@@ -1,0 +1,11 @@
+/.idea/
+/.vscode/
+/.trae/
+
+/views/uploads/
+/_unused_/
+/*.log
+/database_backup.sql
+
+/.env
+/.env.*

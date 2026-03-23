@@ -1,0 +1,40 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/database.php';
+
+header('Content-Type: application/json');
+
+if (!isset($_SESSION['user_id'])) {
+    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+    exit;
+}
+if (($_SESSION['role'] ?? '') !== 'super_admin') {
+    echo json_encode(['success' => false, 'message' => 'Access denied']);
+    exit;
+}
+
+$grup_id = (int)($_POST['grup_id'] ?? 0);
+$barang_id = (int)($_POST['barang_id'] ?? 0);
+$qty = (int)($_POST['qty'] ?? 0);
+
+if ($grup_id <= 0 || $barang_id <= 0 || $qty <= 0) {
+    echo json_encode(['success' => false, 'message' => 'Data tidak valid']);
+    exit;
+}
+
+$stmt = $conn->prepare("SELECT id FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ? AND barang_id = ?");
+$stmt->bind_param("ii", $grup_id, $barang_id);
+$stmt->execute();
+$res = $stmt->get_result();
+if ($res->num_rows > 0) {
+    $stmt = $conn->prepare("UPDATE pemeriksaan_grup_detail SET qty_per_pemeriksaan = ? WHERE pemeriksaan_grup_id = ? AND barang_id = ?");
+    $stmt->bind_param("iii", $qty, $grup_id, $barang_id);
+    $stmt->execute();
+} else {
+    $stmt = $conn->prepare("INSERT INTO pemeriksaan_grup_detail (pemeriksaan_grup_id, barang_id, qty_per_pemeriksaan) VALUES (?, ?, ?)");
+    $stmt->bind_param("iii", $grup_id, $barang_id, $qty);
+    $stmt->execute();
+}
+
+echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE);
+

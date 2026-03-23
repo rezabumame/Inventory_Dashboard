@@ -1,0 +1,61 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/database.php';
+
+header('Content-Type: application/json');
+
+if (!isset($_SESSION['user_id'])) {
+    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+    exit;
+}
+if (($_SESSION['role'] ?? '') !== 'super_admin') {
+    echo json_encode(['success' => false, 'message' => 'Access denied']);
+    exit;
+}
+
+$grup_id = (int)($_POST['grup_id'] ?? 0);
+if ($grup_id <= 0) {
+    echo json_encode(['success' => false, 'message' => 'Invalid grup_id']);
+    exit;
+}
+
+$stmt = $conn->prepare("SELECT id, nama_pemeriksaan FROM pemeriksaan_grup WHERE id = ?");
+$stmt->bind_param("i", $grup_id);
+$stmt->execute();
+$grup = $stmt->get_result()->fetch_assoc();
+if (!$grup) {
+    echo json_encode(['success' => false, 'message' => 'Pemeriksaan tidak ditemukan']);
+    exit;
+}
+
+$stmt = $conn->prepare("
+    SELECT 
+        d.id,
+        d.barang_id,
+        d.qty_per_pemeriksaan,
+        b.odoo_product_id,
+        b.nama_barang,
+        b.satuan
+    FROM pemeriksaan_grup_detail d
+    JOIN barang b ON d.barang_id = b.id
+    WHERE d.pemeriksaan_grup_id = ?
+    ORDER BY b.nama_barang ASC
+");
+$stmt->bind_param("i", $grup_id);
+$stmt->execute();
+$res = $stmt->get_result();
+$details = [];
+while ($row = $res->fetch_assoc()) $details[] = $row;
+
+$cnt_stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ?");
+$cnt_stmt->bind_param("i", $grup_id);
+$cnt_stmt->execute();
+$cnt = (int)($cnt_stmt->get_result()->fetch_assoc()['cnt'] ?? 0);
+
+echo json_encode([
+    'success' => true,
+    'grup' => $grup,
+    'details' => $details,
+    'total_items' => $cnt
+], JSON_UNESCAPED_UNICODE);
+
