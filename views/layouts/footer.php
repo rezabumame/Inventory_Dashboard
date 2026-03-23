@@ -70,7 +70,9 @@
         });
     }
 </script>
-<?php $odoo_auto_tick = in_array($_SESSION['role'] ?? '', ['super_admin', 'admin_gudang'], true); ?>
+<?php 
+$odoo_auto_tick = false;
+?>
 <script>
 (() => {
     if (!<?= $odoo_auto_tick ? 'true' : 'false' ?>) return;
@@ -79,7 +81,10 @@
         if (running) return;
         running = true;
         try {
-            const res = await fetch('api/sync_odoo_schedule.php', { cache: 'no-store' });
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 5000);
+            const res = await fetch('api/sync_odoo_schedule.php?quick=1', { cache: 'no-store', signal: controller.signal });
+            clearTimeout(timer);
             const data = await res.json();
             if (data && data.ran) {
                 const params = new URLSearchParams(window.location.search);
@@ -87,6 +92,9 @@
                 if (page === 'stok_klinik' || document.getElementById('lastUpdateText')) {
                     setTimeout(() => window.location.reload(), 800);
                 }
+            } else if (data && data.quick_due) {
+                // Fire and forget the real run, but do not block tab
+                fetch('api/sync_odoo_schedule.php', { cache: 'no-store' }).catch(()=>{});
             }
         } catch (e) {
         } finally {

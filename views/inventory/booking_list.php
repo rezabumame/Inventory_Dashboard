@@ -31,12 +31,13 @@ if ($need_norm > 0) {
 }
 
 // Filter hari ini
-$filter_today = isset($_GET['filter_today']) && $_GET['filter_today'] == '1';
+$filter_today = isset($_GET['filter_today']) ? ($_GET['filter_today'] == '1') : false;
 $filter_tujuan = (string)($_GET['tujuan'] ?? '');
 $filter_status = (string)($_GET['status'] ?? '');
 $filter_tipe = (string)($_GET['tipe'] ?? '');
 $filter_fu = (string)($_GET['fu'] ?? '');
-$has_filters = $filter_today || $filter_tujuan !== '' || $filter_status !== '' || $filter_tipe !== '' || $filter_fu !== '';
+$has_filters = (isset($_GET['filter_today']) || $filter_tujuan !== '' || $filter_status !== '' || $filter_tipe !== '' || $filter_fu !== '');
+if (!$has_filters) $filter_today = true;
 $reset_url = 'index.php?page=booking';
 
 // Fetch Bookings
@@ -164,7 +165,7 @@ $result = $conn->query($query);
                 <label class="form-label fw-bold text-muted mb-1">Follow-up</label>
                 <select name="fu" class="form-select">
                     <option value="" <?= $filter_fu === '' ? 'selected' : '' ?>>Semua</option>
-                    <option value="1" <?= $filter_fu === '1' ? 'selected' : '' ?>>Perlu Tindak Lanjut</option>
+                    <option value="1" <?= $filter_fu === '1' ? 'selected' : '' ?>>FU Jadwal Kedatangan</option>
                 </select>
             </div>
             <div class="col-md-1 d-grid gap-2">
@@ -193,7 +194,6 @@ $result = $conn->query($query);
             <table id="bookingTable" class="table table-hover table-striped booking-table align-middle">
                 <thead>
                     <tr>
-                        <th>No Booking</th>
                         <th>Tipe</th>
                         <th>Pasien</th>
                         <th>Jenis Pemeriksaan</th>
@@ -210,12 +210,6 @@ $result = $conn->query($query);
                 <tbody>
                     <?php while ($row = $result->fetch_assoc()): ?>
                     <tr>
-                        <td>
-                            <div class="fw-semibold booking-no" title="<?= htmlspecialchars($row['nomor_booking']) ?>"><?= htmlspecialchars($row['nomor_booking']) ?></div>
-                            <?php if (!empty($row['order_id'])): ?>
-                                <div class="booking-muted">Order: <span class="booking-primary fw-semibold"><?= htmlspecialchars($row['order_id']) ?></span></div>
-                            <?php endif; ?>
-                        </td>
                         <td>
                             <?php
                             $bt = strtolower((string)($row['booking_type'] ?? 'keep'));
@@ -273,7 +267,7 @@ $result = $conn->query($query);
                             if ($row['status'] == 'cancelled') $badge = 'bg-danger';
                             ?>
                             <?php if ($row['status'] == 'booked' && (int)($row['butuh_fu'] ?? 0) === 1): ?>
-                                <span class="badge <?= $badge ?>">Perlu Tindak Lanjut</span>
+                                <span class="badge <?= $badge ?>">FU Jadwal Kedatangan</span>
                             <?php else: ?>
                                 <span class="badge <?= $badge ?>"><?= ucfirst($row['status']) ?></span>
                             <?php endif; ?>
@@ -311,7 +305,7 @@ $result = $conn->query($query);
                                     <?php if (in_array($_SESSION['role'] ?? '', ['admin_klinik', 'super_admin'], true) && (int)($row['butuh_fu'] ?? 0) === 0): ?>
                                     <li>
                                         <a class="dropdown-item" href="#" onclick="return confirmButuhFU(<?= (int)$row['id'] ?>);">
-                                            <i class="fas fa-phone text-danger"></i> Perlu Tindak Lanjut
+                                            <i class="fas fa-phone text-danger"></i> FU Jadwal Kedatangan
                                         </a>
                                     </li>
                                     <?php endif; ?>
@@ -510,6 +504,7 @@ $result = $conn->query($query);
 
 <script>
 var examOptionsModal = '<option value="">Pilih klinik dulu...</option>';
+var examRowIndexModal = 0;
 
 $(document).ready(function() {
     // Initialize DataTable without initial sorting to preserve database order (ID DESC)
@@ -517,7 +512,7 @@ $(document).ready(function() {
         order: [], // No initial sorting, preserve database order
         pageLength: 10,
         columnDefs: [
-            { orderable: false, targets: [11] } // Disable sorting on Aksi column
+            { orderable: false, targets: [10] } // Disable sorting on Aksi column
         ],
         language: {
             emptyTable: "Tidak ada data yang tersedia pada tabel ini",
@@ -643,7 +638,7 @@ function updateAllExamSelects() {
 }
 
 function addExamRow() {
-    var idx = $('#examTableModal tr').length;
+    var idx = examRowIndexModal++;
     var paxValue = $('#jumlah_pax').val() || 1; // Get current pax value
     var row = `<tr>
         <td>
@@ -690,7 +685,7 @@ function confirmComplete(id) {
 }
 
 function confirmButuhFU(id) {
-    showConfirm('Tandai booking sebagai Perlu Tindak Lanjut?', 'Konfirmasi', function() {
+    showConfirm('Tandai booking untuk FU jadwal kedatangan pasien (tanya mau datang kapan)?', 'Konfirmasi', function() {
         window.location = 'actions/process_booking_action.php?action=fu&id=' + id;
     });
     return false;
@@ -719,26 +714,67 @@ function openBookingDetail(id) {
             const tlp = h.nomor_tlp ? h.nomor_tlp : '-';
             const lahir = h.tanggal_lahir ? h.tanggal_lahir : '-';
             const items = Array.isArray(res.items) ? res.items : [];
+            const esc = function(v) { return $('<div>').text(v == null ? '' : String(v)).html(); };
             const rows = items.length ? items.map(function(it) {
                 const txt = (it.kode_barang ? it.kode_barang : '') + ' - ' + (it.nama_barang ? it.nama_barang : '') + (it.satuan ? ' (' + it.satuan + ')' : '');
-                return '<tr><td>' + $('<div>').text(txt).html() + '</td><td class="text-end fw-semibold">' + it.qty + '</td></tr>';
+                return '<tr><td>' + esc(txt) + '</td><td class="text-end fw-semibold">' + esc(it.qty) + '</td></tr>';
             }).join('') : '<tr><td colspan="2" class="text-center text-muted py-2">Tidak ada item</td></tr>';
 
             $('#bookingDetailTitle').text('Detail: ' + (h.nomor_booking || ''));
             $('#bookingDetailBody').html(
-                '<div class="row g-2 mb-3">' +
-                    '<div class="col-md-4"><div class="small text-muted">Tanggal / Jam</div><div class="fw-semibold">' + $('<div>').text(tgl).html() + ' ' + $('<div>').text(jam).html() + '</div></div>' +
-                    '<div class="col-md-4"><div class="small text-muted">Nama CS</div><div class="fw-semibold">' + $('<div>').text(h.cs_name || '-').html() + '</div></div>' +
-                    '<div class="col-md-4"><div class="small text-muted">Status / Jotform</div><div class="fw-semibold">' + $('<div>').text(bt).html() + ' / ' + $('<div>').text(jf).html() + '</div></div>' +
-                    '<div class="col-md-6"><div class="small text-muted">Pasien</div><div class="fw-semibold">' + $('<div>').text(h.nama_pemesan || '-').html() + '</div><div class="text-muted small">Tlp: ' + $('<div>').text(tlp).html() + ' | Lahir: ' + $('<div>').text(lahir).html() + '</div></div>' +
-                    '<div class="col-md-6"><div class="small text-muted">Klinik</div><div class="fw-semibold">' + $('<div>').text(h.nama_klinik || '-').html() + '</div><div class="text-muted small">' + $('<div>').text(h.status_booking || '-').html() + '</div></div>' +
-                    '<div class="col-12"><div class="small text-muted">Jenis Pemeriksaan</div><div class="fw-semibold">' + $('<div>').text(jenis).html() + '</div></div>' +
-                '</div>' +
-                '<div class="table-responsive border rounded-2">' +
-                    '<table class="table table-sm mb-0">' +
-                        '<thead class="table-light"><tr><th>Item</th><th class="text-end" width="120">Qty</th></tr></thead>' +
-                        '<tbody>' + rows + '</tbody>' +
-                    '</table>' +
+                '<div class="row g-3">' +
+                    '<div class="col-12">' +
+                        '<div class="d-flex flex-wrap gap-2 align-items-center">' +
+                            '<span class="badge bg-light text-dark border">Booking: ' + esc(bt) + '</span>' +
+                            '<span class="badge bg-light text-dark border">Jotform: ' + esc(jf) + '</span>' +
+                            '<span class="badge bg-light text-dark border">Status: ' + esc(h.status_booking || '-') + '</span>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="col-md-4">' +
+                        '<div class="border rounded-3 p-3 h-100">' +
+                            '<div class="text-muted small">Tanggal</div>' +
+                            '<div class="fw-semibold">' + esc(tgl) + '</div>' +
+                            '<div class="text-muted small mt-2">Jam</div>' +
+                            '<div class="fw-semibold">' + esc(jam) + '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="col-md-4">' +
+                        '<div class="border rounded-3 p-3 h-100">' +
+                            '<div class="text-muted small">Klinik</div>' +
+                            '<div class="fw-semibold">' + esc(h.nama_klinik || '-') + '</div>' +
+                            '<div class="text-muted small mt-2">CS</div>' +
+                            '<div class="fw-semibold">' + esc(h.cs_name || '-') + '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="col-md-4">' +
+                        '<div class="border rounded-3 p-3 h-100">' +
+                            '<div class="text-muted small">Pasien</div>' +
+                            '<div class="fw-semibold">' + esc(h.nama_pemesan || '-') + '</div>' +
+                            '<div class="text-muted small mt-2">Kontak</div>' +
+                            '<div class="small text-muted">Tlp: ' + esc(tlp) + '</div>' +
+                            '<div class="small text-muted">Lahir: ' + esc(lahir) + '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="col-12">' +
+                        '<div class="border rounded-3 p-3">' +
+                            '<div class="text-muted small">Jenis Pemeriksaan</div>' +
+                            '<div class="fw-semibold">' + esc(jenis) + '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="col-12">' +
+                        '<div class="border rounded-3 overflow-hidden">' +
+                            '<div class="px-3 py-2 bg-light d-flex justify-content-between align-items-center">' +
+                                '<div class="fw-semibold">Detail Item</div>' +
+                                '<div class="text-muted small">Qty per item</div>' +
+                            '</div>' +
+                            '<div class="table-responsive">' +
+                                '<table class="table table-sm mb-0">' +
+                                    '<thead class="table-light"><tr><th>Item</th><th class="text-end" width="120">Qty</th></tr></thead>' +
+                                    '<tbody>' + rows + '</tbody>' +
+                                '</table>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
                 '</div>'
             );
         },
@@ -811,16 +847,16 @@ function submitAdjust() {
 <div class="modal fade" id="modalBookingDetail" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header" style="background-color: #204EAB;">
-                <h5 class="modal-title text-white" id="bookingDetailTitle">
-                    <i class="fas fa-list"></i> Detail Booking
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="bookingDetailTitle">
+                    <i class="fas fa-list me-2 text-primary-custom"></i>Detail Booking
                 </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="bookingDetailBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="fas fa-times"></i> Tutup
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                    Tutup
                 </button>
             </div>
         </div>

@@ -80,7 +80,7 @@ try {
                 throw new Exception('Access denied');
             }
             $conn->query("UPDATE booking_pemeriksaan SET butuh_fu = 1 WHERE id = $id");
-            $msg = "Booking ditandai Butuh FU.";
+            $msg = "Booking ditandai FU jadwal kedatangan.";
             break;
             
         case 'move':

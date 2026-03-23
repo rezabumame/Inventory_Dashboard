@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/settings.php';
 
 header('Content-Type: application/json');
 
@@ -183,6 +184,64 @@ try {
     }
 
     $conn->commit();
+
+    // Async notify Google Sheets (Apps Script) if configured
+    try {
+        $webhook = trim((string)get_setting('gsheet_booking_webhook_url', ''));
+        if ($webhook !== '') {
+            $klin_nm = '';
+            $rk = $conn->query("SELECT nama_klinik FROM klinik WHERE id = $klinik_id LIMIT 1");
+            if ($rk && $rk->num_rows > 0) $klin_nm = (string)($rk->fetch_assoc()['nama_klinik'] ?? '');
+            $payload = [
+                'event' => 'booking_created',
+                'nomor_booking' => $nomor_final,
+                'tanggal_pemeriksaan' => $tanggal,
+                'jam_layanan' => $jam_layanan,
+                'status_booking' => $status_booking,
+                'booking_type' => $booking_type,
+                'klinik_id' => (int)$klinik_id,
+                'klinik_nama' => $klin_nm,
+                'cs_name' => $cs_name,
+                'nama_pemesan' => $nama_pemesan,
+                'nomor_tlp' => $nomor_tlp,
+                'tanggal_lahir' => $tanggal_lahir,
+                'jumlah_pax' => (int)$jumlah_pax,
+                'jotform_submitted' => (int)$jotform_submitted,
+                'created_by' => (int)$created_by,
+                'created_at' => date('Y-m-d H:i:s'),
+            ];
+            // Include exams summary
+            $ex_summary = [];
+            foreach ($exams as $exam) {
+                if (empty($exam['pemeriksaan_id']) || empty($exam['qty'])) continue;
+                $pid = (int)$exam['pemeriksaan_id'];
+                $qty = (int)$exam['qty'];
+                $nm = '';
+                $re = $conn->query("SELECT nama_pemeriksaan FROM pemeriksaan_grup WHERE id = $pid LIMIT 1");
+                if ($re && $re->num_rows > 0) $nm = (string)($re->fetch_assoc()['nama_pemeriksaan'] ?? '');
+                $ex_summary[] = ['id' => $pid, 'nama' => $nm, 'qty' => $qty];
+            }
+            $payload['exams'] = $ex_summary;
+            $payload['exams_text'] = implode(' | ', array_map(function($x) {
+                $nm = trim((string)($x['nama'] ?? ''));
+                $qty = (int)($x['qty'] ?? 0);
+                if ($nm === '') $nm = 'Pemeriksaan';
+                return $nm . ' x' . $qty;
+            }, $ex_summary));
+
+            // Fire-and-forget
+            $ch = curl_init($webhook);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1800); // 1.8s
+            curl_exec($ch);
+            curl_close($ch);
+        }
+    } catch (\Throwable $e) {
+        // ignore webhook errors
+    }
     echo json_encode([
         'success' => true, 
         'message' => 'Booking berhasil dibuat!', 

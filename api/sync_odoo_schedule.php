@@ -74,7 +74,14 @@ if (!$due) {
     $debug['last_run_text'] = $lastRun ? date('d M Y H:i:s', $lastRun) : '-';
     $debug['target'] = $target;
     $debug['target_text'] = $target ? date('d M Y H:i:s', $target) : '-';
-    echo json_encode(['success' => true, 'ran' => false, 'message' => 'Not due', 'debug' => $debug]);
+    $quick = isset($_GET['quick']) && $_GET['quick'] === '1';
+    echo json_encode([
+        'success' => true, 
+        'ran' => false, 
+        'message' => 'Not due', 
+        'debug' => $debug,
+        'quick_due' => ($quick ? false : false)
+    ]);
     exit;
 }
 
@@ -93,7 +100,14 @@ if (!$lock_ok) {
     exit;
 }
 
-$ch = curl_init(base_url('api/sync_odoo.php'));
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/'));
+$dir1 = rtrim(dirname($script), '/');          // e.g. /bumame_iventory2/api
+$appRoot = rtrim(dirname($dir1), '/');         // e.g. /bumame_iventory2
+if ($appRoot === '') $appRoot = '/';
+$targetUrl = $scheme . '://' . $host . $appRoot . '/api/sync_odoo.php';
+$ch = curl_init($targetUrl);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_TIMEOUT, 300);

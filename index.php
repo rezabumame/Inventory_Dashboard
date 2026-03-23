@@ -42,6 +42,9 @@ switch ($page) {
     case 'petugas_hc':
         include 'views/master/petugas_hc.php';
         break;
+    case 'barang':
+        include 'views/master/barang.php';
+        break;
     // Inventory
     case 'stok_klinik':
         include 'views/inventory/stok_klinik.php';

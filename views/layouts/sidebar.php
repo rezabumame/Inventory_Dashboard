@@ -64,6 +64,9 @@
         <a href="index.php?page=uom_convert" class="sidebar-link <?= $current_page == 'uom_convert' ? 'active' : '' ?>">
             <i class="fas fa-exchange-alt"></i> Konversi UOM
         </a>
+        <a href="index.php?page=barang" class="sidebar-link <?= $current_page == 'barang' ? 'active' : '' ?>">
+            <i class="fas fa-boxes"></i> Database Barang
+        </a>
         <a href="index.php?page=users" class="sidebar-link <?= $current_page == 'users' ? 'active' : '' ?>">
             <i class="fas fa-users"></i> Data User
         </a>

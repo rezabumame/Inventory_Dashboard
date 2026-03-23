@@ -1,7 +1,7 @@
 <?php
 $host = getenv('DB_HOST') ?: '127.0.0.1';
 $user = getenv('DB_USER') ?: 'root';
-$pass = getenv('DB_PASS') ?: '';
+$pass = getenv('DB_PASS') !== false ? (string)getenv('DB_PASS') : '';
 $db   = getenv('DB_NAME') ?: 'bumame_inventory_v2';
 
 // Enable error reporting for mysqli to throw exceptions

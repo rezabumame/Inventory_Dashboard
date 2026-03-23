@@ -1,11 +1,20 @@
-/.idea/
+.htaccess
+.env
+.env.*
+
 /.vscode/
+/.idea/
 /.trae/
 
+/vendor/
 /views/uploads/
-/_unused_/
-/*.log
-/database_backup.sql
+/assets/uploads/
 
-/.env
-/.env.*
+/_unused_/
+/scripts/
+
+/*.zip
+/*.sql
+/*.log
+*.log
+

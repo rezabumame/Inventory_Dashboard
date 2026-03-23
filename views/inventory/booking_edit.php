@@ -30,7 +30,14 @@ if (!$booking || $booking['status'] != 'booked') {
     redirect('index.php?page=booking');
 }
 
-$exams_result = $conn->query("SELECT id, nama_pemeriksaan FROM pemeriksaan_grup ORDER BY nama_pemeriksaan ASC");
+$jenis_now = '';
+$rj = $conn->query("
+    SELECT GROUP_CONCAT(DISTINCT pg.nama_pemeriksaan ORDER BY pg.nama_pemeriksaan SEPARATOR ', ') AS jenis
+    FROM booking_pasien bp
+    JOIN pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
+    WHERE bp.booking_id = $id
+");
+if ($rj && $rj->num_rows > 0) $jenis_now = (string)($rj->fetch_assoc()['jenis'] ?? '');
 ?>
 
 <div class="container-fluid">
@@ -56,6 +63,7 @@ $exams_result = $conn->query("SELECT id, nama_pemeriksaan FROM pemeriksaan_grup 
                 <strong>Klinik:</strong> <?= htmlspecialchars($booking['nama_klinik']) ?><br>
                 <strong>Tanggal:</strong> <?= date('d M Y', strtotime($booking['tanggal_pemeriksaan'])) ?><br>
                 <strong>Jumlah Pax:</strong> <?= $booking['jumlah_pax'] ?>
+                <?php if ($jenis_now !== ''): ?><br><strong>Pemeriksaan Saat Ini:</strong> <?= htmlspecialchars($jenis_now) ?><?php endif; ?>
             </div>
 
             <form id="formEditBooking" method="POST" action="actions/process_booking_edit.php">
@@ -140,16 +148,14 @@ $exams_result = $conn->query("SELECT id, nama_pemeriksaan FROM pemeriksaan_grup 
 </div>
 
 <script>
-var examOptions = '<option value="">Pilih pemeriksaan...</option>';
-<?php while ($exam = $exams_result->fetch_assoc()): ?>
-examOptions += '<option value="<?= $exam['id'] ?>"><?= htmlspecialchars($exam['nama_pemeriksaan']) ?></option>';
-<?php endwhile; ?>
-
-var defaultPax = <?= $booking['jumlah_pax'] ?>;
+var examOptions = '<option value="">Memuat pemeriksaan...</option>';
+var defaultPax = <?= (int)$booking['jumlah_pax'] ?>;
+var klinikId = <?= (int)$booking['klinik_id'] ?>;
+var statusBooking = <?= json_encode((string)($booking['status_booking'] ?? ''), JSON_UNESCAPED_SLASHES) ?>;
+var examRowIndex = 0;
 
 $(document).ready(function() {
-    // Add first row
-    addExamRow();
+    loadExamOptions();
     
     // Handle form submit
     $('#formEditBooking').on('submit', function(e) {
@@ -181,11 +187,45 @@ $(document).ready(function() {
     });
 });
 
+function loadExamOptions() {
+    $.ajax({
+        url: 'api/get_exam_availability.php',
+        method: 'GET',
+        data: { klinik_id: klinikId, status_booking: statusBooking },
+        dataType: 'json',
+        success: function(data) {
+            examOptions = '<option value="">Pilih pemeriksaan...</option>';
+            if (Array.isArray(data) && data.length > 0) {
+                data.forEach(function(exam) {
+                    examOptions += `<option value="${exam.id}">${exam.name} (Ready: ${exam.qty})</option>`;
+                });
+            } else {
+                examOptions = '<option value="">Tidak ada pemeriksaan available</option>';
+            }
+            updateAllExamSelects();
+            if ($('#examTable tr').length === 0) addExamRow();
+        },
+        error: function() {
+            examOptions = '<option value="">Error loading data</option>';
+            updateAllExamSelects();
+            if ($('#examTable tr').length === 0) addExamRow();
+        }
+    });
+}
+
+function updateAllExamSelects() {
+    $('.exam-select-modal').each(function() {
+        var currentVal = $(this).val();
+        $(this).html(examOptions);
+        if (currentVal) $(this).val(currentVal);
+    });
+}
+
 function addExamRow() {
-    var idx = $('#examTable tr').length;
+    var idx = examRowIndex++;
     var row = `<tr>
         <td>
-            <select name="exams[${idx}][pemeriksaan_id]" class="form-select form-select-sm" required>
+            <select name="exams[${idx}][pemeriksaan_id]" class="form-select form-select-sm exam-select-modal" required>
                 ${examOptions}
             </select>
         </td>

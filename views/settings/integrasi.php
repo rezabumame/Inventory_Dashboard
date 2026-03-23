@@ -28,6 +28,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         set_setting('odoo_location_gudang_utama', $input_gudang);
         $msg = '<div class="alert alert-success">Koneksi RPC tersimpan.</div>';
+    } else if ($form_type === 'hooks') {
+        $lark = trim((string)($_POST['webhook_lark_url'] ?? ''));
+        $gsheet = trim((string)($_POST['gsheet_booking_webhook_url'] ?? ''));
+        set_setting('webhook_lark_url', $lark);
+        set_setting('gsheet_booking_webhook_url', $gsheet);
+        $msg = '<div class="alert alert-success">Webhook tersimpan.</div>';
     } else {
         $enabled = isset($_POST['enabled']) ? '1' : '0';
         set_setting('odoo_sync_enabled', $enabled);
@@ -58,6 +64,18 @@ $rpc_user = trim((string)get_setting('odoo_rpc_username', ''));
 $rpc_password_saved = ((string)get_setting('odoo_rpc_password', '')) !== '';
 $gudang_location_code = trim((string)get_setting('odoo_location_gudang_utama', ''));
 $integration_method = get_setting('odoo_integration_method', $rpc_url !== '' ? 'rpc' : 'api');
+$lark_webhook = trim((string)get_setting('webhook_lark_url', ''));
+$gsheet_webhook = trim((string)get_setting('gsheet_booking_webhook_url', ''));
+$internal_token = getenv('ODOO_SYNC_SYSTEM_TOKEN') ?: '';
+$schedule_hint_url = '';
+if ($internal_token !== '') {
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/'));
+    $appRoot = rtrim(dirname(rtrim(dirname($script), '/')), '/'); // up 2 levels from /views/settings/...
+    if ($appRoot === '') $appRoot = '/';
+    $schedule_hint_url = $scheme . '://' . $host . $appRoot . '/api/sync_odoo_schedule.php?token=' . urlencode($internal_token);
+}
 
 function next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run) {
     if (!$enabled) return '-';
@@ -249,6 +267,34 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                                 </div>
                                 <i class="fas fa-sliders-h fa-2x text-secondary opacity-25"></i>
                             </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <div class="fw-bold mb-3"><i class="fas fa-bell me-2"></i>Notifikasi & Webhook</div>
+                            <form method="POST" class="row g-3">
+                                <input type="hidden" name="form_type" value="hooks">
+                                <div class="col-12">
+                                    <label class="form-label">Lark Webhook URL</label>
+                                    <input type="url" class="form-control" name="webhook_lark_url" value="<?= htmlspecialchars($lark_webhook) ?>" placeholder="https://open.larksuite.com/open-apis/bot/v2/hook/...">
+                                    <div class="form-text">Dipakai untuk kirim ringkasan hasil sync Odoo (sukses/gagal).</div>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Google Sheets Webhook (Booking)</label>
+                                    <input type="url" class="form-control" name="gsheet_booking_webhook_url" value="<?= htmlspecialchars($gsheet_webhook) ?>" placeholder="https://script.google.com/macros/s/....../exec">
+                                    <div class="form-text">Set Web App Apps Script (doPost) untuk menerima booking_created dan menulis ke Sheet.</div>
+                                </div>
+                                <div class="col-12 d-flex gap-2">
+                                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan Webhook</button>
+                                    <?php if ($schedule_hint_url !== ''): ?>
+                                        <a href="<?= htmlspecialchars($schedule_hint_url) ?>" target="_blank" class="btn btn-outline-secondary">
+                                            <i class="fas fa-link"></i> Cek Scheduler URL
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 </div>

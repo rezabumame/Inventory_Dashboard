@@ -58,9 +58,6 @@ function http_get_json($url, $headers = []) {
 
 function lark_webhook_url() {
     $url = trim((string)get_setting('webhook_lark_url', ''));
-    if ($url === '') {
-        $url = 'https://open.larksuite.com/open-apis/bot/v2/hook/b5fb86a4-f554-4deb-b60b-e03d550847bc';
-    }
     return $url;
 }
 
