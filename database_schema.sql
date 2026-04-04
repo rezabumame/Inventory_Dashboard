@@ -3,7 +3,7 @@
 
 SET FOREIGN_KEY_CHECKS = 0;
 
-CREATE TABLE `app_counters` (
+CREATE TABLE IF NOT EXISTS `app_counters` (
   `k` varchar(50) NOT NULL,
   `d` char(8) NOT NULL,
   `seq` int(11) NOT NULL DEFAULT 0,
@@ -11,13 +11,13 @@ CREATE TABLE `app_counters` (
   PRIMARY KEY (`k`,`d`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `app_settings` (
+CREATE TABLE IF NOT EXISTS `app_settings` (
   `k` varchar(100) NOT NULL,
   `v` text NOT NULL,
   PRIMARY KEY (`k`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `barang` (
+CREATE TABLE IF NOT EXISTS `barang` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `kode_barang` varchar(50) NOT NULL,
   `nama_barang` varchar(100) NOT NULL,
@@ -33,7 +33,7 @@ CREATE TABLE `barang` (
   UNIQUE KEY `uniq_odoo_product_id` (`odoo_product_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=7850 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `barang_uom_conversion` (
+CREATE TABLE IF NOT EXISTS `barang_uom_conversion` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `barang_id` int(11) NOT NULL,
   `from_uom` varchar(20) DEFAULT NULL,
@@ -45,7 +45,7 @@ CREATE TABLE `barang_uom_conversion` (
   UNIQUE KEY `uniq_barang` (`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `booking_detail` (
+CREATE TABLE IF NOT EXISTS `booking_detail` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `booking_id` int(11) NOT NULL,
   `booking_pasien_id` int(11) NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE `booking_detail` (
   KEY `idx_booking_barang` (`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `booking_pasien` (
+CREATE TABLE IF NOT EXISTS `booking_pasien` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `booking_id` int(11) NOT NULL,
   `nama_pasien` varchar(100) NOT NULL,
@@ -71,7 +71,7 @@ CREATE TABLE `booking_pasien` (
   KEY `booking_id` (`booking_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `booking_pemeriksaan` (
+CREATE TABLE IF NOT EXISTS `booking_pemeriksaan` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nomor_booking` varchar(50) NOT NULL,
   `order_id` varchar(100) DEFAULT NULL,
@@ -99,7 +99,7 @@ CREATE TABLE `booking_pemeriksaan` (
   KEY `idx_bp_klinik_status_tgl` (`klinik_id`,`status`,`tanggal_pemeriksaan`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `booking_request_dedup` (
+CREATE TABLE IF NOT EXISTS `booking_request_dedup` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `client_request_id` varchar(64) NOT NULL,
   `created_by` int(11) NOT NULL,
@@ -109,7 +109,7 @@ CREATE TABLE `booking_request_dedup` (
   UNIQUE KEY `uniq_client` (`client_request_id`,`created_by`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `hc_petugas` (
+CREATE TABLE IF NOT EXISTS `hc_petugas` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `klinik_id` int(11) NOT NULL,
   `nama_petugas` varchar(120) NOT NULL,
@@ -122,7 +122,7 @@ CREATE TABLE `hc_petugas` (
   KEY `idx_loc` (`location_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `hc_petugas_transfer` (
+CREATE TABLE IF NOT EXISTS `hc_petugas_transfer` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `klinik_id` int(11) NOT NULL,
   `user_hc_id` int(11) NOT NULL,
@@ -137,7 +137,7 @@ CREATE TABLE `hc_petugas_transfer` (
   KEY `idx_barang` (`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `hc_tas_allocation` (
+CREATE TABLE IF NOT EXISTS `hc_tas_allocation` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `klinik_id` int(11) NOT NULL,
   `user_hc_id` int(11) NOT NULL,
@@ -152,7 +152,7 @@ CREATE TABLE `hc_tas_allocation` (
   KEY `idx_barang` (`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=458 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `klinik` (
+CREATE TABLE IF NOT EXISTS `klinik` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `kode_klinik` varchar(20) NOT NULL,
   `kode_homecare` varchar(50) DEFAULT NULL,
@@ -163,7 +163,7 @@ CREATE TABLE `klinik` (
   UNIQUE KEY `kode_klinik` (`kode_klinik`)
 ) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `odoo_format_config` (
+CREATE TABLE IF NOT EXISTS `odoo_format_config` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `internal_reference` varchar(100) DEFAULT NULL,
   `name` varchar(255) DEFAULT NULL,
@@ -177,7 +177,7 @@ CREATE TABLE `odoo_format_config` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=607 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `odoo_support_data` (
+CREATE TABLE IF NOT EXISTS `odoo_support_data` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `key_name` varchar(100) DEFAULT NULL,
   `reason` varchar(255) DEFAULT NULL,
@@ -187,7 +187,7 @@ CREATE TABLE `odoo_support_data` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `pemakaian_bhp` (
+CREATE TABLE IF NOT EXISTS `pemakaian_bhp` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nomor_pemakaian` varchar(50) NOT NULL,
   `tanggal` date NOT NULL,
@@ -206,7 +206,7 @@ CREATE TABLE `pemakaian_bhp` (
   CONSTRAINT `fk_pemakaian_klinik` FOREIGN KEY (`klinik_id`) REFERENCES `klinik` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `pemakaian_bhp_detail` (
+CREATE TABLE IF NOT EXISTS `pemakaian_bhp_detail` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `pemakaian_bhp_id` int(11) NOT NULL,
   `barang_id` int(11) NOT NULL,
@@ -220,14 +220,14 @@ CREATE TABLE `pemakaian_bhp_detail` (
   CONSTRAINT `fk_pemakaian_detail_header` FOREIGN KEY (`pemakaian_bhp_id`) REFERENCES `pemakaian_bhp` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `pemeriksaan_grup` (
+CREATE TABLE IF NOT EXISTS `pemeriksaan_grup` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nama_pemeriksaan` varchar(100) NOT NULL,
   `keterangan` text DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `pemeriksaan_grup_detail` (
+CREATE TABLE IF NOT EXISTS `pemeriksaan_grup_detail` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `pemeriksaan_grup_id` int(11) NOT NULL,
   `barang_id` int(11) NOT NULL,
@@ -235,7 +235,7 @@ CREATE TABLE `pemeriksaan_grup_detail` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `request_barang` (
+CREATE TABLE IF NOT EXISTS `request_barang` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nomor_request` varchar(50) NOT NULL,
   `dari_level` enum('klinik','hc') NOT NULL,
@@ -266,7 +266,7 @@ CREATE TABLE `request_barang` (
   UNIQUE KEY `idx_request_token` (`request_qr_token`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `request_barang_detail` (
+CREATE TABLE IF NOT EXISTS `request_barang_detail` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `request_barang_id` int(11) NOT NULL,
   `barang_id` int(11) NOT NULL,
@@ -278,7 +278,7 @@ CREATE TABLE `request_barang_detail` (
   KEY `idx_req_detail_barang` (`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `request_barang_dokumen` (
+CREATE TABLE IF NOT EXISTS `request_barang_dokumen` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `request_barang_id` int(11) NOT NULL,
   `dokumen_path` varchar(255) NOT NULL,
@@ -288,7 +288,7 @@ CREATE TABLE `request_barang_dokumen` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `stock_mirror` (
+CREATE TABLE IF NOT EXISTS `stock_mirror` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `odoo_product_id` varchar(64) NOT NULL,
   `kode_barang` varchar(64) NOT NULL,
@@ -300,7 +300,7 @@ CREATE TABLE `stock_mirror` (
   KEY `idx_loc_code` (`location_code`,`kode_barang`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6313 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `stok_gudang_klinik` (
+CREATE TABLE IF NOT EXISTS `stok_gudang_klinik` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `barang_id` int(11) NOT NULL,
   `klinik_id` int(11) NOT NULL,
@@ -313,7 +313,7 @@ CREATE TABLE `stok_gudang_klinik` (
   KEY `idx_sgk_klinik_barang` (`klinik_id`,`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `stok_gudang_utama` (
+CREATE TABLE IF NOT EXISTS `stok_gudang_utama` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `barang_id` int(11) NOT NULL,
   `qty` int(11) NOT NULL DEFAULT 0,
@@ -324,7 +324,7 @@ CREATE TABLE `stok_gudang_utama` (
   UNIQUE KEY `barang_id` (`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `stok_tas_hc` (
+CREATE TABLE IF NOT EXISTS `stok_tas_hc` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `barang_id` int(11) NOT NULL,
   `user_id` int(11) NOT NULL,
@@ -337,7 +337,7 @@ CREATE TABLE `stok_tas_hc` (
   KEY `idx_sth_user_barang` (`user_id`,`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=367 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `transaksi_stok` (
+CREATE TABLE IF NOT EXISTS `transaksi_stok` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `barang_id` int(11) NOT NULL,
   `level` enum('gudang_utama','klinik','hc') NOT NULL,
@@ -355,7 +355,7 @@ CREATE TABLE `transaksi_stok` (
   KEY `idx_ts_level_created_barang` (`level`,`level_id`,`created_at`,`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=36 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `transfer_barang` (
+CREATE TABLE IF NOT EXISTS `transfer_barang` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nomor_transfer` varchar(50) NOT NULL,
   `request_barang_id` int(11) DEFAULT NULL,
@@ -371,7 +371,7 @@ CREATE TABLE `transfer_barang` (
   UNIQUE KEY `nomor_transfer` (`nomor_transfer`)
 ) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `transfer_barang_detail` (
+CREATE TABLE IF NOT EXISTS `transfer_barang_detail` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `transfer_barang_id` int(11) NOT NULL,
   `barang_id` int(11) NOT NULL,
@@ -381,7 +381,7 @@ CREATE TABLE `transfer_barang_detail` (
   KEY `idx_trf_detail_barang` (`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `upload_logs` (
+CREATE TABLE IF NOT EXISTS `upload_logs` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `user_id` int(11) DEFAULT NULL,
   `timestamp` datetime DEFAULT current_timestamp(),
@@ -393,7 +393,7 @@ CREATE TABLE `upload_logs` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `users` (
+CREATE TABLE IF NOT EXISTS `users` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `username` varchar(50) NOT NULL,
   `password` varchar(255) NOT NULL,
