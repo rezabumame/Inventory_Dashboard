@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../config/database.php';';
+require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/settings.php';
 
 header('Content-Type: application/json');
@@ -176,4 +176,5 @@ if ($ke_level === 'gudang_utama') {
 }
 
 echo json_encode(['success' => false, 'message' => 'Invalid ke_level'], JSON_UNESCAPED_UNICODE);
+
 

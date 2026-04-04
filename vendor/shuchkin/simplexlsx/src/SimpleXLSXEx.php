@@ -360,10 +360,10 @@ class SimpleXLSXEx
                 $css = '';
 
                 if ($cf['color']) {
-                    $css .= 'color: #'.$cf['color'].';';
+                    $css .= 'color: #'.$cf['color'].';
                 }
                 if ($cf['font']) {
-                    $css .= 'font-family: '.$cf['font'].';';
+                    $css .= 'font-family: '.$cf['font'].';
                 }
                 if ($cf['f-size']) {
 //                    $css .= 'font-size: '.($cf['f-size'] * 0.352806).'mm;';
@@ -382,32 +382,32 @@ class SimpleXLSXEx
                     $css .= 'text-decoration: line-through;';
                 }
                 if ($cf['bgcolor']) {
-                    $css .= 'background-color: #' . $cf['bgcolor'] . ';';
+                    $css .= 'background-color: #' . $cf['bgcolor'] . ';
                 }
                 if ($cf['align']) {
-                    $css .= 'text-align: '.$cf['align'].';';
+                    $css .= 'text-align: '.$cf['align'].';
                 }
                 if ($cf['valign']) {
-                    $css .= 'vertical-align: '.$cf['valign'].';';
+                    $css .= 'vertical-align: '.$cf['valign'].';
                 }
                 if ($cf['b-top-style']) {
-                    $css .= 'border-top-style: '.$cf['b-top-style'].';';
-                    $css .= 'border-top-color: #'.$cf['b-top-color'].';';
+                    $css .= 'border-top-style: '.$cf['b-top-style'].';
+                    $css .= 'border-top-color: #'.$cf['b-top-color'].';
                     $css .= 'border-top-width: thin;';
                 }
                 if ($cf['b-right-style']) {
-                    $css .= 'border-right-style: '.$cf['b-right-style'].';';
-                    $css .= 'border-right-color: #'.$cf['b-right-color'].';';
+                    $css .= 'border-right-style: '.$cf['b-right-style'].';
+                    $css .= 'border-right-color: #'.$cf['b-right-color'].';
                     $css .= 'border-right-width: thin;';
                 }
                 if ($cf['b-bottom-style']) {
-                    $css .= 'border-bottom-style: '.$cf['b-bottom-style'].';';
-                    $css .= 'border-bottom-color: #'.$cf['b-bottom-color'].';';
+                    $css .= 'border-bottom-style: '.$cf['b-bottom-style'].';
+                    $css .= 'border-bottom-color: #'.$cf['b-bottom-color'].';
                     $css .= 'border-bottom-width: thin;';
                 }
                 if ($cf['b-left-style']) {
-                    $css .= 'border-left-style: '.$cf['b-left-style'].';';
-                    $css .= 'border-left-color: #'.$cf['b-left-color'].';';
+                    $css .= 'border-left-style: '.$cf['b-left-style'].';
+                    $css .= 'border-left-color: #'.$cf['b-left-color'].';
                     $css .= 'border-left-width: thin;';
                 }
                 $this->css[$k] = $css;
@@ -692,3 +692,4 @@ class SimpleXLSXEx
         }
     }
 }
+

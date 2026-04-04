@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../config/database.php';';
+require_once __DIR__ . '/../config/database.php';
 
 header('Content-Type: application/json');
 
@@ -26,4 +26,5 @@ $stmt->bind_param("i", $detail_id);
 $stmt->execute();
 
 echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE);
+
 

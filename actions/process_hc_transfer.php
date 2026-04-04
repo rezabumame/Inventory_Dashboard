@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../config/database.php';';
+require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../lib/stock.php';
 
 if (!isset($_SESSION['user_id'])) redirect('index.php?page=login');
@@ -152,4 +152,5 @@ try {
 }
 
 redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . ($role !== 'petugas_hc' ? ('&petugas_user_id=' . (int)$user_hc_id) : ''));
+
 

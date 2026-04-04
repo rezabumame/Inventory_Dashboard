@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../config/database.php';';
+require_once __DIR__ . '/../config/database.php';
 
 header('Content-Type: application/json');
 
@@ -45,4 +45,5 @@ if (!$stmt->execute()) {
     exit;
 }
 echo json_encode(['success' => true]);
+
 

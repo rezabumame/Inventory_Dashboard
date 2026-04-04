@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../config/database.php';';
+require_once __DIR__ . '/../config/database.php';
 
 if (!isset($_SESSION['user_id'])) redirect('index.php?page=login');
 require_csrf();
@@ -32,4 +32,5 @@ try {
 }
 
 redirect('index.php?page=barang');
+
 
