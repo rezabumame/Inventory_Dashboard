@@ -3,19 +3,29 @@
 
 SET FOREIGN_KEY_CHECKS = 0;
 
-CREATE TABLE IF NOT EXISTS `app_counters` (
-  `k` varchar(50) NOT NULL,
-  `d` char(8) NOT NULL,
-  `seq` int(11) NOT NULL DEFAULT 0,
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  PRIMARY KEY (`k`,`d`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `username` varchar(50) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `nama_lengkap` varchar(100) NOT NULL,
+  `role` enum('super_admin','admin_gudang','admin_klinik','cs','b2b_ops','petugas_hc','spv_klinik','spv_manager','manager_klinik') NOT NULL,
+  `klinik_id` int(11) DEFAULT NULL,
+  `status` enum('active','inactive') DEFAULT 'active',
+  `photo` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `username` (`username`)
+) ENGINE=InnoDB AUTO_INCREMENT=57 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE IF NOT EXISTS `app_settings` (
-  `k` varchar(100) NOT NULL,
-  `v` text NOT NULL,
-  PRIMARY KEY (`k`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE IF NOT EXISTS `klinik` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `kode_klinik` varchar(20) NOT NULL,
+  `kode_homecare` varchar(50) DEFAULT NULL,
+  `nama_klinik` varchar(100) NOT NULL,
+  `alamat` text DEFAULT NULL,
+  `status` enum('active','inactive') DEFAULT 'active',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `kode_klinik` (`kode_klinik`)
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS `barang` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -32,6 +42,20 @@ CREATE TABLE IF NOT EXISTS `barang` (
   UNIQUE KEY `uniq_kode_barang` (`kode_barang`),
   UNIQUE KEY `uniq_odoo_product_id` (`odoo_product_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=7850 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `app_counters` (
+  `k` varchar(50) NOT NULL,
+  `d` char(8) NOT NULL,
+  `seq` int(11) NOT NULL DEFAULT 0,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`k`,`d`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `app_settings` (
+  `k` varchar(100) NOT NULL,
+  `v` text NOT NULL,
+  PRIMARY KEY (`k`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS `barang_uom_conversion` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -151,17 +175,6 @@ CREATE TABLE IF NOT EXISTS `hc_tas_allocation` (
   KEY `idx_user` (`user_hc_id`),
   KEY `idx_barang` (`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=458 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-CREATE TABLE IF NOT EXISTS `klinik` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `kode_klinik` varchar(20) NOT NULL,
-  `kode_homecare` varchar(50) DEFAULT NULL,
-  `nama_klinik` varchar(100) NOT NULL,
-  `alamat` text DEFAULT NULL,
-  `status` enum('active','inactive') DEFAULT 'active',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `kode_klinik` (`kode_klinik`)
-) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS `odoo_format_config` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -393,18 +406,4 @@ CREATE TABLE IF NOT EXISTS `upload_logs` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE IF NOT EXISTS `users` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `username` varchar(50) NOT NULL,
-  `password` varchar(255) NOT NULL,
-  `nama_lengkap` varchar(100) NOT NULL,
-  `role` enum('super_admin','admin_gudang','admin_klinik','cs','b2b_ops','petugas_hc','spv_klinik','spv_manager','manager_klinik') NOT NULL,
-  `klinik_id` int(11) DEFAULT NULL,
-  `status` enum('active','inactive') DEFAULT 'active',
-  `photo` varchar(255) DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `username` (`username`)
-) ENGINE=InnoDB AUTO_INCREMENT=57 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
 SET FOREIGN_KEY_CHECKS = 1;
-
