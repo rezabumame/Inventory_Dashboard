@@ -5,11 +5,15 @@ $host = $_SERVER['HTTP_HOST'] ?? (getenv('APP_HOST') ?: 'localhost');
 $base_dir = trim((string)(getenv('APP_BASE_DIR') ?: ''));
 // Detect base path correctly for local and hosting (like InfinityFree/Vercel)
 if ($base_dir === '') {
-    // Force base_dir to root if we are on InfinityFree to avoid long internal paths
-    if (isset($_SERVER['HTTP_X_FORWARDED_HOST']) || (isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'infinityfree') !== false)) {
+    // Check if we are on InfinityFree by looking for specific server patterns
+    $is_infinityfree = isset($_SERVER['HTTP_X_FORWARDED_HOST']) || 
+                       (isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'fwh.is') !== false) ||
+                       (isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'infinityfree') !== false);
+
+    if ($is_infinityfree) {
         $base_dir = '/';
     } else {
-        // Fallback for local subfolders
+        // Fallback for local subfolders or other environments
         $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
         $base_dir = rtrim(dirname($script_name), '/\\') . '/';
         if ($base_dir === '//' || $base_dir === '\\' || $base_dir === '') $base_dir = '/';
