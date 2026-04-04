@@ -366,29 +366,34 @@ if ($active_tab == 'stok') {
                 }
 
                 $query .= " ORDER BY nama_barang ASC";
-                $result = $conn->query($query);
-                while ($r = $result->fetch_assoc()) {
-                    if ($is_history_date) {
-                        // In history mode, we keep sellout/transfer for display purposes,
-                        // but they don't affect the reconstructed 'qty' (Odoo On Hand)
+                try {
+                    $conn->query("SET SQL_BIG_SELECTS=1");
+                    $result = $conn->query($query);
+                    while ($r = $result->fetch_assoc()) {
+                        if ($is_history_date) {
+                            // In history mode, we keep sellout/transfer for display purposes,
+                            // but they don't affect the reconstructed 'qty' (Odoo On Hand)
+                        }
+                        $rows[] = $r;
+                        $summary_stok['total_items']++;
+                        if ($is_history_date) {
+                            $adj_qty = (float)($r['qty'] ?? 0) + (float)($r['rb_out_transfer'] ?? 0) - (float)($r['rb_in_transfer'] ?? 0) + (float)($r['rb_sellout_klinik'] ?? 0);
+                            $adj_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['rb_out_transfer_hc'] ?? 0) - (float)($r['rb_in_transfer_hc'] ?? 0) + (float)($r['rb_sellout_hc'] ?? 0);
+                            $summary_stok['total_qty'] += $adj_qty;
+                            $summary_stok['total_qty_hc'] += $adj_hc;
+                        } else {
+                            $eff_qty = (float)($r['qty'] ?? 0) + (float)($r['in_transfer'] ?? 0) - (float)($r['out_transfer'] ?? 0);
+                            $eff_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['in_transfer_hc'] ?? 0) - (float)($r['out_transfer_hc'] ?? 0);
+                            $summary_stok['total_qty'] += $eff_qty;
+                            $summary_stok['total_qty_hc'] += $eff_hc;
+                        }
+                        $summary_stok['reserve_onsite'] += (float)($r['reserve_onsite'] ?? 0);
+                        $summary_stok['reserve_hc'] += (float)($r['reserve_hc'] ?? 0);
+                        $summary_stok['total_sellout_klinik'] += (float)($r['sellout_klinik'] ?? 0);
+                        $summary_stok['total_sellout_hc'] += (float)($r['sellout_hc'] ?? 0);
                     }
-                    $rows[] = $r;
-                    $summary_stok['total_items']++;
-                    if ($is_history_date) {
-                        $adj_qty = (float)($r['qty'] ?? 0) + (float)($r['rb_out_transfer'] ?? 0) - (float)($r['rb_in_transfer'] ?? 0) + (float)($r['rb_sellout_klinik'] ?? 0);
-                        $adj_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['rb_out_transfer_hc'] ?? 0) - (float)($r['rb_in_transfer_hc'] ?? 0) + (float)($r['rb_sellout_hc'] ?? 0);
-                        $summary_stok['total_qty'] += $adj_qty;
-                        $summary_stok['total_qty_hc'] += $adj_hc;
-                    } else {
-                        $eff_qty = (float)($r['qty'] ?? 0) + (float)($r['in_transfer'] ?? 0) - (float)($r['out_transfer'] ?? 0);
-                        $eff_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['in_transfer_hc'] ?? 0) - (float)($r['out_transfer_hc'] ?? 0);
-                        $summary_stok['total_qty'] += $eff_qty;
-                        $summary_stok['total_qty_hc'] += $eff_hc;
-                    }
-                    $summary_stok['reserve_onsite'] += (float)($r['reserve_onsite'] ?? 0);
-                    $summary_stok['reserve_hc'] += (float)($r['reserve_hc'] ?? 0);
-                    $summary_stok['total_sellout_klinik'] += (float)($r['sellout_klinik'] ?? 0);
-                    $summary_stok['total_sellout_hc'] += (float)($r['sellout_hc'] ?? 0);
+                } catch (Exception $e) {
+                    die("Query Error: " . $e->getMessage() . "<br>Query: <pre>" . $query . "</pre>");
                 }
             }
         }
