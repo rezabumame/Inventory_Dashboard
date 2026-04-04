@@ -1032,12 +1032,12 @@ INSERT INTO `odoo_format_config` (`id`,`internal_reference`,`name`,`uom`,`produc
 INSERT INTO `odoo_format_config` (`id`,`internal_reference`,`name`,`uom`,`product_category`,`income_account`,`valuation_account`,`expense_account`,`created_at`,`updated_at`) VALUES ('606','772','[Obat] Norepinefrin 4mg/4mL','Ampul','OTHERS / General','420101002 PENDAPATAN LAIN - LAIN','110501009 PERSEDIAAN BARANG LAIN - LAIN','510301001 BEBAN LANGSUNG PENDAPATAN CONSUMABLE','2026-03-31 18:57:26','2026-03-31 18:57:26');
 
 -- Data for table `barang_uom_conversion` --
-INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('1','2','mL','Btl','100.00000000','','2026-04-01 11:32:53');
-INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('2','4','mL','Btl','100.00000000','','2026-04-01 11:33:02');
-INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('3','13','mg','Vial','30.00000000','','2026-04-01 11:33:12');
-INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('4','14','mg','Vial','4.00000000','','2026-04-01 11:33:20');
-INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('5','17','mg','Vial','50.00000000','','2026-04-01 11:33:29');
-INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('6','55','mL','Btl','25.00000000','','2026-04-01 11:33:42');
+INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('1','119','mL','Btl','100.00000000','','2026-04-04 17:20:57');
+INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('2','120','mL','Btl','100.00000000','','2026-04-04 17:20:57');
+INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('3','31','mg','Vial','30.00000000','','2026-04-04 17:20:57');
+INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('4','34','mg','Vial','4.00000000','','2026-04-04 17:20:57');
+INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('5','36','mg','Vial','50.00000000','','2026-04-04 17:20:57');
+INSERT INTO `barang_uom_conversion` (`id`,`kode_barang`,`from_uom`,`to_uom`,`multiplier`,`note`,`updated_at`) VALUES ('6','532','mL','Btl','25.00000000','','2026-04-04 17:20:57');
 
 -- Data for table `klinik` --
 INSERT INTO `klinik` (`id`,`kode_klinik`,`kode_homecare`,`nama_klinik`,`alamat`,`status`) VALUES ('1','KRW01/Stock','HCK01/Stock','Klinik Bumame Karawang','Karawang','active');
