@@ -118,22 +118,6 @@ if (!$lock_ok) {
     exit;
 }
 
-function post_lark_text($text) {
-    $url = trim((string)get_setting('webhook_lark_url', ''));
-    if ($url === '') return;
-    $payload = json_encode([
-        'msg_type' => 'text',
-        'content' => ['text' => $text]
-    ]);
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
-    curl_exec($ch);
-}
-
 try {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
@@ -166,13 +150,10 @@ try {
         $snippet = '';
         $resp_s = (string)$resp;
         if ($resp_s !== '') $snippet = substr($resp_s, 0, 300);
-        $errMsg = "Sync request failed. HTTP: $code. Snippet: $snippet";
-        post_lark_text("[SCHEDULER] Gagal memicu sinkronisasi:\n$errMsg\nURL: $targetUrl");
         http_response_code(500);
         echo json_encode(['success' => false, 'ran' => false, 'message' => 'Sync request failed', 'http_code' => $code, 'body' => $snippet, 'debug' => $debug], JSON_UNESCAPED_UNICODE);
     }
 } catch (Exception $e) {
-    post_lark_text("[SCHEDULER] Exception:\n" . $e->getMessage());
     http_response_code(500);
     echo json_encode(['success' => false, 'ran' => false, 'message' => $e->getMessage(), 'debug' => $debug], JSON_UNESCAPED_UNICODE);
 } finally {
