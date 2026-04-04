@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/config.php';
 
 header('Content-Type: application/json');
 
@@ -12,6 +13,7 @@ if (($_SESSION['role'] ?? '') !== 'super_admin') {
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }
+require_csrf();
 
 $id = (int)($_POST['id'] ?? 0);
 if ($id <= 0) {
@@ -35,4 +37,3 @@ try {
     $conn->rollback();
     echo json_encode(['success' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
 }
-

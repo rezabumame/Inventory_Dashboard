@@ -1,25 +1,78 @@
 <?php
-check_role(['super_admin', 'admin_gudang', 'admin_klinik']);
+check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik']);
+require_once __DIR__ . '/../../lib/counter.php';
+require_once __DIR__ . '/../../config/settings.php';
 
 $message = '';
 $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
 $user_klinik = $_SESSION['klinik_id'];
+$active_tab = (string)($_GET['tab'] ?? '');
+if (!in_array($active_tab, ['incoming','outgoing'], true)) $active_tab = 'incoming';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
+}
+
+try {
+    if (function_exists('ensure_enum_value')) {
+        ensure_enum_value($conn, 'request_barang', 'status', 'pending_spv');
+        ensure_enum_value($conn, 'request_barang', 'status', 'rejected_spv');
+    }
+    $cols = [
+        'spv_approved_by' => "INT NULL",
+        'spv_approved_at' => "DATETIME NULL",
+        'spv_qr_token' => "VARCHAR(80) NULL",
+        'spv_rejected_by' => "INT NULL",
+        'spv_rejected_at' => "DATETIME NULL",
+        'request_qr_token' => "VARCHAR(80) NULL",
+        'request_qr_at' => "DATETIME NULL",
+    ];
+    foreach ($cols as $c => $def) {
+        $cc = $conn->real_escape_string($c);
+        $res = $conn->query("SHOW COLUMNS FROM `request_barang` LIKE '$cc'");
+        if ($res && $res->num_rows === 0) {
+            $conn->query("ALTER TABLE `request_barang` ADD COLUMN `$c` $def");
+        }
+    }
+    $res = $conn->query("SHOW INDEX FROM `request_barang` WHERE Key_name = 'idx_spv_token'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE `request_barang` ADD UNIQUE KEY `idx_spv_token` (`spv_qr_token`)");
+    }
+    $res = $conn->query("SHOW INDEX FROM `request_barang` WHERE Key_name = 'idx_request_token'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE `request_barang` ADD UNIQUE KEY `idx_request_token` (`request_qr_token`)");
+    }
+    $res = $conn->query("SHOW TABLES LIKE 'request_barang_dokumen'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("CREATE TABLE request_barang_dokumen (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            request_barang_id INT NOT NULL,
+            dokumen_path VARCHAR(255) NOT NULL,
+            dokumen_name VARCHAR(255) NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_by INT NULL
+        )");
+        $conn->query("INSERT INTO request_barang_dokumen (request_barang_id, dokumen_path, dokumen_name, created_by)
+            SELECT id, dokumen_path, dokumen_name, processed_by FROM request_barang WHERE dokumen_path IS NOT NULL AND dokumen_path != ''");
+    }
+} catch (Exception $e) {
+}
 
 // --- Helper Functions ---
 
 function generate_request_number($conn) {
-    $prefix = "REQ/" . date('Ymd') . "/";
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE nomor_request LIKE '$prefix%'");
-    $row = $res->fetch_assoc();
-    return $prefix . str_pad($row['cnt'] + 1, 4, '0', STR_PAD_LEFT);
+    $date = date('Ymd');
+    $seq = next_sequence($conn, 'REQ', $date);
+    $prefix = "REQ/" . $date . "/";
+    return $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 }
 
 function generate_transfer_number($conn) {
-    $prefix = "TRF/" . date('Ymd') . "/";
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM transfer_barang WHERE nomor_transfer LIKE '$prefix%'");
-    $row = $res->fetch_assoc();
-    return $prefix . str_pad($row['cnt'] + 1, 4, '0', STR_PAD_LEFT);
+    $date = date('Ymd');
+    $seq = next_sequence($conn, 'TRF', $date);
+    $prefix = "TRF/" . $date . "/";
+    return $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 }
 
 // --- ACTION HANDLERS ---
@@ -28,47 +81,91 @@ function generate_transfer_number($conn) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'create_request') {
     $ke_level = (string)($_POST['ke_level'] ?? ''); // gudang_utama or klinik
     $ke_id_post = (int)($_POST['ke_id'] ?? 0);
-    $catatan = $_POST['catatan'];
-    $items = $_POST['items']; // Array of barang_id and qty
-    $qtys = $_POST['qtys'];
+    $catatan = (string)($_POST['catatan'] ?? '');
+    $items = array_map('intval', (array)($_POST['items'] ?? []));
+    $qtys_raw = (array)($_POST['qtys'] ?? []);
+    $qtys = array_map(function($v){ return (float)max(0, (float)$v); }, $qtys_raw);
+    $uom_modes = array_map(function($v){ return trim((string)$v); }, (array)($_POST['uom_modes'] ?? []));
 
     $dari_level = '';
     $dari_id = 0;
     $ke_id = 0;
 
     // Determine Source (Requestor) and Destination
-    if ($user_role == 'admin_klinik') {
+    if (in_array($user_role, ['admin_klinik', 'spv_klinik'], true)) {
         $dari_level = 'klinik';
-        $dari_id = $user_klinik;
-        $ke_level = 'klinik';
-        $ke_id = $ke_id_post;
-        if ($ke_id <= 0 || $ke_id == $dari_id) {
-            $message = '<div class="alert alert-warning">Tujuan request harus klinik lain.</div>';
+        $dari_id = (int)$user_klinik;
+        if ($ke_level === 'gudang_utama') {
             $ke_id = 0;
+        } else {
+            $ke_level = 'klinik';
+            $ke_id = $ke_id_post;
+            if ($ke_id <= 0 || $ke_id == $dari_id) {
+                $message = '<div class="alert alert-warning">Tujuan request harus klinik lain.</div>';
+                $ke_id = 0;
+            }
         }
     }
 
-    if ($ke_id > 0 && !empty($items) && count($items) > 0) {
+    // Normalize items: keep only valid pairs (barang_id>0 AND qty>0)
+    $ratio_map = [];
+    $uniq_ids = array_values(array_unique(array_filter(array_map('intval', $items))));
+    if (!empty($uniq_ids)) {
+        $id_sql = implode(',', array_map('intval', $uniq_ids));
+        $res = $conn->query("SELECT barang_id, COALESCE(multiplier, 1) AS multiplier FROM barang_uom_conversion WHERE barang_id IN ($id_sql)");
+        while ($res && ($row = $res->fetch_assoc())) {
+            $bid = (int)($row['barang_id'] ?? 0);
+            $m = (float)($row['multiplier'] ?? 1);
+            if ($m <= 0) $m = 1;
+            $ratio_map[$bid] = $m;
+        }
+    }
+
+    $pairs = [];
+    foreach ($items as $idx => $bid) {
+        $bid = (int)$bid;
+        $q_in = (float)($qtys[$idx] ?? 0);
+        $mode = (string)($uom_modes[$idx] ?? 'oper');
+        if ($bid <= 0 || $q_in <= 0) continue;
+        $ratio = (float)($ratio_map[$bid] ?? 1);
+        if ($ratio <= 0) $ratio = 1;
+        $q = ($mode === 'odoo') ? ($q_in / $ratio) : $q_in;
+        $q = (float)round($q, 4);
+        if ($q <= 0) continue;
+        $pairs[] = ['barang_id' => $bid, 'qty' => $q];
+    }
+
+    // Allow ke_id=0 when tujuan adalah gudang_utama
+    $dest_ok = ($ke_level === 'gudang_utama') ? true : ($ke_id > 0);
+
+    if ($dest_ok && !empty($pairs)) {
         $conn->begin_transaction();
         try {
             $nomor_request = generate_request_number($conn);
-            
-            $stmt = $conn->prepare("INSERT INTO request_barang (nomor_request, dari_level, dari_id, ke_level, ke_id, status, catatan, created_by) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)");
-            $stmt->bind_param("ssisisi", $nomor_request, $dari_level, $dari_id, $ke_level, $ke_id, $catatan, $user_id);
+            $status = ($user_role === 'admin_klinik') ? 'pending_spv' : 'pending';
+            $spv_by = null;
+            $spv_token = null;
+            $req_token = bin2hex(random_bytes(16));
+            if ($user_role === 'spv_klinik' || $user_role === 'super_admin') {
+                $spv_by = $user_id;
+                $spv_token = bin2hex(random_bytes(16));
+            }
+            $stmt = $conn->prepare("INSERT INTO request_barang (nomor_request, dari_level, dari_id, ke_level, ke_id, status, catatan, created_by, spv_approved_by, spv_approved_at, spv_qr_token, request_qr_token, request_qr_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, IF(? IS NULL, NULL, NOW()), ?, ?, NOW())");
+            $stmt->bind_param("ssisissiisss", $nomor_request, $dari_level, $dari_id, $ke_level, $ke_id, $status, $catatan, $user_id, $spv_by, $spv_by, $spv_token, $req_token);
             $stmt->execute();
             $request_id = $conn->insert_id;
 
             $stmt_detail = $conn->prepare("INSERT INTO request_barang_detail (request_barang_id, barang_id, qty_request) VALUES (?, ?, ?)");
-            foreach ($items as $index => $barang_id) {
-                $qty = $qtys[$index];
-                if ($qty > 0) {
-                    $stmt_detail->bind_param("iii", $request_id, $barang_id, $qty);
-                    $stmt_detail->execute();
-                }
+            foreach ($pairs as $p) {
+                $barang_id = (int)$p['barang_id'];
+                $qty = (float)$p['qty'];
+                $stmt_detail->bind_param("iid", $request_id, $barang_id, $qty);
+                $stmt_detail->execute();
             }
 
             $conn->commit();
             $message = '<div class="alert alert-success">Request berhasil dibuat: ' . $nomor_request . '</div>';
+            $active_tab = 'outgoing';
         } catch (Exception $e) {
             $conn->rollback();
             $message = '<div class="alert alert-danger">Error: ' . $e->getMessage() . '</div>';
@@ -81,8 +178,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 // 2. Approve Request
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'approve_request') {
     $request_id = $_POST['request_id'];
-    $approved_items = $_POST['approved_items']; // barang_id array
-    $approved_qtys = $_POST['approved_qtys']; // qty array
+    $approved_items = (array)($_POST['approved_items'] ?? []); // barang_id array
+    $approved_qtys = (array)($_POST['approved_qtys'] ?? []); // qty array
     $status_action = $_POST['status_action']; // approve_all, reject
     
     // Fetch Request Info
@@ -90,7 +187,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     
     // Validate Permissions
     $can_approve = false;
+    $can_spv = false;
     if ($user_role == 'super_admin') $can_approve = true;
+    if ($user_role === 'spv_klinik' && $req['dari_level'] === 'klinik' && (int)$req['dari_id'] === (int)$user_klinik && $req['status'] === 'pending_spv') {
+        $can_spv = true;
+    }
     if ($user_role == 'admin_gudang') {
         // Gudang can approve requests to Gudang Utama OR Inter-Clinic Transfers
         if ($req['ke_level'] == 'gudang_utama' || $req['status'] == 'pending_gudang' || ($req['dari_level'] == 'klinik' && $req['ke_level'] == 'klinik')) {
@@ -99,7 +200,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     }
     if ($user_role == 'admin_klinik' && $req['ke_level'] == 'klinik' && $req['ke_id'] == $user_klinik) $can_approve = true;
 
-    if ($can_approve) {
+    if ($can_spv) {
+        if ($status_action == 'reject') {
+            $stmt = $conn->prepare("UPDATE request_barang SET status = 'rejected_spv', spv_rejected_by = ?, spv_rejected_at = NOW() WHERE id = ?");
+            $stmt->bind_param("ii", $user_id, $request_id);
+            $stmt->execute();
+            $message = '<div class="alert alert-warning">Request ditolak oleh SPV/Manager.</div>';
+        } else {
+            $token = bin2hex(random_bytes(16));
+            $stmt = $conn->prepare("UPDATE request_barang SET status = 'pending', spv_approved_by = ?, spv_approved_at = NOW(), spv_qr_token = ? WHERE id = ?");
+            $stmt->bind_param("isi", $user_id, $token, $request_id);
+            $stmt->execute();
+            $message = '<div class="alert alert-success">Request disetujui oleh SPV/Manager dan diteruskan ke tujuan.</div>';
+        }
+    } elseif ($can_approve) {
         if ($status_action == 'reject') {
             $conn->query("UPDATE request_barang SET status = 'rejected', approved_by = $user_id WHERE id = $request_id");
             $message = '<div class="alert alert-warning">Permintaan barang telah ditolak.</div>';
@@ -115,16 +229,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                 $all_approved = true;
 
                 foreach ($approved_items as $idx => $b_id) {
-                    $qty_app = (int)$approved_qtys[$idx];
+                    $qty_app = (float)($approved_qtys[$idx] ?? 0);
                     
                     $res_req_det = $conn->query("SELECT qty_request FROM request_barang_detail WHERE request_barang_id = $request_id AND barang_id = $b_id");
                     $row_req_det = $res_req_det->fetch_assoc();
-                    $qty_req = $row_req_det['qty_request'];
+                    $qty_req = (float)($row_req_det['qty_request'] ?? 0);
 
-                    if ($qty_app < $qty_req) $all_approved = false;
-                    if ($qty_app <= 0) continue;
+                    if ($qty_app > $qty_req + 0.00005) {
+                        throw new Exception("Error: Qty disetujui tidak boleh melebihi Qty yang diminta.");
+                    }
+                    if ($qty_app + 0.00005 < $qty_req) $all_approved = false;
+                    if ($qty_app <= 0.00005) continue;
 
-                    $stmt_req_upd->bind_param("iii", $qty_app, $request_id, $b_id);
+                    $stmt_req_upd->bind_param("dii", $qty_app, $request_id, $b_id);
                     $stmt_req_upd->execute();
                 }
 
@@ -142,25 +259,42 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     }
 }
 
+// 2a. Cancel Request
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'cancel_request') {
+    $request_id = (int)($_POST['request_id'] ?? 0);
+    $req = $conn->query("SELECT * FROM request_barang WHERE id = $request_id")->fetch_assoc();
+    if (!$req) {
+        $message = '<div class="alert alert-danger">Permintaan tidak ditemukan.</div>';
+    } else {
+        $can_cancel = false;
+        if ($user_role === 'admin_klinik' && $req['dari_level'] === 'klinik' && (int)$req['dari_id'] === (int)$user_klinik && $req['status'] === 'pending_spv') $can_cancel = true;
+        if ($user_role === 'spv_klinik' && $req['dari_level'] === 'klinik' && (int)$req['dari_id'] === (int)$user_klinik && in_array($req['status'], ['pending_spv','pending'], true)) $can_cancel = true;
+        if (!$can_cancel) {
+            $message = '<div class="alert alert-danger">Anda tidak dapat membatalkan request ini.</div>';
+        } else {
+            try {
+                if (function_exists('ensure_enum_value')) ensure_enum_value($conn, 'request_barang', 'status', 'cancelled');
+                // Add cancel audit columns if missing
+                foreach (['cancelled_by' => "INT NULL", 'cancelled_at' => "DATETIME NULL"] as $c => $def) {
+                    $cc = $conn->real_escape_string($c);
+                    $res = $conn->query("SHOW COLUMNS FROM `request_barang` LIKE '$cc'");
+                    if ($res && $res->num_rows === 0) $conn->query("ALTER TABLE `request_barang` ADD COLUMN `$c` $def");
+                }
+                $stmt = $conn->prepare("UPDATE request_barang SET status = 'cancelled', cancelled_by = ?, cancelled_at = NOW() WHERE id = ?");
+                $stmt->bind_param("ii", $user_id, $request_id);
+                $stmt->execute();
+                $message = '<div class="alert alert-success">Request berhasil dibatalkan.</div>';
+            } catch (Exception $e) {
+                $message = '<div class="alert alert-danger">Gagal membatalkan: ' . $e->getMessage() . '</div>';
+            }
+        }
+    }
+}
 // 2b. Process Request (Upload Document + Apply Stock Movement)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'process_request') {
     $request_id = (int)($_POST['request_id'] ?? 0);
     $received_items = $_POST['received_items'] ?? [];
     $received_qtys = $_POST['received_qtys'] ?? [];
-
-    $ensure_col = function(string $table, string $column, string $definition) use ($conn) {
-        $t = $conn->real_escape_string($table);
-        $c = $conn->real_escape_string($column);
-        $res = $conn->query("SHOW COLUMNS FROM `$t` LIKE '$c'");
-        if ($res && $res->num_rows === 0) {
-            $conn->query("ALTER TABLE `$t` ADD COLUMN `$column` $definition");
-        }
-    };
-    $ensure_col('request_barang', 'dokumen_path', "VARCHAR(255) NULL");
-    $ensure_col('request_barang', 'dokumen_name', "VARCHAR(255) NULL");
-    $ensure_col('request_barang', 'processed_by', "INT NULL");
-    $ensure_col('request_barang', 'processed_at', "TIMESTAMP NULL");
-    $ensure_col('request_barang_detail', 'qty_received', "INT NOT NULL DEFAULT 0");
 
     $req = $conn->query("SELECT * FROM request_barang WHERE id = $request_id")->fetch_assoc();
     if (!$req) {
@@ -209,31 +343,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                             $transfer_id = (int)$conn->insert_id;
 
                             $stmt_trf_det = $conn->prepare("INSERT INTO transfer_barang_detail (transfer_barang_id, barang_id, qty) VALUES (?, ?, ?)");
-                            $stmt_req_recv = $conn->prepare("UPDATE request_barang_detail SET qty_received = ? WHERE request_barang_id = ? AND barang_id = ?");
-
-                            $conn->query("
-                                CREATE TABLE IF NOT EXISTS stock_mirror (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    odoo_product_id VARCHAR(64) NOT NULL,
-                                    kode_barang VARCHAR(64) NOT NULL,
-                                    location_code VARCHAR(100) NOT NULL,
-                                    qty DECIMAL(18,4) NOT NULL DEFAULT 0,
-                                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                                    UNIQUE KEY uniq_loc_prod (odoo_product_id, location_code)
-                                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-                            ");
-                            $conn->query("
-                                CREATE TABLE IF NOT EXISTS barang_uom_conversion (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    barang_id INT NOT NULL,
-                                    from_uom VARCHAR(20) NULL,
-                                    to_uom VARCHAR(20) NULL,
-                                    multiplier DECIMAL(18,8) NOT NULL DEFAULT 1,
-                                    note VARCHAR(255) NULL,
-                                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                                    UNIQUE KEY uniq_barang (barang_id)
-                                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-                            ");
+                            $stmt_req_recv = $conn->prepare("UPDATE request_barang_detail SET qty_received = qty_received + ? WHERE request_barang_id = ? AND barang_id = ?");
 
                             $barang_cache = [];
                             $get_barang_info = function(int $barang_id) use ($conn, &$barang_cache): array {
@@ -298,7 +408,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                     $loc_esc = $conn->real_escape_string(trim($loc));
                                     $where = "TRIM(location_code) = '$loc_esc' AND (" . implode(' OR ', $clauses) . ")";
                                     $res = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE $where");
-                                    $q = (int)floor((float)($res && $res->num_rows > 0 ? ($res->fetch_assoc()['qty'] ?? 0) : 0));
+                                    $q = (float)($res && $res->num_rows > 0 ? ($res->fetch_assoc()['qty'] ?? 0) : 0);
                                     if ($q > $best_qty) {
                                         $best_qty = $q;
                                         $best_loc = (string)$loc;
@@ -319,11 +429,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 if ($mult <= 0) $mult = 1;
 
                                 if ($level === 'gudang_utama') {
-                                    $stmt = $conn->prepare("SELECT qty FROM stok_gudang_utama WHERE barang_id = ? LIMIT 1");
-                                    $stmt->bind_param("i", $barang_id);
-                                    $stmt->execute();
-                                    $qty = (int)($stmt->get_result()->fetch_assoc()['qty'] ?? 0);
-                                    return ['qty' => $qty, 'loc' => ''];
+                                    $gudang_loc = trim((string)get_setting('odoo_location_gudang_utama', ''));
+                                    if ($gudang_loc !== '') {
+                                        $locs = $location_candidates($gudang_loc);
+                                        $mirror = $get_best_mirror($locs, (string)$info['kode_barang'], (string)$info['odoo_product_id']);
+                                        $qty = (float)($mirror['qty'] ?? 0) / $mult;
+                                        return ['qty' => $qty, 'loc' => (string)($mirror['loc'] ?? '')];
+                                    } else {
+                                        $stmt = $conn->prepare("SELECT qty FROM stok_gudang_utama WHERE barang_id = ? LIMIT 1");
+                                        $stmt->bind_param("i", $barang_id);
+                                        $stmt->execute();
+                                        $qty = (float)($stmt->get_result()->fetch_assoc()['qty'] ?? 0);
+                                        return ['qty' => $qty, 'loc' => ''];
+                                    }
                                 }
 
                                 if ($level !== 'klinik' || $level_id <= 0) return ['qty' => 0, 'loc' => ''];
@@ -332,7 +450,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 if ($r && $r->num_rows > 0) $kode_klinik = (string)($r->fetch_assoc()['kode_klinik'] ?? '');
                                 $locs = $location_candidates($kode_klinik);
                                 $mirror = $get_best_mirror($locs, (string)$info['kode_barang'], (string)$info['odoo_product_id']);
-                                $base = (float)($mirror['qty'] ?? 0) * $mult;
+                                $base = (float)($mirror['qty'] ?? 0) / $mult;
                                 $lu = (string)($mirror['last_update'] ?? '');
 
                                 $delta_in = 0;
@@ -348,19 +466,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                     ");
                                     if ($res && $res->num_rows > 0) {
                                         $row = $res->fetch_assoc();
-                                        $delta_in = (int)($row['in_qty'] ?? 0);
-                                        $delta_out = (int)($row['out_qty'] ?? 0);
+                                        $delta_in = (float)($row['in_qty'] ?? 0);
+                                        $delta_out = (float)($row['out_qty'] ?? 0);
                                     }
                                 }
 
-                                $eff = (int)floor($base) + $delta_in - $delta_out;
+                                $eff = (float)$base + (float)$delta_in - (float)$delta_out;
                                 if ($eff < 0) $eff = 0;
 
                                 if (($mirror['loc'] ?? '') === '' && $lu === '') {
                                     $stmt = $conn->prepare("SELECT qty FROM stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ? LIMIT 1");
                                     $stmt->bind_param("ii", $barang_id, $level_id);
                                     $stmt->execute();
-                                    $eff = (int)($stmt->get_result()->fetch_assoc()['qty'] ?? 0);
+                                    $eff = (float)($stmt->get_result()->fetch_assoc()['qty'] ?? 0);
                                 }
 
                                 return ['qty' => $eff, 'loc' => (string)($mirror['loc'] ?? '')];
@@ -378,28 +496,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                             $all_full = true;
                             foreach ($received_items as $idx => $b_id_raw) {
                                 $b_id = (int)$b_id_raw;
-                                $qty_recv = (int)($received_qtys[$idx] ?? 0);
+                                $qty_recv = (float)($received_qtys[$idx] ?? 0);
                                 if ($b_id <= 0) continue;
                                 if ($qty_recv < 0) throw new Exception('Qty tidak valid');
+                                $qty_recv = (float)round($qty_recv, 4);
 
-                                $row_det = $conn->query("SELECT qty_request, qty_approved FROM request_barang_detail WHERE request_barang_id = $request_id AND barang_id = $b_id")->fetch_assoc();
+                                $row_det = $conn->query("SELECT qty_request, qty_approved, qty_received FROM request_barang_detail WHERE request_barang_id = $request_id AND barang_id = $b_id")->fetch_assoc();
                                 if (!$row_det) continue;
-                                $qty_app = (int)($row_det['qty_approved'] ?? 0);
-                                $qty_req = (int)($row_det['qty_request'] ?? 0);
+                                $qty_app = (float)($row_det['qty_approved'] ?? 0);
+                                $qty_req = (float)($row_det['qty_request'] ?? 0);
+                                $qty_already = (float)($row_det['qty_received'] ?? 0);
                                 if ($qty_app <= 0) $qty_app = $qty_req;
-                                if ($qty_recv > $qty_app) throw new Exception("Qty diterima melebihi qty yang disetujui untuk barang ID: $b_id");
-                                if ($qty_recv < $qty_app) $all_full = false;
-                                if ($qty_recv === 0) {
-                                    $stmt_req_recv->bind_param("iii", $qty_recv, $request_id, $b_id);
+                                if ($qty_already + $qty_recv > $qty_app + 0.00005) throw new Exception("Total qty diterima melebihi qty yang disetujui untuk barang ID: $b_id");
+                                if ($qty_already + $qty_recv + 0.00005 < $qty_app) $all_full = false;
+                                if ($qty_recv <= 0.00005) {
+                                    $zr = 0.0;
+                                    $stmt_req_recv->bind_param("dii", $zr, $request_id, $b_id);
                                     $stmt_req_recv->execute();
                                     continue;
                                 }
 
                                 $source_qty_before = 0;
                                 $src = $get_effective_qty((string)$source_level, (int)$source_id, (int)$b_id);
-                                $source_qty_before = (int)($src['qty'] ?? 0);
+                                $source_qty_before = (float)($src['qty'] ?? 0);
                                 $uom = (string)($get_barang_info((int)$b_id)['satuan'] ?? '');
-                                if ($source_qty_before < $qty_recv) {
+                                if ($source_qty_before + 0.00005 < $qty_recv) {
                                     $info = $get_barang_info((int)$b_id);
                                     $kode = trim((string)($info['kode_barang'] ?? ''));
                                     $nm = trim((string)($info['nama_barang'] ?? '-'));
@@ -414,10 +535,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 $source_qty_after = $source_qty_before - $qty_recv;
 
                                 if ($source_level == 'gudang_utama') {
-                                    $stmt_set_src_utama->bind_param("iii", $b_id, $source_qty_after, $user_id);
+                                    $stmt_set_src_utama->bind_param("idi", $b_id, $source_qty_after, $user_id);
                                     $stmt_set_src_utama->execute();
                                 } else {
-                                    $stmt_set_src_klinik->bind_param("iiii", $b_id, $source_id, $source_qty_after, $user_id);
+                                    $stmt_set_src_klinik->bind_param("iidi", $b_id, $source_id, $source_qty_after, $user_id);
                                     $stmt_set_src_klinik->execute();
                                 }
 
@@ -427,37 +548,44 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 $res_check = $stmt_inc_check->get_result();
                                 if ($res_check->num_rows > 0) {
                                     $row_dest = $res_check->fetch_assoc();
-                                    $dest_qty_before = (int)($row_dest['qty'] ?? 0);
-                                    $stmt_inc_upd->bind_param("iii", $qty_recv, $b_id, $dest_id);
+                                    $dest_qty_before = (float)($row_dest['qty'] ?? 0);
+                                    $stmt_inc_upd->bind_param("dii", $qty_recv, $b_id, $dest_id);
                                     $stmt_inc_upd->execute();
                                 } else {
                                     $dest_qty_before = 0;
-                                    $stmt_inc_ins->bind_param("iii", $b_id, $dest_id, $qty_recv);
+                                    $stmt_inc_ins->bind_param("iid", $b_id, $dest_id, $qty_recv);
                                     $stmt_inc_ins->execute();
                                 }
                                 $dest_qty_after = $dest_qty_before + $qty_recv;
 
-                                $stmt_trf_det->bind_param("iii", $transfer_id, $b_id, $qty_recv);
+                                $stmt_trf_det->bind_param("iid", $transfer_id, $b_id, $qty_recv);
                                 $stmt_trf_det->execute();
 
-                                $stmt_req_recv->bind_param("iii", $qty_recv, $request_id, $b_id);
+                                $stmt_req_recv->bind_param("dii", $qty_recv, $request_id, $b_id);
                                 $stmt_req_recv->execute();
 
                                 $log_type = 'out';
-                                $stmt_log->bind_param("isisiiiii", $b_id, $source_level, $source_id, $log_type, $qty_recv, $source_qty_before, $source_qty_after, $transfer_id, $user_id);
+                                $stmt_log->bind_param("isisdddii", $b_id, $source_level, $source_id, $log_type, $qty_recv, $source_qty_before, $source_qty_after, $transfer_id, $user_id);
                                 $stmt_log->execute();
                                 $log_type = 'in';
-                                $stmt_log->bind_param("isisiiiii", $b_id, $dest_level, $dest_id, $log_type, $qty_recv, $dest_qty_before, $dest_qty_after, $transfer_id, $user_id);
+                                $stmt_log->bind_param("isisdddii", $b_id, $dest_level, $dest_id, $log_type, $qty_recv, $dest_qty_before, $dest_qty_after, $transfer_id, $user_id);
                                 $stmt_log->execute();
                             }
 
                             $dok_rel = 'uploads/request_barang/' . $filename;
                             $dok_name = mb_substr(basename($name), 0, 255);
                             $final_status = 'completed';
-                            if (!$all_full) $final_status = 'partial';
+                            $user_choice = $_POST['status_action'] ?? '';
+                            if (!$all_full && $user_choice === 'partial') {
+                                $final_status = 'partial';
+                            }
                             $stmt_up = $conn->prepare("UPDATE request_barang SET status = ?, dokumen_path = ?, dokumen_name = ?, processed_by = ?, processed_at = NOW() WHERE id = ?");
                             $stmt_up->bind_param("sssii", $final_status, $dok_rel, $dok_name, $user_id, $request_id);
                             $stmt_up->execute();
+
+                            $stmt_dok = $conn->prepare("INSERT INTO request_barang_dokumen (request_barang_id, dokumen_path, dokumen_name, created_by) VALUES (?, ?, ?, ?)");
+                            $stmt_dok->bind_param("issi", $request_id, $dok_rel, $dok_name, $user_id);
+                            $stmt_dok->execute();
 
                             $conn->commit();
                             $message = '<div class="alert alert-success">Dokumen berhasil diunggah. Pergerakan stok telah diproses.</div>';
@@ -469,6 +597,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                 }
             }
         }
+    }
+}
+
+// 2c. Force Complete Request
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'force_complete_request') {
+    $request_id = (int)($_POST['request_id'] ?? 0);
+    $req = $conn->query("SELECT * FROM request_barang WHERE id = $request_id")->fetch_assoc();
+    if ($req && $req['status'] === 'partial') {
+        $can_process = false;
+        if ($user_role === 'super_admin') $can_process = true;
+        if ($user_role === 'admin_klinik' && $req['dari_level'] === 'klinik' && (int)$req['dari_id'] === (int)$user_klinik) $can_process = true;
+        
+        if ($can_process) {
+            $stmt = $conn->prepare("UPDATE request_barang SET status = 'completed', processed_by = ?, processed_at = NOW() WHERE id = ?");
+            $stmt->bind_param("ii", $user_id, $request_id);
+            if ($stmt->execute()) {
+                $message = '<div class="alert alert-success">Permintaan berhasil ditandai selesai. Sisa barang tidak akan diproses lagi.</div>';
+            } else {
+                $message = '<div class="alert alert-danger">Gagal mengubah status.</div>';
+            }
+        } else {
+            $message = '<div class="alert alert-danger">Anda tidak memiliki akses.</div>';
+        }
+    } else {
+        $message = '<div class="alert alert-warning">Request tidak dapat diubah statusnya.</div>';
     }
 }
 
@@ -494,19 +647,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 $stock_available = [];
 
 // Fetch Barang for Dropdown
-$conn->query("
-    CREATE TABLE IF NOT EXISTS barang_uom_conversion (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        barang_id INT NOT NULL,
-        from_uom VARCHAR(20) NULL,
-        to_uom VARCHAR(20) NULL,
-        multiplier DECIMAL(18,8) NOT NULL DEFAULT 1,
-        note VARCHAR(255) NULL,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_barang (barang_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
-
 $seeded_barang_from_mirror = false;
 try {
     $conn->query("
@@ -523,7 +663,15 @@ try {
 }
 
 $res_barang = $conn->query("
-    SELECT b.id, b.kode_barang, b.odoo_product_id, b.barcode, b.nama_barang, COALESCE(uc.to_uom, b.satuan) AS satuan
+    SELECT
+        b.id,
+        b.kode_barang,
+        b.odoo_product_id,
+        b.barcode,
+        b.nama_barang,
+        COALESCE(NULLIF(uc.to_uom, ''), b.satuan) AS satuan,
+        COALESCE(NULLIF(uc.from_uom, ''), '') AS uom_odoo,
+        COALESCE(uc.multiplier, 1) AS uom_ratio
     FROM barang b
     LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
     ORDER BY b.nama_barang ASC
@@ -532,7 +680,7 @@ $barang_list = [];
 while ($b = $res_barang->fetch_assoc()) $barang_list[] = $b;
 
 $target_kliniks = [];
-if ($user_role === 'admin_klinik') {
+if (in_array($user_role, ['admin_klinik', 'spv_klinik'], true)) {
     $kid = (int)$user_klinik;
     $res = $conn->query("SELECT id, nama_klinik, status FROM klinik WHERE id <> $kid ORDER BY (status='active') DESC, nama_klinik ASC");
     while ($res && ($row = $res->fetch_assoc())) $target_kliniks[] = $row;
@@ -542,35 +690,69 @@ if ($user_role === 'admin_klinik') {
 $outgoing_requests = [];
 $incoming_requests = [];
 
-// Outgoing: Created by me
-if (in_array($user_role, ['admin_klinik', 'petugas_hc'])) {
-    $query = "SELECT 
-                r.*, 
-                u.nama_lengkap as requestor_name,
-                CASE
-                    WHEN r.ke_level = 'klinik' THEN CONCAT('Klinik - ', COALESCE(k_to.nama_klinik, '-'))
-                    WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
-                    ELSE UPPER(r.ke_level)
-                END AS tujuan_label
-              FROM request_barang r 
-              JOIN users u ON r.created_by = u.id
-              LEFT JOIN klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
-              WHERE r.created_by = $user_id 
-              ORDER BY r.created_at DESC";
+// Outgoing: Created by me or All for Super Admin
+if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_hc'], true)) {
+    if ($user_role === 'super_admin') {
+        // Super Admin: Lihat semua request keluar
+        $query = "SELECT 
+                    r.*, 
+                    u.nama_lengkap as requestor_name,
+                    CASE
+                        WHEN r.ke_level = 'klinik' THEN CONCAT('Klinik - ', COALESCE(k_to.nama_klinik, '-'))
+                        WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
+                        ELSE UPPER(r.ke_level)
+                    END AS tujuan_label
+                  FROM request_barang r 
+                  JOIN users u ON r.created_by = u.id
+                  LEFT JOIN klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+                  ORDER BY r.created_at DESC";
+    } elseif ($user_role === 'spv_klinik') {
+        // SPV melihat semua request dari kliniknya (permintaan saya = klinik saya)
+        $query = "SELECT 
+                    r.*, 
+                    u.nama_lengkap as requestor_name,
+                    CASE
+                        WHEN r.ke_level = 'klinik' THEN CONCAT('Klinik - ', COALESCE(k_to.nama_klinik, '-'))
+                        WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
+                        ELSE UPPER(r.ke_level)
+                    END AS tujuan_label
+                  FROM request_barang r 
+                  JOIN users u ON r.created_by = u.id
+                  LEFT JOIN klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+                  WHERE r.dari_level = 'klinik' AND r.dari_id = $user_klinik
+                  ORDER BY r.created_at DESC";
+    } else {
+        // Admin Klinik & Petugas HC: permintaan saya = yang saya buat
+        $query = "SELECT 
+                    r.*, 
+                    u.nama_lengkap as requestor_name,
+                    CASE
+                        WHEN r.ke_level = 'klinik' THEN CONCAT('Klinik - ', COALESCE(k_to.nama_klinik, '-'))
+                        WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
+                        ELSE UPPER(r.ke_level)
+                    END AS tujuan_label
+                  FROM request_barang r 
+                  JOIN users u ON r.created_by = u.id
+                  LEFT JOIN klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+                  WHERE r.created_by = $user_id 
+                  ORDER BY r.created_at DESC";
+    }
     $res = $conn->query($query);
     while($row = $res->fetch_assoc()) $outgoing_requests[] = $row;
 }
 
+// SPV acts as approver via detail view; no separate SPV tab list
+
 // Incoming: Directed to me
-if (in_array($user_role, ['admin_gudang', 'admin_klinik', 'super_admin'])) {
+if (in_array($user_role, ['admin_gudang', 'admin_klinik', 'spv_klinik', 'super_admin'], true)) {
     $where = "1=0"; // Default false
     if ($user_role == 'super_admin') {
-        $where = "1=1"; // See all? Or maybe just pending? Let's show all for super admin
+        $where = "1=1"; // super admin: lihat semua
     } elseif ($user_role == 'admin_gudang') {
-        // Admin Gudang sees requests to Gudang Utama AND Inter-Clinic Transfers (Klinik -> Klinik)
-        $where = "ke_level = 'gudang_utama' OR (dari_level = 'klinik' AND ke_level = 'klinik')";
-    } elseif ($user_role == 'admin_klinik') {
-        $where = "ke_level = 'klinik' AND ke_id = $user_klinik";
+        // Admin Gudang: Gudang Utama & transfer antar klinik, exclude pending_spv
+        $where = "(r.ke_level = 'gudang_utama' OR (r.dari_level = 'klinik' AND r.ke_level = 'klinik')) AND r.status NOT IN ('pending_spv','rejected_spv')";
+    } elseif (in_array($user_role, ['admin_klinik','spv_klinik'], true)) {
+        $where = "r.ke_level = 'klinik' AND r.ke_id = $user_klinik AND r.status NOT IN ('pending_spv','rejected_spv')";
     }
 
     $query = "SELECT r.*, u.nama_lengkap as requestor_name 
@@ -596,6 +778,57 @@ if (in_array($user_role, ['admin_gudang', 'admin_klinik', 'super_admin'])) {
 
 $incoming_all = $incoming_requests;
 
+$outgoing_active_count = 0;
+if (!empty($outgoing_requests)) {
+    $outgoing_active_count = count(array_filter($outgoing_requests, function($r) {
+        $st = strtolower((string)($r['status'] ?? ''));
+        return !in_array($st, ['completed', 'rejected', 'rejected_spv', 'cancelled'], true);
+    }));
+}
+
+?>
+
+<?php
+function get_status_badge($status) {
+    $st = strtolower((string)$status);
+    $class = 'bg-secondary'; 
+    $label = ucfirst(str_replace('_', ' ', $st));
+
+    switch ($st) {
+        case 'pending_spv':
+            $class = 'bg-warning text-dark';
+            $label = 'Waiting SPV';
+            break;
+        case 'pending':
+        case 'pending_gudang':
+            $class = 'bg-warning text-dark';
+            $label = 'Pending';
+            break;
+        case 'approved':
+            $class = 'bg-success';
+            $label = 'Approved';
+            break;
+        case 'completed':
+            $class = 'bg-primary';
+            $label = 'Completed';
+            break;
+        case 'partial':
+            $class = 'bg-info text-white';
+            $label = 'Partial';
+            break;
+        case 'rejected':
+        case 'rejected_spv':
+            $class = 'bg-danger';
+            $label = 'Rejected';
+            break;
+        case 'cancelled':
+            $class = 'bg-secondary';
+            $label = 'Cancelled';
+            break;
+    }
+
+    return '<span class="badge ' . $class . ' rounded-pill px-3" style="font-weight: 600; font-size: 0.85rem;">' . $label . '</span>';
+}
 ?>
 
 <div class="row mb-4 align-items-center">
@@ -611,7 +844,7 @@ $incoming_all = $incoming_requests;
         </nav>
     </div>
     <div class="col-auto">
-        <?php if (in_array($user_role, ['admin_klinik'])): ?>
+        <?php if (in_array($user_role, ['admin_klinik', 'spv_klinik'], true)): ?>
         <button class="btn shadow-sm text-white px-4" style="background-color: #204EAB;" data-bs-toggle="modal" data-bs-target="#modalRequest">
             <i class="fas fa-plus me-2"></i>Buat Request
         </button>
@@ -622,19 +855,26 @@ $incoming_all = $incoming_requests;
 <?= $message ?>
 
 <ul class="nav nav-pills mb-4" id="requestTabs" role="tablist">
-    <?php if (in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik'], true)): ?>
+    <?php if (in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)): ?>
     <li class="nav-item" role="presentation">
-        <button class="nav-link rounded-pill px-4 <?= in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik'], true) ? 'active' : '' ?>" id="incoming-tab" data-bs-toggle="tab" data-bs-target="#incoming" type="button" role="tab">
-            <i class="fas fa-inbox me-2"></i>Masuk <span class="badge bg-danger ms-1"><?= count(array_filter($incoming_all, function($r){ return in_array($r['status'], ['pending', 'pending_gudang'], true); })) ?></span>
-        </button>
+        <a class="nav-link rounded-pill px-4 <?= ($active_tab === 'incoming') ? 'active' : '' ?>" id="incoming-tab" href="index.php?page=request&tab=incoming" role="tab">
+            <i class="fas fa-inbox me-2"></i>Masuk 
+            <?php 
+            $incoming_active_count = count(array_filter($incoming_all, function($r){ return in_array($r['status'], ['pending', 'pending_gudang'], true); }));
+            if ($user_role !== 'super_admin' && $incoming_active_count > 0): ?>
+                <span class="badge bg-danger ms-1"><?= $incoming_active_count ?></span>
+            <?php endif; ?>
+        </a>
     </li>
     <?php endif; ?>
+
+    <!-- No separate SPV tab; SPV approves from detail view -->
     
-    <?php if (in_array($user_role, ['admin_klinik', 'petugas_hc'])): ?>
+    <?php if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_hc'], true)): ?>
     <li class="nav-item ms-2" role="presentation">
-        <button class="nav-link rounded-pill px-4 <?= ($user_role == 'petugas_hc') ? 'active' : '' ?>" id="outgoing-tab" data-bs-toggle="tab" data-bs-target="#outgoing" type="button" role="tab">
-            <i class="fas fa-paper-plane me-2"></i>Permintaan Saya
-        </button>
+        <a class="nav-link rounded-pill px-4 <?= ($active_tab === 'outgoing') ? 'active' : '' ?>" id="outgoing-tab" href="index.php?page=request&tab=outgoing" role="tab">
+            <i class="fas fa-paper-plane me-2"></i>Permintaan Saya <?php if ($user_role !== 'super_admin' && $outgoing_active_count > 0): ?><span class="badge bg-danger ms-1"><?= (int)$outgoing_active_count ?></span><?php endif; ?>
+        </a>
     </li>
     <?php endif; ?>
 </ul>
@@ -649,7 +889,7 @@ $incoming_all = $incoming_requests;
 <div class="tab-content" id="requestTabsContent">
     
     <!-- Incoming Requests -->
-    <div class="tab-pane fade <?= in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik'], true) ? 'show active' : '' ?>" id="incoming" role="tabpanel">
+    <div class="tab-pane fade <?= ($active_tab === 'incoming') ? 'show active' : '' ?>" id="incoming" role="tabpanel">
         <div class="card">
             <div class="card-body">
                 <div class="table-responsive">
@@ -672,9 +912,7 @@ $incoming_all = $incoming_requests;
                                 <td><?= htmlspecialchars(($row['dari_label'] ?? strtoupper($row['dari_level'])) . ' (' . ($row['requestor_name'] ?? '-') . ')') ?></td>
                                 <td><?= htmlspecialchars($row['tujuan_label'] ?? strtoupper($row['ke_level'])) ?></td>
                                 <td>
-                                    <span class="badge bg-<?= in_array($row['status'], ['pending', 'pending_gudang']) ? 'warning' : ($row['status'] == 'approved' ? 'success' : ($row['status'] == 'rejected' ? 'danger' : 'secondary')) ?>">
-                                        <?= ucfirst(str_replace('_', ' ', $row['status'])) ?>
-                                    </span>
+                                    <?= get_status_badge($row['status']) ?>
                                 </td>
                                 <td>
                                     <button class="btn btn-sm text-white" style="background-color: #204EAB;" onclick="viewRequest(<?= $row['id'] ?>)">
@@ -690,8 +928,10 @@ $incoming_all = $incoming_requests;
         </div>
     </div>
 
+    <!-- No separate SPV tab content -->
+
     <!-- Outgoing Requests (My Requests) -->
-    <div class="tab-pane fade <?= ($user_role == 'petugas_hc') ? 'show active' : '' ?>" id="outgoing" role="tabpanel">
+    <div class="tab-pane fade <?= ($active_tab === 'outgoing') ? 'show active' : '' ?>" id="outgoing" role="tabpanel">
         <div class="card">
             <div class="card-body">
                 <div class="table-responsive">
@@ -712,17 +952,26 @@ $incoming_all = $incoming_requests;
                                 <td><?= date('d M Y', strtotime($row['created_at'])) ?></td>
                                 <td><?= htmlspecialchars($row['tujuan_label'] ?? strtoupper($row['ke_level'])) ?></td>
                                 <td>
-                                    <span class="badge bg-<?= $row['status'] == 'pending' ? 'warning' : ($row['status'] == 'approved' ? 'success' : ($row['status'] == 'rejected' ? 'danger' : 'secondary')) ?>">
-                                        <?= ucfirst($row['status']) ?>
-                                    </span>
+                                    <?= get_status_badge($row['status']) ?>
                                 </td>
                                 <td>
                                     <button class="btn btn-sm text-white" style="background-color: #204EAB;" onclick="viewRequest(<?= $row['id'] ?>)">
                                         Detail
                                     </button>
-                                    <?php if ($row['status'] == 'pending'): ?>
-                                    <button class="btn btn-sm btn-danger" onclick="cancelRequest(<?= $row['id'] ?>)">
-                                        Cancel
+                                    <?php
+                                        $st = (string)($row['status'] ?? '');
+                                        $can_cancel_row = false;
+                                        if ($user_role === 'admin_klinik') {
+                                            $can_cancel_row = ($st === 'pending_spv');
+                                        } elseif ($user_role === 'spv_klinik') {
+                                            $can_cancel_row = in_array($st, ['pending_spv','pending'], true);
+                                        }
+                                        if (!empty($row['dari_level']) && (string)$row['dari_level'] !== 'klinik') $can_cancel_row = false;
+                                        if (isset($row['dari_id']) && (int)$row['dari_id'] !== (int)$user_klinik) $can_cancel_row = false;
+                                    ?>
+                                    <?php if ($can_cancel_row): ?>
+                                    <button class="btn btn-sm btn-danger ms-1" onclick="cancelRequest(<?= (int)$row['id'] ?>)">
+                                        Batalkan
                                     </button>
                                     <?php endif; ?>
                                 </td>
@@ -738,9 +987,10 @@ $incoming_all = $incoming_requests;
 
 <!-- Modal Create Request -->
 <div class="modal fade" id="modalRequest" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <form method="POST" onsubmit="return validateStock()">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <input type="hidden" name="action" value="create_request">
                 <div class="modal-header" style="background-color: #204EAB;">
                     <h5 class="modal-title text-white fw-bold"><i class="fas fa-plus-circle me-2"></i>Buat Permintaan Barang</h5>
@@ -750,17 +1000,18 @@ $incoming_all = $incoming_requests;
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Tujuan Request</label>
-                            <?php if ($user_role === 'admin_klinik'): ?>
+                            <?php if (in_array($user_role, ['admin_klinik','spv_klinik'], true)): ?>
                                 <?php $default_target_id = !empty($target_kliniks) ? (int)$target_kliniks[0]['id'] : 0; ?>
                                 <select class="form-select" id="tujuanRequest">
+                                    <option value="gudang_utama:0">Gudang Utama</option>
                                     <?php foreach ($target_kliniks as $k): ?>
                                         <option value="klinik:<?= (int)$k['id'] ?>">
                                             <?= htmlspecialchars($k['nama_klinik']) ?><?= ($k['status'] ?? 'active') !== 'active' ? ' (Inactive)' : '' ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <input type="hidden" name="ke_level" id="ke_level" value="klinik">
-                                <input type="hidden" name="ke_id" id="ke_id" value="<?= (int)$default_target_id ?>">
+                                <input type="hidden" name="ke_level" id="ke_level" value="gudang_utama">
+                                <input type="hidden" name="ke_id" id="ke_id" value="0">
                             <?php else: ?>
                                 <input type="text" class="form-control" value="Klinik" readonly>
                                 <input type="hidden" name="ke_level" value="klinik">
@@ -772,19 +1023,22 @@ $incoming_all = $incoming_requests;
                             <textarea name="catatan" class="form-control" rows="2"></textarea>
                         </div>
                         
-                        <table class="table table-bordered">
-                            <thead>
-                                <tr>
-                                    <th>Barang</th>
-                                    <th width="150">Ketersediaan</th>
-                                    <th width="100">Qty</th>
-                                    <th width="50"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="reqBody">
-                                <!-- Rows -->
-                            </tbody>
-                        </table>
+                        <div class="table-responsive">
+                            <table class="table table-bordered align-middle" style="min-width: 1000px; table-layout: fixed;">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th style="width: auto;">Barang</th>
+                                        <th style="width: 180px;" class="text-center">Ketersediaan</th>
+                                        <th style="width: 100px;" class="text-center">Qty</th>
+                                        <th style="width: 140px;" class="text-center">UOM</th>
+                                        <th style="width: 50px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reqBody">
+                                    <!-- Rows -->
+                                </tbody>
+                            </table>
+                        </div>
                         <button type="button" class="btn btn-success btn-sm" onclick="addRow()">+ Tambah Baris</button>
                     </div>
                     <div class="modal-footer">
@@ -801,6 +1055,7 @@ $incoming_all = $incoming_requests;
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <form method="POST" id="approvalForm" enctype="multipart/form-data">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <input type="hidden" name="action" id="form_action" value="approve_request">
                 <input type="hidden" name="request_id" id="view_request_id">
                 <input type="hidden" name="status_action" id="status_action" value="approve_all">
@@ -822,11 +1077,13 @@ $incoming_all = $incoming_requests;
 
 <!-- Form Cancel (Hidden) -->
 <form id="cancelForm" method="POST" style="display:none;">
+    <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
     <input type="hidden" name="action" value="cancel_request">
     <input type="hidden" name="request_id" id="cancel_request_id">
 </form>
 
 <script>
+const REQUEST_CSRF = <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>;
 var barangData = <?= json_encode($barang_list) ?>;
 var stockData = <?= json_encode($stock_available) ?>;
 var stockDataLoaded = false;
@@ -834,6 +1091,7 @@ var availableItems = [];
 var destVersion = 0;
 var currentDestKey = '';
 var stockDataDestKey = '';
+var uomMeta = {};
 
 function fmtQty(v) {
     var n = Number(v || 0);
@@ -907,17 +1165,25 @@ function loadAvailableItems() {
         url: 'api/ajax_request_items.php',
         method: 'POST',
         dataType: 'json',
-        data: { ke_level: keLevel, ke_id: keId }
+        data: { ke_level: keLevel, ke_id: keId, _csrf: REQUEST_CSRF }
     }).then(function(res) {
         if (myVersion !== destVersion || destKey !== currentDestKey) return;
         availableItems = [];
         stockData = {};
         window.__stockUom = window.__stockUom || {};
+        uomMeta = {};
         if (res && res.success && Array.isArray(res.items)) {
             availableItems = res.items;
             availableItems.forEach(function(it) {
                 if (it && it.barang_id) stockData[it.barang_id] = parseFloat(it.qty || 0);
                 if (it && it.barang_id) window.__stockUom[it.barang_id] = it.satuan || '';
+                if (it && it.barang_id) {
+                    uomMeta[it.barang_id] = {
+                        uom_oper: it.satuan || '',
+                        uom_odoo: it.uom_odoo || '',
+                        uom_ratio: parseFloat(it.uom_ratio || 1) || 1
+                    };
+                }
             });
         }
         window.__requestStockLocationCode = (res && res.location_code) ? res.location_code : '';
@@ -937,13 +1203,27 @@ function buildOptionsHtml(selectedId) {
         availableItems.forEach(function(it) {
             var sel = (selectedId && it.barang_id == selectedId) ? 'selected' : '';
             var labelCode = (it.kode_barang && String(it.kode_barang).trim() !== '') ? it.kode_barang : it.odoo_product_id;
-            options += '<option value="' + it.barang_id + '" ' + sel + '>' + labelCode + ' - ' + it.nama_barang + ' (' + it.satuan + ')</option>';
+            var uomOper = it.satuan || '';
+            var uomOdoo = it.uom_odoo || '';
+            var ratio = parseFloat(it.uom_ratio || 1) || 1;
+            options += '<option value="' + it.barang_id + '" ' + sel +
+                ' data-uom-oper="' + String(uomOper).replace(/"/g,'&quot;') + '"' +
+                ' data-uom-odoo="' + String(uomOdoo).replace(/"/g,'&quot;') + '"' +
+                ' data-uom-ratio="' + String(ratio).replace(/"/g,'&quot;') + '"' +
+                '>' + labelCode + ' - ' + it.nama_barang + ' (' + uomOper + ')</option>';
         });
     } else {
         barangData.forEach(function(b) {
             var sel = (selectedId && b.id == selectedId) ? 'selected' : '';
             var labelCode = (b.kode_barang && String(b.kode_barang).trim() !== '') ? b.kode_barang : b.odoo_product_id;
-            options += '<option value="' + b.id + '" ' + sel + '>' + labelCode + ' - ' + b.nama_barang + ' (' + b.satuan + ')</option>';
+            var uomOper = b.satuan || '';
+            var uomOdoo = b.uom_odoo || '';
+            var ratio = parseFloat(b.uom_ratio || 1) || 1;
+            options += '<option value="' + b.id + '" ' + sel +
+                ' data-uom-oper="' + String(uomOper).replace(/"/g,'&quot;') + '"' +
+                ' data-uom-odoo="' + String(uomOdoo).replace(/"/g,'&quot;') + '"' +
+                ' data-uom-ratio="' + String(ratio).replace(/"/g,'&quot;') + '"' +
+                '>' + labelCode + ' - ' + b.nama_barang + ' (' + uomOper + ')</option>';
         });
     }
     return options;
@@ -954,15 +1234,22 @@ function addRow(selectedId = null) {
 
     var row = `<tr>
         <td>
-            <select name="items[]" class="form-select req-item" onchange="updateStock(this)" required>
+            <select name="items[]" class="form-select req-item" onchange="updateStock(this)" required style="width: 100%;">
                 ${options}
             </select>
         </td>
-        <td>
-            <span class="stock-info badge bg-secondary">-</span>
+        <td class="text-center">
+            <span class="stock-info badge bg-secondary" style="white-space: normal; display: inline-block;">-</span>
         </td>
-        <td><input type="number" name="qtys[]" class="form-control" min="1" value="1" required></td>
-        <td><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>
+        <td><input type="number" name="qtys[]" class="form-control text-center" min="0.0001" step="0.0001" value="1" required style="width: 100%;"></td>
+        <td>
+            <select name="uom_modes[]" class="form-select req-uom" required style="width: 100%;">
+                <option value="oper">-</option>
+            </select>
+        </td>
+        <td class="text-center">
+            <button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)"><i class="fas fa-times"></i></button>
+        </td>
     </tr>`;
     $('#reqBody').append(row);
     
@@ -1007,12 +1294,15 @@ function updateStock(select) {
     var id = $(select).val();
     var row = $(select).closest('tr');
     var stockSpan = row.find('.stock-info');
+    var uomSel = row.find('.req-uom');
     
     if (!id) {
         stockSpan.text('-');
         stockSpan.removeClass('bg-success bg-danger').addClass('bg-secondary');
+        if (uomSel.length) uomSel.html('<option value="oper">-</option>').prop('disabled', true);
         return;
     }
+    refreshRowUom(row);
     if (stockDataDestKey === currentDestKey && stockDataLoaded && stockData[id] !== undefined) {
         var qtyCached = parseFloat(stockData[id]) || 0;
         var uomCached = (window.__stockUom && window.__stockUom[id]) ? window.__stockUom[id] : '';
@@ -1041,7 +1331,7 @@ function updateStock(select) {
         url: 'api/ajax_request_stock_qty.php',
         method: 'POST',
         dataType: 'json',
-        data: { ke_level: keLevel, ke_id: keId, barang_id: id }
+        data: { ke_level: keLevel, ke_id: keId, barang_id: id, _csrf: REQUEST_CSRF }
     }).then(function(res) {
         if (myVersion !== destVersion || destKey !== currentDestKey) return;
         if ($(select).val() != id) return;
@@ -1052,6 +1342,7 @@ function updateStock(select) {
             window.__requestStockLocationCode = res.location_code ? res.location_code : window.__requestStockLocationCode;
             window.__stockUom = window.__stockUom || {};
             window.__stockUom[id] = res.satuan || window.__stockUom[id] || '';
+            if (!uomMeta[id]) uomMeta[id] = { uom_oper: window.__stockUom[id] || '', uom_odoo: '', uom_ratio: 1 };
             var uom = window.__stockUom[id] || '';
             stockSpan.text(fmtQty(q) + (uom ? (' ' + uom) : '') + ' Ready');
             stockSpan.removeClass('bg-secondary bg-danger bg-success').addClass(q > 0 ? 'bg-success' : 'bg-danger');
@@ -1069,6 +1360,32 @@ function updateStock(select) {
         stockSpan.text('0 Ready');
         stockSpan.removeClass('bg-secondary bg-success').addClass('bg-danger');
     });
+}
+
+function refreshRowUom($row) {
+    var $barangSel = $row.find('.req-item');
+    var $uomSel = $row.find('.req-uom');
+    if ($barangSel.length === 0 || $uomSel.length === 0) return;
+    var id = $barangSel.val();
+    if (!id) {
+        $uomSel.html('<option value="oper">-</option>').prop('disabled', true);
+        return;
+    }
+    var $opt = $barangSel.find('option:selected');
+    var oper = String($opt.attr('data-uom-oper') || (window.__stockUom && window.__stockUom[id]) || '').trim();
+    var odoo = String($opt.attr('data-uom-odoo') || '').trim();
+    var ratio = parseFloat(String($opt.attr('data-uom-ratio') || '1').replace(',', '.')) || 1;
+    if (!oper) oper = '-';
+    var html = '';
+    if (odoo && ratio && Math.abs(ratio - 1) > 0.0000001 && oper.toLowerCase() !== odoo.toLowerCase()) {
+        html += '<option value="oper">' + oper + '</option>';
+        html += '<option value="odoo">' + odoo + '</option>';
+        $uomSel.prop('disabled', false);
+    } else {
+        html += '<option value="oper">' + oper + '</option>';
+        $uomSel.prop('disabled', true);
+    }
+    $uomSel.html(html).val('oper');
 }
 
 function updateAllRowStocks() {
@@ -1093,10 +1410,16 @@ function validateStock() {
     $('#reqBody tr').each(function() {
         var id = $(this).find('.req-item').val();
         var qtyReq = parseFloat($(this).find('input[name="qtys[]"]').val()) || 0;
+        var uomMode = String($(this).find('select[name="uom_modes[]"]').val() || 'oper');
+        var ratio = 1;
+        var $opt = $(this).find('.req-item option:selected');
+        if ($opt.length) ratio = parseFloat(String($opt.attr('data-uom-ratio') || '1').replace(',', '.')) || 1;
+        if (ratio <= 0) ratio = 1;
+        var qtyOper = (uomMode === 'odoo') ? (qtyReq / ratio) : qtyReq;
         
         if (id) {
             var avail = (stockData[id] !== undefined) ? parseFloat(stockData[id]) : 0;
-            if (qtyReq > avail) {
+            if (qtyOper > avail + 0.00005) {
                 alert('Ketersediaan stok tidak mencukupi untuk salah satu item.');
                 valid = false;
                 return false;
@@ -1125,23 +1448,44 @@ function viewRequest(id) {
         .then(data => {
             $('#view_content').html(data);
             $('#view_request_id').val(id);
+            var addCancel = data.includes('data-can-cancel="true"');
             
-            if (data.includes('data-pending="true"')) {
+            if (data.includes('data-spv="true"')) {
+                 $('#form_action').val('approve_request');
+                 $('#view_footer').html(`
+                    <button type="button" class="btn btn-danger me-auto" onclick="submitApproval('reject')">Tolak</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-primary-custom" onclick="submitApproval('approve')">Approve SPV</button>
+                 `);
+                 if (addCancel) {
+                    $('#view_footer').prepend(`<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(${id})"><i class="fas fa-times me-1"></i>Batalkan</button>`);
+                 }
+            } else if (data.includes('data-pending="true"')) {
                  $('#form_action').val('approve_request');
                  $('#view_footer').html(`
                     <button type="button" class="btn btn-danger me-auto" onclick="submitApproval('reject')">Tolak</button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
                     <button type="button" class="btn btn-primary-custom" onclick="submitApproval('approve')">Setujui</button>
                  `);
+                 if (addCancel) {
+                    $('#view_footer').prepend(`<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(${id})"><i class="fas fa-times me-1"></i>Batalkan</button>`);
+                 }
             } else if (data.includes('data-process="true"')) {
                  $('#form_action').val('process_request');
-                 $('#status_action').val('');
+                 $('#status_action').val('completed');
+                 
+                 let extraBtn = '';
+                 if (data.includes('data-is-partial="true"')) {
+                     extraBtn = `<button type="button" class="btn btn-success me-2" onclick="forceComplete(${id})"><i class="fas fa-check-circle me-1"></i>Tandai Selesai</button>`;
+                 }
+                 
                  $('#view_footer').html(`
                     <a href="scripts/print_request.php?id=${id}" target="_blank" class="btn btn-info text-white me-auto">
                         <i class="fas fa-print me-1"></i> Cetak Dokumen
                     </a>
+                    ${extraBtn}
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
-                    <button type="submit" class="btn btn-primary-custom">
+                    <button type="button" class="btn btn-primary-custom" onclick="processUpload()">
                         <i class="fas fa-upload me-1"></i> Unggah Dokumen & Proses
                     </button>
                  `);
@@ -1154,8 +1498,60 @@ function viewRequest(id) {
                     </a>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
                  `);
+                 if (addCancel) {
+                    $('#view_footer').prepend(`<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(${id})"><i class="fas fa-times me-1"></i>Batalkan</button>`);
+                 }
             }
         });
+}
+
+function processUpload() {
+    var isPartial = false;
+    var isZero = true;
+    var inputs = document.querySelectorAll('input[name="received_qtys[]"]');
+    var fileInput = document.querySelector('input[name="dokumen"]');
+    
+    if (fileInput && fileInput.files.length === 0) {
+        alert('Harap unggah dokumen Odoo terlebih dahulu.');
+        return;
+    }
+
+    for (var i = 0; i < inputs.length; i++) {
+        var val = parseFloat(inputs[i].value) || 0;
+        var max = parseFloat(inputs[i].getAttribute('max')) || 0;
+        if (val > 0) isZero = false;
+        if (val < max) isPartial = true;
+        if (val > max) {
+            alert('Qty diterima (' + val + ') tidak boleh lebih dari sisa (' + max + ')');
+            return;
+        }
+    }
+    
+    if (isZero && inputs.length > 0) {
+        alert('Minimal ada 1 barang yang diterima.');
+        return;
+    }
+
+    if (isPartial) {
+        var msg = "Terdapat barang yang diterima kurang dari sisa persetujuan.\n\nApakah masih ada pengiriman untuk sisa barang ini di kemudian hari?\n- Klik OK jika YA (Status tetap Partial)\n- Klik Cancel jika TIDAK (Status Completed, sisa hangus)";
+        var ans = confirm(msg);
+        if (ans) {
+            $('#status_action').val('partial');
+        } else {
+            $('#status_action').val('completed');
+        }
+    } else {
+        $('#status_action').val('completed');
+    }
+    
+    $('#approvalForm').submit();
+}
+
+function forceComplete(id) {
+    if (confirm('Yakin ingin menandai pesanan ini SELESAI?\n\nSisa barang tidak akan diproses lagi / hangus.')) {
+        $('#form_action').val('force_complete_request');
+        $('#approvalForm').submit();
+    }
 }
 
 function submitApproval(action) {

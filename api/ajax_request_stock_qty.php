@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/settings.php';
 
 header('Content-Type: application/json');
@@ -15,6 +16,7 @@ if (!in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik'], true)) {
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }
+require_csrf();
 
 $ke_level = (string)($_POST['ke_level'] ?? '');
 $ke_id = (int)($_POST['ke_id'] ?? 0);
@@ -24,19 +26,6 @@ if ($barang_id <= 0) {
     echo json_encode(['success' => false, 'message' => 'Invalid barang_id'], JSON_UNESCAPED_UNICODE);
     exit;
 }
-
-$conn->query("
-    CREATE TABLE IF NOT EXISTS barang_uom_conversion (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        barang_id INT NOT NULL,
-        from_uom VARCHAR(20) NULL,
-        to_uom VARCHAR(20) NULL,
-        multiplier DECIMAL(18,8) NOT NULL DEFAULT 1,
-        note VARCHAR(255) NULL,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_barang (barang_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
 
 function location_candidates(string $input): array {
     $input = trim($input);
@@ -128,6 +117,6 @@ foreach ($location_candidates as $loc) {
     }
 }
 
-$qty = (float)$best_qty * $multiplier;
+$qty = (float)$best_qty / $multiplier;
 echo json_encode(['success' => true, 'qty' => (float)round($qty, 4), 'satuan' => $uom, 'location_code' => $best_loc], JSON_UNESCAPED_UNICODE);
 

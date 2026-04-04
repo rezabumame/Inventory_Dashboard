@@ -35,7 +35,7 @@ if (!function_exists('ensure_enum_value')) {
     }
 }
 
-ensure_enum_value($conn, 'users', 'role', 'petugas_hc');
+ 
 
 if (!function_exists('safe_query')) {
     function safe_query(&$conn, $sql, $params = null, $types = "") {

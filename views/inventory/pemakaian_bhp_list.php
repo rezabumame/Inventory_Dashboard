@@ -1,6 +1,6 @@
 <?php
 // Check access
-$allowed_roles = ['super_admin', 'admin_gudang', 'admin_klinik', 'b2b_ops', 'cs', 'admin_sales', 'petugas_hc'];
+$allowed_roles = ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'petugas_hc'];
 if (!in_array($_SESSION['role'], $allowed_roles)) {
     redirect('index.php?page=dashboard');
 }
@@ -36,6 +36,13 @@ if ($user_role === 'admin_klinik' && $user_klinik_id) {
     $types .= "i";
 }
 
+if ($user_role === 'petugas_hc') {
+    $uid = (int)($_SESSION['user_id'] ?? 0);
+    $where_clause .= " AND pb.user_hc_id = ?";
+    $params[] = $uid;
+    $types .= "i";
+}
+
 if (!empty($start_date)) {
     $where_clause .= " AND pb.tanggal >= ?";
     $params[] = $start_date;
@@ -47,50 +54,8 @@ if (!empty($end_date)) {
     $types .= "s";
 }
 
-if ($active_tab === 'data_out' && isset($_GET['export']) && $_GET['export'] === '1') {
-    $stmt_exp = $conn->prepare("
-        SELECT 
-            pb.tanggal, 
-            pb.nomor_pemakaian,
-            pb.jenis_pemakaian, 
-            k.nama_klinik,
-            COALESCE(u_hc.nama_lengkap, '-') as hc_name,
-            b.nama_barang,
-            COALESCE(NULLIF(pbd.satuan, ''), uc.to_uom, b.satuan) AS satuan, 
-            pbd.qty
-        FROM pemakaian_bhp pb
-        JOIN pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
-        JOIN barang b ON pbd.barang_id = b.id
-        LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
-        LEFT JOIN users u_hc ON pb.user_hc_id = u_hc.id
-        JOIN klinik k ON pb.klinik_id = k.id
-        WHERE $where_clause
-        ORDER BY pb.tanggal DESC, pb.created_at DESC
-    ");
-    if (!empty($params)) $stmt_exp->bind_param($types, ...$params);
-    $stmt_exp->execute();
-    $res = $stmt_exp->get_result();
-
-    $fn = 'pemakaian_bhp_data_out_' . preg_replace('/[^0-9]/', '', (string)$start_date) . '-' . preg_replace('/[^0-9]/', '', (string)$end_date) . '.csv';
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . $fn . '"');
-    $out = fopen('php://output', 'w');
-    fwrite($out, "\xEF\xBB\xBF");
-    fputcsv($out, ['Tanggal', 'No Pemakaian', 'Jenis', 'Klinik', 'Petugas HC', 'Barang', 'Qty', 'Satuan']);
-    while ($row = $res->fetch_assoc()) {
-        fputcsv($out, [
-            $row['tanggal'] ?? '',
-            $row['nomor_pemakaian'] ?? '',
-            $row['jenis_pemakaian'] ?? '',
-            $row['nama_klinik'] ?? '',
-            $row['hc_name'] ?? '',
-            $row['nama_barang'] ?? '',
-            $row['qty'] ?? '',
-            $row['satuan'] ?? ''
-        ]);
-    }
-    fclose($out);
-    exit;
+if ($active_tab === 'data_out') {
+    // Logic for data_out view remains here, but export logic moved to api/export_odoo_bhp.php
 }
 
 if ($active_tab == 'list') {
@@ -121,6 +86,8 @@ if ($active_tab == 'list') {
             pb.jenis_pemakaian, 
             b.nama_barang, 
             COALESCE(NULLIF(pbd.satuan, ''), uc.to_uom, b.satuan) AS satuan, 
+            COALESCE(NULLIF(uc.from_uom, ''), b.satuan) AS uom_odoo,
+            COALESCE(uc.multiplier, 1) AS uom_ratio,
             pbd.qty, 
             u_hc.nama_lengkap as hc_name,
             k.nama_klinik,
@@ -144,19 +111,6 @@ if ($active_tab == 'list') {
 }
 
 // Data for Modal Tambah
-$conn->query("
-    CREATE TABLE IF NOT EXISTS barang_uom_conversion (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        barang_id INT NOT NULL,
-        from_uom VARCHAR(20) NULL,
-        to_uom VARCHAR(20) NULL,
-        multiplier DECIMAL(18,8) NOT NULL DEFAULT 1,
-        note VARCHAR(255) NULL,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_barang (barang_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
-
 $seeded_barang_from_mirror = false;
 try {
     $conn->query("
@@ -174,7 +128,13 @@ try {
 
 $barang_list = [];
 $stmt_barang = $conn->query("
-    SELECT b.id, b.odoo_product_id, b.nama_barang, COALESCE(uc.to_uom, b.satuan) AS satuan
+    SELECT
+        b.id,
+        b.odoo_product_id,
+        b.nama_barang,
+        COALESCE(uc.to_uom, b.satuan) AS satuan,
+        COALESCE(NULLIF(uc.from_uom, ''), '') AS uom_odoo,
+        COALESCE(uc.multiplier, 1) AS uom_ratio
     FROM barang b
     LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
     WHERE b.odoo_product_id IS NOT NULL AND b.odoo_product_id <> ''
@@ -258,16 +218,15 @@ if ($default_modal_klinik_id) {
 }
 ?>
 
-<div class="container-fluid">
-    <div class="row mb-4 align-items-center">
+<div class="row mb-4 align-items-center">
         <div class="col">
             <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
-                <i class="fas fa-clipboard-list me-2"></i>Pemakaian BHP
+                <i class="fas fa-clipboard-list me-2"></i><?= ($user_role === 'petugas_hc') ? 'BHP Saya' : 'Pemakaian BHP' ?>
             </h1>
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-0">
                     <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
-                    <li class="breadcrumb-item active">Pemakaian BHP</li>
+                    <li class="breadcrumb-item active"><?= ($user_role === 'petugas_hc') ? 'BHP Saya' : 'Pemakaian BHP' ?></li>
                 </ol>
             </nav>
         </div>
@@ -275,7 +234,7 @@ if ($default_modal_klinik_id) {
             <button type="button" class="btn shadow-sm text-white px-4 me-2" style="background-color: #204EAB;" data-bs-toggle="modal" data-bs-target="#modalTambah">
                 <i class="fas fa-plus me-2"></i>Tambah Pemakaian
             </button>
-            <?php if (in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'b2b_ops'], true)): ?>
+            <?php if (in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'b2b_ops'], true)): ?>
             <button type="button" class="btn btn-success shadow-sm px-4" data-bs-toggle="modal" data-bs-target="#modalUpload">
                 <i class="fas fa-file-excel me-2"></i>Upload Excel
             </button>
@@ -321,11 +280,6 @@ if ($default_modal_klinik_id) {
                     <a href="index.php?page=pemakaian_bhp_list&tab=<?= $active_tab ?>" class="btn btn-outline-secondary px-4">
                         <i class="fas fa-undo me-2"></i>Reset
                     </a>
-                    <?php if ($active_tab === 'data_out'): ?>
-                        <a class="btn btn-outline-primary px-4" href="index.php?page=pemakaian_bhp_list&tab=data_out&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>&export=1">
-                            <i class="fas fa-file-excel me-2"></i>Export Excel
-                        </a>
-                    <?php endif; ?>
                 </div>
             </form>
         </div>
@@ -409,9 +363,16 @@ if ($default_modal_klinik_id) {
     <div class="card border-0 shadow-sm">
         <div class="card-body p-0">
             <div class="d-flex justify-content-end p-3 bg-white border-bottom align-items-center">
-                <button class="btn btn-success btn-sm me-2" onclick="exportToOdoo()">
+                <?php
+                // Build export URL with current filters
+                $export_url = "api/export_odoo_bhp.php?tab=data_out";
+                if (isset($_GET['start_date'])) $export_url .= "&start_date=" . urlencode($_GET['start_date']);
+                if (isset($_GET['end_date'])) $export_url .= "&end_date=" . urlencode($_GET['end_date']);
+                if (isset($_GET['klinik_id'])) $export_url .= "&klinik_id=" . urlencode($_GET['klinik_id']);
+                ?>
+                <a href="<?= $export_url ?>" class="btn btn-success btn-sm me-2">
                     <i class="fas fa-file-excel me-2"></i>Export Odoo (.xlsx)
-                </button>
+                </a>
             </div>
             <div class="table-responsive rounded-top scrollbar-custom">
                 <table class="table table-spreadsheet align-middle mb-0" id="tableDataOut">
@@ -419,20 +380,27 @@ if ($default_modal_klinik_id) {
                         <tr>
                             <th width="120"><i class="far fa-calendar-alt me-1"></i> Tanggal</th>
                             <th><i class="fas fa-box me-1"></i> Item</th>
-                            <th width="80" class="text-center">Qty</th>
+                            <th width="80" class="text-center">Qty (Btl)</th>
                             <th width="100">UoM</th>
+                            <th width="100" class="text-center bg-light">Qty Odoo</th>
+                            <th width="80" class="bg-light">UoM Odoo</th>
                             <th><i class="fas fa-info-circle me-1"></i> Status</th>
                             <th><i class="fas fa-user-md me-1"></i> PIC / Nakes</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if ($result_out->num_rows == 0): ?>
-                            <tr><td colspan="6" class="text-center py-5 text-muted">Tidak ada data pemakaian ditemukan.</td></tr>
+                            <tr><td colspan="8" class="text-center py-5 text-muted">Tidak ada data pemakaian ditemukan.</td></tr>
                         <?php else: ?>
                             <?php while ($row = $result_out->fetch_assoc()): 
                                 $status_text = ($row['jenis_pemakaian'] === 'hc') ? 'Additional Used - From Tas HC' : 'Direct Used - On Site Klinik';
                                 $pic_name = ($row['jenis_pemakaian'] === 'hc') ? $row['hc_name'] : $row['nama_klinik'];
                                 $badge_class = ($row['jenis_pemakaian'] === 'hc') ? 'badge-hc' : 'badge-klinik';
+                                
+                                // Calculate Odoo Qty
+                                $ratio = (float)($row['uom_ratio'] ?? 1);
+                                $qty_odoo = $row['qty'] * $ratio;
+                                $uom_odoo = $row['uom_odoo'] ?: $row['satuan'];
                             ?>
                             <tr>
                                 <td class="text-muted small"><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
@@ -442,7 +410,13 @@ if ($default_modal_klinik_id) {
                                     </div>
                                 </td>
                                 <td class="text-center fw-bold text-primary"><?= $row['qty'] ?></td>
-                                <td><span class="uom-text"><?= htmlspecialchars($row['satuan']) ?></span></td>
+                                <td>
+                                    <span class="uom-text">
+                                          <?= htmlspecialchars($row['satuan']) ?>
+                                    </span>
+                                </td>
+                                <td class="text-center fw-bold text-success bg-light"><?= number_format($qty_odoo, 0, ',', '.') ?></td>
+                                <td class="text-muted small bg-light"><?= htmlspecialchars($uom_odoo) ?></td>
                                 <td>
                                     <span class="status-pill <?= $badge_class ?>">
                                         <?= $status_text ?>
@@ -585,6 +559,7 @@ if ($default_modal_klinik_id) {
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form id="formEditPemakaianBHP" method="POST" action="actions/process_pemakaian_bhp.php">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <input type="hidden" name="id" id="editId">
                 <div class="modal-body p-4 bg-light">
                     <div id="editLoadingSpinner" class="text-center py-5">
@@ -606,10 +581,13 @@ if ($default_modal_klinik_id) {
                                         <label class="form-label fw-semibold small mb-1">
                                             <i class="fas fa-tags text-warning me-1"></i>Jenis Pemakaian <span class="text-danger">*</span>
                                         </label>
-                                        <select name="jenis_pemakaian" id="editJenisPemakaian" class="form-select" required>
+                                        <select name="jenis_pemakaian" id="editJenisPemakaian" class="form-select" required <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>
                                             <option value="klinik">Pemakaian Klinik</option>
                                             <option value="hc">Pemakaian HC</option>
                                         </select>
+                                        <?php if ($user_role === 'petugas_hc'): ?>
+                                            <input type="hidden" name="jenis_pemakaian" value="hc">
+                                        <?php endif; ?>
                                     </div>
 
                                     <div class="col-md-3">
@@ -619,13 +597,18 @@ if ($default_modal_klinik_id) {
                                         <input type="text" class="form-control bg-light" id="editKlinikName" value="" readonly>
                                         <input type="hidden" name="klinik_id" id="editKlinikId" value="">
                                     </div>
-                                    <div class="col-md-3" id="editPetugasHcWrap" style="display:none;">
+                                    <div class="col-md-3" id="editPetugasHcWrap" style="<?= ($user_role === 'petugas_hc') ? 'display:block;' : 'display:none;' ?>">
                                         <label class="form-label fw-semibold small mb-1">
                                             <i class="fas fa-user-nurse text-warning me-1"></i>Petugas HC <span class="text-danger">*</span>
                                         </label>
-                                        <select name="user_hc_id" id="editUserHcId" class="form-select">
-                                            <option value="">- Pilih Petugas -</option>
-                                        </select>
+                                        <?php if ($user_role === 'petugas_hc'): ?>
+                                            <input type="text" class="form-control bg-light" value="<?= htmlspecialchars($_SESSION['nama_lengkap']) ?>" readonly>
+                                            <input type="hidden" name="user_hc_id" id="editUserHcIdHidden" value="<?= (int)$_SESSION['user_id'] ?>">
+                                        <?php else: ?>
+                                            <select name="user_hc_id" id="editUserHcId" class="form-select">
+                                                <option value="">- Pilih Petugas -</option>
+                                            </select>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                                 <div class="row mt-3">
@@ -688,6 +671,7 @@ if ($default_modal_klinik_id) {
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form id="formPemakaianBHP" method="POST" action="actions/process_pemakaian_bhp.php">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <div class="modal-body p-4 bg-light">
                     <!-- Form Header Info -->
                     <div class="card border-0 shadow-sm mb-4">
@@ -703,11 +687,14 @@ if ($default_modal_klinik_id) {
                                     <label class="form-label fw-semibold small mb-1">
                                         <i class="fas fa-tags text-primary me-1"></i>Jenis Pemakaian <span class="text-danger">*</span>
                                     </label>
-                                    <select name="jenis_pemakaian" id="modalJenisPemakaian" class="form-select" required>
+                                    <select name="jenis_pemakaian" id="modalJenisPemakaian" class="form-select" required <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>
                                         <option value="">-- Pilih --</option>
-                                        <option value="klinik">Pemakaian Klinik</option>
-                                        <option value="hc">Pemakaian HC</option>
+                                        <option value="klinik" <?= ($user_role !== 'petugas_hc') ? '' : '' ?>>Pemakaian Klinik</option>
+                                        <option value="hc" <?= ($user_role === 'petugas_hc') ? 'selected' : '' ?>>Pemakaian HC</option>
                                     </select>
+                                    <?php if ($user_role === 'petugas_hc'): ?>
+                                        <input type="hidden" name="jenis_pemakaian" value="hc">
+                                    <?php endif; ?>
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label fw-semibold small mb-1">
@@ -723,16 +710,21 @@ if ($default_modal_klinik_id) {
                                         </select>
                                     <?php else: ?>
                                         <input type="text" class="form-control bg-light" value="<?= htmlspecialchars($klinik_name) ?>" readonly>
-                                        <input type="hidden" name="klinik_id" value="<?= (int)$user_klinik_id ?>">
+                                        <input type="hidden" name="klinik_id" id="modalKlinikIdHidden" value="<?= (int)$user_klinik_id ?>">
                                     <?php endif; ?>
                                 </div>
-                                <div class="col-md-3" id="modalPetugasHcWrap" style="display:none;">
+                                <div class="col-md-3" id="modalPetugasHcWrap" style="<?= ($user_role === 'petugas_hc') ? 'display:block;' : 'display:none;' ?>">
                                     <label class="form-label fw-semibold small mb-1">
                                         <i class="fas fa-user-nurse text-primary me-1"></i>Petugas HC <span class="text-danger">*</span>
                                     </label>
-                                    <select name="user_hc_id" id="modalUserHcId" class="form-select">
-                                        <option value="">- Pilih Petugas -</option>
-                                    </select>
+                                    <?php if ($user_role === 'petugas_hc'): ?>
+                                        <input type="text" class="form-control bg-light" value="<?= htmlspecialchars($_SESSION['nama_lengkap']) ?>" readonly>
+                                        <input type="hidden" name="user_hc_id" value="<?= (int)$_SESSION['user_id'] ?>">
+                                    <?php else: ?>
+                                        <select name="user_hc_id" id="modalUserHcId" class="form-select">
+                                            <option value="">- Pilih Petugas -</option>
+                                        </select>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                             <div class="row mt-3">
@@ -777,7 +769,10 @@ if ($default_modal_klinik_id) {
                                                 <input type="number" name="items[0][qty]" class="form-control form-control-sm" min="1" placeholder="0" required>
                                             </td>
                                             <td class="p-2">
-                                                <input type="text" name="items[0][satuan]" class="form-control form-control-sm modal-satuan-field bg-light" readonly>
+                                                <select name="items[0][uom_mode]" class="form-select form-select-sm modal-uom-select" required>
+                                                    <option value="oper">-</option>
+                                                </select>
+                                                <input type="hidden" name="items[0][satuan]" class="modal-satuan-hidden">
                                             </td>
                                             <td class="p-2">
                                                 <input type="text" name="items[0][catatan_item]" class="form-control form-control-sm" placeholder="Catatan">
@@ -806,13 +801,15 @@ if ($default_modal_klinik_id) {
 </div>
 
 <script>
+const PEMAKAIAN_CSRF = <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>;
 window.__petugasByKlinik = <?= json_encode($petugas_by_klinik, JSON_UNESCAPED_UNICODE) ?>;
 
 function renderPetugasOptions(selectEl, klinikId) {
-    var opts = ['<option value=\"\">- Pilih Petugas -</option>'];
+    var opts = ['<option value="">- Pilih Petugas -</option>'];
     var list = window.__petugasByKlinik[String(klinikId)] || window.__petugasByKlinik[Number(klinikId)] || [];
     list.forEach(function(p) {
-        opts.push('<option value=\"' + String(p.id) + '\">' + $('<div>').text(p.nama).html() + '</option>');
+        var safeName = String(p.nama).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        opts.push('<option value="' + String(p.id) + '">' + safeName + '</option>');
     });
     $(selectEl).html(opts.join(''));
 }
@@ -820,7 +817,14 @@ function renderPetugasOptions(selectEl, klinikId) {
 function togglePetugasHc(modePrefix) {
     var jenis = $('#' + modePrefix + 'JenisPemakaian').val();
     var klinikIdEl = $('#' + modePrefix + 'KlinikId');
-    var klinikId = klinikIdEl.length ? klinikIdEl.val() : $('input[name=\"klinik_id\"]').val();
+    var klinikId;
+    if (klinikIdEl.length) {
+        klinikId = klinikIdEl.val();
+    } else if ($('#modalKlinikIdHidden').length) {
+        klinikId = $('#modalKlinikIdHidden').val();
+    } else {
+        klinikId = $('input[name="klinik_id"]').first().val();
+    }
     var wrap = $('#' + modePrefix + 'PetugasHcWrap');
     var select = $('#' + modePrefix + 'UserHcId');
     if (jenis === 'hc') {
@@ -856,6 +860,7 @@ $(document).on('shown.bs.modal', '#modalTambah', function() {
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form id="formUploadExcel" method="POST" action="actions/process_pemakaian_bhp_upload.php" enctype="multipart/form-data">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <div class="modal-body p-4 bg-light">
                     <div class="card border-0 shadow-sm mb-4">
                         <div class="card-body">
@@ -863,16 +868,18 @@ $(document).on('shown.bs.modal', '#modalTambah', function() {
                                 <label class="form-label fw-semibold small mb-1">
                                     <i class="fas fa-file-excel text-success me-1"></i>Pilih File Excel <span class="text-danger">*</span>
                                 </label>
-                                <input type="file" name="excel_file" id="excelFile" class="form-control" accept=".csv,.xlsx,.xls" required>
-                                <div class="form-text small">Format: .csv, .xlsx, .xls (Max 5MB). Disarankan CSV.</div>
+                                <input type="file" name="excel_file" id="excelFile" class="form-control" accept=".xlsx" required>
+                                <div class="form-text small">Format wajib: <b>.xlsx</b> (Maksimal 5MB).</div>
                             </div>
 
                             <div class="alert alert-info border-0 shadow-sm small py-3">
-                                <h6 class="fw-bold mb-2"><i class="fas fa-info-circle me-1"></i>Petunjuk Upload:</h6>
+                                <h6 class="fw-bold mb-2"><i class="fas fa-info-circle me-1"></i>Petunjuk Format Baru (10 Kolom):</h6>
                                 <ul class="mb-0 ps-3">
-                                    <li>Gunakan template yang sudah disediakan agar format sesuai.</li>
-                                    <li>Sistem akan memvalidasi Nama Item dan Satuan secara ketat.</li>
-                                    <li>Seluruh proses akan dibatalkan jika ditemukan data yang tidak valid.</li>
+                                    <li>Gunakan <b>Template Baru</b> (xlsx) agar urutan kolom tepat (10 kolom).</li>
+                                    <li><b>Format Tanggal:</b> dd Month yyyy, HH:mm (Contoh: 04 March 2026, 16:00).</li>
+                                    <li><b>Atomic Transaction:</b> Jika ada 1 baris salah, seluruh file akan ditolak.</li>
+                                    <li><b>Duplikasi:</b> Sistem mengecek kombinasi ID Pasien + Tanggal + Kode Barang.</li>
+                                    <li>Validasi ketat terhadap Master Item, Satuan (UoM), Nakes, dan Cabang.</li>
                                 </ul>
                             </div>
                         </div>
@@ -884,7 +891,7 @@ $(document).on('shown.bs.modal', '#modalTambah', function() {
                                 <h6 class="mb-1 fw-bold text-primary">Template Excel</h6>
                                 <p class="small text-muted mb-0">Pastikan format file Anda sesuai dengan template kami.</p>
                             </div>
-                            <a href="download_template_pemakaian.php" class="btn btn-outline-primary btn-sm rounded-pill px-3">
+                            <a href="api/download_template_pemakaian.php" class="btn btn-outline-primary btn-sm rounded-pill px-3">
                                 <i class="fas fa-download me-1"></i> Download Template
                             </a>
                         </div>
@@ -908,7 +915,9 @@ $(document).ready(function() {
         foreach ($barang_list as $b) {
             $m[(int)$b['id']] = [
                 'name' => (string)$b['nama_barang'],
-                'satuan' => (string)$b['satuan']
+                'satuan' => (string)$b['satuan'],
+                'uom_odoo' => (string)($b['uom_odoo'] ?? ''),
+                'uom_ratio' => (float)($b['uom_ratio'] ?? 1)
             ];
         }
         echo json_encode($m, JSON_UNESCAPED_UNICODE);
@@ -995,22 +1004,7 @@ $(document).ready(function() {
     // Initialize DataTable for list tab
     if ($('#tablePemakaianBHP').length) {
         $('#tablePemakaianBHP').DataTable({
-            order: [[1, 'desc']],
-            language: {
-                "sProcessing": "Sedang memproses...",
-                "sLengthMenu": "Tampilkan _MENU_ entri",
-                "sZeroRecords": "Tidak ditemukan data yang sesuai",
-                "sInfo": "Menampilkan _START_ sampai _END_ dari _TOTAL_ entri",
-                "sInfoEmpty": "Menampilkan 0 sampai 0 dari 0 entri",
-                "sInfoFiltered": "(disaring dari _MAX_ entri keseluruhan)",
-                "sSearch": "Cari:",
-                "oPaginate": {
-                    "sFirst": "Pertama",
-                    "sPrevious": "Sebelumnya",
-                    "sNext": "Selanjutnya",
-                    "sLast": "Terakhir"
-                }
-            }
+            order: [[1, 'desc']]
         });
     }
 
@@ -1058,7 +1052,7 @@ $(document).ready(function() {
                 $.ajax({
                     url: 'actions/process_pemakaian_bhp_delete.php',
                     method: 'POST',
-                    data: { id: id },
+                    data: { id: id, _csrf: PEMAKAIAN_CSRF },
                     success: function(response) {
                         try {
                             const res = JSON.parse(response);
@@ -1085,8 +1079,24 @@ $(document).ready(function() {
     // Handle barang selection in modal
     $(document).on('change', '.modal-barang-select', function() {
         const id = $(this).val();
+        const row = $(this).closest('tr');
         const satuan = (id && barangMaster[id] && barangMaster[id].satuan) ? barangMaster[id].satuan : '';
-        $(this).closest('tr').find('.modal-satuan-field').val(satuan);
+        const uomOdoo = (id && barangMaster[id] && barangMaster[id].uom_odoo) ? barangMaster[id].uom_odoo : '';
+        const ratio = (id && barangMaster[id] && barangMaster[id].uom_ratio) ? Number(barangMaster[id].uom_ratio) : 1;
+        const $uomSelect = row.find('.modal-uom-select');
+        const $hiddenSatuan = row.find('.modal-satuan-hidden');
+
+        $hiddenSatuan.val(satuan);
+        let opts = '';
+        if (uomOdoo && ratio && ratio !== 1 && String(uomOdoo).toLowerCase() !== String(satuan).toLowerCase()) {
+            opts += `<option value="oper">${satuan}</option>`;
+            opts += `<option value="odoo">${uomOdoo}</option>`;
+            $uomSelect.prop('disabled', false);
+        } else {
+            opts += `<option value="oper">${satuan || '-'}</option>`;
+            $uomSelect.prop('disabled', true);
+        }
+        $uomSelect.html(opts).val('oper');
     });
 
     // Add row in modal
@@ -1105,7 +1115,10 @@ $(document).ready(function() {
                     <input type="number" name="items[${modalRowIndex}][qty]" class="form-control form-control-sm" min="1" placeholder="0" required>
                 </td>
                 <td class="p-2">
-                    <input type="text" name="items[${modalRowIndex}][satuan]" class="form-control form-control-sm modal-satuan-field bg-light" readonly>
+                    <select name="items[${modalRowIndex}][uom_mode]" class="form-select form-select-sm modal-uom-select" required>
+                        <option value="oper">-</option>
+                    </select>
+                    <input type="hidden" name="items[${modalRowIndex}][satuan]" class="modal-satuan-hidden">
                 </td>
                 <td class="p-2">
                     <input type="text" name="items[${modalRowIndex}][catatan_item]" class="form-control form-control-sm" placeholder="Catatan">
@@ -1347,18 +1360,28 @@ function exportToOdoo() {
     rows.forEach(row => {
         const date = row.cells[0].innerText.trim();
         const itemName = row.cells[1].innerText.trim();
-        const qty = row.cells[2].innerText.trim();
-        const uom = row.cells[3].innerText.trim();
+        const qtyText = row.cells[2].innerText.trim();
+        const uomEl = row.cells[3].querySelector('.uom-text');
+        const uomShown = row.cells[3].innerText.trim();
+        const ratioText = uomEl ? (uomEl.getAttribute('data-uom-ratio') || '1') : '1';
+        const ratio = parseFloat(String(ratioText).replace(',', '.')) || 1;
+        const uomOdoo = uomEl ? (uomEl.getAttribute('data-uom-odoo') || '') : '';
         const status = row.cells[4].innerText.trim();
         const location = row.cells[5].innerText.trim();
+
+        const qtyShown = parseFloat(String(qtyText).replace(',', '.')) || 0;
+        let qtyOdoo = qtyShown;
+        if (ratio > 0.0000001) qtyOdoo = qtyShown * ratio;
+        qtyOdoo = Math.round(qtyOdoo * 1000000) / 1000000;
+        const qtyOut = (String(qtyOdoo).includes('.') ? qtyOdoo.toString().replace(/\.?0+$/, '') : String(qtyOdoo));
         
         // Find correct reference
         const reference = "SCRAP-" + date.replace(/\//g, '') + "-" + itemName.substring(0, 3).toUpperCase();
 
         data.push([
             itemName,
-            qty,
-            uom,
+            qtyOut,
+            (uomOdoo || uomShown),
             location,
             date,
             reference,

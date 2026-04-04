@@ -1,5 +1,5 @@
 <?php
-check_role(['super_admin', 'admin_gudang']);
+check_role(['super_admin']);
 require_once __DIR__ . '/../../config/settings.php';
 require_once __DIR__ . '/../../config/odoo.php';
 
@@ -36,6 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $msg = '<div class="alert alert-success">Webhook tersimpan.</div>';
     } else {
         $enabled = isset($_POST['enabled']) ? '1' : '0';
+        $scheduler_token = trim((string)($_POST['scheduler_token'] ?? ''));
+        set_setting('odoo_sync_token', $scheduler_token);
         set_setting('odoo_sync_enabled', $enabled);
         if ($enabled === '1') {
             $mode = $_POST['mode'] ?? 'manual';
@@ -66,16 +68,16 @@ $gudang_location_code = trim((string)get_setting('odoo_location_gudang_utama', '
 $integration_method = get_setting('odoo_integration_method', $rpc_url !== '' ? 'rpc' : 'api');
 $lark_webhook = trim((string)get_setting('webhook_lark_url', ''));
 $gsheet_webhook = trim((string)get_setting('gsheet_booking_webhook_url', ''));
+$scheduler_token_saved = trim((string)get_setting('odoo_sync_token', ''));
 $internal_token = getenv('ODOO_SYNC_SYSTEM_TOKEN') ?: '';
 $schedule_hint_url = '';
-if ($internal_token !== '') {
-    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/'));
-    $appRoot = rtrim(dirname(rtrim(dirname($script), '/')), '/'); // up 2 levels from /views/settings/...
-    if ($appRoot === '') $appRoot = '/';
-    $schedule_hint_url = $scheme . '://' . $host . $appRoot . '/api/sync_odoo_schedule.php?token=' . urlencode($internal_token);
-}
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/'));
+$appRoot = rtrim(dirname(rtrim(dirname($script), '/')), '/'); // up 2 levels from /views/settings/...
+if ($appRoot === '') $appRoot = '/';
+$schedule_hint_url = $scheme . '://' . $host . $appRoot . '/api/updatedataforodoo.php';
+if ($scheduler_token_saved !== '') $schedule_hint_url .= '?token=' . urlencode($scheduler_token_saved);
 
 function next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run) {
     if (!$enabled) return '-';
@@ -212,6 +214,11 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                                 <label class="form-label">Jam</label>
                                 <input type="time" class="form-control" id="time" name="time" value="<?= htmlspecialchars($time) ?>">
                             </div>
+                            <div class="col-12">
+                                <label class="form-label">Token Scheduler (untuk Apps Script)</label>
+                                <input type="text" class="form-control" name="scheduler_token" value="<?= htmlspecialchars($scheduler_token_saved) ?>" placeholder="Contoh: bumame-sync-token">
+                                <div class="form-text">Token ini dipakai di URL: <span class="fw-semibold"><?= htmlspecialchars($schedule_hint_url) ?></span></div>
+                            </div>
                         </div>
                         <div class="col-12 d-flex gap-2">
                             <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
@@ -288,6 +295,8 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                                 </div>
                                 <div class="col-12 d-flex gap-2">
                                     <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan Webhook</button>
+                                    <button type="button" class="btn btn-outline-primary" id="btnTestLark"><i class="fas fa-paper-plane"></i> Test Lark</button>
+                                    <div class="text-muted small align-self-center" id="larkTestStatus"></div>
                                     <?php if ($schedule_hint_url !== ''): ?>
                                         <a href="<?= htmlspecialchars($schedule_hint_url) ?>" target="_blank" class="btn btn-outline-secondary">
                                             <i class="fas fa-link"></i> Cek Scheduler URL
@@ -339,7 +348,9 @@ document.addEventListener('DOMContentLoaded', function() {
         s.textContent = 'Memproses...';
         btn.disabled = true;
         try {
-            const res = await fetch('api/sync_odoo.php', { method: 'POST' });
+            const fd = new FormData();
+            fd.append('_csrf', <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>);
+            const res = await fetch('api/sync_odoo.php', { method: 'POST', body: fd });
             const data = await res.json();
             if (data.success) {
                 s.textContent = 'Selesai';
@@ -369,6 +380,31 @@ document.addEventListener('DOMContentLoaded', function() {
         } finally {
             btn.disabled = false;
         }
+    }
+
+    const btnTestLark = document.getElementById('btnTestLark');
+    const larkStatus = document.getElementById('larkTestStatus');
+    if (btnTestLark) {
+        btnTestLark.addEventListener('click', async function() {
+            if (larkStatus) larkStatus.textContent = 'Mengirim test...';
+            btnTestLark.disabled = true;
+            try {
+                const fd = new FormData();
+                fd.append('_csrf', <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>);
+                const res = await fetch('api/test_lark_webhook.php', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (!data || !data.success) {
+                    if (larkStatus) larkStatus.textContent = 'Gagal: ' + (data && data.message ? data.message : 'Unknown');
+                    return;
+                }
+                if (larkStatus) larkStatus.textContent = 'OK. Preferred: ' + (data.preferred || '-');
+                if (data.results) console.log('Lark test results', data.results);
+            } catch (e) {
+                if (larkStatus) larkStatus.textContent = 'Gagal: ' + e.message;
+            } finally {
+                btnTestLark.disabled = false;
+            }
+        });
     }
 });
 </script>

@@ -4,6 +4,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
 
 if (!isset($_SESSION['user_id'])) redirect('index.php?page=login');
+require_csrf();
 
 $role = (string)($_SESSION['role'] ?? '');
 if ($role !== 'super_admin') {
@@ -20,82 +21,32 @@ $catatan = trim((string)($_POST['catatan'] ?? ''));
 
 $barang_ids_raw = $_POST['barang_id'] ?? [];
 $qtys_raw = $_POST['qty'] ?? [];
+$uom_modes_raw = $_POST['uom_mode'] ?? [];
 if (!is_array($barang_ids_raw)) $barang_ids_raw = [$barang_ids_raw];
 if (!is_array($qtys_raw)) $qtys_raw = [$qtys_raw];
+if (!is_array($uom_modes_raw)) $uom_modes_raw = [$uom_modes_raw];
 
 $items = [];
-$max = max(count($barang_ids_raw), count($qtys_raw));
+$max = max(count($barang_ids_raw), count($qtys_raw), count($uom_modes_raw));
 for ($i = 0; $i < $max; $i++) {
     $bid = (int)($barang_ids_raw[$i] ?? 0);
     $q = (float)($qtys_raw[$i] ?? 0);
+    $mode = trim((string)($uom_modes_raw[$i] ?? 'oper'));
     if ($bid <= 0 || $q <= 0) continue;
-    if (abs($q - round($q)) > 0.00005) {
-        $_SESSION['error'] = 'Qty harus bilangan bulat.';
-        redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . '&petugas_user_id=' . (int)$user_hc_id);
-    }
-    $qi = (int)round($q);
+    $conv = $conn->query("SELECT COALESCE(multiplier, 1) AS multiplier FROM barang_uom_conversion WHERE barang_id = $bid LIMIT 1")->fetch_assoc();
+    $ratio = (float)($conv['multiplier'] ?? 1);
+    if ($ratio <= 0) $ratio = 1;
+    $qty_oper = ($mode === 'odoo') ? ($q / $ratio) : $q;
+    $qty_oper = (float)round($qty_oper, 4);
+    if ($qty_oper <= 0) continue;
     if (!isset($items[$bid])) $items[$bid] = 0;
-    $items[$bid] += $qi;
+    $items[$bid] += $qty_oper;
 }
 
 if ($klinik_id <= 0 || $user_hc_id <= 0 || empty($items)) {
     $_SESSION['error'] = 'Data allocasi tidak valid.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
-
-$conn->query("
-    CREATE TABLE IF NOT EXISTS stok_tas_hc (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        barang_id INT NOT NULL,
-        user_id INT NOT NULL,
-        klinik_id INT NOT NULL,
-        qty DECIMAL(18,4) NOT NULL DEFAULT 0,
-        updated_by INT NULL,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY barang_user (barang_id, user_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
-
-$conn->query("
-    CREATE TABLE IF NOT EXISTS barang_uom_conversion (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        barang_id INT NOT NULL,
-        from_uom VARCHAR(20) NULL,
-        to_uom VARCHAR(20) NULL,
-        multiplier DECIMAL(18,8) NOT NULL DEFAULT 1,
-        note VARCHAR(255) NULL,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_barang (barang_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
-
-$conn->query("
-    CREATE TABLE IF NOT EXISTS stock_mirror (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        odoo_product_id VARCHAR(64) NOT NULL,
-        kode_barang VARCHAR(64) NOT NULL,
-        location_code VARCHAR(100) NOT NULL,
-        qty DECIMAL(18,4) NOT NULL DEFAULT 0,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_loc_prod (odoo_product_id, location_code)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
-
-$conn->query("
-    CREATE TABLE IF NOT EXISTS hc_tas_allocation (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        klinik_id INT NOT NULL,
-        user_hc_id INT NOT NULL,
-        barang_id INT NOT NULL,
-        qty INT NOT NULL,
-        catatan VARCHAR(255) NULL,
-        created_by INT NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        KEY idx_klinik (klinik_id),
-        KEY idx_user (user_hc_id),
-        KEY idx_barang (barang_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
 
 $kl = $conn->query("SELECT id, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$kl || trim((string)($kl['kode_homecare'] ?? '')) === '') {
@@ -116,8 +67,8 @@ try {
     $count = 0;
     foreach ($items as $barang_id => $qty_int) {
         $barang_id = (int)$barang_id;
-        $qty_int = (int)$qty_int;
-        if ($barang_id <= 0 || $qty_int <= 0) continue;
+        $qty_oper = (float)$qty_int;
+        if ($barang_id <= 0 || $qty_oper <= 0) continue;
 
         $b = $conn->query("SELECT id, kode_barang, odoo_product_id, nama_barang FROM barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
         if (!$b) throw new Exception('Barang tidak ditemukan.');
@@ -137,26 +88,26 @@ try {
 
         $r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE TRIM(location_code) = '$kode_homecare' AND $match");
         $mirror_qty = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
-        $mirror_converted = (int)floor($mirror_qty * $mult);
+        if ($mult <= 0) $mult = 1;
+        $mirror_converted = (float)($mirror_qty / $mult);
 
         $r = $conn->query("SELECT COALESCE(SUM(qty), 0) AS total FROM stok_tas_hc WHERE klinik_id = $klinik_id AND barang_id = $barang_id");
-        $allocated_item = (int)floor((float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['total'] ?? 0) : 0));
+        $allocated_item = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['total'] ?? 0) : 0);
         $unallocated = $mirror_converted - $allocated_item;
         if ($unallocated < 0) $unallocated = 0;
 
-        if ($qty_int > $unallocated) {
+        if ($qty_oper > $unallocated + 0.00005) {
             $label = trim((string)($b['nama_barang'] ?? 'Barang'));
             if ($kode_barang !== '') $label = $kode_barang . ' - ' . $label;
-            throw new Exception('Unallocated tidak cukup untuk item: ' . $label . '. Unallocated: ' . $unallocated . ', Requested: ' . $qty_int);
+            throw new Exception('Unallocated tidak cukup untuk item: ' . $label . '. Unallocated: ' . fmt_qty($unallocated) . ', Requested: ' . fmt_qty($qty_oper));
         }
 
         $stmt = $conn->prepare("INSERT INTO hc_tas_allocation (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("iiiisi", $klinik_id, $user_hc_id, $barang_id, $qty_int, $catatan, $created_by);
+        $stmt->bind_param("iiidsi", $klinik_id, $user_hc_id, $barang_id, $qty_oper, $catatan, $created_by);
         $stmt->execute();
 
         $stmt = $conn->prepare("INSERT INTO stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by)");
-        $qty_dec = (float)$qty_int;
-        $stmt->bind_param("iiidi", $barang_id, $user_hc_id, $klinik_id, $qty_dec, $created_by);
+        $stmt->bind_param("iiidi", $barang_id, $user_hc_id, $klinik_id, $qty_oper, $created_by);
         $stmt->execute();
         $count++;
     }

@@ -16,10 +16,12 @@ $stmt = $conn->prepare("
     SELECT 
         pb.*,
         k.nama_klinik,
-        u_created.nama_lengkap as created_by_name
+        u_created.nama_lengkap as created_by_name,
+        u_hc.nama_lengkap as hc_name
     FROM pemakaian_bhp pb
     LEFT JOIN klinik k ON pb.klinik_id = k.id
     LEFT JOIN users u_created ON pb.created_by = u_created.id
+    LEFT JOIN users u_hc ON pb.user_hc_id = u_hc.id
     WHERE pb.id = ?
 ");
 $stmt->bind_param("i", $id);
@@ -100,6 +102,15 @@ $details = $stmt->get_result();
                         <span class="info-label">Unit/Klinik</span>
                         <span class="info-value"><?= htmlspecialchars($header['nama_klinik'] ?? '-') ?></span>
                     </div>
+                    <?php if (($header['jenis_pemakaian'] ?? '') !== 'klinik'): ?>
+                    <div class="info-item">
+                        <span class="info-label">Petugas HC</span>
+                        <span class="info-value">
+                            <i class="fas fa-user-nurse text-muted me-1"></i>
+                            <?= htmlspecialchars($header['hc_name'] ?? '-') ?>
+                        </span>
+                    </div>
+                    <?php endif; ?>
                     <div class="info-item">
                         <span class="info-label">Dibuat Oleh</span>
                         <span class="info-value">

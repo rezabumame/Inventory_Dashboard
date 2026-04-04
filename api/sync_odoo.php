@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/odoo.php';
 require_once __DIR__ . '/../config/settings.php';
 require_once __DIR__ . '/odoo_rpc_client.php';
@@ -9,9 +10,15 @@ header('Content-Type: application/json');
 
 // Allow internal scheduler token
 $internalToken = $_SERVER['HTTP_X_INTERNAL_TOKEN'] ?? '';
-$sync_trigger = ($internalToken !== '' && $internalToken === ODOO_SYNC_SYSTEM_TOKEN) ? 'auto' : 'manual';
+$dbToken = trim((string)get_setting('odoo_sync_token', ''));
+$okInternal = false;
+if ($internalToken !== '') {
+    if (ODOO_SYNC_SYSTEM_TOKEN !== '' && hash_equals(ODOO_SYNC_SYSTEM_TOKEN, $internalToken)) $okInternal = true;
+    if (!$okInternal && $dbToken !== '' && hash_equals($dbToken, $internalToken)) $okInternal = true;
+}
+$sync_trigger = $okInternal ? 'auto' : 'manual';
 $sync_started_at = microtime(true);
-if (empty($internalToken) || $internalToken !== ODOO_SYNC_SYSTEM_TOKEN) {
+if (!$okInternal) {
     if (!isset($_SESSION['user_id'])) {
         http_response_code(401);
         echo json_encode(['success' => false, 'message' => 'Unauthorized']);
@@ -22,6 +29,7 @@ if (empty($internalToken) || $internalToken !== ODOO_SYNC_SYSTEM_TOKEN) {
         echo json_encode(['success' => false, 'message' => 'Forbidden']);
         exit;
     }
+    require_csrf();
 }
 
 function get_rpc_config() {
@@ -61,21 +69,62 @@ function lark_webhook_url() {
     return $url;
 }
 
-function post_lark_text($text) {
+function lark_send_payload(string $payload, int $timeout_sec = 8): bool {
     $url = lark_webhook_url();
-    if ($url === '') return;
-    $payload = json_encode([
-        'msg_type' => 'text',
-        'content' => ['text' => $text]
-    ]);
+    if ($url === '') return false;
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
-    curl_exec($ch);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout_sec);
+    $resp = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    if ($resp === false || $code < 200 || $code >= 300) return false;
+    $j = json_decode((string)$resp, true);
+    if (!is_array($j)) return true;
+    if (array_key_exists('code', $j)) return (int)$j['code'] === 0;
+    if (array_key_exists('StatusCode', $j)) return (int)$j['StatusCode'] === 0;
+    return true;
+}
+
+function post_lark_post_lines(array $lines, array $bold_line_indexes = []) {
+    $content = [];
+    foreach ($lines as $i => $line) {
+        $line = (string)$line;
+        if ($line === '') $line = ' ';
+        $el = ['tag' => 'text', 'text' => $line];
+        if (in_array($i, $bold_line_indexes, true)) $el['style'] = ['bold'];
+        $content[] = [$el];
+    }
+
+    $payload = json_encode([
+        'msg_type' => 'post',
+        'content' => [
+            'post' => [
+                'zh_cn' => [
+                    'title' => 'Sync Odoo',
+                    'content' => $content
+                ]
+            ]
+        ]
+    ]);
+    if (!is_string($payload) || $payload === '') {
+        post_lark_text(implode("\n", $lines));
+        return;
+    }
+    $ok = lark_send_payload($payload, 8);
+    if (!$ok) post_lark_text(implode("\n", $lines));
+}
+
+function post_lark_text($text) {
+    $payload = json_encode([
+        'msg_type' => 'text',
+        'content' => ['text' => $text]
+    ]);
+    if (!is_string($payload) || $payload === '') return;
+    lark_send_payload($payload, 8);
 }
 
 function mirror_stats(mysqli $conn): array {
@@ -112,8 +161,55 @@ function mirror_stats(mysqli $conn): array {
     return $stats;
 }
 
+function loc_candidates(string $code): array {
+    $code = trim($code);
+    if ($code === '') return [];
+    $cand = [$code];
+    if (!preg_match('/\/Stock$/i', $code)) $cand[] = $code . '/Stock';
+    if (!preg_match('/-Stock$/i', $code)) $cand[] = $code . '-Stock';
+    if (!preg_match('/ Stock$/i', $code)) $cand[] = $code . ' Stock';
+    if (preg_match('/\/Stock$/i', $code)) $cand[] = preg_replace('/\/Stock$/i', '', $code);
+    $seen = [];
+    $out = [];
+    foreach ($cand as $c) {
+        $k = strtolower($c);
+        if (isset($seen[$k])) continue;
+        $seen[$k] = true;
+        $out[] = $c;
+    }
+    return $out;
+}
+
+function build_loc_group_map(mysqli $conn): array {
+    $map = [];
+    $res = $conn->query("SELECT nama_klinik, kode_klinik, kode_homecare FROM klinik WHERE status = 'active'");
+    while ($res && ($row = $res->fetch_assoc())) {
+        $nm = trim((string)($row['nama_klinik'] ?? ''));
+        if ($nm === '') $nm = 'Klinik';
+        $kk = trim((string)($row['kode_klinik'] ?? ''));
+        $kh = trim((string)($row['kode_homecare'] ?? ''));
+        if ($kk !== '') {
+            foreach (loc_candidates($kk) as $c) $map[$c] = $nm;
+        }
+        if ($kh !== '') {
+            foreach (loc_candidates($kh) as $c) $map[$c] = $nm . " (HC)";
+        }
+    }
+    $gudang = trim((string)get_setting('odoo_location_gudang_utama', ''));
+    if ($gudang !== '') {
+        foreach (loc_candidates($gudang) as $c) $map[$c] = 'Gudang Utama';
+    }
+    return $map;
+}
+
 function fmt_dec($n, $digits = 4): string {
     return number_format((float)$n, $digits, '.', '');
+}
+
+function fmt_id_qty($n): string {
+    $n = (float)$n;
+    if (abs($n - round($n)) < 0.00005) return number_format($n, 0, ',', '.');
+    return rtrim(rtrim(number_format($n, 1, ',', '.'), '0'), ',');
 }
 
 function fmt_ts($ts): string {
@@ -160,6 +256,125 @@ function build_diff_lines(array $before, array $after, int $limit = 8): array {
     return $lines;
 }
 
+function build_diff_lines_compact(array $before, array $after, int $limit = 8, float $threshold = 0.0001): array {
+    $before_loc = $before['by_loc'] ?? [];
+    $after_loc = $after['by_loc'] ?? [];
+    $locs = array_values(array_unique(array_merge(array_keys($before_loc), array_keys($after_loc))));
+    $deltas = [];
+    foreach ($locs as $loc) {
+        $b = $before_loc[$loc] ?? ['rows' => 0, 'qty' => 0];
+        $a = $after_loc[$loc] ?? ['rows' => 0, 'qty' => 0];
+        $dq = (float)$a['qty'] - (float)$b['qty'];
+        $dr = (int)$a['rows'] - (int)$b['rows'];
+        if (abs($dq) < $threshold && $dr === 0) continue;
+        $deltas[] = ['loc' => $loc, 'dq' => $dq, 'dr' => $dr, 'b' => $b, 'a' => $a];
+    }
+    usort($deltas, function ($x, $y) {
+        $ax = abs((float)$x['dq']);
+        $ay = abs((float)$y['dq']);
+        if ($ax === $ay) return abs((int)$y['dr']) <=> abs((int)$x['dr']);
+        return $ay <=> $ax;
+    });
+    $lines = [];
+    $take = array_slice($deltas, 0, max(0, $limit));
+    foreach ($take as $d) {
+        $bq = fmt_id_qty($d['b']['qty'] ?? 0);
+        $aq = fmt_id_qty($d['a']['qty'] ?? 0);
+        $dq = fmt_id_qty($d['dq'] ?? 0);
+        $br = (int)($d['b']['rows'] ?? 0);
+        $ar = (int)($d['a']['rows'] ?? 0);
+        $dr = (int)($d['dr'] ?? 0);
+        $dq_s = ($d['dq'] ?? 0) >= 0 ? ('+' . $dq) : $dq;
+        $dr_s = $dr >= 0 ? ('+' . $dr) : (string)$dr;
+        $lines[] = "- {$d['loc']}: qty {$bq} → {$aq} ({$dq_s}), rows {$br} → {$ar} ({$dr_s})";
+    }
+    return $lines;
+}
+
+function build_diff_grouped_lines_compact(array $before, array $after, array $loc_group_map, int $limit = 8, float $threshold = 0.0001): array {
+    $before_loc = $before['by_loc'] ?? [];
+    $after_loc = $after['by_loc'] ?? [];
+    $locs = array_values(array_unique(array_merge(array_keys($before_loc), array_keys($after_loc))));
+    $deltas = [];
+    foreach ($locs as $loc) {
+        $b = $before_loc[$loc] ?? ['rows' => 0, 'qty' => 0];
+        $a = $after_loc[$loc] ?? ['rows' => 0, 'qty' => 0];
+        $dq = (float)$a['qty'] - (float)$b['qty'];
+        $dr = (int)$a['rows'] - (int)$b['rows'];
+        if (abs($dq) < $threshold && $dr === 0) continue;
+        $deltas[] = ['loc' => $loc, 'dq' => $dq, 'dr' => $dr, 'b' => $b, 'a' => $a];
+    }
+    usort($deltas, function ($x, $y) {
+        $ax = abs((float)$x['dq']);
+        $ay = abs((float)$y['dq']);
+        if ($ax === $ay) return abs((int)$y['dr']) <=> abs((int)$x['dr']);
+        return $ay <=> $ax;
+    });
+
+    $take = array_slice($deltas, 0, max(0, $limit));
+    $groups = [];
+    $order = [];
+    foreach ($take as $d) {
+        $loc = (string)($d['loc'] ?? '');
+        $g = (string)($loc_group_map[$loc] ?? 'Lainnya');
+        if (!isset($groups[$g])) {
+            $groups[$g] = [];
+            $order[] = $g;
+        }
+        $bq = fmt_id_qty($d['b']['qty'] ?? 0);
+        $aq = fmt_id_qty($d['a']['qty'] ?? 0);
+        $dq = fmt_id_qty($d['dq'] ?? 0);
+        $br = (int)($d['b']['rows'] ?? 0);
+        $ar = (int)($d['a']['rows'] ?? 0);
+        $dr = (int)($d['dr'] ?? 0);
+        $dq_s = ($d['dq'] ?? 0) >= 0 ? ('+' . $dq) : $dq;
+        $dr_s = $dr >= 0 ? ('+' . $dr) : (string)$dr;
+        $groups[$g][] = "- {$loc}: qty {$bq} → {$aq} ({$dq_s}), rows {$br} → {$ar} ({$dr_s})";
+    }
+
+    $lines = [];
+    $bold = [];
+    foreach ($order as $g) {
+        if (!empty($lines)) $lines[] = "";
+        $bold[] = count($lines);
+        $lines[] = $g;
+        foreach ($groups[$g] as $ln) $lines[] = $ln;
+    }
+    return ['lines' => $lines, 'bold' => $bold];
+}
+
+function build_group_summary_lines(array $stats_after, array $loc_group_map, bool $hc, int $limit = 12): array {
+    $by_loc = $stats_after['by_loc'] ?? [];
+    $groups = [];
+    foreach ($by_loc as $loc => $info) {
+        $g = (string)($loc_group_map[$loc] ?? '');
+        if ($g === '') $g = 'Lainnya';
+        $is_hc = (stripos($g, '(HC)') !== false);
+        if ($hc !== $is_hc) continue;
+        if (!isset($groups[$g])) $groups[$g] = ['rows' => 0, 'qty' => 0.0, 'last' => ''];
+        $groups[$g]['rows'] += (int)($info['rows'] ?? 0);
+        $groups[$g]['qty'] += (float)($info['qty'] ?? 0);
+        $lu = (string)($info['last_update'] ?? '');
+        if ($lu !== '' && ($groups[$g]['last'] === '' || strtotime($lu) > strtotime($groups[$g]['last']))) {
+            $groups[$g]['last'] = $lu;
+        }
+    }
+    uasort($groups, function($a, $b) {
+        $qa = abs((float)($a['qty'] ?? 0));
+        $qb = abs((float)($b['qty'] ?? 0));
+        if ($qa === $qb) return (int)($b['rows'] ?? 0) <=> (int)($a['rows'] ?? 0);
+        return $qb <=> $qa;
+    });
+    $lines = [];
+    $count = 0;
+    foreach ($groups as $name => $agg) {
+        $lines[] = "- {$name}: rows " . (int)$agg['rows'] . ", qty " . fmt_id_qty($agg['qty'] ?? 0) . ", last " . fmt_ts($agg['last'] ?? '');
+        $count++;
+        if ($count >= $limit) break;
+    }
+    return $lines;
+}
+
 function ensure_column_exists($table, $column, $definition) {
     global $conn;
     $t = $conn->real_escape_string($table);
@@ -181,33 +396,7 @@ function ensure_index_exists($table, $indexName, $createSql) {
 }
 
 try {
-    ensure_column_exists('barang', 'odoo_product_id', 'VARCHAR(64) NULL');
-    ensure_column_exists('barang', 'barcode', 'VARCHAR(64) NULL');
-    ensure_column_exists('barang', 'uom', 'VARCHAR(64) NULL');
-
-    $conn->query("
-        CREATE TABLE IF NOT EXISTS stock_mirror (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            odoo_product_id VARCHAR(64) NOT NULL,
-            kode_barang VARCHAR(64) NOT NULL,
-            location_code VARCHAR(100) NOT NULL,
-            qty DECIMAL(18,4) NOT NULL DEFAULT 0,
-            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_loc_prod (odoo_product_id, location_code),
-            KEY idx_loc_code (location_code, kode_barang)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-    ");
     $mirror_before = mirror_stats($conn);
-
-    // Ensure stable upsert keys when possible
-    $dup_odoo = $conn->query("SELECT odoo_product_id FROM barang WHERE odoo_product_id IS NOT NULL AND odoo_product_id <> '' GROUP BY odoo_product_id HAVING COUNT(*) > 1 LIMIT 1");
-    if ($dup_odoo && $dup_odoo->num_rows === 0) {
-        ensure_index_exists('barang', 'uniq_odoo_product_id', "ALTER TABLE barang ADD UNIQUE KEY uniq_odoo_product_id (odoo_product_id)");
-    }
-    $dup_kode = $conn->query("SELECT kode_barang FROM barang WHERE kode_barang IS NOT NULL AND kode_barang <> '' GROUP BY kode_barang HAVING COUNT(*) > 1 LIMIT 1");
-    if ($dup_kode && $dup_kode->num_rows === 0) {
-        ensure_index_exists('barang', 'uniq_kode_barang', "ALTER TABLE barang ADD UNIQUE KEY uniq_kode_barang (kode_barang)");
-    }
 
     // Upsert products into barang mirror
     $ins_prod = $conn->prepare("
@@ -253,6 +442,36 @@ try {
             exit;
         }
 
+        // 1. Pull ALL active products to populate Database Barang (especially from main warehouse categories)
+        // This ensures the local 'barang' table is complete even for items with zero stock.
+        $all_products = odoo_rpc_execute_kw($rpc_url, $rpc_db, $uid, $rpc_pass, 'product.product', 'search_read', 
+            [[['active', '=', true], ['type', 'in', ['product', 'consu']]]], 
+            ['fields' => ['id', 'default_code', 'name', 'barcode', 'uom_id']]
+        );
+        
+        if (is_array($all_products)) {
+            $conn->begin_transaction();
+            foreach ($all_products as $p) {
+                $odoo_id = (string)($p['id'] ?? '');
+                if ($odoo_id === '') continue;
+                $code = (string)($p['default_code'] ?? '');
+                $name = (string)($p['name'] ?? '');
+                $barcode = (string)($p['barcode'] ?? '');
+                $uom = '';
+                if (isset($p['uom_id']) && is_array($p['uom_id']) && count($p['uom_id']) >= 2) {
+                    $uom = (string)$p['uom_id'][1];
+                }
+                if ($code === '') $code = $barcode !== '' ? $barcode : ($name !== '' ? $name : $odoo_id);
+                $satuan = $uom !== '' ? $uom : 'Unit';
+
+                $ins_prod->bind_param("ssssss", $odoo_id, $code, $name, $satuan, $uom, $barcode);
+                $ins_prod->execute();
+                $products_count++;
+            }
+            $conn->commit();
+        }
+
+        // 2. Pull stock per location and refresh snapshot in mirror
         foreach ($locations as $loc) {
             $loc_id = odoo_find_location_id($rpc_url, $rpc_db, $uid, $rpc_pass, $loc);
             if (!$loc_id) {
@@ -330,24 +549,35 @@ try {
         $rows_a = (int)($mirror_after['total_rows'] ?? 0);
         $qty_b = (float)($mirror_before['total_qty'] ?? 0);
         $qty_a = (float)($mirror_after['total_qty'] ?? 0);
-        $dq = fmt_dec($qty_a - $qty_b);
+        $dq = fmt_id_qty($qty_a - $qty_b);
         $dr = $rows_a - $rows_b;
-        $dq_s = ($qty_a - $qty_b) >= 0 ? ('+' . $dq) : $dq;
         $dr_s = $dr >= 0 ? ('+' . $dr) : (string)$dr;
         $lines = [];
         $lines[] = "[SYNC ODOO][RPC][" . strtoupper($sync_trigger) . "] Selesai " . date('d M Y H:i');
         $lines[] = "Durasi: {$dur}s";
-        $lines[] = "Produk: $products_count";
+        $lines[] = "Produk: {$products_count}";
         $lines[] = "Lokasi target: " . count($locations) . " (skip: " . count($skipped_locations) . ")";
-        $lines[] = "Rows mirror: $rows_b → $rows_a ($dr_s)";
-        $lines[] = "Total qty mirror: " . fmt_dec($qty_b) . " → " . fmt_dec($qty_a) . " ($dq_s)";
+        $lines[] = "Rows mirror: {$rows_b} → {$rows_a} ({$dr_s})";
+        $lines[] = "Total qty mirror: " . fmt_id_qty($qty_b) . " → " . fmt_id_qty($qty_a) . " (" . (($qty_a - $qty_b) >= 0 ? '+' : '') . $dq . ")";
         $lines[] = "Last update mirror: " . fmt_ts($mirror_before['last_update'] ?? '') . " → " . fmt_ts($mirror_after['last_update'] ?? '');
         if (!empty($errors)) $lines[] = "Error lokasi: " . count($errors);
-        $diff_lines = build_diff_lines($mirror_before, $mirror_after, 8);
+        $loc_group_map = build_loc_group_map($conn);
+        $diff_pack = build_diff_grouped_lines_compact($mirror_before, $mirror_after, $loc_group_map, 12, 0.0001);
+        $diff_lines = $diff_pack['lines'] ?? [];
+        $diff_bold = $diff_pack['bold'] ?? [];
         if (!empty($diff_lines)) {
+            $lines[] = "";
             $lines[] = "Top perubahan lokasi:";
             $lines = array_merge($lines, $diff_lines);
         }
+        $lines[] = "";
+        $lines[] = "Ringkasan per Klinik:";
+        $sum_klinik = build_group_summary_lines($mirror_after, $loc_group_map, false, 12);
+        if (!empty($sum_klinik)) $lines = array_merge($lines, $sum_klinik);
+        $lines[] = "";
+        $lines[] = "Ringkasan Homecare:";
+        $sum_hc = build_group_summary_lines($mirror_after, $loc_group_map, true, 12);
+        if (!empty($sum_hc)) $lines = array_merge($lines, $sum_hc);
         post_lark_text(implode("\n", $lines));
         exit;
     }
@@ -420,23 +650,34 @@ try {
     $rows_a = (int)($mirror_after['total_rows'] ?? 0);
     $qty_b = (float)($mirror_before['total_qty'] ?? 0);
     $qty_a = (float)($mirror_after['total_qty'] ?? 0);
-    $dq = fmt_dec($qty_a - $qty_b);
+    $dq = fmt_id_qty($qty_a - $qty_b);
     $dr = $rows_a - $rows_b;
-    $dq_s = ($qty_a - $qty_b) >= 0 ? ('+' . $dq) : $dq;
     $dr_s = $dr >= 0 ? ('+' . $dr) : (string)$dr;
     $lines = [];
     $lines[] = "[SYNC ODOO][API][" . strtoupper($sync_trigger) . "] Selesai " . date('d M Y H:i');
     $lines[] = "Durasi: {$dur}s";
-    $lines[] = "Produk: $products_count";
+    $lines[] = "Produk: {$products_count}";
     $lines[] = "Lokasi target: " . count($locations);
-    $lines[] = "Rows mirror: $rows_b → $rows_a ($dr_s)";
-    $lines[] = "Total qty mirror: " . fmt_dec($qty_b) . " → " . fmt_dec($qty_a) . " ($dq_s)";
+    $lines[] = "Rows mirror: {$rows_b} → {$rows_a} ({$dr_s})";
+    $lines[] = "Total qty mirror: " . fmt_id_qty($qty_b) . " → " . fmt_id_qty($qty_a) . " (" . (($qty_a - $qty_b) >= 0 ? '+' : '') . $dq . ")";
     $lines[] = "Last update mirror: " . fmt_ts($mirror_before['last_update'] ?? '') . " → " . fmt_ts($mirror_after['last_update'] ?? '');
-    $diff_lines = build_diff_lines($mirror_before, $mirror_after, 8);
+    $loc_group_map = build_loc_group_map($conn);
+    $diff_pack = build_diff_grouped_lines_compact($mirror_before, $mirror_after, $loc_group_map, 12, 0.0001);
+    $diff_lines = $diff_pack['lines'] ?? [];
+    $diff_bold = $diff_pack['bold'] ?? [];
     if (!empty($diff_lines)) {
+        $lines[] = "";
         $lines[] = "Top perubahan lokasi:";
         $lines = array_merge($lines, $diff_lines);
     }
+    $lines[] = "";
+    $lines[] = "Ringkasan per Klinik:";
+    $sum_klinik = build_group_summary_lines($mirror_after, $loc_group_map, false, 12);
+    if (!empty($sum_klinik)) $lines = array_merge($lines, $sum_klinik);
+    $lines[] = "";
+    $lines[] = "Ringkasan Homecare:";
+    $sum_hc = build_group_summary_lines($mirror_after, $loc_group_map, true, 12);
+    if (!empty($sum_hc)) $lines = array_merge($lines, $sum_hc);
     post_lark_text(implode("\n", $lines));
 } catch (Exception $e) {
     http_response_code(500);

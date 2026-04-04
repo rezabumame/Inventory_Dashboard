@@ -1,9 +1,9 @@
 <?php
-check_role(['super_admin', 'admin_gudang', 'admin_klinik']);
+check_role(['super_admin', 'admin_klinik']);
 
 $role = (string)($_SESSION['role'] ?? '');
 $user_klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
-$can_choose_klinik = in_array($role, ['super_admin', 'admin_gudang'], true);
+$can_choose_klinik = in_array($role, ['super_admin'], true);
 
 $message = '';
 
@@ -13,6 +13,7 @@ if (function_exists('ensure_enum_value')) {
 $conn->query("UPDATE users SET role = 'petugas_hc' WHERE role = '' AND klinik_id IS NOT NULL AND username IS NOT NULL AND username <> ''");
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     $action = (string)($_POST['action'] ?? '');
     $id = (int)($_POST['id'] ?? 0);
     $klinik_id = (int)($_POST['klinik_id'] ?? 0);
@@ -97,10 +98,15 @@ if ($can_choose_klinik) {
 }
 
 $filter_klinik_id = $can_choose_klinik ? (int)($_GET['klinik_id'] ?? 0) : $user_klinik_id;
+$search_query = trim((string)($_GET['q'] ?? ''));
 if (!$can_choose_klinik) $filter_klinik_id = $user_klinik_id;
 
 $where = "1=1";
 if ($filter_klinik_id > 0) $where .= " AND u.klinik_id = " . (int)$filter_klinik_id;
+if ($search_query !== '') {
+    $sq = $conn->real_escape_string($search_query);
+    $where .= " AND (u.nama_lengkap LIKE '%$sq%' OR u.username LIKE '%$sq%')";
+}
 
 $petugas = [];
 $res = $conn->query("
@@ -159,6 +165,13 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
                     </select>
                 </div>
                 <?php endif; ?>
+                <div class="col-md-6">
+                    <label class="form-label fw-bold small text-muted mb-1">Cari Petugas</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" name="q" placeholder="Nama atau username..." value="<?= htmlspecialchars($search_query) ?>">
+                        <button class="btn btn-primary" type="submit"><i class="fas fa-search"></i></button>
+                    </div>
+                </div>
             </form>
         </div>
     </div>
@@ -198,17 +211,21 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
                                         <?php endif; ?>
                                     </td>
                                     <td class="text-end">
+                                        <?php 
+                                            $data_json = htmlspecialchars(json_encode([
+                                                'id' => (int)$p['id'],
+                                                'klinik_id' => (int)$p['klinik_id'],
+                                                'nama_lengkap' => (string)$p['nama_lengkap'],
+                                                'username' => (string)$p['username'],
+                                                'status' => (string)$p['status']
+                                            ], JSON_UNESCAPED_UNICODE), ENT_QUOTES);
+                                        ?>
                                         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalPetugasHC"
-                                            onclick="openPetugasModal({
-                                                id: <?= (int)$p['id'] ?>,
-                                                klinik_id: <?= (int)$p['klinik_id'] ?>,
-                                                nama_lengkap: <?= json_encode((string)$p['nama_lengkap'], JSON_UNESCAPED_UNICODE) ?>,
-                                                username: <?= json_encode((string)$p['username'], JSON_UNESCAPED_UNICODE) ?>,
-                                                status: <?= json_encode((string)$p['status'], JSON_UNESCAPED_UNICODE) ?>
-                                            })">
+                                            onclick="openPetugasModal(<?= $data_json ?>)">
                                             <i class="fas fa-edit"></i>
                                         </button>
                                         <form method="POST" class="d-inline">
+                                            <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
                                             <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Hapus petugas ini?')">
@@ -229,24 +246,25 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
 <div class="modal fade" id="modalPetugasHC" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow">
-            <div class="modal-header border-0 text-white" style="background-color:#204EAB;">
-                <h5 class="modal-title fw-bold" id="modalPetugasTitle"><i class="fas fa-user-nurse me-2"></i>Petugas HC</h5>
+            <div class="modal-header border-0" style="background-color:#204EAB;">
+                <h5 class="modal-title fw-bold text-white" id="modalPetugasTitle"><i class="fas fa-user-nurse me-2"></i>Petugas HC</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form method="POST" class="modal-body bg-light">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <input type="hidden" name="action" value="save">
                 <input type="hidden" name="id" id="petugas_id" value="">
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label class="form-label fw-bold small">Klinik</label>
-                        <select name="klinik_id" id="petugas_klinik_id" class="form-select" <?= $can_choose_klinik ? '' : 'readonly disabled' ?> required>
+                        <select name="klinik_id" id="petugas_klinik_id" class="form-select" <?= $can_choose_klinik ? '' : 'disabled' ?> required>
                             <option value="">- Pilih Klinik -</option>
                             <?php foreach ($kliniks as $k): ?>
                                 <option value="<?= (int)$k['id'] ?>"><?= htmlspecialchars($k['nama_klinik']) ?></option>
                             <?php endforeach; ?>
                         </select>
                         <?php if (!$can_choose_klinik): ?>
-                            <input type="hidden" name="klinik_id" value="<?= (int)$user_klinik_id ?>">
+                            <input type="hidden" name="klinik_id" id="petugas_klinik_id_hidden" value="<?= (int)$user_klinik_id ?>">
                         <?php endif; ?>
                     </div>
                     <div class="col-md-6">
@@ -261,16 +279,13 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
                         <label class="form-label fw-bold small">Password</label>
                         <input type="password" name="password" id="petugas_password" class="form-control" placeholder="kosongkan jika tidak diubah">
                     </div>
-                    <div class="col-md-8">
-                        <label class="form-label fw-bold small">Mirror HC</label>
-                        <input type="text" class="form-control bg-light" value="Mengikuti Klinik.kode_homecare" readonly>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-bold small">Status</label>
-                        <select name="status" id="petugas_status" class="form-select">
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold small d-block">Status</label>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" id="petugas_status_switch" checked onchange="toggleStatus(this)">
+                            <label class="form-check-label fw-semibold" for="petugas_status_switch" id="status_label">Active</label>
+                            <input type="hidden" name="status" id="petugas_status_hidden" value="active">
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer border-0 px-0 pb-0">
@@ -283,15 +298,75 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
 </div>
 
 <script>
+function toggleStatus(el) {
+    const hidden = document.getElementById('petugas_status_hidden');
+    const label = document.getElementById('status_label');
+    if (el.checked) {
+        hidden.value = 'active';
+        label.innerText = 'Active';
+        label.classList.replace('text-secondary', 'text-success');
+    } else {
+        hidden.value = 'inactive';
+        label.innerText = 'Inactive';
+        label.classList.replace('text-success', 'text-secondary');
+    }
+}
+
 function openPetugasModal(data) {
-    document.getElementById('petugas_id').value = data && data.id ? data.id : '';
+    // Reset or set data based on whether data is provided (edit vs add)
+    document.getElementById('petugas_id').value = (data && data.id) ? data.id : '';
+    
     var k = document.getElementById('petugas_klinik_id');
-    if (k && data && data.klinik_id) k.value = String(data.klinik_id);
-    document.getElementById('petugas_nama').value = data && data.nama_lengkap ? data.nama_lengkap : '';
-    document.getElementById('petugas_username').value = data && data.username ? data.username : '';
-    document.getElementById('petugas_password').value = '';
-    document.getElementById('petugas_status').value = data && data.status ? data.status : 'active';
+    var k_hidden = document.getElementById('petugas_klinik_id_hidden');
+    
+    if (k) {
+        // Clear previous selection
+        k.value = "";
+        
+        const targetKlinikId = (data && data.klinik_id) ? String(data.klinik_id) : "";
+        
+        if (targetKlinikId !== "") {
+            // Set value and try to ensure it's visually selected
+            k.value = targetKlinikId;
+            
+            // If the value isn't matching (e.g. clinic not in options), k.value will be empty
+            // In that case, we might need a backup way or just let it be empty
+        }
+        
+        // Also update hidden field if exists (for non-super-admins)
+        if (k_hidden) {
+            k_hidden.value = targetKlinikId || "<?= (int)$user_klinik_id ?>";
+        }
+    }
+    
+    document.getElementById('petugas_nama').value = (data && data.nama_lengkap) ? data.nama_lengkap : '';
+    document.getElementById('petugas_username').value = (data && data.username) ? data.username : '';
+    document.getElementById('petugas_password').value = ''; // Always clear password field
+    
+    // Status Switch setup
+    const status = (data && data.status) ? data.status : 'active';
+    const switchEl = document.getElementById('petugas_status_switch');
+    const hidden = document.getElementById('petugas_status_hidden');
+    const label = document.getElementById('status_label');
+    
+    if (status === 'active') {
+        switchEl.checked = true;
+        hidden.value = 'active';
+        label.innerText = 'Active';
+        label.classList.remove('text-secondary');
+        label.classList.add('text-success');
+    } else {
+        switchEl.checked = false;
+        hidden.value = 'inactive';
+        label.innerText = 'Inactive';
+        label.classList.remove('text-success');
+        label.classList.add('text-secondary');
+    }
+    
+    // Update modal title
     var title = document.getElementById('modalPetugasTitle');
-    if (title) title.innerHTML = '<i class="fas fa-user-nurse me-2"></i>' + (data && data.id ? 'Edit Petugas HC' : 'Tambah Petugas HC');
+    if (title) {
+        title.innerHTML = '<i class="fas fa-user-nurse me-2"></i>' + (data && data.id ? 'Edit Petugas HC' : 'Tambah Petugas HC');
+    }
 }
 </script>

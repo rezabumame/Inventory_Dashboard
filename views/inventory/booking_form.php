@@ -1,6 +1,9 @@
 <?php
 check_role(['cs', 'super_admin']);
 
+$_SESSION['error'] = 'Gunakan halaman Booking (tombol Booking Baru) untuk membuat booking. Halaman booking_create sudah dinonaktifkan agar perhitungan stok dan security konsisten.';
+redirect('index.php?page=booking');
+
 function ensure_column_exists($table, $column, $definition) {
     global $conn;
     $t = $conn->real_escape_string($table);

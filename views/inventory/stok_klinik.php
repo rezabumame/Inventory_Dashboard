@@ -50,31 +50,6 @@ if ($selected_klinik) {
     }
 }
 
-$conn->query("
-    CREATE TABLE IF NOT EXISTS stock_mirror (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        odoo_product_id VARCHAR(64) NOT NULL,
-        kode_barang VARCHAR(64) NOT NULL,
-        location_code VARCHAR(100) NOT NULL,
-        qty DECIMAL(18,4) NOT NULL DEFAULT 0,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_loc_prod (odoo_product_id, location_code)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
-
-$conn->query("
-    CREATE TABLE IF NOT EXISTS barang_uom_conversion (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        barang_id INT NOT NULL,
-        from_uom VARCHAR(20) NULL,
-        to_uom VARCHAR(20) NULL,
-        multiplier DECIMAL(18,8) NOT NULL DEFAULT 1,
-        note VARCHAR(255) NULL,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_barang (barang_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
-
 function fmt_qty($v) {
     $n = (float)($v ?? 0);
     if (abs($n - round($n)) < 0.00005) return (string)(int)round($n);
@@ -175,21 +150,21 @@ if ($active_tab == 'stok') {
                 if ($res_one && $res_one->num_rows > 0) $selected_klinik_row = $res_one->fetch_assoc();
             }
 
-            $kode_klinik = $selected_klinik_row['kode_klinik'] ?? '';
-            $kode_homecare = $selected_klinik_row['kode_homecare'] ?? '';
+            $kode_klinik = trim((string)($selected_klinik_row['kode_klinik'] ?? ''));
+            $kode_homecare = trim((string)($selected_klinik_row['kode_homecare'] ?? ''));
             $kode_klinik_esc = $conn->real_escape_string($kode_klinik);
             $kode_homecare_esc = $conn->real_escape_string($kode_homecare);
             $last_update_text = '-';
             $last_update_klinik = '';
             $last_update_hc = '';
             if ($kode_klinik !== '') {
-                $res_uk = $conn->query("SELECT MAX(updated_at) as last_update FROM stock_mirror WHERE location_code = '$kode_klinik_esc'");
+                $res_uk = $conn->query("SELECT MAX(updated_at) as last_update FROM stock_mirror WHERE TRIM(location_code) = '$kode_klinik_esc'");
                 if ($res_uk && $res_uk->num_rows > 0) {
                     $urow = $res_uk->fetch_assoc();
                     if (!empty($urow['last_update'])) $last_update_klinik = (string)$urow['last_update'];
                 }
                 if ($show_hc && $kode_homecare !== '') {
-                    $res_uh = $conn->query("SELECT MAX(updated_at) as last_update FROM stock_mirror WHERE location_code = '$kode_homecare_esc'");
+                    $res_uh = $conn->query("SELECT MAX(updated_at) as last_update FROM stock_mirror WHERE TRIM(location_code) = '$kode_homecare_esc'");
                     if ($res_uh && $res_uh->num_rows > 0) {
                         $urow = $res_uh->fetch_assoc();
                         if (!empty($urow['last_update'])) $last_update_hc = (string)$urow['last_update'];
@@ -212,22 +187,26 @@ if ($active_tab == 'stok') {
                     $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at <= '" . $conn->real_escape_string($filter_end_ts) . "'";
                     $filter_ts_hc = $filter_ts_klinik;
                 } else {
-                    $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($month_start) . "'";
-                    if ($last_update_klinik_date !== '') $filter_bp_onsite .= " AND bp.tanggal_pemeriksaan > '" . $conn->real_escape_string($last_update_klinik_date) . "'";
+                    if ($last_update_klinik !== '') {
+                        $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($month_start) . "' AND bp.created_at > '" . $conn->real_escape_string($last_update_klinik) . "'";
+                        $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "' AND pb.created_at > '" . $conn->real_escape_string($last_update_klinik) . "'";
+                        $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at > '" . $conn->real_escape_string($last_update_klinik) . "'";
+                    } else {
+                        $filter_bp_onsite = " AND 1=0";
+                        $filter_pb_klinik = " AND 1=0";
+                        $filter_ts_klinik = " AND 1=0";
+                    }
 
-                    $filter_bp_hc = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($month_start) . "'";
-                    if ($last_update_hc_date !== '') $filter_bp_hc .= " AND bp.tanggal_pemeriksaan > '" . $conn->real_escape_string($last_update_hc_date) . "'";
-
-                    $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "'";
-                    if ($last_update_klinik_date !== '') $filter_pb_klinik .= " AND pb.tanggal > '" . $conn->real_escape_string($last_update_klinik_date) . "'";
-
-                    $filter_pb_hc = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "'";
-                    if ($last_update_hc_date !== '') $filter_pb_hc .= " AND pb.tanggal > '" . $conn->real_escape_string($last_update_hc_date) . "'";
-
-                    $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "'";
-                    if ($last_update_klinik !== '') $filter_ts_klinik .= " AND ts.created_at > '" . $conn->real_escape_string($last_update_klinik) . "'";
-                    $filter_ts_hc = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "'";
-                    if ($last_update_hc !== '') $filter_ts_hc .= " AND ts.created_at > '" . $conn->real_escape_string($last_update_hc) . "'";
+                    if ($last_update_hc !== '') {
+                        $filter_bp_hc = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($month_start) . "' AND bp.created_at > '" . $conn->real_escape_string($last_update_hc) . "'";
+                        $filter_pb_hc = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "' AND pb.created_at > '" . $conn->real_escape_string($last_update_hc) . "'";
+                        $filter_ts_hc = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at > '" . $conn->real_escape_string($last_update_hc) . "'";
+                    } else {
+                        // Jika belum pernah sync Odoo HC, tetap hitung transaksi lokal sejak awal bulan
+                        $filter_bp_hc = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($month_start) . "'";
+                        $filter_pb_hc = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "'";
+                        $filter_ts_hc = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "'";
+                    }
                 }
 
                 $filter_pb2_klinik = str_replace("pb.", "pb2.", $filter_pb_klinik);
@@ -235,57 +214,32 @@ if ($active_tab == 'stok') {
 
                 $rb_in_transfer_sql = "0";
                 $rb_out_transfer_sql = "0";
+                $rb_in_transfer_hc_sql = "0";
+                $rb_out_transfer_hc_sql = "0";
                 $rb_sellout_klinik_sql = "0";
                 $rb_sellout_hc_sql = "0";
-                if ($is_history_date && $last_update_klinik !== '' && strtotime($filter_end_ts) < strtotime($last_update_klinik)) {
-                    $rb_ts_start = $conn->real_escape_string($filter_end_ts);
-                    $rb_ts_end = $conn->real_escape_string($last_update_klinik);
-                    $rb_ts_min = $conn->real_escape_string($month_start_ts);
-                    $rb_in_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0)
-                                            FROM transaksi_stok ts
-                                            WHERE ts.barang_id = b.id
-                                            AND ts.level = 'klinik'
-                                            AND ts.level_id = $selected_klinik_id
-                                            AND ts.tipe_transaksi = 'in'
-                                            AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')
-                                            AND ts.created_at > '$rb_ts_start'
-                                            AND ts.created_at <= '$rb_ts_end'
-                                            AND ts.created_at >= '$rb_ts_min')";
-                    $rb_out_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0)
-                                             FROM transaksi_stok ts
-                                             WHERE ts.barang_id = b.id
-                                             AND ts.level = 'klinik'
-                                             AND ts.level_id = $selected_klinik_id
-                                             AND ts.tipe_transaksi = 'out'
-                                             AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')
-                                             AND ts.created_at > '$rb_ts_start'
-                                             AND ts.created_at <= '$rb_ts_end'
-                                             AND ts.created_at >= '$rb_ts_min')";
-                    $rb_sellout_klinik_sql = "(SELECT COALESCE(SUM(pbd.qty), 0)
-                                              FROM pemakaian_bhp_detail pbd
-                                              JOIN pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
-                                              WHERE pbd.barang_id = b.id
-                                              AND pb.klinik_id = $selected_klinik_id
-                                              AND pb.jenis_pemakaian != 'hc'
-                                              AND pb.tanggal > '" . $conn->real_escape_string($filter_date) . "'
-                                              AND pb.tanggal <= '" . $conn->real_escape_string($last_update_klinik_date) . "'
-                                              AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "')";
-                }
-                if ($is_history_date && $last_update_hc !== '' && strtotime($filter_end_ts) < strtotime($last_update_hc)) {
-                    $rb_sellout_hc_sql = "(SELECT COALESCE(SUM(pbd.qty), 0)
-                                          FROM pemakaian_bhp_detail pbd
-                                          JOIN pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
-                                          WHERE pbd.barang_id = b.id
-                                          AND pb.klinik_id = $selected_klinik_id
-                                          AND pb.jenis_pemakaian = 'hc'
-                                          AND pb.tanggal > '" . $conn->real_escape_string($filter_date) . "'
-                                          AND pb.tanggal <= '" . $conn->real_escape_string($last_update_hc_date) . "'
-                                          AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "')";
+                
+                // Siapkan timestamp untuk subquery rollback (selalu siapkan jika mode history)
+                $rb_ts_start = $conn->real_escape_string($filter_end_ts);
+                $rb_ts_min = $conn->real_escape_string($month_start_ts);
+                
+                if ($is_history_date) {
+                    // Onsite Rollback SQL
+                    $rb_ts_end_k = $last_update_klinik !== '' ? $conn->real_escape_string($last_update_klinik) : $conn->real_escape_string(date('Y-m-d H:i:s'));
+                    $rb_in_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'klinik' AND ts.level_id = $selected_klinik_id AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end_k' AND ts.created_at >= '$rb_ts_min')";
+                    $rb_out_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'klinik' AND ts.level_id = $selected_klinik_id AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end_k' AND ts.created_at >= '$rb_ts_min')";
+                    $rb_sellout_klinik_sql = "(SELECT COALESCE(SUM(pbd.qty), 0) FROM pemakaian_bhp_detail pbd JOIN pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id WHERE pbd.barang_id = b.id AND pb.klinik_id = $selected_klinik_id AND TRIM(pb.jenis_pemakaian) != 'hc' AND pb.created_at > '$rb_ts_start' AND pb.created_at <= '$rb_ts_end_k' AND pb.created_at >= '$rb_ts_min')";
+
+                    // HC Rollback SQL
+                    $rb_ts_end_h = $last_update_hc !== '' ? $conn->real_escape_string($last_update_hc) : $conn->real_escape_string(date('Y-m-d H:i:s'));
+                    $rb_in_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND ts.level_id = $selected_klinik_id AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end_h' AND ts.created_at >= '$rb_ts_min')";
+                    $rb_out_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND ts.level_id = $selected_klinik_id AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end_h' AND ts.created_at >= '$rb_ts_min')";
+                    $rb_sellout_hc_sql = "(SELECT COALESCE(SUM(pbd.qty), 0) FROM pemakaian_bhp_detail pbd JOIN pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id WHERE pbd.barang_id = b.id AND pb.klinik_id = $selected_klinik_id AND TRIM(pb.jenis_pemakaian) = 'hc' AND pb.created_at > '$rb_ts_start' AND pb.created_at <= '$rb_ts_end_h' AND pb.created_at >= '$rb_ts_min')";
                 }
 
-                $union_sql = "SELECT odoo_product_id, kode_barang FROM stock_mirror WHERE location_code = '$kode_klinik_esc'";
+                $union_sql = "SELECT odoo_product_id, kode_barang FROM stock_mirror WHERE TRIM(location_code) = '$kode_klinik_esc'";
                 if ($show_hc && $kode_homecare !== '') {
-                    $union_sql .= " UNION SELECT odoo_product_id, kode_barang FROM stock_mirror WHERE location_code = '$kode_homecare_esc'";
+                    $union_sql .= " UNION SELECT odoo_product_id, kode_barang FROM stock_mirror WHERE TRIM(location_code) = '$kode_homecare_esc'";
                 }
 
                 $query = "SELECT 
@@ -298,11 +252,11 @@ if ($active_tab == 'stok') {
                             b.id as barang_id,
                             b.kode_barang as kode_barang_master,
                             COALESCE(b.nama_barang, p.kode_barang) as nama_barang,
-                            COALESCE(b.satuan, '') as satuan,
+                            COALESCE(uc.to_uom, b.satuan) as satuan,
                             COALESCE(uc.from_uom, '') as uom_odoo,
                             COALESCE(uc.multiplier, 1) as uom_multiplier,
-                            COALESCE(sm_k.qty, 0) * COALESCE(uc.multiplier, 1) as qty,
-                            COALESCE(sm_h.qty, 0) * COALESCE(uc.multiplier, 1) as stok_hc,
+                            COALESCE(sm_k.qty, 0) / NULLIF(COALESCE(uc.multiplier, 1), 0) as qty,
+                            COALESCE(sm_h.qty, 0) / NULLIF(COALESCE(uc.multiplier, 1), 0) as stok_hc,
                             (SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END), 0)
                              FROM booking_detail bd 
                              JOIN booking_pemeriksaan bp ON bd.booking_id = bp.id 
@@ -387,11 +341,13 @@ if ($active_tab == 'stok') {
                              AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc) as out_transfer_hc,
                             $rb_in_transfer_sql as rb_in_transfer,
                             $rb_out_transfer_sql as rb_out_transfer,
+                            $rb_in_transfer_hc_sql as rb_in_transfer_hc,
+                            $rb_out_transfer_hc_sql as rb_out_transfer_hc,
                             $rb_sellout_klinik_sql as rb_sellout_klinik,
                             $rb_sellout_hc_sql as rb_sellout_hc
                           FROM ($union_sql) p
-                          LEFT JOIN stock_mirror sm_k ON sm_k.odoo_product_id = p.odoo_product_id AND sm_k.location_code = '$kode_klinik_esc'
-                          LEFT JOIN stock_mirror sm_h ON sm_h.odoo_product_id = p.odoo_product_id AND sm_h.location_code = '$kode_homecare_esc'
+                          LEFT JOIN stock_mirror sm_k ON sm_k.odoo_product_id = p.odoo_product_id AND TRIM(sm_k.location_code) = '$kode_klinik_esc'
+                          LEFT JOIN stock_mirror sm_h ON sm_h.odoo_product_id = p.odoo_product_id AND TRIM(sm_h.location_code) = '$kode_homecare_esc'
                           LEFT JOIN barang b ON (b.odoo_product_id = p.odoo_product_id OR b.kode_barang = p.kode_barang)
                           LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
                           JOIN klinik k ON k.id = $selected_klinik_id
@@ -413,18 +369,14 @@ if ($active_tab == 'stok') {
                 $result = $conn->query($query);
                 while ($r = $result->fetch_assoc()) {
                     if ($is_history_date) {
-                        $r['sellout_klinik'] = 0;
-                        $r['sellout_hc'] = 0;
-                        $r['in_transfer'] = 0;
-                        $r['out_transfer'] = 0;
-                        $r['in_transfer_hc'] = 0;
-                        $r['out_transfer_hc'] = 0;
+                        // In history mode, we keep sellout/transfer for display purposes,
+                        // but they don't affect the reconstructed 'qty' (Odoo On Hand)
                     }
                     $rows[] = $r;
                     $summary_stok['total_items']++;
                     if ($is_history_date) {
                         $adj_qty = (float)($r['qty'] ?? 0) + (float)($r['rb_out_transfer'] ?? 0) - (float)($r['rb_in_transfer'] ?? 0) + (float)($r['rb_sellout_klinik'] ?? 0);
-                        $adj_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['rb_sellout_hc'] ?? 0);
+                        $adj_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['rb_out_transfer_hc'] ?? 0) - (float)($r['rb_in_transfer_hc'] ?? 0) + (float)($r['rb_sellout_hc'] ?? 0);
                         $summary_stok['total_qty'] += $adj_qty;
                         $summary_stok['total_qty_hc'] += $adj_hc;
                     } else {
@@ -474,6 +426,9 @@ if ($active_tab == 'stok') {
     .breadcrumb-item + .breadcrumb-item::before { content: "/"; }
     .refresh-btn { border-width: 2px; border-radius: 10px; padding: 0.6rem 1rem; }
     .last-update { font-size: 0.875rem; color: #6c757d; }
+    .text-sellout-hc { color: #dc3545 !important; }
+    .text-reserve-onsite { color: #ffc107 !important; }
+    .text-reserve-hc { color: #ffc107 !important; }
 </style>
 
 <!-- TAB CONTENT: STOK KLINIK -->
@@ -507,7 +462,7 @@ if ($active_tab == 'stok') {
                 </label>
                 <input type="date" name="tanggal" class="form-control" value="<?= htmlspecialchars($filter_date) ?>" min="<?= htmlspecialchars($min_filter_date) ?>" max="<?= htmlspecialchars($today_date) ?>" onchange="this.form.submit()">
             </div>
-            <?php if (!in_array($_SESSION['role'], ['cs','admin_klinik'])): ?>
+            <?php if (!in_array($_SESSION['role'], ['cs','admin_klinik','spv_klinik'])): ?>
             <div class="col-md-6">
                 <div class="d-flex flex-column align-items-end">
                     <button type="button" class="btn btn-outline-primary refresh-btn d-flex align-items-center justify-content-center gap-2" onclick="syncFromOdoo(this)" <?= $is_history_date ? 'disabled' : '' ?>>
@@ -689,86 +644,173 @@ function openStokBreakdown(barangId, namaBarang) {
         var rbe = rb.events || {};
         var pem = Array.isArray(rbe.pemakaian) ? rbe.pemakaian : [];
         var trf = Array.isArray(rbe.transfers) ? rbe.transfers : [];
+        var periodPem = Array.isArray(res.period_usage) ? res.period_usage : [];
         var reserve = res.reserve || {};
         var reserveOn = reserve.onsite || 0;
         var reserveHc = reserve.hc || 0;
         var result = res.result || {};
 
         var pemRows = pem.length ? pem.map(function(p) {
+            var jenis = (p.jenis_pemakaian === 'hc') ? '<span class="badge bg-info x-small">HC</span>' : '<span class="badge bg-light text-dark x-small border">Klinik</span>';
+            var tgl = p.tanggal || '';
+            if (p.created_at) {
+                var dt = new Date(p.created_at);
+                if (!isNaN(dt)) {
+                    var pad = function(n) { return n.toString().padStart(2, '0'); };
+                    tgl = pad(dt.getDate()) + '/' + pad(dt.getMonth()+1) + '/' + dt.getFullYear() + ' ' + pad(dt.getHours()) + ':' + pad(dt.getMinutes());
+                }
+            }
+            return '<tr><td class="ps-3">' + $('<div>').text(p.nomor_pemakaian || '').html() + '</td><td>' + $('<div>').text(tgl).html() + '</td><td>' + jenis + '</td><td class="text-end pe-3 fw-semibold">' + fmtNum(p.qty || 0) + '</td></tr>';
+        }).join('') : '<tr><td colspan="4" class="text-center text-muted py-2">Tidak ada transaksi pemakaian</td></tr>';
+
+        var periodRows = periodPem.length ? periodPem.map(function(p) {
             var jenis = (p.jenis_pemakaian === 'hc') ? 'HC' : 'Klinik';
             return '<tr><td>' + $('<div>').text(p.nomor_pemakaian || '').html() + '</td><td>' + $('<div>').text(p.tanggal || '').html() + '</td><td>' + jenis + '</td><td class="text-end fw-semibold">' + fmtNum(p.qty || 0) + '</td></tr>';
         }).join('') : '<tr><td colspan="4" class="text-center text-muted py-2">Tidak ada</td></tr>';
 
         var trfRows = trf.length ? trf.map(function(t) {
-            return '<tr><td class="text-muted">Transfer #' + (t.transfer_id || '-') + '</td><td>' + (t.tipe_transaksi || '-') + '</td><td>' + $('<div>').text(t.last_at || '').html() + '</td><td class="text-end fw-semibold">' + fmtNum(t.qty || 0) + '</td></tr>';
-        }).join('') : '<tr><td colspan="4" class="text-center text-muted py-2">Tidak ada</td></tr>';
+            var level = (t.level === 'hc') ? '<span class="badge bg-info x-small">HC</span>' : '<span class="badge bg-light text-dark x-small border">Klinik</span>';
+            return '<tr><td class="ps-3 text-muted">#' + (t.transfer_id || '-') + '</td><td>' + (t.tipe_transaksi || '-') + ' ' + level + '</td><td>' + $('<div>').text(t.last_at || '').html() + '</td><td class="text-end pe-3 fw-semibold">' + fmtNum(t.qty || 0) + '</td></tr>';
+        }).join('') : '<tr><td colspan="4" class="text-center text-muted py-2">Tidak ada transaksi transfer</td></tr>';
 
         body.innerHTML = `
-            <div class="mb-2">
-                <div class="small text-muted">Barang</div>
-                <div class="fw-semibold">${$('<div>').text((b.kode_barang || '-') + ' - ' + (b.nama_barang || namaBarang)).html()}</div>
+            <div class="mb-3 text-center">
+                <div class="small text-muted mb-1 text-uppercase fw-bold letter-spacing-05">Barang</div>
+                <div class="h5 fw-bold text-primary-custom mb-0">${$('<div>').text((b.kode_barang || '-') + ' - ' + (b.nama_barang || namaBarang)).html()}</div>
             </div>
-            <div class="row g-2 mb-3">
+
+            <!-- Hasil Akhir (To the point) -->
+            <div class="row g-2 mb-4">
                 <div class="col-md-6">
-                    <div class="p-3 border rounded">
-                        <div class="small text-muted">Tanggal yang ditampilkan</div>
-                        <div class="fw-semibold">${$('<div>').text(window.__stokKlinikContext.tanggalLabel).html()}</div>
-                        <div class="small text-muted mt-2">Terakhir update Odoo</div>
-                        <div class="fw-semibold">${$('<div>').text(lastU).html()}</div>
+                    <div class="p-3 bg-light border rounded text-center h-100">
+                        <div class="small text-muted mb-1 fw-semibold text-uppercase">Stok Akhir (On Hand)</div>
+                        <div class="h3 mb-0 fw-bold text-dark">${fmtNum(result.stock_total || 0)}</div>
+                        <div class="small text-muted mt-1">Per ${$('<div>').text(window.__stokKlinikContext.tanggalLabel).html()}</div>
                     </div>
                 </div>
                 <div class="col-md-6">
-                    <div class="p-3 border rounded">
-                        <div class="small text-muted">Rumus (Onsite)</div>
-                        <div class="fw-semibold">${fmtNum(result.stock_onsite || 0)}</div>
-                        <div class="small text-muted mt-2">Baseline Odoo (Onsite)</div>
-                        <div class="fw-semibold">${fmtNum(baseOn)}</div>
-                        <div class="small text-muted mt-2">Rollback setelah ${$('<div>').text(window.__stokKlinikContext.tanggal).html()}</div>
-                        <div class="small">
-                            + Out Transfer: <span class="fw-semibold">${fmtNum(rb.out_transfer || 0)}</span><br>
-                            - In Transfer: <span class="fw-semibold">${fmtNum(rb.in_transfer || 0)}</span><br>
-                            + Sellout Klinik: <span class="fw-semibold">${fmtNum(rb.sellout_klinik || 0)}</span>
-                        </div>
+                    <div class="p-3 bg-primary-light border border-primary-custom rounded text-center h-100">
+                        <div class="small text-primary-custom mb-1 fw-semibold text-uppercase">Tersedia (Siap Pakai)</div>
+                        <div class="h3 mb-0 fw-bold text-primary-custom">${fmtNum(result.tersedia || 0)}</div>
+                        <div class="small text-primary-custom mt-1">Setelah dikurangi Reservasi</div>
                     </div>
                 </div>
             </div>
-            <div class="row g-2 mb-3">
+
+            <div class="row g-3 mb-4">
+                <!-- Breakdown Onsite -->
                 <div class="col-md-6">
-                    <div class="p-3 border rounded">
-                        <div class="small text-muted">HC</div>
-                        <div class="small">
-                            Baseline Odoo (HC): <span class="fw-semibold">${fmtNum(baseHc)}</span><br>
-                            + Sellout HC (rollback): <span class="fw-semibold">${fmtNum(rb.sellout_hc || 0)}</span><br>
-                            Stock HC hasil: <span class="fw-semibold">${fmtNum(result.stock_hc || 0)}</span>
+                    <div class="card shadow-none border-0 h-100">
+                        <div class="card-body p-3 border rounded bg-light-subtle">
+                            <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-hospital me-2"></i>Stok Onsite</h6>
+                            <div class="d-flex justify-content-between mb-2 small text-muted">
+                                <span>Stok Odoo Sekarang:</span>
+                                <span>${fmtNum(baseOn)}</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2 small text-success">
+                                <span>Penyesuaian (Rollback):</span>
+                                <span class="fw-bold">+ ${fmtNum((rb.out_transfer || 0) - (rb.in_transfer || 0) + (rb.sellout_klinik || 0))}</span>
+                            </div>
+                            <div class="d-flex justify-content-between pt-2 border-top fw-bold text-dark">
+                                <span>Total Onsite:</span>
+                                <span>${fmtNum(result.stock_onsite || 0)}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
+                <!-- Breakdown HC -->
                 <div class="col-md-6">
-                    <div class="p-3 border rounded">
-                        <div class="small text-muted">Reserve (berdasarkan tanggal reservasi)</div>
-                        <div class="small">
-                            Onsite: <span class="fw-semibold">${fmtNum(reserveOn)}</span><br>
-                            HC: <span class="fw-semibold">${fmtNum(reserveHc)}</span><br>
-                            Tersedia: <span class="fw-semibold">${fmtNum(result.tersedia || 0)}</span>
+                    <div class="card shadow-none border-0 h-100">
+                        <div class="card-body p-3 border rounded bg-light-subtle">
+                            <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-user-nurse me-2"></i>Stok Home Care (HC)</h6>
+                            <div class="d-flex justify-content-between mb-2 small text-muted">
+                                <span>Stok Odoo Sekarang:</span>
+                                <span>${fmtNum(baseHc)}</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2 small text-success">
+                                <span>Penyesuaian (Rollback):</span>
+                                <span class="fw-bold">+ ${fmtNum((rb.out_transfer_hc || 0) - (rb.in_transfer_hc || 0) + (rb.sellout_hc || 0))}</span>
+                            </div>
+                            <div class="d-flex justify-content-between pt-2 border-top fw-bold text-dark">
+                                <span>Total HC:</span>
+                                <span>${fmtNum(result.stock_hc || 0)}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="mb-2 fw-semibold">Transaksi pemakaian yang dibalik (tanggal > ${$('<div>').text(window.__stokKlinikContext.tanggal).html()} sampai last update)</div>
-            <div class="table-responsive mb-3">
-                <table class="table table-sm table-bordered mb-0">
-                    <thead><tr><th>No. Pemakaian</th><th>Tanggal</th><th>Jenis</th><th class="text-end">Qty</th></tr></thead>
-                    <tbody>${pemRows}</tbody>
-                </table>
+            <div class="row g-3 mb-4">
+                <!-- Reservasi Detail -->
+                <div class="col-md-6">
+                    <div class="card shadow-none border-0 h-100">
+                        <div class="card-body p-3 border rounded">
+                            <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-calendar-check me-2"></i>Reservasi Booking</h6>
+                            <div class="d-flex justify-content-between mb-2 small text-muted">
+                                <span>Booking Onsite:</span>
+                                <span class="fw-bold text-danger">-${fmtNum(reserveOn)}</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2 small text-muted">
+                                <span>Booking HC:</span>
+                                <span class="fw-bold text-danger">-${fmtNum(reserveHc)}</span>
+                            </div>
+                            <div class="d-flex justify-content-between pt-2 border-top fw-bold text-danger">
+                                <span>Total Reservasi:</span>
+                                <span>-${fmtNum(reserveOn + reserveHc)}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Info Sync -->
+                <div class="col-md-6">
+                    <div class="card shadow-none border-0 h-100">
+                        <div class="card-body p-3 border rounded d-flex flex-column justify-content-center">
+                            <div class="text-center">
+                                <i class="fas fa-sync-alt fa-2x text-muted mb-2"></i>
+                                <div class="small text-muted">Data Odoo terakhir diupdate pada:</div>
+                                <div class="fw-bold text-dark">${lastU}</div>
+                                <div class="x-small text-muted mt-1 fst-italic">Sync otomatis berjalan setiap 1 jam atau manual.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <div class="mb-2 fw-semibold">Transfer yang dibalik (created_at > tanggal sampai last update)</div>
-            <div class="table-responsive">
-                <table class="table table-sm table-bordered mb-0">
-                    <thead><tr><th>Referensi</th><th>Tipe</th><th>Waktu</th><th class="text-end">Qty</th></tr></thead>
-                    <tbody>${trfRows}</tbody>
-                </table>
+            <div class="accordion" id="accordionDetailTrans">
+                <div class="accordion-item border rounded mb-2 overflow-hidden">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed py-2 small fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePemakaian">
+                            <i class="fas fa-list-ul me-2"></i> Lihat Daftar Transaksi Pemakaian
+                        </button>
+                    </h2>
+                    <div id="collapsePemakaian" class="accordion-collapse collapse" data-bs-parent="#accordionDetailTrans">
+                        <div class="accordion-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0">
+                                    <thead class="bg-light"><tr><th class="ps-3">No. Pemakaian</th><th>Tanggal</th><th>Jenis</th><th class="text-end pe-3">Qty</th></tr></thead>
+                                    <tbody class="small">${pemRows}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item border rounded mb-2 overflow-hidden">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed py-2 small fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTransfer">
+                            <i class="fas fa-exchange-alt me-2"></i> Lihat Daftar Transaksi Transfer
+                        </button>
+                    </h2>
+                    <div id="collapseTransfer" class="accordion-collapse collapse" data-bs-parent="#accordionDetailTrans">
+                        <div class="accordion-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0">
+                                    <thead class="bg-light"><tr><th class="ps-3">Referensi</th><th>Tipe</th><th>Waktu</th><th class="text-end pe-3">Qty</th></tr></thead>
+                                    <tbody class="small">${trfRows}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
     }).catch(function() {
@@ -801,14 +843,14 @@ function openStokBreakdown(barangId, namaBarang) {
                             <?php if (empty($exams)): ?>
                                 <tr><td colspan="4" class="text-center">Tidak ada pemeriksaan yang available saat ini.</td></tr>
                             <?php else: ?>
-                                <?php foreach ($exams as $ex): ?>
-                                <tr>
-                                    <td><?= htmlspecialchars($ex['nama_pemeriksaan']) ?></td>
-                                    <td><?= htmlspecialchars($ex['keterangan']) ?></td>
-                                    <td><span class="badge bg-success">Available</span></td>
-                                    <td class="fw-bold fs-5"><?= $ex['max_qty'] ?></td>
-                                </tr>
-                                <?php endforeach; ?>
+                                 <?php foreach ($exams as $ex): ?>
+                                 <tr>
+                                     <td><?= htmlspecialchars((string)($ex['nama_pemeriksaan'] ?? '')) ?></td>
+                                     <td><?= htmlspecialchars((string)($ex['keterangan'] ?? '')) ?></td>
+                                     <td><span class="badge bg-success">Available</span></td>
+                                     <td class="fw-bold fs-5"><?= (string)($ex['max_qty'] ?? 0) ?></td>
+                                 </tr>
+                                 <?php endforeach; ?>
                             <?php endif; ?>
                         </tbody>
                     </table>
@@ -840,7 +882,8 @@ function openStokBreakdown(barangId, namaBarang) {
                             <?php if ($show_hc): ?><th>Sellout HC</th><?php endif; ?>
                             <th>Reserve Onsite</th>
                             <?php if ($show_hc): ?><th>Reserve HC</th><?php endif; ?>
-                            <th>Tersedia</th>
+                            <th>On Hand Stok</th>
+                            <th>Available Stok</th>
                             <?php if ($is_history_date): ?><th>Detail</th><?php endif; ?>
                         </tr>
                     </thead>
@@ -859,19 +902,19 @@ function openStokBreakdown(barangId, namaBarang) {
                             $out_transfer_hc = $row['out_transfer_hc'] ?? 0;
                             if ($is_history_date) {
                                 $stok_onsite = $stok_onsite + (float)($row['rb_out_transfer'] ?? 0) - (float)($row['rb_in_transfer'] ?? 0) + (float)($row['rb_sellout_klinik'] ?? 0);
-                                $stok_hc = $stok_hc + (float)($row['rb_sellout_hc'] ?? 0);
+                                $stok_hc = $stok_hc + (float)($row['rb_out_transfer_hc'] ?? 0) - (float)($row['rb_in_transfer_hc'] ?? 0) + (float)($row['rb_sellout_hc'] ?? 0);
                             } else {
                                 $stok_onsite = $stok_onsite + (float)$in_transfer - (float)$out_transfer;
                                 $stok_hc = $stok_hc + (float)$in_transfer_hc - (float)$out_transfer_hc;
                             }
                             
                             $total_stok = $stok_onsite + ($show_hc ? $stok_hc : 0);
-                            if ($is_history_date) {
-                                $tersedia = $total_stok - $reserve_total;
-                            } else {
+                            $total_sellout = 0;
+                            if (!$is_history_date) {
                                 $total_sellout = $sellout + ($show_hc ? $sellout_hc : 0);
-                                $tersedia = $total_stok - $total_sellout - $reserve_total;
                             }
+                            $on_hand = $total_stok - $total_sellout;
+                            $available = $on_hand - $reserve_total;
                         ?>
                         <tr>
                             <td><?= htmlspecialchars(!empty($row['kode_barang_master']) ? $row['kode_barang_master'] : ($row['kode_barang'] ?? '-')) ?></td>
@@ -879,7 +922,7 @@ function openStokBreakdown(barangId, namaBarang) {
                             <td class="small">
                                 <div><?= htmlspecialchars($row['satuan']) ?></div>
                                 <?php if (!empty($row['uom_odoo']) && (float)($row['uom_multiplier'] ?? 1) != 1.0): ?>
-                                    <div class="text-muted small">Odoo: <?= htmlspecialchars($row['uom_odoo']) ?> × <?= htmlspecialchars(fmt_qty($row['uom_multiplier'])) ?></div>
+                                    <div class="text-muted small">1 <?= htmlspecialchars($row['satuan']) ?> = <?= htmlspecialchars(fmt_qty($row['uom_multiplier'])) ?> <?= htmlspecialchars($row['uom_odoo']) ?></div>
                                 <?php endif; ?>
                             </td>
                             <td>
@@ -916,8 +959,11 @@ function openStokBreakdown(barangId, namaBarang) {
                                 <?= fmt_qty($reserve_hc) ?>
                             </td>
                             <?php endif; ?>
-                            <td class="<?= $tersedia < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>">
-                                <?= fmt_qty($tersedia) ?>
+                            <td class="<?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>">
+                                <?= fmt_qty($on_hand) ?>
+                            </td>
+                            <td class="<?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>">
+                                <?= fmt_qty($available) ?>
                             </td>
                             <?php if ($is_history_date): ?>
                             <td class="text-center">
@@ -998,7 +1044,8 @@ function loadHCDetail(barangId, klinikId, namaBarang) {
     $('#hcDetailContent').html('<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="text-muted mt-2">Memuat data...</p></div>');
     
     // Show modal
-    var modal = new bootstrap.Modal(document.getElementById('modalHCDetail'));
+    var modalEl = document.getElementById('modalHCDetail');
+    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
     
     // Load data via AJAX
@@ -1029,7 +1076,9 @@ async function syncFromOdoo(btn) {
     statusEl.textContent = 'Sinkronisasi berjalan...';
     btn.disabled = true;
     try {
-        const res = await fetch('api/sync_odoo.php', { method: 'POST' });
+        const fd = new FormData();
+        fd.append('_csrf', <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>);
+        const res = await fetch('api/sync_odoo.php', { method: 'POST', body: fd });
         const data = await res.json();
         if (data.success) {
             statusEl.textContent = `Selesai. Produk: ${data.products}, Lokasi: ${data.locations}, Baris: ${data.rows}`;

@@ -10,14 +10,22 @@ if (!isset($_SESSION['user_id']) || !isset($_GET['id'])) {
 $id = intval($_GET['id']);
 
 // Fetch Request Header
+$has_spv = false;
+try {
+    $res_col = $conn->query("SHOW COLUMNS FROM `request_barang` LIKE 'spv_approved_by'");
+    if ($res_col && $res_col->num_rows > 0) $has_spv = true;
+} catch (Exception $e) {}
+
 $query = "SELECT r.*, 
             u_req.nama_lengkap as requestor_name,
-            u_app.nama_lengkap as approver_name,
+            u_app.nama_lengkap as approver_name," .
+            ($has_spv ? " u_spv.nama_lengkap as spv_approver_name," : "") . "
             k_dari.nama_klinik as dari_klinik_nama,
             k_ke.nama_klinik as ke_klinik_nama
           FROM request_barang r
           JOIN users u_req ON r.created_by = u_req.id
-          LEFT JOIN users u_app ON r.approved_by = u_app.id
+          LEFT JOIN users u_app ON r.approved_by = u_app.id" .
+          ($has_spv ? " LEFT JOIN users u_spv ON r.spv_approved_by = u_spv.id" : "") . "
           LEFT JOIN klinik k_dari ON (r.dari_level = 'klinik' AND r.dari_id = k_dari.id)
           LEFT JOIN klinik k_ke ON (r.ke_level = 'klinik' AND r.ke_id = k_ke.id)
           WHERE r.id = $id";
@@ -27,6 +35,19 @@ $req = $res->fetch_assoc();
 if (!$req) {
     die("Request tidak ditemukan");
 }
+
+try {
+    $res_col = $conn->query("SHOW COLUMNS FROM `request_barang` LIKE 'request_qr_token'");
+    if ($res_col && $res_col->num_rows > 0) {
+        if (empty($req['request_qr_token'])) {
+            $newTok = bin2hex(random_bytes(16));
+            $stmt = $conn->prepare("UPDATE request_barang SET request_qr_token = ?, request_qr_at = COALESCE(request_qr_at, NOW()) WHERE id = ?");
+            $stmt->bind_param("si", $newTok, $id);
+            $stmt->execute();
+            $req['request_qr_token'] = $newTok;
+        }
+    }
+} catch (Exception $e) {}
 
 // Fetch Details
 $query_det = "SELECT d.*, b.kode_barang, b.nama_barang, b.satuan 
@@ -81,7 +102,7 @@ if ($req['ke_level'] == 'klinik') {
         .info-table td.label { width: 100px; font-weight: bold; color: #555; }
         
         .items-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-        .items-table th { background-color: #f2f2f2 !important; -webkit-print-color-adjust: exact; border: 1px solid #aaa; padding: 8px; text-align: left; text-transform: uppercase; font-size: 10px; }
+        .items-table th { background-color: #f2f2f2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; border: 1px solid #aaa; padding: 8px; text-align: left; text-transform: uppercase; font-size: 10px; }
         .items-table td { border: 1px solid #aaa; padding: 8px; }
         
         .notes { margin-bottom: 40px; border: 1px solid #eee; padding: 10px; background: #fdfdfd; min-height: 60px; }
@@ -89,8 +110,10 @@ if ($req['ke_level'] == 'klinik') {
         
         .signature-section { width: 100%; margin-top: 50px; display: table; table-layout: fixed; }
         .signature-box { display: table-cell; text-align: center; vertical-align: top; }
-        .signature-space { height: 70px; }
-        .signature-name { border-top: 1.5px solid #333; display: inline-block; min-width: 160px; padding-top: 5px; font-weight: bold; }
+        .signature-box p { margin: 0 0 5px 0; }
+        .signature-space { height: 110px; margin-bottom: 5px; }
+        .signature-space img { display: block; margin: 0 auto; }
+        .signature-name { border-top: 1.5px solid #333; display: inline-block; min-width: 180px; padding-top: 5px; font-weight: bold; }
         
         @media print {
             body { padding: 0; }
@@ -174,44 +197,40 @@ if ($req['ke_level'] == 'klinik') {
         <?= nl2br(htmlspecialchars($req['catatan'] ?: '-')) ?>
     </div>
 
+    <?php
+        // Build verify URLs using base_url with page=qr_verify_rab
+        $reqTok  = (string)($req['request_qr_token'] ?? '');
+        $verifyUrlReq = $reqTok !== '' ? base_url('index.php?page=qr_verify_rab&id=' . $id . '&token=' . urlencode($reqTok) . '&who=requester') : '';
+
+        $show_spv_qr  = $has_spv && !empty($req['spv_approved_by']) && !empty($req['spv_qr_token']);
+        $verifyUrlSpv = $show_spv_qr ? base_url('index.php?page=qr_verify_rab&id=' . $id . '&token=' . urlencode((string)$req['spv_qr_token']) . '&who=approver') : '';
+        $spv_label    = $show_spv_qr ? htmlspecialchars((string)($req['spv_approver_name'] ?? 'SPV/Manager')) : '..........................';
+    ?>
     <div class="signature-section">
         <div class="signature-box">
             <p>Pemohon,</p>
-            <div class="signature-space"></div>
+            <div class="signature-space">
+                <?php if ($verifyUrlReq !== ''): ?>
+                    <img src="<?= htmlspecialchars(base_url('api/qr.php?text=' . urlencode($verifyUrlReq))) ?>"
+                         style="width:95px;height:95px;" alt="QR Pemohon">
+                <?php endif; ?>
+            </div>
             <div class="signature-name">( <?= htmlspecialchars($req['requestor_name']) ?> )</div>
             <p style="margin-top: 4px; font-size: 10px;">Requester</p>
         </div>
         <div class="signature-box">
             <p>Menyetujui,</p>
-            <div class="signature-space"></div>
-            <div class="signature-name">( .......................... )</div>
+            <div class="signature-space">
+                <?php if ($show_spv_qr): ?>
+                    <img src="<?= htmlspecialchars(base_url('api/qr.php?text=' . urlencode($verifyUrlSpv))) ?>"
+                         style="width:95px;height:95px;" alt="QR Approval">
+                <?php endif; ?>
+            </div>
+            <div class="signature-name">( <?= $spv_label ?> )</div>
             <p style="margin-top: 4px; font-size: 10px;">SPV / Manager</p>
         </div>
-        <div class="signature-box">
-            <p>Menyiapkan Barang,</p>
-            <div class="signature-space"></div>
-            <div class="signature-name">( .......................... )</div>
-            <p style="margin-top: 4px; font-size: 10px;">Petugas Gudang</p>
-        </div>
-    </div>
-
-    <div class="signature-section" style="margin-top: 25px;">
-        <div class="signature-box">
-            <p>Pengirim,</p>
-            <div class="signature-space"></div>
-            <div class="signature-name">( .......................... )</div>
-            <p style="margin-top: 4px; font-size: 10px;">Kurir / Driver</p>
-        </div>
-        <div class="signature-box">
-            <p>Penerima,</p>
-            <div class="signature-space"></div>
-            <div class="signature-name">( .......................... )</div>
-            <p style="margin-top: 4px; font-size: 10px;">Klinik Tujuan</p>
-        </div>
-        <div class="signature-box">
+        <div class="signature-box" style="visibility: hidden;">
             <p>&nbsp;</p>
-            <div class="signature-space"></div>
-            <div class="signature-name" style="border-top: none;">&nbsp;</div>
         </div>
     </div>
 

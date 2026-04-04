@@ -1,3 +1,34 @@
+<?php
+$badge_incoming = 0;
+$badge_spv = 0;
+
+if (isset($_SESSION['user_id'])) {
+    $uid = $_SESSION['user_id'];
+    $u_role = $_SESSION['role'];
+    $u_klinik_id = $_SESSION['klinik_id'] ?? 0;
+
+    // 1. Incoming Requests Count (for the destination)
+    if (in_array($u_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)) {
+        $where_inc = "1=0";
+        if ($u_role == 'super_admin') {
+            $where_inc = "1=1";
+        } elseif ($u_role == 'admin_gudang') {
+            $where_inc = "(ke_level = 'gudang_utama' OR (dari_level = 'klinik' AND ke_level = 'klinik'))";
+        } else {
+            $where_inc = "ke_level = 'klinik' AND ke_id = $u_klinik_id";
+        }
+        $q_inc = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE $where_inc AND status IN ('pending', 'pending_gudang')");
+        $badge_incoming = (int)($q_inc->fetch_assoc()['cnt'] ?? 0);
+    }
+
+    // 2. SPV Pending Count (Requests from my clinic awaiting my approval)
+    if (in_array($u_role, ['super_admin', 'spv_klinik'], true)) {
+        $where_spv = ($u_role == 'super_admin') ? "status = 'pending_spv'" : "dari_level = 'klinik' AND dari_id = $u_klinik_id AND status = 'pending_spv'";
+        $q_spv = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE $where_spv");
+        $badge_spv = (int)($q_spv->fetch_assoc()['cnt'] ?? 0);
+    }
+}
+?>
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-brand">
@@ -10,32 +41,40 @@
             </div>
         </div>
     </div>
-    <div class="sidebar-menu">
+    <div class="sidebar-menu" id="sidebar-menu-scroll">
+        <?php if ($role !== 'petugas_hc'): ?>
         <a href="index.php?page=dashboard" class="sidebar-link <?= $current_page == 'dashboard' ? 'active' : '' ?>">
             <i class="fas fa-tachometer-alt"></i> Dashboard
         </a>
+        <?php endif; ?>
 
         <div class="sidebar-heading">OPERASIONAL</div>
 
-        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'cs'])): ?>
+        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'cs'])): ?>
         <a href="index.php?page=stok_klinik" class="sidebar-link <?= $current_page == 'stok_klinik' ? 'active' : '' ?>">
             <i class="fas fa-hospital"></i> Inventory Klinik
         </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['cs', 'super_admin', 'admin_klinik'])): ?>
-        <a href="index.php?page=booking" class="sidebar-link <?= in_array($current_page, ['booking', 'booking_create']) ? 'active' : '' ?>">
+        <?php if (in_array($role, ['cs', 'super_admin', 'admin_klinik', 'spv_klinik'])): ?>
+        <?php $booking_url = in_array($role, ['admin_klinik', 'spv_klinik'], true) ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1'; ?>
+        <a href="<?= $booking_url ?>" class="sidebar-link <?= in_array($current_page, ['booking', 'booking_create']) ? 'active' : '' ?>">
             <i class="fas fa-calendar-check"></i> Booking & Pending
         </a>
         <?php endif; ?>
 
-        <?php if ($role != 'cs'): ?>
+        <?php if (!in_array($role, ['cs', 'petugas_hc'])): ?>
         <a href="index.php?page=request" class="sidebar-link <?= $current_page == 'request' ? 'active' : '' ?>">
-            <i class="fas fa-exchange-alt"></i> Request Barang
+            <div class="d-flex w-100 align-items-center justify-content-between">
+                <div><i class="fas fa-exchange-alt"></i> Request Barang</div>
+                <?php if ($u_role !== 'super_admin' && ($badge_incoming + $badge_spv) > 0): ?>
+                    <span class="badge bg-danger rounded-pill"><?= $badge_incoming + $badge_spv ?></span>
+                <?php endif; ?>
+            </div>
         </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'b2b_ops'])): ?>
+        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'b2b_ops'])): ?>
         <a href="index.php?page=pemakaian_bhp_list" class="sidebar-link <?= $current_page == 'pemakaian_bhp_list' ? 'active' : '' ?>">
             <i class="fas fa-clipboard-list"></i> Pemakaian BHP
         </a>
@@ -45,15 +84,18 @@
         <a href="index.php?page=stok_petugas_hc" class="sidebar-link <?= $current_page == 'stok_petugas_hc' ? 'active' : '' ?>">
             <i class="fas fa-briefcase-medical"></i> Stok HC Saya
         </a>
+        <a href="index.php?page=pemakaian_bhp_list" class="sidebar-link <?= $current_page == 'pemakaian_bhp_list' ? 'active' : '' ?>">
+            <i class="fas fa-clipboard-list"></i> BHP Saya
+        </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik'], true)): ?>
+        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)): ?>
         <a href="index.php?page=stok_petugas_hc" class="sidebar-link <?= $current_page == 'stok_petugas_hc' ? 'active' : '' ?>">
             <i class="fas fa-briefcase-medical"></i> Stok Petugas HC
         </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['super_admin', 'admin_gudang'])): ?>
+        <?php if ($role === 'super_admin'): ?>
         <div class="sidebar-heading">MASTER DATA</div>
         <a href="index.php?page=pemeriksaan" class="sidebar-link <?= $current_page == 'pemeriksaan' ? 'active' : '' ?>">
             <i class="fas fa-notes-medical"></i> Master Pemeriksaan
@@ -61,11 +103,11 @@
         <a href="index.php?page=klinik" class="sidebar-link <?= $current_page == 'klinik' ? 'active' : '' ?>">
             <i class="fas fa-clinic-medical"></i> Data Klinik
         </a>
+        <a href="index.php?page=barang" class="sidebar-link <?= $current_page == 'barang' ? 'active' : '' ?>">
+            <i class="fas fa-box"></i> Database Barang
+        </a>
         <a href="index.php?page=uom_convert" class="sidebar-link <?= $current_page == 'uom_convert' ? 'active' : '' ?>">
             <i class="fas fa-exchange-alt"></i> Konversi UOM
-        </a>
-        <a href="index.php?page=barang" class="sidebar-link <?= $current_page == 'barang' ? 'active' : '' ?>">
-            <i class="fas fa-boxes"></i> Database Barang
         </a>
         <a href="index.php?page=users" class="sidebar-link <?= $current_page == 'users' ? 'active' : '' ?>">
             <i class="fas fa-users"></i> Data User
@@ -74,9 +116,12 @@
         <a href="index.php?page=settings_integrasi" class="sidebar-link <?= $current_page == 'settings_integrasi' ? 'active' : '' ?>">
             <i class="fas fa-cogs"></i> Integrasi Odoo
         </a>
+        <a href="index.php?page=odoo_format_config" class="sidebar-link <?= $current_page == 'odoo_format_config' ? 'active' : '' ?>">
+            <i class="fas fa-file-invoice"></i> Format Odoo
+        </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik'])): ?>
+        <?php if (in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik'])): ?>
         <div class="sidebar-heading">MAPPING HC</div>
         <a href="index.php?page=petugas_hc" class="sidebar-link <?= $current_page == 'petugas_hc' ? 'active' : '' ?>">
             <i class="fas fa-user-nurse"></i> Petugas HC
@@ -111,23 +156,18 @@
         <div class="d-flex align-items-center">
             <span class="me-3"><?= $_SESSION['nama_lengkap'] ?? 'User' ?> (<?= ucfirst(str_replace('_', ' ', $role)) ?>)</span>
             <div class="dropdown">
-                <a href="#" class="d-flex align-items-center text-decoration-none" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
-                    <?php if (!empty($_SESSION['photo']) && file_exists($_SESSION['photo'])): ?>
-                        <img src="<?= $_SESSION['photo'] ?>" alt="Profile" width="32" height="32" class="rounded-circle me-2" style="object-fit: cover;">
-                    <?php else: ?>
-                        <i class="fas fa-user-circle fa-2x text-secondary me-2"></i>
-                    <?php endif; ?>
+                <a href="#" class="d-block link-dark text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-user-circle fa-2x text-primary-custom"></i>
                 </a>
                 <ul class="dropdown-menu dropdown-menu-end text-small shadow" aria-labelledby="dropdownUser1">
-                    <li><a class="dropdown-item" href="index.php?page=profile">Profile</a></li>
+                    <li><a class="dropdown-menu-item" href="index.php?page=profile"><i class="fas fa-user me-2"></i>Profil Saya</a></li>
                     <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item" href="index.php?page=logout">Sign out</a></li>
+                    <li><a class="dropdown-menu-item text-danger" href="index.php?page=logout"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
                 </ul>
             </div>
         </div>
     </nav>
-    
-    <div class="container-fluid p-3">
+    <div class="container-fluid py-4">
         <!-- Global Alert Messages -->
         <?php if (isset($_SESSION['error'])): ?>
         <div class="alert alert-danger alert-dismissible fade show shadow-sm" role="alert">
@@ -164,3 +204,45 @@
         </div>
         <?php unset($_SESSION['warnings']); endif; ?>
     </div> <!-- End of Global Alert Container -->
+    <script>
+    (function() {
+        const sidebarMenu = document.getElementById('sidebar-menu-scroll');
+        if (sidebarMenu) {
+            // Restore scroll position immediately to prevent blink
+            const scrollPos = localStorage.getItem('sidebarScrollPos');
+            if (scrollPos) {
+                sidebarMenu.scrollTop = scrollPos;
+                // Double check after layout finishes
+                window.addEventListener('load', () => {
+                    sidebarMenu.scrollTop = scrollPos;
+                });
+            }
+
+            // Save scroll position function with debounce
+            let scrollTimer;
+            const saveScroll = () => {
+                clearTimeout(scrollTimer);
+                scrollTimer = setTimeout(() => {
+                    try {
+                        localStorage.setItem('sidebarScrollPos', sidebarMenu.scrollTop);
+                    } catch (e) {
+                        console.error("Failed to save sidebar scroll position", e);
+                    }
+                }, 50);
+            };
+
+            // Enhanced click handler for all sidebar links
+            sidebarMenu.querySelectorAll('.sidebar-link').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    const href = this.getAttribute('href');
+                    if (href && href !== '#' && !href.includes('logout')) {
+                        saveScroll();
+                    }
+                });
+            });
+
+            // Save on scroll
+            sidebarMenu.addEventListener('scroll', saveScroll);
+        }
+    })();
+    </script>

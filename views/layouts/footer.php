@@ -11,8 +11,31 @@
 
 <script>
     $(document).ready(function() {
-        // Init DataTable
-        $('.datatable').DataTable();
+        // Global DataTable defaults
+        $.extend(true, $.fn.dataTable.defaults, {
+            "language": {
+                "emptyTable": "Tidak ada data yang tersedia pada tabel ini",
+                "info": "Menampilkan _START_ sampai _END_ dari _TOTAL_ entri",
+                "infoEmpty": "Menampilkan 0 sampai 0 dari 0 entri",
+                "infoFiltered": "(disaring dari _MAX_ entri keseluruhan)",
+                "lengthMenu": "Tampilkan _MENU_ entri",
+                "loadingRecords": "Sedang memuat...",
+                "processing": "Sedang memproses...",
+                "search": "Cari:",
+                "zeroRecords": "Tidak ditemukan data yang sesuai",
+                "paginate": {
+                    "first": "Pertama",
+                    "last": "Terakhir",
+                    "next": "<i class='fas fa-chevron-right'></i>",
+                    "previous": "<i class='fas fa-chevron-left'></i>"
+                }
+            }
+        });
+
+        // Init DataTable - Newest first (index 1 is Tanggal/Created At)
+        $('.datatable').DataTable({
+            "order": [[ 1, "desc" ]]
+        });
         
         // Init Select2 globally for static selects
         $('.form-select').each(function() {
@@ -32,10 +55,20 @@
     const toggleBtn = document.getElementById('sidebar-toggle');
     const overlay = document.getElementById('sidebar-overlay');
     
+    // Restore sidebar state from localStorage
+    if (localStorage.getItem('sidebarActive') === 'true') {
+        sidebar.classList.add('active');
+        if (mainContent) mainContent.classList.add('active');
+        if (overlay) overlay.classList.add('active');
+    }
+
     function toggleSidebar() {
         sidebar.classList.toggle('active');
         if (mainContent) mainContent.classList.toggle('active');
         if (overlay) overlay.classList.toggle('active');
+        
+        // Save state
+        localStorage.setItem('sidebarActive', sidebar.classList.contains('active'));
     }
 
     if (toggleBtn) {
@@ -54,24 +87,17 @@
     
     // Close sidebar on route change (optional, for SPA feeling if links didn't reload)
     // But since it reloads, it's fine.
-
-    // PERSIST SIDEBAR SCROLL POSITION & COLLAPSE STATE
-    const sidebarMenu = document.querySelector('.sidebar-menu');
-    if (sidebarMenu) {
-        // Restore scroll position
-        const scrollPos = localStorage.getItem('sidebarScrollPos');
-        if (scrollPos) {
-            sidebarMenu.scrollTop = scrollPos;
-        }
-        
-        // Save scroll position on scroll
-        sidebarMenu.addEventListener('scroll', () => {
-            localStorage.setItem('sidebarScrollPos', sidebarMenu.scrollTop);
-        });
-    }
 </script>
 <?php 
 $odoo_auto_tick = false;
+try {
+    require_once __DIR__ . '/../../config/settings.php';
+    $enabled = get_setting('odoo_sync_enabled', '0') === '1';
+    $mode = get_setting('odoo_sync_mode', 'manual');
+    $odoo_auto_tick = ($enabled && $mode !== 'manual');
+} catch (Exception $e) {
+    $odoo_auto_tick = false;
+}
 ?>
 <script>
 (() => {
@@ -83,7 +109,7 @@ $odoo_auto_tick = false;
         try {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 5000);
-            const res = await fetch('api/sync_odoo_schedule.php?quick=1', { cache: 'no-store', signal: controller.signal });
+            const res = await fetch('api/updatedataforodoo.php?quick=1', { cache: 'no-store', signal: controller.signal });
             clearTimeout(timer);
             const data = await res.json();
             if (data && data.ran) {
@@ -94,7 +120,7 @@ $odoo_auto_tick = false;
                 }
             } else if (data && data.quick_due) {
                 // Fire and forget the real run, but do not block tab
-                fetch('api/sync_odoo_schedule.php', { cache: 'no-store' }).catch(()=>{});
+                fetch('api/updatedataforodoo.php', { cache: 'no-store' }).catch(()=>{});
             }
         } catch (e) {
         } finally {

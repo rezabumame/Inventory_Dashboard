@@ -1,20 +1,17 @@
-.htaccess
+# Database and sensitive configs
+config/database.php
 .env
-.env.*
 
-/.vscode/
-/.idea/
-/.trae/
-
-/vendor/
-/views/uploads/
-/assets/uploads/
-
-/_unused_/
-/scripts/
-
-/*.zip
-/*.sql
-/*.log
+# Temporary files
 *.log
+tmp/
+temp/
 
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+.trae/

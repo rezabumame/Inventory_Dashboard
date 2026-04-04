@@ -1,255 +1,282 @@
 <?php
 check_role(['super_admin']);
 
-$message = '';
+$error = '';
+$success = '';
 
-// Fetch Clinics for dropdown
-$clinics = $conn->query("SELECT * FROM klinik WHERE status='active'");
-$clinic_options = [];
-while ($c = $clinics->fetch_assoc()) {
-    $clinic_options[] = $c;
-}
-
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $id = $_POST['id'] ?? '';
-    $username = $_POST['username'];
-    $nama_lengkap = $_POST['nama_lengkap'];
-    $role = $_POST['role'];
-    $klinik_id = $_POST['klinik_id'] ?: NULL;
-    $status = $_POST['status'];
-    $password = $_POST['password'];
-
-    if ($id) {
-        $sql = "UPDATE users SET username=?, nama_lengkap=?, role=?, klinik_id=?, status=?";
-        $params = [$username, $nama_lengkap, $role, $klinik_id, $status];
-        $types = "sssis";
-
-        if (!empty($password)) {
-            $sql .= ", password=?";
-            $params[] = password_hash($password, PASSWORD_DEFAULT);
-            $types .= "s";
-        }
-        $sql .= " WHERE id=?";
-        $params[] = $id;
-        $types .= "i";
-
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param($types, ...$params);
+// Handle Actions
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
+    require_csrf();
+    
+    if ($_POST['action'] == 'add_user') {
+        $username = trim($_POST['username']);
+        $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+        $nama_lengkap = trim($_POST['nama_lengkap']);
+        $role = $_POST['role'];
+        $klinik_id = ($_POST['klinik_id'] === '') ? null : (int)$_POST['klinik_id'];
+        
+        $stmt = $conn->prepare("INSERT INTO users (username, password, nama_lengkap, role, klinik_id) VALUES (?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssi", $username, $password, $nama_lengkap, $role, $klinik_id);
         
         if ($stmt->execute()) {
-            $message = '<div class="alert alert-success">User berhasil diupdate.</div>';
+            $success = "User berhasil ditambahkan.";
         } else {
-            $message = '<div class="alert alert-danger">Error: ' . $stmt->error . '</div>';
+            $error = "Gagal menambahkan user: " . $conn->error;
         }
-    } else {
-        if (empty($password)) {
-            $message = '<div class="alert alert-danger">Password wajib diisi untuk user baru.</div>';
+    }
+    
+    if ($_POST['action'] == 'edit_user') {
+        $id = (int)$_POST['id'];
+        $nama_lengkap = trim($_POST['nama_lengkap']);
+        $role = $_POST['role'];
+        $klinik_id = ($_POST['klinik_id'] === '') ? null : (int)$_POST['klinik_id'];
+        
+        $sql = "UPDATE users SET nama_lengkap = ?, role = ?, klinik_id = ? WHERE id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("ssii", $nama_lengkap, $role, $klinik_id, $id);
+        
+        if ($stmt->execute()) {
+            // Update password if provided
+            if (!empty($_POST['password'])) {
+                $pass = password_hash($_POST['password'], PASSWORD_DEFAULT);
+                $conn->query("UPDATE users SET password = '$pass' WHERE id = $id");
+            }
+            $success = "User berhasil diperbarui.";
         } else {
-            $stmt = $conn->prepare("INSERT INTO users (username, password, nama_lengkap, role, klinik_id, status) VALUES (?, ?, ?, ?, ?, ?)");
-            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-            $stmt->bind_param("ssssis", $username, $hashed_password, $nama_lengkap, $role, $klinik_id, $status);
-            
-            if ($stmt->execute()) {
-                $message = '<div class="alert alert-success">User berhasil ditambahkan.</div>';
+            $error = "Gagal memperbarui user.";
+        }
+    }
+    
+    if ($_POST['action'] == 'delete_user') {
+        $id = (int)$_POST['id'];
+        if ($id == $_SESSION['user_id']) {
+            $error = "Anda tidak bisa menghapus akun sendiri.";
+        } else {
+            if ($conn->query("DELETE FROM users WHERE id = $id")) {
+                $success = "User berhasil dihapus.";
             } else {
-                $message = '<div class="alert alert-danger">Error: ' . $stmt->error . '</div>';
+                $error = "Gagal menghapus user.";
             }
         }
     }
 }
 
-if (isset($_GET['delete_id'])) {
-    $id = $_GET['delete_id'];
-    // Prevent deleting self
-    if ($id == $_SESSION['user_id']) {
-         $message = '<div class="alert alert-danger">Tidak bisa menghapus akun sendiri.</div>';
-    } else {
-        $stmt = $conn->prepare("DELETE FROM users WHERE id=?");
-        $stmt->bind_param("i", $id);
-        if ($stmt->execute()) {
-            $message = '<div class="alert alert-success">User berhasil dihapus.</div>';
-        } else {
-            $message = '<div class="alert alert-danger">Gagal menghapus user.</div>';
-        }
-    }
-}
+// Fetch Data
+$users = [];
+$res = $conn->query("SELECT u.*, k.nama_klinik FROM users u LEFT JOIN klinik k ON u.klinik_id = k.id ORDER BY u.nama_lengkap ASC");
+while ($row = $res->fetch_assoc()) $users[] = $row;
 
-$result = $conn->query("SELECT u.*, k.nama_klinik FROM users u LEFT JOIN klinik k ON u.klinik_id = k.id ORDER BY u.id DESC");
+$kliniks = [];
+$res_k = $conn->query("SELECT id, nama_klinik FROM klinik WHERE status = 'active' ORDER BY nama_klinik ASC");
+while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
 ?>
 
-<div class="container-fluid">
-    <div class="row mb-4 align-items-center">
-        <div class="col">
-            <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
-                <i class="fas fa-users me-2"></i>Data User
-            </h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
-                    <li class="breadcrumb-item active">Data User</li>
-                </ol>
-            </nav>
-        </div>
-        <div class="col-auto">
-            <button class="btn shadow-sm text-white px-4" style="background-color: #204EAB;" data-bs-toggle="modal" data-bs-target="#modalUser" onclick="resetForm()">
-                <i class="fas fa-plus me-2"></i>Tambah User
-            </button>
-        </div>
-    </div>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0 fw-bold" style="color: #204EAB;">Data User</h1>
+    <button class="btn btn-primary shadow-sm px-4" data-bs-toggle="modal" data-bs-target="#modalAdd">
+        <i class="fas fa-plus me-2"></i>Tambah User
     </button>
 </div>
 
-<?= $message ?>
+<?php if ($error): ?><div class="alert alert-danger"><?= $error ?></div><?php endif; ?>
+<?php if ($success): ?><div class="alert alert-success"><?= $success ?></div><?php endif; ?>
 
-<div class="card">
+<div class="card shadow-sm border-0">
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-hover datatable">
-                <thead>
+            <table class="table table-hover datatable align-middle">
+                <thead class="table-light">
                     <tr>
-                        <th>Username</th>
                         <th>Nama Lengkap</th>
+                        <th>Username</th>
                         <th>Role</th>
-                        <th>Klinik</th>
-                        <th>Status</th>
-                        <th>Aksi</th>
+                        <th>Klinik / Lokasi</th>
+                        <th class="text-center">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php while ($row = $result->fetch_assoc()): ?>
+                    <?php foreach ($users as $u): ?>
                     <tr>
-                        <td><?= htmlspecialchars($row['username']) ?></td>
-                        <td><?= htmlspecialchars($row['nama_lengkap']) ?></td>
-                        <td><span class="badge bg-info"><?= str_replace('_', ' ', strtoupper($row['role'])) ?></span></td>
-                        <td><?= htmlspecialchars($row['nama_klinik'] ?? '-') ?></td>
+                        <td class="fw-bold"><?= htmlspecialchars($u['nama_lengkap']) ?></td>
+                        <td><?= htmlspecialchars($u['username']) ?></td>
                         <td>
-                            <span class="badge <?= $row['status'] == 'active' ? 'bg-success' : 'bg-secondary' ?>">
-                                <?= ucfirst($row['status']) ?>
+                            <span class="badge bg-info text-dark rounded-pill px-3">
+                                <?= ucfirst(str_replace('_', ' ', $u['role'])) ?>
                             </span>
                         </td>
-                        <td>
-                            <button class="btn btn-sm btn-info text-white" 
-                                onclick='editUser(<?= json_encode($row) ?>)'>
+                        <td><?= $u['nama_klinik'] ?: '<span class="text-muted fst-italic">Semua Lokasi / Gudang</span>' ?></td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-primary me-1" onclick="editUser(<?= htmlspecialchars(json_encode($u)) ?>)">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <?php if ($row['id'] != $_SESSION['user_id']): ?>
-                            <a href="index.php?page=users&delete_id=<?= $row['id'] ?>" 
-                               class="btn btn-sm btn-danger" 
-                               onclick="return confirm('Yakin ingin menghapus?')">
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(<?= $u['id'] ?>)">
                                 <i class="fas fa-trash"></i>
-                            </a>
-                            <?php endif; ?>
+                            </button>
                         </td>
                     </tr>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="modalUser" tabindex="-1">
+<!-- Modal Add -->
+<div class="modal fade" id="modalAdd" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="POST">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="action" value="add_user">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="modalTitle">Tambah User</h5>
+                    <h5 class="modal-title">Tambah User Baru</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <input type="hidden" name="id" id="user_id">
+                    <div class="mb-3">
+                        <label class="form-label">Nama Lengkap</label>
+                        <input type="text" name="nama_lengkap" class="form-control" required>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label">Username</label>
-                        <input type="text" name="username" id="username" class="form-control" required>
+                        <input type="text" name="username" class="form-control" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Password</label>
-                        <input type="password" name="password" id="password" class="form-control" placeholder="Kosongkan jika tidak ingin mengubah password">
-                        <small class="text-muted" id="password_hint">Wajib diisi untuk user baru.</small>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Nama Lengkap</label>
-                        <input type="text" name="nama_lengkap" id="nama_lengkap" class="form-control" required>
+                        <input type="password" name="password" class="form-control" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Role</label>
-                        <select name="role" id="role" class="form-select" onchange="toggleKlinik()" required>
+                        <select name="role" class="form-select" required onchange="toggleKlinik(this)">
                             <option value="super_admin">Super Admin</option>
                             <option value="admin_gudang">Admin Gudang</option>
                             <option value="admin_klinik">Admin Klinik</option>
+                            <option value="spv_klinik">SPV Klinik</option>
+                            <option value="petugas_hc">Petugas HC</option>
                             <option value="cs">CS</option>
                             <option value="b2b_ops">B2B Ops</option>
-                            <option value="petugas_hc">Petugas HC</option>
                         </select>
                     </div>
-                    <div class="mb-3" id="klinik_group" style="display:none;">
+                    <div class="mb-3 klinik-select" style="display:none;">
                         <label class="form-label">Klinik</label>
-                        <select name="klinik_id" id="klinik_id" class="form-select">
-                            <option value="">- Pilih Klinik -</option>
-                            <?php foreach ($clinic_options as $c): ?>
-                                <option value="<?= $c['id'] ?>"><?= $c['nama_klinik'] ?></option>
+                        <select name="klinik_id" class="form-select">
+                            <option value="">-- Pilih Klinik --</option>
+                            <?php foreach ($kliniks as $k): ?>
+                            <option value="<?= $k['id'] ?>"><?= htmlspecialchars($k['nama_klinik']) ?></option>
                             <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Status</label>
-                        <select name="status" id="status" class="form-select">
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
                         </select>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-primary-custom">Simpan</button>
+                    <button type="submit" class="btn btn-primary">Simpan</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
+<!-- Modal Edit -->
+<div id="modalEdit" class="modal fade" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="action" value="edit_user">
+                <input type="hidden" name="id" id="edit_id">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit User</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Nama Lengkap</label>
+                        <input type="text" name="nama_lengkap" id="edit_nama" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" id="edit_username" class="form-control" readonly disabled>
+                        <small class="text-muted">Username tidak dapat diubah.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password Baru</label>
+                        <input type="password" name="password" class="form-control" placeholder="Kosongkan jika tidak ingin mengubah">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Role</label>
+                        <select name="role" id="edit_role" class="form-select" required onchange="toggleKlinik(this)">
+                            <option value="super_admin">Super Admin</option>
+                            <option value="admin_gudang">Admin Gudang</option>
+                            <option value="admin_klinik">Admin Klinik</option>
+                            <option value="spv_klinik">SPV Klinik</option>
+                            <option value="petugas_hc">Petugas HC</option>
+                            <option value="cs">CS</option>
+                            <option value="b2b_ops">B2B Ops</option>
+                        </select>
+                    </div>
+                    <div class="mb-3 klinik-select">
+                        <label class="form-label">Klinik</label>
+                        <select name="klinik_id" id="edit_klinik_id" class="form-select">
+                            <option value="">-- Pilih Klinik --</option>
+                            <?php foreach ($kliniks as $k): ?>
+                            <option value="<?= $k['id'] ?>"><?= htmlspecialchars($k['nama_klinik']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<form id="formDelete" method="POST" style="display:none;">
+    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+    <input type="hidden" name="action" value="delete_user">
+    <input type="hidden" name="id" id="delete_id">
+</form>
+
 <script>
-function toggleKlinik() {
-    var role = document.getElementById('role').value;
-    var klinikGroup = document.getElementById('klinik_group');
-    if (role === 'admin_klinik' || role === 'petugas_hc') {
-        klinikGroup.style.display = 'block';
-        document.getElementById('klinik_id').required = true;
+function toggleKlinik(select) {
+    const role = select.value;
+    const modal = select.closest('.modal');
+    const klinikDiv = modal.querySelector('.klinik-select');
+    if (['admin_klinik', 'spv_klinik', 'petugas_hc', 'cs'].includes(role)) {
+        klinikDiv.style.display = 'block';
     } else {
-        klinikGroup.style.display = 'none';
-        document.getElementById('klinik_id').required = false;
-        document.getElementById('klinik_id').value = '';
+        klinikDiv.style.display = 'none';
+        modal.querySelector('select[name="klinik_id"]').value = '';
     }
 }
 
-function editUser(data) {
-    document.getElementById('modalTitle').innerText = 'Edit User';
-    document.getElementById('user_id').value = data.id;
-    document.getElementById('username').value = data.username;
-    document.getElementById('nama_lengkap').value = data.nama_lengkap;
-    document.getElementById('role').value = data.role;
-    document.getElementById('klinik_id').value = data.klinik_id || '';
-    document.getElementById('status').value = data.status;
-    document.getElementById('password_hint').innerText = 'Isi hanya jika ingin mengubah password.';
+function editUser(u) {
+    console.log("Editing user:", u);
+    // Set values
+    $('#edit_id').val(u.id);
+    $('#edit_nama').val(u.nama_lengkap);
+    $('#edit_username').val(u.username);
     
-    toggleKlinik();
-    var modal = new bootstrap.Modal(document.getElementById('modalUser'));
-    modal.show();
+    // Set role and trigger change
+    const roleSelect = document.getElementById('edit_role');
+    $(roleSelect).val(u.role).trigger('change');
+    
+    // Force toggleKlinik to run immediately
+    toggleKlinik(roleSelect);
+    
+    // Set klinik_id and trigger change
+    const klinikSelect = document.getElementById('edit_klinik_id');
+    $(klinikSelect).val(u.klinik_id || '').trigger('change');
+    
+    $('#modalEdit').modal('show');
 }
 
-function resetForm() {
-    document.getElementById('modalTitle').innerText = 'Tambah User';
-    document.getElementById('user_id').value = '';
-    document.getElementById('username').value = '';
-    document.getElementById('password').value = '';
-    document.getElementById('nama_lengkap').value = '';
-    document.getElementById('role').value = 'admin_klinik';
-    document.getElementById('klinik_id').value = '';
-    document.getElementById('status').value = 'active';
-    document.getElementById('password_hint').innerText = 'Wajib diisi untuk user baru.';
-    
-    toggleKlinik();
+function deleteUser(id) {
+    if (confirm('Yakin ingin menghapus user ini?')) {
+        $('#delete_id').val(id);
+        $('#formDelete').submit();
+    }
 }
 </script>
-
-</div> <!-- End container-fluid -->

@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/config.php';
 
 header('Content-Type: application/json');
 
@@ -12,6 +13,7 @@ if (($_SESSION['role'] ?? '') !== 'super_admin') {
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }
+require_csrf();
 
 $grup_id = (int)($_POST['grup_id'] ?? 0);
 $barang_id = (int)($_POST['barang_id'] ?? 0);
@@ -29,12 +31,17 @@ $res = $stmt->get_result();
 if ($res->num_rows > 0) {
     $stmt = $conn->prepare("UPDATE pemeriksaan_grup_detail SET qty_per_pemeriksaan = ? WHERE pemeriksaan_grup_id = ? AND barang_id = ?");
     $stmt->bind_param("iii", $qty, $grup_id, $barang_id);
-    $stmt->execute();
+    if (!$stmt->execute()) {
+        echo json_encode(['success' => false, 'message' => $stmt->error]);
+        exit;
+    }
 } else {
     $stmt = $conn->prepare("INSERT INTO pemeriksaan_grup_detail (pemeriksaan_grup_id, barang_id, qty_per_pemeriksaan) VALUES (?, ?, ?)");
     $stmt->bind_param("iii", $grup_id, $barang_id, $qty);
-    $stmt->execute();
+    if (!$stmt->execute()) {
+        echo json_encode(['success' => false, 'message' => $stmt->error]);
+        exit;
+    }
 }
 
 echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE);
-

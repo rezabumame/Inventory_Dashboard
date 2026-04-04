@@ -12,6 +12,17 @@ if (!isset($_SESSION['user_id']) || !isset($_GET['booking_id'])) {
 $booking_id = intval($_GET['booking_id']);
 
 try {
+    $role = $_SESSION['role'] ?? '';
+    if ($role === 'admin_klinik') {
+        // Secure IDOR: admin klinik can only get details of bookings from their own clinic
+        $userKlinik = (int)($_SESSION['klinik_id'] ?? 0);
+        $check = $conn->query("SELECT klinik_id FROM booking_pemeriksaan WHERE id = $booking_id")->fetch_assoc();
+        if (!$check || (int)$check['klinik_id'] !== $userKlinik) {
+            echo json_encode(['success' => false, 'message' => 'Access denied to this booking']);
+            exit;
+        }
+    }
+
     // Get unique exams from booking details
     $query = "SELECT DISTINCT 
                 pgd.pemeriksaan_grup_id as pemeriksaan_id,

@@ -72,9 +72,29 @@ $items = [];
 $res = $stmt->get_result();
 while ($row = $res->fetch_assoc()) $items[] = $row;
 
+// Fetch all pasien (utama + tambahan) with their exams
+$stmt = $conn->prepare("
+    SELECT 
+        bp.nama_pasien, 
+        bp.nomor_tlp, 
+        bp.tanggal_lahir,
+        GROUP_CONCAT(pg.nama_pemeriksaan SEPARATOR ', ') as exams
+    FROM booking_pasien bp
+    JOIN pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
+    WHERE bp.booking_id = ?
+    GROUP BY bp.nama_pasien, bp.nomor_tlp, bp.tanggal_lahir
+    ORDER BY MIN(bp.id) ASC
+");
+$stmt->bind_param("i", $id);
+$stmt->execute();
+$pasien_list = [];
+$res = $stmt->get_result();
+while ($row = $res->fetch_assoc()) $pasien_list[] = $row;
+
 echo json_encode([
     'success' => true,
     'header' => $header,
     'jenis_pemeriksaan' => $jenis,
-    'items' => $items
+    'items' => $items,
+    'pasien_list' => $pasien_list,
 ], JSON_UNESCAPED_UNICODE);

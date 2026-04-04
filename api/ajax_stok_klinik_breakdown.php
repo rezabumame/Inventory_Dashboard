@@ -16,19 +16,6 @@ if (!in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'cs', 'petu
     exit;
 }
 
-$conn->query("
-    CREATE TABLE IF NOT EXISTS barang_uom_conversion (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        barang_id INT NOT NULL,
-        from_uom VARCHAR(20) NULL,
-        to_uom VARCHAR(20) NULL,
-        multiplier DECIMAL(18,8) NOT NULL DEFAULT 1,
-        note VARCHAR(255) NULL,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_barang (barang_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
-
 $klinik_id = (int)($_POST['klinik_id'] ?? 0);
 $barang_id = (int)($_POST['barang_id'] ?? 0);
 $tanggal = (string)($_POST['tanggal'] ?? '');
@@ -108,14 +95,16 @@ if ($kode_homecare !== '') {
     $r = $conn->query("SELECT COALESCE(MAX(qty),0) AS qty FROM stock_mirror WHERE TRIM(location_code) = '$loc_h' AND $match_sql");
     if ($r && $r->num_rows > 0) $baseline_hc = (float)($r->fetch_assoc()['qty'] ?? 0);
 }
-$baseline_onsite = $baseline_onsite * $multiplier;
-$baseline_hc = $baseline_hc * $multiplier;
+$baseline_onsite = $baseline_onsite / $multiplier;
+$baseline_hc = $baseline_hc / $multiplier;
 
 $is_history = (strtotime($tanggal) < strtotime($today));
 
 $rb = [
     'out_transfer' => 0.0,
     'in_transfer' => 0.0,
+    'out_transfer_hc' => 0.0,
+    'in_transfer_hc' => 0.0,
     'sellout_klinik' => 0.0,
     'sellout_hc' => 0.0,
     'range' => null,
@@ -134,6 +123,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
     $re = $conn->real_escape_string($range_end);
     $ms = $conn->real_escape_string($month_start_ts);
 
+    // Rollback Onsite Transfers
     $r = $conn->query("
         SELECT COALESCE(SUM(ts.qty), 0) AS qty
         FROM transaksi_stok ts
@@ -141,7 +131,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
           AND ts.level = 'klinik'
           AND ts.level_id = $klinik_id
           AND ts.tipe_transaksi = 'out'
-          AND ts.referensi_tipe = 'transfer'
+          AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs' AND ts.created_at <= '$re'
           AND ts.created_at >= '$ms'
     ");
@@ -154,28 +144,55 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
           AND ts.level = 'klinik'
           AND ts.level_id = $klinik_id
           AND ts.tipe_transaksi = 'in'
-          AND ts.referensi_tipe = 'transfer'
+          AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs' AND ts.created_at <= '$re'
           AND ts.created_at >= '$ms'
     ");
     if ($r && $r->num_rows > 0) $rb['in_transfer'] = (float)($r->fetch_assoc()['qty'] ?? 0);
+
+    // Rollback HC Transfers
+    $r = $conn->query("
+        SELECT COALESCE(SUM(ts.qty), 0) AS qty
+        FROM transaksi_stok ts
+        WHERE ts.barang_id = $barang_id
+          AND ts.level = 'hc'
+          AND ts.level_id = $klinik_id
+          AND ts.tipe_transaksi = 'out'
+          AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
+          AND ts.created_at > '$rs' AND ts.created_at <= '$re'
+          AND ts.created_at >= '$ms'
+    ");
+    if ($r && $r->num_rows > 0) $rb['out_transfer_hc'] = (float)($r->fetch_assoc()['qty'] ?? 0);
+
+    $r = $conn->query("
+        SELECT COALESCE(SUM(ts.qty), 0) AS qty
+        FROM transaksi_stok ts
+        WHERE ts.barang_id = $barang_id
+          AND ts.level = 'hc'
+          AND ts.level_id = $klinik_id
+          AND ts.tipe_transaksi = 'in'
+          AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
+          AND ts.created_at > '$rs' AND ts.created_at <= '$re'
+          AND ts.created_at >= '$ms'
+    ");
+    if ($r && $r->num_rows > 0) $rb['in_transfer_hc'] = (float)($r->fetch_assoc()['qty'] ?? 0);
 
     $r = $conn->query("
         SELECT 
             pb.id,
             pb.nomor_pemakaian,
             pb.tanggal,
+            pb.created_at,
             pb.jenis_pemakaian,
             SUM(pbd.qty) AS qty
         FROM pemakaian_bhp pb
         JOIN pemakaian_bhp_detail pbd ON pbd.pemakaian_bhp_id = pb.id
         WHERE pb.klinik_id = $klinik_id
           AND pbd.barang_id = $barang_id
-          AND pb.tanggal > '" . $conn->real_escape_string($tanggal) . "'
-          AND pb.tanggal <= '" . $conn->real_escape_string(date('Y-m-d', strtotime($max_u))) . "'
-          AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "'
-        GROUP BY pb.id, pb.nomor_pemakaian, pb.tanggal, pb.jenis_pemakaian
-        ORDER BY pb.tanggal ASC, pb.id ASC
+          AND pb.created_at > '$rs' AND pb.created_at <= '$re'
+          AND pb.created_at >= '$ms'
+        GROUP BY pb.id, pb.nomor_pemakaian, pb.tanggal, pb.created_at, pb.jenis_pemakaian
+        ORDER BY pb.created_at ASC, pb.id ASC
     ");
     while ($r && ($row = $r->fetch_assoc())) {
         $qty = (float)($row['qty'] ?? 0);
@@ -185,15 +202,14 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
     }
 
     $r = $conn->query("
-        SELECT ts.referensi_id AS transfer_id, ts.tipe_transaksi, SUM(ts.qty) AS qty, MIN(ts.created_at) AS first_at, MAX(ts.created_at) AS last_at
+        SELECT ts.referensi_id AS transfer_id, ts.tipe_transaksi, ts.level, SUM(ts.qty) AS qty, MIN(ts.created_at) AS first_at, MAX(ts.created_at) AS last_at
         FROM transaksi_stok ts
         WHERE ts.barang_id = $barang_id
-          AND ts.level = 'klinik'
           AND ts.level_id = $klinik_id
-          AND ts.referensi_tipe = 'transfer'
+          AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs' AND ts.created_at <= '$re'
           AND ts.created_at >= '$ms'
-        GROUP BY ts.referensi_id, ts.tipe_transaksi
+        GROUP BY ts.referensi_id, ts.tipe_transaksi, ts.level
         ORDER BY last_at ASC
         LIMIT 50
     ");
@@ -252,11 +268,36 @@ $stock_as_of_onsite = $baseline_onsite;
 $stock_as_of_hc = $baseline_hc;
 if ($is_history) {
     $stock_as_of_onsite = $baseline_onsite + $rb['out_transfer'] - $rb['in_transfer'] + $rb['sellout_klinik'];
-    $stock_as_of_hc = $baseline_hc + $rb['sellout_hc'];
+    $stock_as_of_hc = $baseline_hc + $rb['out_transfer_hc'] - $rb['in_transfer_hc'] + $rb['sellout_hc'];
+}
+
+// Period usage (1st of month until selected date)
+$ms_q = $conn->real_escape_string($month_start);
+$t_q = $conn->real_escape_string($tanggal);
+$p_res = $conn->query("
+    SELECT 
+        pb.id,
+        pb.nomor_pemakaian,
+        pb.tanggal,
+        pb.created_at,
+        pb.jenis_pemakaian,
+        SUM(pbd.qty) AS qty
+    FROM pemakaian_bhp pb
+    JOIN pemakaian_bhp_detail pbd ON pbd.pemakaian_bhp_id = pb.id
+    WHERE pb.klinik_id = $klinik_id
+      AND pbd.barang_id = $barang_id
+      AND pb.tanggal >= '$ms_q' AND pb.tanggal <= '$t_q'
+    GROUP BY pb.id, pb.nomor_pemakaian, pb.tanggal, pb.created_at, pb.jenis_pemakaian
+    ORDER BY pb.tanggal ASC, pb.id ASC
+");
+$period_usage = [];
+while ($p_res && ($p_row = $p_res->fetch_assoc())) {
+    $period_usage[] = $p_row;
 }
 
 echo json_encode([
     'success' => true,
+    'period_usage' => $period_usage,
     'klinik' => [
         'id' => (int)$kl['id'],
         'nama_klinik' => (string)($kl['nama_klinik'] ?? ''),

@@ -8,29 +8,16 @@ document.addEventListener("DOMContentLoaded", function() {
     // Prepare Data based on Role
     $labels = [];
     $data = [];
-    $label = "Data";
-    $chartType = 'bar'; // default
+    $label = "Booking Harian (Semua Klinik)";
+    $chartType = 'line';
 
-    if ($role == 'cs' || $role == 'admin_klinik') {
-        // Booking stats for next 7 days
-        $label = "Booking 7 Hari Ke Depan";
-        $chartType = 'line';
-        $klinik_id = $_SESSION['klinik_id'] ?? 0;
-        for ($i = 0; $i < 7; $i++) {
-            $d = date('Y-m-d', strtotime("+$i days"));
-            $labels[] = date('d M', strtotime($d));
-            $q = $conn->query("SELECT COUNT(*) as cnt FROM booking_pemeriksaan WHERE klinik_id = $klinik_id AND tanggal_pemeriksaan = '$d' AND status != 'cancelled'");
-            $data[] = $q->fetch_assoc()['cnt'];
-        }
-    } else {
-        // Stock stats (Top 10 items by qty in Gudang Utama)
-        $label = "Stok Terbanyak (Gudang Utama)";
-        $chartType = 'bar';
-        $q = $conn->query("SELECT b.nama_barang, s.qty FROM stok_gudang_utama s JOIN barang b ON s.barang_id = b.id ORDER BY s.qty DESC LIMIT 10");
-        while($r = $q->fetch_assoc()) {
-            $labels[] = $r['nama_barang'];
-            $data[] = $r['qty'];
-        }
+    for ($i = 6; $i >= 0; $i--) {
+        $d = date('Y-m-d', strtotime("-$i days"));
+        $labels[] = date('d M', strtotime($d));
+        $q = $conn->query("SELECT COUNT(*) as cnt FROM booking_pemeriksaan WHERE tanggal_pemeriksaan = '$d' AND status != 'cancelled'");
+        $cnt = 0;
+        if ($q && $q->num_rows > 0) $cnt = (int)$q->fetch_assoc()['cnt'];
+        $data[] = $cnt;
     }
     ?>
 

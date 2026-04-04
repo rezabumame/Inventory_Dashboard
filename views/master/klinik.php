@@ -1,10 +1,24 @@
 <?php
-check_role(['super_admin', 'admin_gudang']);
+check_role(['super_admin']);
 
 $message = '';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    require_csrf();
     $id = $_POST['id'] ?? '';
+    $action = (string)($_POST['action'] ?? '');
+    if ($action === 'delete') {
+        $del_id = (int)($_POST['delete_id'] ?? 0);
+        if ($del_id > 0) {
+            $stmt = $conn->prepare("DELETE FROM klinik WHERE id=?");
+            $stmt->bind_param("i", $del_id);
+            if ($stmt->execute()) {
+                $message = '<div class="alert alert-success">Klinik berhasil dihapus.</div>';
+            } else {
+                $message = '<div class="alert alert-danger">Gagal menghapus klinik. Mungkin sedang digunakan.</div>';
+            }
+        }
+    } else {
     $kode_klinik = $_POST['kode_klinik'];
     $nama_klinik = $_POST['nama_klinik'];
     $kode_homecare = $_POST['kode_homecare'] ?? '';
@@ -28,16 +42,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $message = '<div class="alert alert-danger">Error: ' . $stmt->error . '</div>';
         }
     }
-}
-
-if (isset($_GET['delete_id'])) {
-    $id = $_GET['delete_id'];
-    $stmt = $conn->prepare("DELETE FROM klinik WHERE id=?");
-    $stmt->bind_param("i", $id);
-    if ($stmt->execute()) {
-        $message = '<div class="alert alert-success">Klinik berhasil dihapus.</div>';
-    } else {
-        $message = '<div class="alert alert-danger">Gagal menghapus klinik. Mungkin sedang digunakan.</div>';
     }
 }
 
@@ -98,11 +102,14 @@ $result = $conn->query("SELECT * FROM klinik ORDER BY id DESC");
                                 onclick='editKlinik(<?= json_encode($row) ?>)'>
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <a href="index.php?page=klinik&delete_id=<?= $row['id'] ?>" 
-                               class="btn btn-sm btn-danger" 
-                               onclick="return confirm('Yakin ingin menghapus?')">
-                                <i class="fas fa-trash"></i>
-                            </a>
+                            <form method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus?')">
+                                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="delete_id" value="<?= (int)$row['id'] ?>">
+                                <button type="submit" class="btn btn-sm btn-danger">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
                         </td>
                     </tr>
                     <?php endwhile; ?>
@@ -116,6 +123,7 @@ $result = $conn->query("SELECT * FROM klinik ORDER BY id DESC");
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="POST">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <div class="modal-header">
                     <h5 class="modal-title" id="modalTitle">Tambah Klinik</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

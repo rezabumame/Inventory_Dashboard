@@ -21,36 +21,78 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
 
 <div class="container-fluid">
     <div class="row mb-4 align-items-center">
-        <div class="col">
-            <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
-                <i class="fas fa-stethoscope me-2"></i>Daftar Pemeriksaan
-            </h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
-                    <li class="breadcrumb-item active">Daftar Pemeriksaan</li>
-                </ol>
-            </nav>
+        <div class="col-md-6">
+            <h1 class="h3 mb-0 fw-bold" style="color: #204EAB;">Daftar Pemeriksaan</h1>
+            <p class="text-muted small mb-0">Kelola paket pemeriksaan dan mapping item consumable / obat.</p>
+        </div>
+        <div class="col-md-6 text-md-end mt-3 mt-md-0">
+            <button class="btn btn-outline-success shadow-sm me-2" data-bs-toggle="modal" data-bs-target="#modalImport">
+                <i class="fas fa-file-import me-2"></i>Import Excel
+            </button>
+            <button class="btn btn-primary shadow-sm px-4" id="btnNewExam">
+                <i class="fas fa-plus me-2"></i>Buat Pemeriksaan Baru
+            </button>
         </div>
     </div>
 
+<style>
+    #examTable_wrapper .dataTables_length,
+    #examTable_wrapper .dataTables_filter {
+        margin-bottom: .5rem;
+    }
+    #examTable_wrapper .dataTables_length label,
+    #examTable_wrapper .dataTables_filter label {
+        font-size: .85rem;
+        color: #6c757d;
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        margin: 0;
+    }
+    #examTable_wrapper .dataTables_length select {
+        width: 65px;
+        padding: .25rem .5rem;
+        border-radius: .375rem;
+    }
+    #examTable_wrapper .dataTables_filter input {
+        width: 250px;
+        padding: .25rem .75rem;
+        border-radius: .375rem;
+        border: 1px solid #dee2e6;
+    }
+    #examTable_wrapper .dataTables_filter input:focus {
+        border-color: #204EAB;
+        box-shadow: 0 0 0 0.2rem rgba(32, 78, 171, 0.15);
+        outline: 0;
+    }
+    #examTable th {
+        font-size: .78rem;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: #6c757d;
+    }
+    #examTable td {
+        padding-top: .5rem;
+        padding-bottom: .5rem;
+        vertical-align: middle;
+    }
+    #examTable .btn-group .btn {
+        padding: .25rem .5rem;
+        line-height: 1.1;
+    }
+</style>
+
 <div class="row">
     <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Daftar Pemeriksaan</h5>
-                <button class="btn btn-sm btn-primary-custom" type="button" id="btnNewExam">
-                    <i class="fas fa-plus"></i> Baru
-                </button>
-            </div>
+        <div class="card shadow-sm border-0">
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-hover datatable" id="examTable">
+                    <table class="table table-hover table-sm align-middle" id="examTable">
                         <thead class="table-light">
                             <tr>
                                 <th>Nama Pemeriksaan</th>
-                                <th width="160" class="text-center">Total Item</th>
-                                <th width="220">Aksi</th>
+                                <th width="120" class="text-center">Item</th>
+                                <th width="140">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -61,15 +103,15 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                         <span class="badge bg-light text-dark border" data-role="total-items"><?= (int)$g['total_items'] ?></span>
                                     </td>
                                     <td>
-                                        <div class="d-flex gap-2">
-                                            <button type="button" class="btn btn-sm btn-outline-primary btnDetail">
-                                                <i class="fas fa-list"></i> Detail
+                                        <div class="btn-group" role="group">
+                                            <button type="button" class="btn btn-sm btn-outline-primary btnDetail" title="Detail">
+                                                <i class="fas fa-list"></i>
                                             </button>
-                                            <button type="button" class="btn btn-sm btn-outline-warning btnEdit">
-                                                <i class="fas fa-edit"></i> Edit
+                                            <button type="button" class="btn btn-sm btn-outline-warning btnEdit" title="Edit">
+                                                <i class="fas fa-edit"></i>
                                             </button>
-                                            <button type="button" class="btn btn-sm btn-outline-danger btnDelete">
-                                                <i class="fas fa-trash"></i> Hapus
+                                            <button type="button" class="btn btn-sm btn-outline-danger btnDelete" title="Hapus">
+                                                <i class="fas fa-trash"></i>
                                             </button>
                                         </div>
                                     </td>
@@ -83,78 +125,198 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
     </div>
 </div>
 
-<div class="modal fade" id="modalDetailGrup" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="detailTitle">Detail</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="detailGrupId" value="">
-                <h6 class="mb-2">Item Consumable / Obat</h6>
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Item</th>
-                                <th width="80">Qty</th>
-                                <th width="50"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="detailItemsBody"></tbody>
-                    </table>
-                </div>
-
-                <hr>
-                <h6 class="mb-2">Tambah Item</h6>
-                <form class="row g-2" id="formAddMapping">
-                    <div class="col-md-8">
-                        <select name="barang_id" class="form-select form-select-sm select2" required id="detailBarangId">
-                            <option value="">- Pilih Barang -</option>
-                            <?php foreach($barang_opts as $b): ?>
-                                <option value="<?= (int)$b['id'] ?>"><?= htmlspecialchars($b['kode_barang']) ?> - <?= htmlspecialchars($b['nama_barang']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <input type="number" name="qty" class="form-control form-control-sm" placeholder="Qty" required min="1" value="1" id="detailQty">
-                    </div>
-                    <div class="col-md-2">
-                        <button type="submit" class="btn btn-sm btn-success w-100">Add</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="modalGrup" tabindex="-1">
+<!-- Modal Import -->
+<div class="modal fade" id="modalImport" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form id="formGrup">
-                <input type="hidden" name="id" id="grupId" value="">
+            <form id="formImport" enctype="multipart/form-data">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="grupModalTitle">Buat Pemeriksaan Baru</h5>
+                    <h5 class="modal-title fw-bold">Import Pemeriksaan & Item</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="fas fa-info-circle me-1"></i> Gunakan template Excel untuk mengimport data secara massal.
+                    </div>
                     <div class="mb-3">
-                        <label>Nama Pemeriksaan</label>
-                        <input type="text" name="nama_pemeriksaan" class="form-control" required id="grupNama">
+                        <label class="form-label">Download Template</label>
+                        <div>
+                            <a href="api/download_template_pemeriksaan.php" class="btn btn-sm btn-outline-success">
+                                <i class="fas fa-file-excel me-1"></i> Template_Pemeriksaan.xlsx
+                            </a>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Pilih File Excel (.xlsx)</label>
+                        <input type="file" name="excel_file" class="form-control" accept=".xlsx" required>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="submit" class="btn btn-primary-custom">Simpan</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary-custom" id="btnDoImport">
+                        <i class="fas fa-upload me-1"></i> Mulai Import
+                    </button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
+<!-- Modal View -->
+<div class="modal fade" id="modalViewGrup" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="viewTitle">Detail</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Item</th>
+                                <th width="80">Qty</th>
+                            </tr>
+                        </thead>
+                        <tbody id="viewItemsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalDetailGrup" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="detailTitle">Edit</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="detailGrupId" value="">
+                <div class="row g-3">
+                    <div class="col-lg-8">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="fw-bold">Item Consumable / Obat</div>
+                            <div class="text-muted small">Barang lokal (ID/Kode Barang)</div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Item</th>
+                                        <th width="80">Qty</th>
+                                        <th width="44"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="detailItemsBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="border rounded-3 p-3">
+                            <div class="fw-bold mb-2">Pengaturan</div>
+                            <label class="form-label mb-1">Nama Pemeriksaan</label>
+                            <div class="input-group mb-3">
+                                <input type="text" class="form-control" id="detailGrupNama" value="">
+                                <button type="button" class="btn btn-primary-custom" id="btnSaveNama">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </div>
+
+                            <div class="fw-bold mb-2">Tambah Item</div>
+                            <form class="row g-2" id="formAddMapping">
+                                <div class="col-12">
+                                    <select name="barang_id" class="form-select form-select-sm select2" required id="detailBarangId">
+                                        <option value="">- Pilih Barang -</option>
+                                        <?php foreach($barang_opts as $b): ?>
+                                            <option value="<?= (int)$b['id'] ?>"><?= htmlspecialchars($b['kode_barang']) ?> - <?= htmlspecialchars($b['nama_barang']) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <input type="number" name="qty" class="form-control form-control-sm" placeholder="Qty" required min="1" value="1" id="detailQty">
+                                </div>
+                                <div class="col-12">
+                                    <button type="submit" class="btn btn-sm btn-success w-100"><i class="fas fa-plus"></i> Add</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalGrup" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form id="formGrup" class="modal-content">
+            <input type="hidden" name="id" id="grupId" value="">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="grupModalTitle">Buat Pemeriksaan Baru</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-12">
+                        <label class="form-label fw-semibold">Nama Pemeriksaan</label>
+                        <input type="text" name="nama_pemeriksaan" class="form-control" required id="grupNama" placeholder="Contoh: Paket Screening A">
+                    </div>
+                    
+                    <div class="col-12 mt-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="fw-bold mb-0">Mapping Item BHP</h6>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddRow">
+                                <i class="fas fa-plus me-1"></i>Tambah Baris
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered align-middle" id="tableNewMapping">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Item Barang</th>
+                                        <th width="120">Jumlah (Qty)</th>
+                                        <th width="50"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="newMappingBody">
+                                    <tr>
+                                        <td>
+                                            <select name="barang_ids[]" class="form-select form-select-sm select2-modal" required>
+                                                <option value="">- Pilih Barang -</option>
+                                                <?php foreach($barang_opts as $b): ?>
+                                                    <option value="<?= (int)$b['id'] ?>"><?= htmlspecialchars($b['kode_barang']) ?> - <?= htmlspecialchars($b['nama_barang']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input type="number" name="qtys[]" class="form-control form-control-sm" value="1" min="1" required>
+                                        </td>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-sm btn-outline-danger btnRemoveRow"><i class="fas fa-times"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-primary-custom px-4">Simpan Pemeriksaan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 </div> <!-- End container-fluid -->
 
 <script>
+const PEMERIKSAAN_CSRF = <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>;
 function getRowByGrupId(grupId) {
     return $('#examTable tbody tr[data-grup-id="' + grupId + '"]');
 }
@@ -177,17 +339,19 @@ function loadDetail(grupId) {
                 return;
             }
             $('#detailGrupId').val(res.grup.id);
-            $('#detailTitle').text('Detail: ' + res.grup.nama_pemeriksaan);
+            $('#detailGrupNama').val(res.grup.nama_pemeriksaan);
+            $('#detailTitle').text('Edit: ' + res.grup.nama_pemeriksaan);
             const rows = [];
             if (Array.isArray(res.details) && res.details.length > 0) {
                 res.details.forEach(function(d) {
-                    const itemText = (d.odoo_product_id ? d.odoo_product_id : '') + ' - ' + (d.nama_barang ? d.nama_barang : '') + ' (' + (d.satuan ? d.satuan : '') + ')';
+                    const code = (d.kode_barang ? d.kode_barang : (d.barang_id ? d.barang_id : '-'));
+                    const itemText = code + ' - ' + (d.nama_barang ? d.nama_barang : '') + (d.satuan ? ' (' + d.satuan + ')' : '');
                     rows.push(
                         '<tr>' +
-                            '<td>' + $('<div>').text(itemText).html() + '</td>' +
+                            '<td class="fw-semibold">' + $('<div>').text(itemText).html() + '</td>' +
                             '<td class="text-center fw-semibold">' + d.qty_per_pemeriksaan + '</td>' +
                             '<td class="text-center">' +
-                                '<button type="button" class="btn btn-xs btn-danger btnDeleteDetail" data-detail-id="' + d.id + '"><i class="fas fa-trash"></i></button>' +
+                                '<button type="button" class="btn btn-sm btn-outline-danger btnDeleteDetail" data-detail-id="' + d.id + '"><i class="fas fa-trash"></i></button>' +
                             '</td>' +
                         '</tr>'
                     );
@@ -204,29 +368,120 @@ function loadDetail(grupId) {
     });
 }
 
+function loadView(grupId) {
+    $('#viewItemsBody').html('<tr><td colspan="2" class="text-center text-muted py-3">Memuat...</td></tr>');
+    $.ajax({
+        url: 'api/ajax_pemeriksaan_detail.php',
+        method: 'POST',
+        dataType: 'json',
+        data: { grup_id: grupId },
+        success: function(res) {
+            if (!res || !res.success) {
+                $('#viewItemsBody').html('<tr><td colspan="2" class="text-center text-danger py-3">' + (res && res.message ? res.message : 'Gagal memuat') + '</td></tr>');
+                return;
+            }
+            $('#viewTitle').text('Detail: ' + res.grup.nama_pemeriksaan);
+            const rows = [];
+            if (Array.isArray(res.details) && res.details.length > 0) {
+                res.details.forEach(function(d) {
+                    const code = (d.kode_barang ? d.kode_barang : (d.barang_id ? d.barang_id : '-'));
+                    const itemText = code + ' - ' + (d.nama_barang ? d.nama_barang : '') + (d.satuan ? ' (' + d.satuan + ')' : '');
+                    rows.push(
+                        '<tr>' +
+                            '<td class="fw-semibold">' + $('<div>').text(itemText).html() + '</td>' +
+                            '<td class="text-center fw-semibold">' + d.qty_per_pemeriksaan + '</td>' +
+                        '</tr>'
+                    );
+                });
+            } else {
+                rows.push('<tr><td colspan="2" class="text-center text-muted py-3">Belum ada mapping item.</td></tr>');
+            }
+            $('#viewItemsBody').html(rows.join(''));
+            setRowTotalItems(res.grup.id, res.total_items);
+        },
+        error: function() {
+            $('#viewItemsBody').html('<tr><td colspan="2" class="text-center text-danger py-3">Gagal memuat</td></tr>');
+        }
+    });
+}
+
 $(document).ready(function() {
+    $('#examTable').DataTable({
+        "order": [[ 0, "asc" ]],
+        "pageLength": 10,
+        "lengthMenu": [10, 25, 50, 100],
+        "dom": "<'row mb-2'<'col-sm-12 col-md-6 d-flex align-items-center'l><'col-sm-12 col-md-6 d-flex align-items-center justify-content-end'f>>" +
+               "<'row'<'col-sm-12'tr>>" +
+               "<'row mt-2'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+        "language": {
+            "searchPlaceholder": "Cari pemeriksaan..."
+        }
+    });
+
     $('#btnNewExam').on('click', function() {
         $('#grupModalTitle').text('Buat Pemeriksaan Baru');
         $('#grupId').val('');
         $('#grupNama').val('');
+        $('#newMappingBody').html('<tr>' +
+            '<td><select name="barang_ids[]" class="form-select form-select-sm select2-modal" required><option value="">- Pilih Barang -</option>' + 
+            <?= json_encode(array_reduce($barang_opts, function($carry, $item) {
+                return $carry . '<option value="'.(int)$item['id'].'">'.htmlspecialchars($item['kode_barang']).' - '.htmlspecialchars($item['nama_barang']).'</option>';
+            }, '')) ?> + 
+            '</select></td>' +
+            '<td><input type="number" name="qtys[]" class="form-control form-control-sm" value="1" min="1" required></td>' +
+            '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btnRemoveRow"><i class="fas fa-times"></i></button></td>' +
+            '</tr>');
+        initSelect2Modal();
         new bootstrap.Modal(document.getElementById('modalGrup')).show();
     });
+
+    $('#btnAddRow').on('click', function() {
+        const newRow = $('<tr>' +
+            '<td><select name="barang_ids[]" class="form-select form-select-sm select2-modal" required><option value="">- Pilih Barang -</option>' + 
+            <?= json_encode(array_reduce($barang_opts, function($carry, $item) {
+                return $carry . '<option value="'.(int)$item['id'].'">'.htmlspecialchars($item['kode_barang']).' - '.htmlspecialchars($item['nama_barang']).'</option>';
+            }, '')) ?> + 
+            '</select></td>' +
+            '<td><input type="number" name="qtys[]" class="form-control form-control-sm" value="1" min="1" required></td>' +
+            '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btnRemoveRow"><i class="fas fa-times"></i></button></td>' +
+            '</tr>');
+        $('#newMappingBody').append(newRow);
+        initSelect2Modal();
+    });
+
+    $(document).on('click', '.btnRemoveRow', function() {
+        if ($('#newMappingBody tr').length > 1) {
+            $(this).closest('tr').remove();
+        } else {
+            alert('Minimal harus ada 1 baris item.');
+        }
+    });
+
+    function initSelect2Modal() {
+        $('.select2-modal').each(function() {
+            if (!$(this).hasClass('select2-hidden-accessible')) {
+                $(this).select2({
+                    theme: 'bootstrap-5',
+                    width: '100%',
+                    dropdownParent: $('#modalGrup')
+                });
+            }
+        });
+    }
 
     $('#examTable').on('click', '.btnEdit', function() {
         const tr = $(this).closest('tr');
         const id = tr.data('grup-id');
-        const nama = tr.data('grup-nama');
-        $('#grupModalTitle').text('Edit Pemeriksaan');
-        $('#grupId').val(id);
-        $('#grupNama').val(nama);
-        new bootstrap.Modal(document.getElementById('modalGrup')).show();
+        loadDetail(id);
+        const m = new bootstrap.Modal(document.getElementById('modalDetailGrup'));
+        m.show();
     });
 
     $('#examTable').on('click', '.btnDetail', function() {
         const tr = $(this).closest('tr');
         const id = tr.data('grup-id');
-        loadDetail(id);
-        new bootstrap.Modal(document.getElementById('modalDetailGrup')).show();
+        loadView(id);
+        new bootstrap.Modal(document.getElementById('modalViewGrup')).show();
     });
 
     $('#examTable').on('click', '.btnDelete', function() {
@@ -238,7 +493,7 @@ $(document).ready(function() {
             url: 'api/ajax_pemeriksaan_delete.php',
             method: 'POST',
             dataType: 'json',
-            data: { id: id },
+            data: { id: id, _csrf: PEMERIKSAAN_CSRF },
             success: function(res) {
                 if (!res || !res.success) {
                     alert(res && res.message ? res.message : 'Gagal menghapus');
@@ -258,7 +513,7 @@ $(document).ready(function() {
             url: 'api/ajax_pemeriksaan_save.php',
             method: 'POST',
             dataType: 'json',
-            data: $(this).serialize(),
+            data: $(this).serialize() + '&_csrf=' + encodeURIComponent(PEMERIKSAAN_CSRF),
             success: function(res) {
                 if (!res || !res.success) {
                     alert(res && res.message ? res.message : 'Gagal menyimpan');
@@ -271,23 +526,46 @@ $(document).ready(function() {
                     existing.data('grup-nama', nama);
                     existing.attr('data-grup-nama', nama);
                     existing.find('td').first().text(nama);
+                    $('#modalGrup').modal('hide');
                 } else {
-                    const rowHtml =
-                        '<tr data-grup-id="' + id + '" data-grup-nama="' + $('<div>').text(nama).html() + '">' +
-                            '<td class="fw-semibold">' + $('<div>').text(nama).html() + '</td>' +
-                            '<td class="text-center"><span class="badge bg-light text-dark border" data-role="total-items">0</span></td>' +
-                            '<td><div class="d-flex gap-2">' +
-                                '<button type="button" class="btn btn-sm btn-outline-primary btnDetail"><i class="fas fa-list"></i> Detail</button>' +
-                                '<button type="button" class="btn btn-sm btn-outline-warning btnEdit"><i class="fas fa-edit"></i> Edit</button>' +
-                                '<button type="button" class="btn btn-sm btn-outline-danger btnDelete"><i class="fas fa-trash"></i> Hapus</button>' +
-                            '</div></td>' +
-                        '</tr>';
-                    $('#examTable tbody').append(rowHtml);
+                    // Success, reload page to show new data with mapping count
+                    $('#modalGrup').modal('hide');
+                    location.reload();
                 }
-                bootstrap.Modal.getInstance(document.getElementById('modalGrup')).hide();
             },
             error: function() {
                 alert('Gagal menyimpan');
+            }
+        });
+    });
+
+    $('#formImport').on('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        formData.append('_csrf', PEMERIKSAAN_CSRF);
+        
+        const btn = $('#btnDoImport');
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Mengimport...');
+        
+        $.ajax({
+            url: 'api/ajax_pemeriksaan_import.php',
+            method: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            dataType: 'json',
+            success: function(res) {
+                btn.prop('disabled', false).html('<i class="fas fa-upload me-1"></i> Mulai Import');
+                if (!res || !res.success) {
+                    alert(res && res.message ? res.message : 'Gagal mengimport');
+                    return;
+                }
+                alert(res.message);
+                location.reload();
+            },
+            error: function() {
+                btn.prop('disabled', false).html('<i class="fas fa-upload me-1"></i> Mulai Import');
+                alert('Terjadi kesalahan saat mengimport.');
             }
         });
     });
@@ -302,7 +580,7 @@ $(document).ready(function() {
             url: 'api/ajax_pemeriksaan_detail_save.php',
             method: 'POST',
             dataType: 'json',
-            data: { grup_id: grupId, barang_id: barangId, qty: qty },
+            data: { grup_id: grupId, barang_id: barangId, qty: qty, _csrf: PEMERIKSAAN_CSRF },
             success: function(res) {
                 if (!res || !res.success) {
                     alert(res && res.message ? res.message : 'Gagal menyimpan mapping');
@@ -326,7 +604,7 @@ $(document).ready(function() {
             url: 'api/ajax_pemeriksaan_detail_delete.php',
             method: 'POST',
             dataType: 'json',
-            data: { detail_id: detailId },
+            data: { detail_id: detailId, _csrf: PEMERIKSAAN_CSRF },
             success: function(res) {
                 if (!res || !res.success) {
                     alert(res && res.message ? res.message : 'Gagal menghapus');
@@ -338,6 +616,42 @@ $(document).ready(function() {
                 alert('Gagal menghapus');
             }
         });
+    });
+
+    $('#btnSaveNama').on('click', function() {
+        const grupId = $('#detailGrupId').val();
+        const nama = ($('#detailGrupNama').val() || '').trim();
+        if (!grupId || !nama) return;
+        $.ajax({
+            url: 'api/ajax_pemeriksaan_save.php',
+            method: 'POST',
+            dataType: 'json',
+            data: { id: grupId, nama_pemeriksaan: nama, _csrf: PEMERIKSAAN_CSRF },
+            success: function(res) {
+                if (!res || !res.success) {
+                    alert(res && res.message ? res.message : 'Gagal menyimpan');
+                    return;
+                }
+                const id = res.id;
+                const nm = res.nama_pemeriksaan;
+                const row = getRowByGrupId(id);
+                row.data('grup-nama', nm);
+                row.attr('data-grup-nama', nm);
+                row.find('td').first().text(nm);
+                $('#detailTitle').text('Edit: ' + nm);
+            },
+            error: function() {
+                alert('Gagal menyimpan');
+            }
+        });
+    });
+
+    $('#modalDetailGrup').on('shown.bs.modal', function() {
+        const $sel = $('#detailBarangId');
+        if ($sel.length) {
+            if ($sel.hasClass('select2-hidden-accessible')) $sel.select2('destroy');
+            $sel.select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: $('#modalDetailGrup') });
+        }
     });
 });
 </script>

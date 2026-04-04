@@ -13,70 +13,78 @@ $total_barang = 0;
 $low_stock = 0;
 $pending_requests = 0;
 $today_bookings = 0;
-$my_pending_requests = 0;
-$today_hc_usage = 0;
-$last_mirror_update = '';
 $approval_klinik_cnt = 0;
+$last_mirror_update = '';
 
 $r = $conn->query("SELECT MAX(updated_at) AS last_update FROM stock_mirror");
 if ($r && $r->num_rows > 0) $last_mirror_update = (string)($r->fetch_assoc()['last_update'] ?? '');
 
-if ($role === 'super_admin' || $role === 'admin_gudang') {
+if (in_array($role, ['super_admin', 'admin_gudang'])) {
+    // GLOBAL STATS (Odoo / Gudang Utama)
     $res = $conn->query("SELECT COUNT(*) as cnt FROM barang");
     $total_barang = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
     $res = $conn->query("SELECT COUNT(*) as cnt FROM stok_gudang_utama s JOIN barang b ON s.barang_id = b.id WHERE s.qty <= b.stok_minimum");
     $low_stock = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE (ke_level = 'gudang_utama' AND status = 'pending') OR status = 'pending_gudang'");
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE status IN ('pending', 'pending_gudang', 'pending_spv')");
     $pending_requests = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE status = 'pending_gudang'");
-    $approval_klinik_cnt = (int)($res->fetch_assoc()['cnt'] ?? 0);
-} elseif ($role === 'admin_klinik') {
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM stok_gudang_klinik WHERE klinik_id = $klinik_id AND qty > 0");
-    $total_barang = (int)($res->fetch_assoc()['cnt'] ?? 0);
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM booking_pemeriksaan WHERE tanggal_pemeriksaan = CURDATE() AND status = 'booked'");
+    $today_bookings = (int)($res->fetch_assoc()['cnt'] ?? 0);
+} elseif (in_array($role, ['admin_klinik', 'cs', 'spv_klinik'])) {
+    // KLINIK STATS
+    $kode_klinik = '';
+    $res_klinik = $conn->query("SELECT kode_klinik, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1");
+    if ($res_klinik && $res_klinik->num_rows > 0) {
+        $k_row = $res_klinik->fetch_assoc();
+        $kode_klinik = $conn->real_escape_string(trim((string)$k_row['kode_klinik']));
+        $kode_homecare = $conn->real_escape_string(trim((string)$k_row['kode_homecare']));
+        
+        $union_sql = "SELECT odoo_product_id FROM stock_mirror WHERE TRIM(location_code) = '$kode_klinik'";
+        if ($kode_homecare !== '') {
+            $union_sql .= " UNION SELECT odoo_product_id FROM stock_mirror WHERE TRIM(location_code) = '$kode_homecare'";
+        }
+        $res = $conn->query("SELECT COUNT(*) as cnt FROM ($union_sql) t");
+        if ($res) $total_barang = (int)($res->fetch_assoc()['cnt'] ?? 0);
+        
+        $res = $conn->query("SELECT COUNT(*) as cnt FROM stock_mirror sm JOIN barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang) WHERE TRIM(sm.location_code) = '$kode_klinik' AND sm.qty <= b.stok_minimum");
+        if ($res) $low_stock = (int)($res->fetch_assoc()['cnt'] ?? 0);
+    }
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM stok_gudang_klinik s JOIN barang b ON s.barang_id = b.id WHERE s.klinik_id = $klinik_id AND s.qty <= b.stok_minimum");
-    $low_stock = (int)($res->fetch_assoc()['cnt'] ?? 0);
-
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE ke_level = 'klinik' AND ke_id = $klinik_id AND status = 'pending'");
-    $pending_requests = (int)($res->fetch_assoc()['cnt'] ?? 0);
-
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE dari_level = 'klinik' AND dari_id = $klinik_id AND status = 'pending'");
-    $my_pending_requests = (int)($res->fetch_assoc()['cnt'] ?? 0);
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE ((dari_level = 'klinik' AND dari_id = $klinik_id) OR (ke_level = 'klinik' AND ke_id = $klinik_id)) AND status IN ('pending', 'pending_spv')");
+    if ($res) $pending_requests = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
     $res = $conn->query("SELECT COUNT(*) as cnt FROM booking_pemeriksaan WHERE klinik_id = $klinik_id AND tanggal_pemeriksaan = CURDATE() AND status = 'booked'");
-    $today_bookings = (int)($res->fetch_assoc()['cnt'] ?? 0);
-} elseif ($role === 'cs') {
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM stok_gudang_klinik WHERE klinik_id = $klinik_id AND qty > 0");
-    $total_barang = (int)($res->fetch_assoc()['cnt'] ?? 0);
-
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM booking_pemeriksaan WHERE klinik_id = $klinik_id AND tanggal_pemeriksaan = CURDATE() AND status = 'booked'");
-    $today_bookings = (int)($res->fetch_assoc()['cnt'] ?? 0);
+    if ($res) $today_bookings = (int)($res->fetch_assoc()['cnt'] ?? 0);
 } elseif ($role === 'petugas_hc') {
+    // HC STATS
     $res = $conn->query("SELECT COUNT(DISTINCT barang_id) as cnt FROM stok_tas_hc WHERE user_id = $user_id AND qty > 0");
-    if ($res && $res->num_rows > 0) $total_barang = (int)($res->fetch_assoc()['cnt'] ?? 0);
+    if ($res) $total_barang = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
     $res = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE created_by = $user_id AND status = 'pending'");
-    if ($res && $res->num_rows > 0) $my_pending_requests = (int)($res->fetch_assoc()['cnt'] ?? 0);
+    if ($res) $pending_requests = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM pemakaian_bhp WHERE jenis_pemakaian = 'hc' AND user_hc_id = $user_id AND tanggal = CURDATE()");
-    if ($res && $res->num_rows > 0) $today_hc_usage = (int)($res->fetch_assoc()['cnt'] ?? 0);
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM booking_pemeriksaan WHERE tanggal_pemeriksaan = CURDATE() AND status = 'booked'");
+    if ($res) $today_bookings = (int)($res->fetch_assoc()['cnt'] ?? 0);
 }
 
 $upcoming_bookings = [];
-if (in_array($role, ['cs', 'admin_klinik'], true) && $klinik_id > 0) {
-    $sql_book = "SELECT b.*,
-                 (SELECT GROUP_CONCAT(bp.nama_pasien SEPARATOR ', ') FROM booking_pasien bp WHERE bp.booking_id = b.id) as nama_pasien_list
-                 FROM booking_pemeriksaan b
-                 WHERE b.klinik_id = $klinik_id
-                 AND b.tanggal_pemeriksaan BETWEEN CURDATE() AND (CURDATE() + INTERVAL 1 DAY)
-                 AND b.status = 'booked'
-                 ORDER BY b.tanggal_pemeriksaan ASC, b.created_at ASC";
-    $res_book = $conn->query($sql_book);
-    if ($res_book) while ($r = $res_book->fetch_assoc()) $upcoming_bookings[] = $r;
+$book_cond = "1=1";
+// Schedule only specific for clinic roles
+if (in_array($role, ['cs', 'admin_klinik', 'spv_klinik'], true) && $klinik_id > 0) {
+    $book_cond = "b.klinik_id = $klinik_id";
 }
+$sql_book = "SELECT b.*, k.nama_klinik,
+             (SELECT GROUP_CONCAT(bp.nama_pasien SEPARATOR ', ') FROM booking_pasien bp WHERE bp.booking_id = b.id) as nama_pasien_list
+             FROM booking_pemeriksaan b
+             LEFT JOIN klinik k ON b.klinik_id = k.id
+             WHERE $book_cond
+             AND b.tanggal_pemeriksaan BETWEEN CURDATE() AND (CURDATE() + INTERVAL 1 DAY)
+             AND b.status = 'booked'
+             ORDER BY b.tanggal_pemeriksaan ASC, b.created_at ASC";
+$res_book = $conn->query($sql_book);
+if ($res_book) while ($r = $res_book->fetch_assoc()) $upcoming_bookings[] = $r;
 ?>
 <div class="row mb-4 align-items-center">
     <div class="col">
@@ -130,72 +138,35 @@ if (in_array($role, ['cs', 'admin_klinik'], true) && $klinik_id > 0) {
     <div class="col-6 col-lg-3">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small text-uppercase fw-semibold mb-1">Items</div>
-                <div class="h4 mb-0 fw-bold"><?= (int)$total_barang ?></div>
-            </div>
-        </div>
-    </div>
-    <?php if ($role !== 'petugas_hc'): ?>
-    <div class="col-6 col-lg-3">
-        <div class="card h-100">
-            <div class="card-body">
-                <div class="text-muted small text-uppercase fw-semibold mb-1">Low Stock</div>
-                <div class="h4 mb-0 fw-bold <?= $low_stock > 0 ? 'text-danger' : '' ?>"><?= (int)$low_stock ?></div>
+                <div class="text-muted small text-uppercase fw-semibold mb-1">Total Items</div>
+                <div class="h4 mb-0 fw-bold text-primary"><?= (int)$total_barang ?></div>
             </div>
         </div>
     </div>
     <div class="col-6 col-lg-3">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small text-uppercase fw-semibold mb-1">Pending Masuk</div>
-                <div class="h4 mb-0 fw-bold <?= $pending_requests > 0 ? 'text-warning' : '' ?>"><?= (int)$pending_requests ?></div>
+                <div class="text-muted small text-uppercase fw-semibold mb-1">Low Stock (Gudang)</div>
+                <div class="h4 mb-0 fw-bold <?= $low_stock > 0 ? 'text-danger' : 'text-success' ?>"><?= (int)$low_stock ?></div>
             </div>
         </div>
     </div>
-    <?php if (in_array($role, ['super_admin', 'admin_gudang'], true)): ?>
     <div class="col-6 col-lg-3">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small text-uppercase fw-semibold mb-1">Approval K-K</div>
-                <div class="h4 mb-0 fw-bold <?= $approval_klinik_cnt > 0 ? 'text-warning' : '' ?>"><?= (int)$approval_klinik_cnt ?></div>
+                <div class="text-muted small text-uppercase fw-semibold mb-1">Pending Request</div>
+                <div class="h4 mb-0 fw-bold <?= $pending_requests > 0 ? 'text-warning' : 'text-success' ?>"><?= (int)$pending_requests ?></div>
             </div>
         </div>
     </div>
-    <?php endif; ?>
-    <?php endif; ?>
-
-    <?php if (in_array($role, ['cs', 'admin_klinik'], true)): ?>
     <div class="col-6 col-lg-3">
         <div class="card h-100">
             <div class="card-body">
                 <div class="text-muted small text-uppercase fw-semibold mb-1">Booking Hari Ini</div>
-                <div class="h4 mb-0 fw-bold"><?= (int)$today_bookings ?></div>
+                <div class="h4 mb-0 fw-bold text-info"><?= (int)$today_bookings ?></div>
             </div>
         </div>
     </div>
-    <?php endif; ?>
-
-    <?php if ($role === 'admin_klinik' || $role === 'petugas_hc'): ?>
-    <div class="col-6 col-lg-3">
-        <div class="card h-100">
-            <div class="card-body">
-                <div class="text-muted small text-uppercase fw-semibold mb-1">Pending Saya</div>
-                <div class="h4 mb-0 fw-bold <?= $my_pending_requests > 0 ? 'text-warning' : '' ?>"><?= (int)$my_pending_requests ?></div>
-            </div>
-        </div>
-    </div>
-    <?php endif; ?>
-
-    <?php if ($role === 'petugas_hc'): ?>
-    <div class="col-6 col-lg-3">
-        <div class="card h-100">
-            <div class="card-body">
-                <div class="text-muted small text-uppercase fw-semibold mb-1">Pemakaian HC</div>
-                <div class="h4 mb-0 fw-bold"><?= (int)$today_hc_usage ?></div>
-            </div>
-        </div>
-    </div>
-    <?php endif; ?>
 </div>
 
 <!-- Content Grid -->
@@ -204,7 +175,7 @@ if (in_array($role, ['cs', 'admin_klinik'], true) && $klinik_id > 0) {
     <div class="col-lg-8 mb-4 mb-lg-0">
         <div class="card border-0 shadow-sm h-100" style="border-radius:16px;">
             <div class="card-header bg-white fw-bold py-3 d-flex justify-content-between align-items-center" style="border-radius:16px 16px 0 0;">
-                <span><i class="fas fa-chart-line text-primary-custom me-2"></i> Statistik Ringkas</span>
+                <span><i class="fas fa-chart-line text-primary-custom me-2"></i> Statistik Aktivitas</span>
                 <span class="badge bg-light text-dark fw-normal">Odoo + Lokal</span>
             </div>
             <div class="card-body">
@@ -216,11 +187,11 @@ if (in_array($role, ['cs', 'admin_klinik'], true) && $klinik_id > 0) {
     </div>
 
     <!-- Upcoming Bookings Section -->
-    <?php if (in_array($role, ['cs', 'admin_klinik'])): ?>
     <div class="col-lg-4">
         <div class="card border-0 shadow-sm h-100" style="border-radius:16px;">
             <div class="card-header bg-white fw-bold py-3" style="border-radius:16px 16px 0 0;">
                 <i class="fas fa-calendar-alt text-primary-custom me-2"></i> Jadwal Pemeriksaan
+                <?= in_array($role, ['cs', 'admin_klinik', 'spv_klinik'], true) ? '' : '<span class="badge bg-info ms-2">Semua Klinik</span>' ?>
             </div>
             <div class="card-body p-0">
                 <?php if (!empty($upcoming_bookings)): ?>
@@ -228,7 +199,12 @@ if (in_array($role, ['cs', 'admin_klinik'], true) && $klinik_id > 0) {
                         <?php foreach ($upcoming_bookings as $b): ?>
                         <div class="list-group-item border-0 px-3 py-3 border-bottom">
                             <div class="d-flex w-100 justify-content-between align-items-center mb-2">
-                                <h6 class="mb-0 fw-bold text-dark"><?= htmlspecialchars($b['nama_pasien_list'] ?? 'Tanpa Nama') ?></h6>
+                                <div>
+                                    <h6 class="mb-0 fw-bold text-dark"><?= htmlspecialchars($b['nama_pasien_list'] ?? 'Tanpa Nama') ?></h6>
+                                    <?php if (!in_array($role, ['cs', 'admin_klinik', 'spv_klinik'], true)): ?>
+                                        <small class="text-secondary mt-1 d-block"><i class="fas fa-hospital me-1"></i> <?= htmlspecialchars($b['nama_klinik'] ?? '-') ?></small>
+                                    <?php endif; ?>
+                                </div>
                                 <?php 
                                 $date = date('Y-m-d', strtotime($b['tanggal_pemeriksaan']));
                                 if ($date == date('Y-m-d')) echo '<span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3">Hari Ini</span>';
@@ -262,39 +238,6 @@ if (in_array($role, ['cs', 'admin_klinik'], true) && $klinik_id > 0) {
             <?php endif; ?>
         </div>
     </div>
-    <?php elseif ($role == 'super_admin' || $role == 'admin_gudang'): ?>
-    <!-- Alternative for Admin Gudang: Low Stock List -->
-    <div class="col-lg-4">
-        <div class="card border-0 shadow-sm h-100" style="border-radius:16px;">
-            <div class="card-header bg-white fw-bold py-3 text-danger" style="border-radius:16px 16px 0 0;">
-                <i class="fas fa-exclamation-triangle me-2"></i> Stok Menipis
-            </div>
-            <div class="card-body p-0">
-                <?php
-                $low_q = $conn->query("SELECT b.nama_barang, s.qty, b.stok_minimum FROM stok_gudang_utama s JOIN barang b ON s.barang_id = b.id WHERE s.qty <= b.stok_minimum LIMIT 5");
-                if ($low_q->num_rows > 0):
-                ?>
-                <ul class="list-group list-group-flush">
-                    <?php while($row = $low_q->fetch_assoc()): ?>
-                    <li class="list-group-item d-flex justify-content-between align-items-center px-3 py-3 border-bottom border-light">
-                        <div>
-                            <div class="fw-bold text-dark"><?= $row['nama_barang'] ?></div>
-                            <small class="text-danger">Min: <?= $row['stok_minimum'] ?></small>
-                        </div>
-                        <span class="badge bg-danger rounded-pill"><?= $row['qty'] ?></span>
-                    </li>
-                    <?php endwhile; ?>
-                </ul>
-                <?php else: ?>
-                <div class="text-center py-5 text-muted">
-                    <i class="fas fa-check-circle fa-3x mb-3 text-success opacity-25"></i>
-                    <p class="mb-0">Stok aman.</p>
-                </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-    <?php endif; ?>
 </div>
 
 <?php include 'chart_script.php'; ?>

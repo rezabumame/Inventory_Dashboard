@@ -1,27 +1,22 @@
 <?php
 check_role(['super_admin', 'admin_gudang']);
 
-function ensure_barang_col($column, $definition) {
-    global $conn;
-    $c = $conn->real_escape_string($column);
-    $res = $conn->query("SHOW COLUMNS FROM `barang` LIKE '$c'");
-    if ($res && $res->num_rows === 0) {
-        $conn->query("ALTER TABLE `barang` ADD COLUMN `$column` $definition");
-    }
-}
-
-ensure_barang_col('kode_barang', "VARCHAR(64) NULL");
-ensure_barang_col('nama_barang', "VARCHAR(255) NULL");
-ensure_barang_col('satuan', "VARCHAR(64) NULL");
-ensure_barang_col('kategori', "VARCHAR(64) NULL");
-ensure_barang_col('stok_minimum', "INT NOT NULL DEFAULT 0");
-ensure_barang_col('odoo_product_id', "VARCHAR(64) NULL");
-ensure_barang_col('uom', "VARCHAR(64) NULL");
-ensure_barang_col('barcode', "VARCHAR(64) NULL");
-
 $q = $conn->query("
-    SELECT id, kode_barang, nama_barang, satuan, kategori, stok_minimum, odoo_product_id, uom, barcode
-    FROM barang
+    SELECT
+        b.id,
+        b.kode_barang,
+        b.nama_barang,
+        b.satuan,
+        b.kategori,
+        b.stok_minimum,
+        b.odoo_product_id,
+        b.uom,
+        b.barcode,
+        COALESCE(NULLIF(uc.from_uom, ''), COALESCE(b.uom, '')) AS uom_odoo,
+        COALESCE(NULLIF(uc.to_uom, ''), COALESCE(b.satuan, '')) AS uom_operasional,
+        COALESCE(uc.multiplier, 1) AS uom_ratio
+    FROM barang b
+    LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
     ORDER BY nama_barang ASC
 ");
 $rows = [];
@@ -33,8 +28,7 @@ foreach ($rows as $r) if ((int)($r['stok_minimum'] ?? 0) > 0) $with_min++;
 $without_min = $total - $with_min;
 ?>
 
-<div class="container-fluid">
-    <div class="row mb-4 align-items-center">
+<div class="row mb-4 align-items-center">
         <div class="col">
             <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
                 <i class="fas fa-boxes me-2"></i>Database Barang
@@ -89,7 +83,9 @@ $without_min = $total - $with_min;
                             <th style="width:90px;">ID</th>
                             <th style="width:160px;">Kode</th>
                             <th>Nama Barang</th>
-                            <th style="width:110px;">Satuan</th>
+                            <th style="width:130px;">UOM Operasional</th>
+                            <th style="width:130px;">UOM Odoo</th>
+                            <th style="width:120px;" class="text-end">Ratio</th>
                             <th style="width:140px;">Kategori</th>
                             <th style="width:120px;" class="text-end">Min Stok</th>
                             <th style="width:220px;">Odoo</th>
@@ -107,14 +103,18 @@ $without_min = $total - $with_min;
                             <td class="text-muted"><?= (int)$r['id'] ?></td>
                             <td class="fw-semibold"><?= htmlspecialchars((string)($r['kode_barang'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($r['nama_barang'] ?? '-')) ?></td>
-                            <td class="text-muted small"><?= htmlspecialchars((string)($r['satuan'] ?? '-')) ?></td>
+                            <td class="text-muted small"><?= htmlspecialchars((string)($r['uom_operasional'] ?? ($r['satuan'] ?? '-'))) ?></td>
+                            <td class="text-muted small"><?= htmlspecialchars((string)($r['uom_odoo'] ?? ($r['uom'] ?? '-'))) ?></td>
+                            <td class="text-end fw-semibold <?= (float)($r['uom_ratio'] ?? 1) === 1.0 ? 'text-muted' : '' ?>">
+                                <?= htmlspecialchars(rtrim(rtrim(number_format((float)($r['uom_ratio'] ?? 1), 8, '.', ''), '0'), '.')) ?>
+                            </td>
                             <td class="text-muted small"><?= htmlspecialchars((string)($r['kategori'] ?? '-')) ?></td>
                             <td class="text-end fw-semibold <?= (int)($r['stok_minimum'] ?? 0) === 0 ? 'text-muted' : '' ?>">
                                 <?= (int)($r['stok_minimum'] ?? 0) ?>
                             </td>
                             <td class="small text-muted">
                                 <div>odoo_product_id: <?= htmlspecialchars((string)($r['odoo_product_id'] ?? '-')) ?></div>
-                                <div>uom: <?= htmlspecialchars((string)($r['uom'] ?? '-')) ?> • barcode: <?= htmlspecialchars((string)($r['barcode'] ?? '-')) ?></div>
+                                <div>uom (odoo raw): <?= htmlspecialchars((string)($r['uom'] ?? '-')) ?> • barcode: <?= htmlspecialchars((string)($r['barcode'] ?? '-')) ?></div>
                             </td>
                             <td class="text-end">
                                 <button type="button" class="btn btn-sm btn-outline-primary btnEditMin">
@@ -138,6 +138,7 @@ $without_min = $total - $with_min;
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form method="POST" action="actions/process_barang_min_stok.php">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <div class="modal-body">
                     <input type="hidden" name="barang_id" id="minBarangId" value="">
                     <div class="mb-2">
@@ -176,4 +177,3 @@ document.addEventListener('click', function(e) {
     modal.show();
 });
 </script>
-

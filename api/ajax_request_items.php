@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/settings.php';
 
 header('Content-Type: application/json');
@@ -11,26 +12,14 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $role = (string)($_SESSION['role'] ?? '');
-if (!in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik'], true)) {
+if (!in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)) {
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }
+require_csrf();
 
 $ke_level = (string)($_POST['ke_level'] ?? '');
 $ke_id = (int)($_POST['ke_id'] ?? 0);
-
-$conn->query("
-    CREATE TABLE IF NOT EXISTS barang_uom_conversion (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        barang_id INT NOT NULL,
-        from_uom VARCHAR(20) NULL,
-        to_uom VARCHAR(20) NULL,
-        multiplier DECIMAL(18,8) NOT NULL DEFAULT 1,
-        note VARCHAR(255) NULL,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_barang (barang_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
 
 function resolve_location_code(mysqli $conn, string $input): string {
     $input = trim($input);
@@ -107,6 +96,17 @@ function conv_to_uom(mysqli $conn, int $barang_id, string $fallback): string {
     return $u;
 }
 
+function conv_from_uom(mysqli $conn, int $barang_id): string {
+    static $cache = [];
+    if ($barang_id <= 0) return '';
+    if (isset($cache[$barang_id])) return (string)$cache[$barang_id];
+    $r = $conn->query("SELECT COALESCE(from_uom, '') AS u FROM barang_uom_conversion WHERE barang_id = $barang_id LIMIT 1");
+    $u = '';
+    if ($r && $r->num_rows > 0) $u = trim((string)($r->fetch_assoc()['u'] ?? ''));
+    $cache[$barang_id] = $u;
+    return $u;
+}
+
 if ($ke_level === 'klinik') {
     if ($ke_id <= 0) {
         echo json_encode(['success' => true, 'items' => [], 'location_code' => ''], JSON_UNESCAPED_UNICODE);
@@ -126,13 +126,17 @@ if ($ke_level === 'klinik') {
     while ($res && ($row = $res->fetch_assoc())) {
         $b = find_or_create_barang_by_kode($conn, (string)($row['kode_barang'] ?? ''));
         $m = conv_multiplier($conn, (int)($b['id'] ?? 0));
-        $q = (float)($row['qty'] ?? 0) * $m;
+        if ($m <= 0) $m = 1;
+        $q = (float)($row['qty'] ?? 0) / $m;
         $uom = conv_to_uom($conn, (int)($b['id'] ?? 0), (string)($b['satuan'] ?? ''));
+        $uom_odoo = conv_from_uom($conn, (int)($b['id'] ?? 0));
         $items[] = [
             'barang_id' => (int)($b['id'] ?? 0),
             'kode_barang' => (string)($row['kode_barang'] ?? ''),
             'nama_barang' => (string)($b['nama_barang'] ?? ''),
             'satuan' => (string)$uom,
+            'uom_odoo' => (string)$uom_odoo,
+            'uom_ratio' => (float)$m,
             'qty' => (float)round($q, 4)
         ];
     }
@@ -153,13 +157,17 @@ if ($ke_level === 'gudang_utama') {
     while ($res && ($row = $res->fetch_assoc())) {
         $b = find_or_create_barang_by_kode($conn, (string)($row['kode_barang'] ?? ''));
         $m = conv_multiplier($conn, (int)($b['id'] ?? 0));
-        $q = (float)($row['qty'] ?? 0) * $m;
+        if ($m <= 0) $m = 1;
+        $q = (float)($row['qty'] ?? 0) / $m;
         $uom = conv_to_uom($conn, (int)($b['id'] ?? 0), (string)($b['satuan'] ?? ''));
+        $uom_odoo = conv_from_uom($conn, (int)($b['id'] ?? 0));
         $items[] = [
             'barang_id' => (int)($b['id'] ?? 0),
             'kode_barang' => (string)($row['kode_barang'] ?? ''),
             'nama_barang' => (string)($b['nama_barang'] ?? ''),
             'satuan' => (string)$uom,
+            'uom_odoo' => (string)$uom_odoo,
+            'uom_ratio' => (float)$m,
             'qty' => (float)round($q, 4)
         ];
     }

@@ -2,44 +2,6 @@
 session_start();
 require_once __DIR__ . '/../config/database.php';
 
-$conn->query("
-    CREATE TABLE IF NOT EXISTS stock_mirror (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        odoo_product_id VARCHAR(64) NOT NULL,
-        kode_barang VARCHAR(64) NOT NULL,
-        location_code VARCHAR(100) NOT NULL,
-        qty DECIMAL(18,4) NOT NULL DEFAULT 0,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_loc_prod (odoo_product_id, location_code)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
-
-$conn->query("
-    CREATE TABLE IF NOT EXISTS stok_tas_hc (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        barang_id INT NOT NULL,
-        user_id INT NOT NULL,
-        klinik_id INT NOT NULL,
-        qty DECIMAL(18,4) NOT NULL DEFAULT 0,
-        updated_by INT NULL,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY barang_user (barang_id, user_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
-
-$conn->query("
-    CREATE TABLE IF NOT EXISTS barang_uom_conversion (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        barang_id INT NOT NULL,
-        from_uom VARCHAR(20) NULL,
-        to_uom VARCHAR(20) NULL,
-        multiplier DECIMAL(18,8) NOT NULL DEFAULT 1,
-        note VARCHAR(255) NULL,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_barang (barang_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-");
-
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
     echo '<div class="alert alert-danger">Unauthorized access</div>';
@@ -47,7 +9,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 // Check role
-$allowed_roles = ['super_admin', 'admin_gudang', 'admin_klinik', 'cs', 'petugas_hc'];
+$allowed_roles = ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'cs', 'petugas_hc'];
 if (!in_array($_SESSION['role'], $allowed_roles)) {
     echo '<div class="alert alert-danger">Access denied</div>';
     exit;
@@ -117,7 +79,9 @@ if (!empty($petugas)) {
     $match = '(' . implode(' OR ', $clauses) . ')';
     $r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE TRIM(location_code) = '$loc' AND $match");
     $q = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
-    $q = $q * $mult;
+    $q = $q / $mult;
+    $res_u = $conn->query("SELECT MAX(updated_at) AS last_update FROM stock_mirror WHERE TRIM(location_code) = '$loc'");
+    $last_update = (string)($res_u && $res_u->num_rows > 0 ? ($res_u->fetch_assoc()['last_update'] ?? '') : '');
 
     echo '<div class="mb-2">';
     echo '<div class="text-muted small">Stok HC (Mirror Odoo)</div>';
@@ -125,6 +89,9 @@ if (!empty($petugas)) {
     echo '<div class="fw-semibold">' . htmlspecialchars($kode_homecare) . '</div>';
     echo '<div class="fw-bold">' . htmlspecialchars(fmt_qty($q)) . ' <small class="text-muted">' . htmlspecialchars((string)$b['satuan']) . '</small></div>';
     echo '</div>';
+    if ($last_update !== '') {
+        echo '<div class="text-muted small">Terakhir update mirror: <span class="fw-semibold">' . htmlspecialchars(date('d M Y H:i', strtotime($last_update))) . '</span></div>';
+    }
     echo '<div class="text-muted small">Stok ini bersifat bersama untuk klinik. Petugas HC hanya dipetakan untuk kebutuhan operasional di sistem.</div>';
     echo '</div>';
 
@@ -155,6 +122,64 @@ if (!empty($petugas)) {
     echo '</tbody>';
     echo '</table>';
     echo '</div>';
+
+    $sellout_total = 0.0;
+    $sellout_rows = [];
+    if ($last_update !== '') {
+        $lu = $conn->real_escape_string($last_update);
+        $filter = "pb.klinik_id = $klinik_id AND pb.jenis_pemakaian = 'hc' AND pbd.barang_id = $barang_id AND pb.created_at > '$lu'";
+    } else {
+        $filter = "1=0";
+    }
+    $rs = $conn->query("
+        SELECT COALESCE(SUM(pbd.qty),0) AS qty
+        FROM pemakaian_bhp_detail pbd
+        JOIN pemakaian_bhp pb ON pb.id = pbd.pemakaian_bhp_id
+        WHERE $filter
+    ");
+    if ($rs && $rs->num_rows > 0) $sellout_total = (float)($rs->fetch_assoc()['qty'] ?? 0);
+
+    $rs = $conn->query("
+        SELECT pb.nomor_pemakaian, pb.tanggal, pb.created_at, pb.user_hc_id, pb.created_by, pbd.qty,
+               u_hc.nama_lengkap AS hc_name,
+               u_created.nama_lengkap AS created_by_name
+        FROM pemakaian_bhp_detail pbd
+        JOIN pemakaian_bhp pb ON pb.id = pbd.pemakaian_bhp_id
+        LEFT JOIN users u_hc ON u_hc.id = pb.user_hc_id
+        LEFT JOIN users u_created ON u_created.id = pb.created_by
+        WHERE $filter
+        ORDER BY pb.created_at DESC
+        LIMIT 15
+    ");
+    while ($rs && ($row = $rs->fetch_assoc())) $sellout_rows[] = $row;
+
+    if ($sellout_total > 0.0001) {
+        echo '<div class="mt-3 p-3 border rounded-3 bg-light">';
+        echo '<div class="d-flex justify-content-between align-items-center mb-2">';
+        echo '<div class="fw-bold"><i class="fas fa-minus-circle text-danger me-2"></i>Sellout HC (setelah refresh)</div>';
+        echo '<div class="fw-bold text-danger">' . htmlspecialchars(fmt_qty($sellout_total)) . ' <small class="text-muted">' . htmlspecialchars((string)$b['satuan']) . '</small></div>';
+        echo '</div>';
+        echo '<div class="small text-muted mb-2">Berikut transaksi pemakaian HC yang mengurangi stok setelah mirror terakhir di-refresh.</div>';
+        echo '<div class="table-responsive">';
+        echo '<table class="table table-sm mb-0">';
+        echo '<thead class="table-light"><tr><th>No</th><th>Waktu</th><th>Petugas HC</th><th>Dibuat Oleh</th><th class="text-end">Qty</th></tr></thead>';
+        echo '<tbody>';
+        foreach ($sellout_rows as $sr) {
+            $no = (string)($sr['nomor_pemakaian'] ?? '-');
+            $waktu = (string)($sr['created_at'] ?? ($sr['tanggal'] ?? ''));
+            $hc_name = (string)($sr['hc_name'] ?? '-');
+            $created_by_name = (string)($sr['created_by_name'] ?? '-');
+            $qty = (float)($sr['qty'] ?? 0);
+            echo '<tr>';
+            echo '<td class="text-muted small">' . htmlspecialchars($no) . '</td>';
+            echo '<td class="text-muted small">' . htmlspecialchars($waktu !== '' ? date('d M Y H:i', strtotime($waktu)) : '-') . '</td>';
+            echo '<td>' . htmlspecialchars($hc_name) . '</td>';
+            echo '<td class="text-muted small">' . htmlspecialchars($created_by_name) . '</td>';
+            echo '<td class="text-end fw-semibold text-danger">' . htmlspecialchars(fmt_qty($qty)) . '</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table></div></div>';
+    }
 } else {
     $kode_homecare = (string)($k['kode_homecare'] ?? '');
     if ($kode_homecare === '' || (string)($b['kode_barang'] ?? '') === '') {
@@ -166,7 +191,7 @@ if (!empty($petugas)) {
     $kb = $conn->real_escape_string((string)$b['kode_barang']);
     $r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE location_code = '$loc' AND TRIM(kode_barang) = '$kb'");
     $q = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
-    $q = $q * $mult;
+    $q = $q / $mult;
     echo '<div class="table-responsive">';
     echo '<table class="table table-sm table-hover mb-0">';
     echo '<thead class="table-light">';

@@ -20,6 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['id'])) {
     exit;
 }
 
+require_csrf();
+
 $id = intval($_POST['id']);
 $created_by = $_SESSION['user_id'];
 

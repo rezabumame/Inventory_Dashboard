@@ -4,6 +4,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
 
 if (!isset($_SESSION['user_id'])) redirect('index.php?page=login');
+require_csrf();
 
 $role = (string)($_SESSION['role'] ?? '');
 if (!in_array($role, ['super_admin', 'admin_gudang'], true)) {
@@ -22,14 +23,6 @@ if ($barang_id <= 0 || $stok_minimum < 0) {
 }
 
 try {
-    $res = $conn->query("SHOW COLUMNS FROM `barang` LIKE 'stok_minimum'");
-    if ($res && $res->num_rows === 0) {
-        $conn->query("ALTER TABLE `barang` ADD COLUMN `stok_minimum` INT NOT NULL DEFAULT 0");
-    }
-} catch (Exception $e) {
-}
-
-try {
     $stmt = $conn->prepare("UPDATE barang SET stok_minimum = ? WHERE id = ?");
     $stmt->bind_param("ii", $stok_minimum, $barang_id);
     $stmt->execute();
@@ -39,4 +32,3 @@ try {
 }
 
 redirect('index.php?page=barang');
-

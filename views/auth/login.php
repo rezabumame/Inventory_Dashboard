@@ -5,6 +5,7 @@ if (isset($_SESSION['user_id'])) {
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    require_csrf();
     $username = $_POST['username'];
     $password = $_POST['password'];
 
@@ -67,13 +68,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <?php endif; ?>
         
         <form method="POST" action="">
+            <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
             <div class="mb-3">
                 <label class="form-label small fw-semibold text-muted">Username</label>
                 <input type="text" name="username" class="form-control" required autofocus>
             </div>
             <div class="mb-4">
                 <label class="form-label small fw-semibold text-muted">Password</label>
-                <input type="password" name="password" class="form-control" required>
+                <div class="input-group">
+                    <input type="password" name="password" id="loginPassword" class="form-control border-end-0" required>
+                    <button class="btn border border-start-0 bg-transparent text-muted" type="button" id="togglePasswordBtn" style="border-color: #dee2e6;">
+                        <i class="fas fa-eye" id="togglePasswordIcon"></i>
+                    </button>
+                </div>
             </div>
             <button type="submit" class="btn btn-primary w-100">Sign In</button>
         </form>
@@ -86,5 +93,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     </div>
 </div>
 
+<script>
+    document.getElementById('togglePasswordBtn').addEventListener('click', function() {
+        const passwordInput = document.getElementById('loginPassword');
+        const icon = document.getElementById('togglePasswordIcon');
+        
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            icon.classList.remove('fa-eye');
+            icon.classList.add('fa-eye-slash');
+        } else {
+            passwordInput.type = 'password';
+            icon.classList.remove('fa-eye-slash');
+            icon.classList.add('fa-eye');
+        }
+    });
+</script>
 </body>
 </html>

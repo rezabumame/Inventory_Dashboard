@@ -1,8 +1,6 @@
 <?php
 require_once __DIR__ . '/database.php';
 
-$conn->query("CREATE TABLE IF NOT EXISTS app_settings (k VARCHAR(100) PRIMARY KEY, v TEXT NOT NULL)");
-
 function get_setting($key, $default = null) {
     global $conn;
     $key_esc = $conn->real_escape_string($key);

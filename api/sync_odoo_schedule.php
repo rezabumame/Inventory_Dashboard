@@ -100,6 +100,21 @@ if (!$lock_ok) {
     exit;
 }
 
+$lark_url = trim((string)get_setting('webhook_lark_url', ''));
+function post_lark_text_sched($text) {
+    global $lark_url;
+    if ($lark_url === '') return;
+    $payload = json_encode(['msg_type' => 'text', 'content' => ['text' => $text]]);
+    $ch = curl_init($lark_url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/'));
@@ -107,27 +122,31 @@ $dir1 = rtrim(dirname($script), '/');          // e.g. /bumame_iventory2/api
 $appRoot = rtrim(dirname($dir1), '/');         // e.g. /bumame_iventory2
 if ($appRoot === '') $appRoot = '/';
 $targetUrl = $scheme . '://' . $host . $appRoot . '/api/sync_odoo.php';
-$ch = curl_init($targetUrl);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+$delays = [30, 120, 600];
 $headers = [];
 if (!empty(ODOO_SYNC_SYSTEM_TOKEN)) {
     $headers[] = 'X-Internal-Token: ' . ODOO_SYNC_SYSTEM_TOKEN;
 }
-if (!empty($headers)) {
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-}
-if (session_id() !== '') {
-    curl_setopt($ch, CURLOPT_COOKIE, session_name() . '=' . session_id());
-}
-$resp = curl_exec($ch);
-$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
-
-if ($code >= 200 && $code < 300) {
-    set_setting('odoo_sync_last_run', (string) time());
+function run_once_sched($url, $headers) {
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+    if (!empty($headers)) curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    if (session_id() !== '') curl_setopt($ch, CURLOPT_COOKIE, session_name() . '=' . session_id());
+    $resp = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
     $payload = json_decode((string)$resp, true);
+    $ok = ($code >= 200 && $code < 300 && is_array($payload) && ($payload['success'] ?? false));
+    return ['ok' => $ok, 'code' => $code, 'payload' => $payload, 'err' => $err, 'raw' => $resp];
+}
+
+$first = run_once_sched($targetUrl, $headers);
+if ($first['ok']) {
+    set_setting('odoo_sync_last_run', (string) time());
+    $payload = $first['payload'];
     if (is_array($payload)) {
         $payload['ran'] = true;
         $payload['debug'] = $debug;
@@ -136,11 +155,36 @@ if ($code >= 200 && $code < 300) {
         echo json_encode(['success' => true, 'ran' => true, 'message' => 'Sync selesai', 'debug' => $debug]);
     }
 } else {
-    http_response_code(500);
-    $snippet = '';
-    $resp_s = (string)$resp;
-    if ($resp_s !== '') $snippet = substr($resp_s, 0, 300);
-    echo json_encode(['success' => false, 'ran' => false, 'message' => 'Sync request failed', 'http_code' => $code, 'body' => $snippet, 'debug' => $debug]);
+    post_lark_text_sched("[SYNC ODOO][SCHED] Gagal (" . (int)$first['code'] . "). Auto-retry: 30s → 2m → 10m");
+    $ok = false;
+    $attempt = 0;
+    foreach ($delays as $d) {
+        $attempt++;
+        sleep($d);
+        $r = run_once_sched($targetUrl, $headers);
+        if ($r['ok']) {
+            set_setting('odoo_sync_last_run', (string) time());
+            $payload = $r['payload'];
+            if (is_array($payload)) {
+                $payload['ran'] = true;
+                $payload['retry_attempt'] = $attempt;
+                $payload['debug'] = $debug;
+                echo json_encode($payload);
+            } else {
+                echo json_encode(['success' => true, 'ran' => true, 'retry_attempt' => $attempt, 'message' => 'Sync selesai', 'debug' => $debug]);
+            }
+            post_lark_text_sched("[SYNC ODOO][SCHED] Berhasil setelah retry #" . $attempt . " (" . $d . "s).");
+            $ok = true;
+            break;
+        } else {
+            post_lark_text_sched("[SYNC ODOO][SCHED] Retry #" . $attempt . " gagal (" . (int)$r['code'] . ").");
+        }
+    }
+    if (!$ok) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'ran' => false, 'message' => 'Sync request failed (all retries)', 'debug' => $debug]);
+        post_lark_text_sched("[SYNC ODOO][SCHED] Gagal setelah semua retry.");
+    }
 }
 
 try {

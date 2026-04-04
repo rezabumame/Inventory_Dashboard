@@ -4,10 +4,15 @@ require_once 'config/database.php';
 require_once 'config/config.php';
 
 $page = isset($_GET['page']) ? $_GET['page'] : 'dashboard';
+
+// Redirect petugas_hc from dashboard to stok_petugas_hc
+if ($page === 'dashboard' && isset($_SESSION['role']) && $_SESSION['role'] === 'petugas_hc') {
+    $page = 'stok_petugas_hc';
+}
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 
 // Auth check for non-public pages
-$public_pages = ['login', 'logout'];
+$public_pages = ['login', 'logout', 'qr_verify_rab'];
 if (!in_array($page, $public_pages) && !isset($_SESSION['user_id'])) {
     redirect('index.php?page=login');
 }
@@ -90,6 +95,15 @@ switch ($page) {
     // Pengaturan
     case 'settings_integrasi':
         include 'views/settings/integrasi.php';
+        break;
+    case 'odoo_format_config':
+        include 'views/settings/odoo_format_config.php';
+        break;
+    case 'mcu_realization':
+        include 'views/mcu/realization.php';
+        break;
+    case 'qr_verify_rab':
+        include 'api/verify_request.php';
         break;
 
     // Laporan

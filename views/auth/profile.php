@@ -6,19 +6,19 @@ $message = '';
 $message_type = '';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    require_csrf();
     $nama_lengkap = $_POST['nama_lengkap'];
     $password = $_POST['password'];
     
-    $update_pass = "";
-    if (!empty($password)) {
-        $hashed = password_hash($password, PASSWORD_DEFAULT);
-        $update_pass = ", password = '$hashed'";
-    }
-
     if (empty($message)) {
-        $sql = "UPDATE users SET nama_lengkap = ? $update_pass WHERE id = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("si", $nama_lengkap, $user_id);
+        if (!empty($password)) {
+            $hashed = password_hash($password, PASSWORD_DEFAULT);
+            $stmt = $conn->prepare("UPDATE users SET nama_lengkap = ?, password = ? WHERE id = ?");
+            $stmt->bind_param("ssi", $nama_lengkap, $hashed, $user_id);
+        } else {
+            $stmt = $conn->prepare("UPDATE users SET nama_lengkap = ? WHERE id = ?");
+            $stmt->bind_param("si", $nama_lengkap, $user_id);
+        }
         
         if ($stmt->execute()) {
             $_SESSION['nama_lengkap'] = $nama_lengkap;
@@ -118,6 +118,7 @@ $user = $conn->query("SELECT u.*, k.nama_klinik FROM users u LEFT JOIN klinik k 
                     </div>
                     <div class="card-body p-4">
                         <form method="POST" id="profileForm">
+                            <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                             <div class="row g-3">
                                 <div class="col-md-12">
                                     <label class="form-label fw-bold">
