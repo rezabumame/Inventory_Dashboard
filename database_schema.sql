@@ -1,6 +1,8 @@
 -- Bumame Inventory Database Schema Dump
 -- Generated on 2026-04-04 08:22:46
 
+SET FOREIGN_KEY_CHECKS = 0;
+
 CREATE TABLE `app_counters` (
   `k` varchar(50) NOT NULL,
   `d` char(8) NOT NULL,
@@ -403,4 +405,6 @@ CREATE TABLE `users` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`)
 ) ENGINE=InnoDB AUTO_INCREMENT=57 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+SET FOREIGN_KEY_CHECKS = 1;
 
