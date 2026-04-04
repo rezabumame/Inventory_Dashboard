@@ -212,7 +212,6 @@ try {
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
             curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1800);
             curl_exec($ch);
-            curl_close($ch);
         }
     } catch (\Throwable $e) {}
 

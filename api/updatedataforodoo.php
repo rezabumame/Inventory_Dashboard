@@ -138,7 +138,6 @@ try {
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['X-Internal-Token: ' . $sysToken]);
     $resp = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
 
     if ($code >= 200 && $code < 300) {
         set_setting('odoo_sync_last_run', (string) time());

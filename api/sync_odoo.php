@@ -80,7 +80,6 @@ function lark_send_payload(string $payload, int $timeout_sec = 8): bool {
     curl_setopt($ch, CURLOPT_TIMEOUT, $timeout_sec);
     $resp = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
     if ($resp === false || $code < 200 || $code >= 300) return false;
     $j = json_decode((string)$resp, true);
     if (!is_array($j)) return true;
