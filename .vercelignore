@@ -1,5 +1,4 @@
 .env
-config/database.php
 database_schema.sql
 debug_users_table.php
 delete_manual_hc_stock.php

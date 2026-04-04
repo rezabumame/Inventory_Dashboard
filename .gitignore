@@ -1,5 +1,4 @@
 # Database and sensitive configs
-config/database.php
 .env
 
 # Temporary and debug files
