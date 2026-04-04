@@ -1,0 +1,15 @@
+.env
+config/database.php
+database_schema.sql
+debug_users_table.php
+delete_manual_hc_stock.php
+seed_dummy_accounts.php
+tmp_check_db.php
+vendor/
+.gitignore
+.git/
+*.log
+tmp/
+temp/
+README.md
+composer.lock

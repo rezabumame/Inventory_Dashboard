@@ -2,10 +2,14 @@
 config/database.php
 .env
 
-# Temporary files
+# Temporary and debug files
 *.log
 tmp/
 temp/
+debug_users_table.php
+delete_manual_hc_stock.php
+seed_dummy_accounts.php
+tmp_check_db.php
 
 # OS files
 .DS_Store
