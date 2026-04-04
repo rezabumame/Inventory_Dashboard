@@ -5,10 +5,15 @@ $host = $_SERVER['HTTP_HOST'] ?? (getenv('APP_HOST') ?: 'localhost');
 $base_dir = trim((string)(getenv('APP_BASE_DIR') ?: ''));
 // Detect base path correctly for local and hosting (like InfinityFree/Vercel)
 if ($base_dir === '') {
-    // If running on a subfolder (like /bumame_inventory2/)
-    $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
-    $base_dir = rtrim(dirname($script_name), '/\\') . '/';
-    if ($base_dir === '//' || $base_dir === '\\' || $base_dir === '') $base_dir = '/';
+    // Force base_dir to root if we are on InfinityFree to avoid long internal paths
+    if (isset($_SERVER['HTTP_X_FORWARDED_HOST']) || (isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'infinityfree') !== false)) {
+        $base_dir = '/';
+    } else {
+        // Fallback for local subfolders
+        $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
+        $base_dir = rtrim(dirname($script_name), '/\\') . '/';
+        if ($base_dir === '//' || $base_dir === '\\' || $base_dir === '') $base_dir = '/';
+    }
 }
 define('BASE_URL', $protocol . '://' . $host . $base_dir);
 define('APP_NAME', 'Bumame Inventory');
