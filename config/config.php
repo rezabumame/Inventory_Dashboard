@@ -3,34 +3,22 @@ date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Asia/Jakarta');
 $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? (getenv('APP_HOST') ?: 'localhost');
 $base_dir = trim((string)(getenv('APP_BASE_DIR') ?: ''));
+// Detect base path correctly for local and hosting (like InfinityFree/Vercel)
 if ($base_dir === '') {
-    $project_root = realpath(__DIR__ . '/..');
-    $doc_root = isset($_SERVER['DOCUMENT_ROOT']) ? realpath((string)$_SERVER['DOCUMENT_ROOT']) : false;
-    if ($project_root && $doc_root && stripos($project_root, $doc_root) === 0) {
-        $rel = substr($project_root, strlen($doc_root));
-        $rel = str_replace('\\', '/', (string)$rel);
-        $rel = '/' . ltrim($rel, '/');
-        $base_dir = rtrim($rel, '/') . '/';
-        if ($base_dir === '//') $base_dir = '/';
-    } elseif ($project_root) {
-        $folder = basename($project_root);
-        $base_dir = '/' . trim((string)$folder, '/') . '/';
-    } else {
-        $base_dir = '/';
-    }
-} else {
-    if ($base_dir[0] !== '/') $base_dir = '/' . $base_dir;
-    if (substr($base_dir, -1) !== '/') $base_dir .= '/';
+    // If running on a subfolder (like /bumame_inventory2/)
+    $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
+    $base_dir = rtrim(dirname($script_name), '/\\') . '/';
+    if ($base_dir === '//' || $base_dir === '\\' || $base_dir === '') $base_dir = '/';
 }
 define('BASE_URL', $protocol . '://' . $host . $base_dir);
 define('APP_NAME', 'Bumame Inventory');
 
 function base_url($path = '') {
     $p = (string)$path;
+    // Remove index.php prefix for cleaner URLs if requested
     if ($p === 'index.php') $p = '';
-    if (strpos($p, 'index.php?') === 0) $p = '?' . substr($p, strlen('index.php?'));
-    if ($p !== '' && $p[0] === '/') $p = ltrim($p, '/');
-    return BASE_URL . $p;
+    // Use relative path if the base URL detection is still messy
+    return BASE_URL . ltrim($p, '/');
 }
 
 function redirect($path) {

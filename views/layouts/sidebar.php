@@ -33,7 +33,7 @@ if (isset($_SESSION['user_id'])) {
     <div class="sidebar-header">
         <div class="sidebar-brand">
             <span class="sidebar-brand-mark" aria-hidden="true">
-                <img src="assets/img/favicon.ico" alt="">
+                <img src="<?= base_url('assets/img/favicon.ico') ?>" alt="">
             </span>
             <div class="sidebar-brand-text">
                 <div class="sidebar-brand-title">Bumame</div>
