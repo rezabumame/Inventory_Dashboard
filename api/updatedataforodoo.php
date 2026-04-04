@@ -51,11 +51,13 @@ $target = null;
 $force = isset($_GET['force']) && $_GET['force'] === '1';
 
 if ($mode === 'interval' && $interval > 0) {
-    $due = ($lastRun === 0) || ($now - $lastRun >= $interval * 60);
+    // Tambahkan buffer 5 detik agar tidak terpicu 2x jika terpanggil sangat cepat di detik yang sama
+    $due = ($lastRun === 0) || ($now - $lastRun >= ($interval * 60) - 5);
 }
 
 if ($mode === 'daily') {
     $target = strtotime(date('Y-m-d') . ' ' . $time);
+    // Cek: Sekarang sudah melewati jam target DAN terakhir jalan adalah SEBELUM jam target hari ini
     if ($now >= $target && $lastRun < $target) {
         $due = true;
     }
@@ -67,6 +69,7 @@ if ($mode === 'weekly') {
     $debug['weekday_setting'] = $weekday;
     if ($weekday === $todayW) {
         $target = strtotime(date('Y-m-d') . ' ' . $time);
+        // Cek: Sekarang sudah melewati jam target DAN terakhir jalan adalah SEBELUM jam target hari ini
         if ($now >= $target && $lastRun < $target) {
             $due = true;
         }
