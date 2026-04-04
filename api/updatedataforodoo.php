@@ -1,7 +1,7 @@
 <?php
 
-require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/database.php';';
 require_once __DIR__ . '/../config/settings.php';
 require_once __DIR__ . '/../config/odoo.php';
 
@@ -160,3 +160,4 @@ try {
     } catch (Exception $e) {
     }
 }
+

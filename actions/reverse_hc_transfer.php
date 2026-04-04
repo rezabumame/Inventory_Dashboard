@@ -1,7 +1,7 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/database.php';';
 require_once __DIR__ . '/../lib/stock.php';
 
 if (!isset($_SESSION['user_id'])) redirect('index.php?page=login');
@@ -142,3 +142,4 @@ if ($petugas_user_id > 0) $url .= '&petugas_user_id=' . (int)$petugas_user_id;
 if ($history_from !== '') $url .= '&history_from=' . urlencode($history_from);
 if ($history_to !== '') $url .= '&history_to=' . urlencode($history_to);
 redirect($url);
+

@@ -20,6 +20,8 @@ try {
         $conn->real_connect($host, $user, $pass, $db, $port);
     }
     $conn->set_charset("utf8mb4");
+    // Set session timezone to Asia/Jakarta (WIB)
+    $conn->query("SET time_zone = '+07:00'");
 } catch (mysqli_sql_exception $e) {
     die("Connection failed: " . $e->getMessage());
 }

@@ -1,7 +1,7 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/database.php';';
 
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
@@ -295,3 +295,4 @@ $details = $stmt->get_result();
     font-style: italic;
 }
 </style>
+

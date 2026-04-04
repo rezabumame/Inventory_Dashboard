@@ -1,7 +1,7 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/database.php';';
 
 header('Content-Type: application/json');
 
@@ -37,3 +37,4 @@ try {
     $conn->rollback();
     echo json_encode(['success' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
 }
+

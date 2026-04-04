@@ -1,7 +1,7 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/database.php';';
 
 if (!isset($_SESSION['user_id'])) {
     die("Unauthorized");
@@ -123,3 +123,4 @@ if ($result && $result->num_rows > 0) {
 }
 echo '</table>';
 ?>
+

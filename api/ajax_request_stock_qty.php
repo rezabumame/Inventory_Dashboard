@@ -1,7 +1,7 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/database.php';';
 require_once __DIR__ . '/../config/settings.php';
 
 header('Content-Type: application/json');
@@ -119,4 +119,5 @@ foreach ($location_candidates as $loc) {
 
 $qty = (float)$best_qty / $multiplier;
 echo json_encode(['success' => true, 'qty' => (float)round($qty, 4), 'satuan' => $uom, 'location_code' => $best_loc], JSON_UNESCAPED_UNICODE);
+
 

@@ -2,8 +2,8 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/database.php';';
 
 $token = trim((string)($_GET['token'] ?? ''));
 if ($token === '' || !preg_match('/^[a-f0-9]{16,80}$/i', $token)) {
@@ -172,4 +172,5 @@ $approver = (string)($row['approver_name'] ?? '-');
     </div>
 </body>
 </html>
+
 

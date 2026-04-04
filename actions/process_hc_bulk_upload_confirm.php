@@ -1,7 +1,7 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/database.php';';
 require_once __DIR__ . '/../config/settings.php';
 
 if (!isset($_SESSION['user_id'])) {
@@ -77,4 +77,5 @@ try {
 }
 
 redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . '&petugas_user_id=' . (int)$petugas_user_id);
+
 

@@ -1,7 +1,7 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/database.php';';
 require_once __DIR__ . '/../config/settings.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
@@ -177,3 +177,4 @@ foreach ($petugas as $idx => $p) {
 $filename = 'template_alokasi_mirror_hc_' . preg_replace('/[^A-Za-z0-9_-]+/', '_', (string)($kl['nama_klinik'] ?? 'klinik')) . '_' . date('Ymd_His') . '.xlsx';
 $xlsx->downloadAs($filename);
 exit;
+

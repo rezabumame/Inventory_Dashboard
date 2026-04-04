@@ -1,7 +1,7 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/database.php';';
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../lib/counter.php';
 
@@ -447,3 +447,4 @@ try {
     $_SESSION['error'] = "Gagal memproses file: " . $msg;
     redirect('index.php?page=pemakaian_bhp_list');
 }
+
