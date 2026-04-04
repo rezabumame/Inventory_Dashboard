@@ -530,6 +530,7 @@ try {
             }
         }
 
+        set_setting('odoo_sync_last_run', (string) time());
         echo json_encode([
             'success' => true,
             'method' => 'rpc',
@@ -640,6 +641,7 @@ try {
         }
     }
 
+    set_setting('odoo_sync_last_run', (string) time());
     echo json_encode(['success' => true, 'method' => 'api', 'message' => 'Sync selesai', 'products' => $products_count, 'locations' => count($locations), 'rows' => $updated_rows]);
     $mirror_after = mirror_stats($conn);
     $dur = round(microtime(true) - $sync_started_at, 1);

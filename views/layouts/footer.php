@@ -88,48 +88,5 @@
     // Close sidebar on route change (optional, for SPA feeling if links didn't reload)
     // But since it reloads, it's fine.
 </script>
-<?php 
-$odoo_auto_tick = false;
-try {
-    require_once __DIR__ . '/../../config/settings.php';
-    $enabled = get_setting('odoo_sync_enabled', '0') === '1';
-    $mode = get_setting('odoo_sync_mode', 'manual');
-    $odoo_auto_tick = ($enabled && $mode !== 'manual');
-} catch (Exception $e) {
-    $odoo_auto_tick = false;
-}
-?>
-<script>
-(() => {
-    if (!<?= $odoo_auto_tick ? 'true' : 'false' ?>) return;
-    let running = false;
-    async function tick() {
-        if (running) return;
-        running = true;
-        try {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 5000);
-            const res = await fetch('api/updatedataforodoo.php?quick=1', { cache: 'no-store', signal: controller.signal });
-            clearTimeout(timer);
-            const data = await res.json();
-            if (data && data.ran) {
-                const params = new URLSearchParams(window.location.search);
-                const page = params.get('page') || 'dashboard';
-                if (page === 'stok_klinik' || document.getElementById('lastUpdateText')) {
-                    setTimeout(() => window.location.reload(), 800);
-                }
-            } else if (data && data.quick_due) {
-                // Fire and forget the real run, but do not block tab
-                fetch('api/updatedataforodoo.php', { cache: 'no-store' }).catch(()=>{});
-            }
-        } catch (e) {
-        } finally {
-            running = false;
-        }
-    }
-    setTimeout(tick, 8000);
-    setInterval(tick, 60000);
-})();
-</script>
 </body>
 </html>

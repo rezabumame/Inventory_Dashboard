@@ -140,7 +140,6 @@ try {
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
     if ($code >= 200 && $code < 300) {
-        set_setting('odoo_sync_last_run', (string) time());
         $payload = json_decode((string)$resp, true);
         if (is_array($payload)) {
             $payload['ran'] = true;
