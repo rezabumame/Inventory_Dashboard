@@ -31,7 +31,7 @@ if (isset($_SESSION['user_id'])) {
 ?>
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
-        <div class="sidebar-brand">
+        <a href="index.php?page=dashboard" class="sidebar-brand text-decoration-none">
             <span class="sidebar-brand-mark" aria-hidden="true">
                 <img src="<?= base_url('assets/img/favicon.ico') ?>" alt="">
             </span>
@@ -39,7 +39,7 @@ if (isset($_SESSION['user_id'])) {
                 <div class="sidebar-brand-title">Bumame</div>
                 <div class="sidebar-brand-subtitle">Inventory</div>
             </div>
-        </div>
+        </a>
     </div>
     <div class="sidebar-menu" id="sidebar-menu-scroll">
         <?php if ($role !== 'petugas_hc'): ?>
@@ -150,23 +150,37 @@ if (isset($_SESSION['user_id'])) {
 
 <div class="main-content" id="main-content">
     <nav class="top-navbar">
-        <button class="btn btn-link text-primary-custom p-0" id="sidebar-toggle">
-            <i class="fas fa-bars fa-lg"></i>
-        </button>
         <div class="d-flex align-items-center">
-            <span class="me-3"><?= $_SESSION['nama_lengkap'] ?? 'User' ?> (<?= ucfirst(str_replace('_', ' ', $role)) ?>)</span>
+            <button class="btn btn-link text-primary-custom ps-0 me-3" id="sidebar-toggle">
+                <i class="fas fa-bars fa-lg"></i>
+            </button>
+            <h5 class="mb-0 fw-bold d-none d-md-block text-primary-custom"><?= APP_NAME ?></h5>
+        </div>
+        <div class="d-flex align-items-center">
+            <div class="me-3 text-end d-none d-sm-block">
+                <div class="fw-bold small"><?= $_SESSION['nama_lengkap'] ?? 'User' ?></div>
+                <div class="text-muted" style="font-size: 10px;"><?= strtoupper(str_replace('_', ' ', $role)) ?></div>
+            </div>
             <div class="dropdown">
-                <a href="#" class="d-block link-dark text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="fas fa-user-circle fa-2x text-primary-custom"></i>
+                <a href="#" class="d-flex align-items-center link-dark text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
+                    <div class="bg-primary-light rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                        <i class="fas fa-user text-primary-custom"></i>
+                    </div>
                 </a>
-                <ul class="dropdown-menu dropdown-menu-end text-small shadow" aria-labelledby="dropdownUser1">
-                    <li><a class="dropdown-menu-item" href="index.php?page=profile"><i class="fas fa-user me-2"></i>Profil Saya</a></li>
+                <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0" aria-labelledby="dropdownUser1">
+                    <li class="px-3 py-2 d-sm-none">
+                        <div class="fw-bold small"><?= $_SESSION['nama_lengkap'] ?? 'User' ?></div>
+                        <div class="text-muted" style="font-size: 10px;"><?= strtoupper(str_replace('_', ' ', $role)) ?></div>
+                    </li>
+                    <li class="d-sm-none"><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item py-2" href="index.php?page=profile"><i class="fas fa-user-circle me-2 text-muted"></i>Profil Saya</a></li>
                     <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-menu-item text-danger" href="index.php?page=logout"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
+                    <li><a class="dropdown-item py-2 text-danger" href="index.php?page=logout"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
                 </ul>
             </div>
         </div>
     </nav>
+    <div class="content-wrapper">
     <div class="container-fluid py-4">
         <!-- Global Alert Messages -->
         <?php if (isset($_SESSION['error'])): ?>

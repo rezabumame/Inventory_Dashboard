@@ -126,7 +126,7 @@ try {
     $script = preg_replace('#/+#', '/', $script);
     $dir1 = rtrim(dirname($script), '/');
     $appRoot = rtrim(dirname($dir1), '/');
-    if ($appRoot === '') $appRoot = '/';
+    if ($appRoot === '/' || $appRoot === '\\') $appRoot = '';
     $targetUrl = $scheme . '://' . $host . $appRoot . '/api/sync_odoo.php';
 
     $ch = curl_init($targetUrl);

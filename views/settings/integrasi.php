@@ -75,7 +75,7 @@ $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 
 $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/'));
 $appRoot = rtrim(dirname(rtrim(dirname($script), '/')), '/'); // up 2 levels from /views/settings/...
-if ($appRoot === '') $appRoot = '/';
+if ($appRoot === '/' || $appRoot === '\\') $appRoot = '';
 $schedule_hint_url = $scheme . '://' . $host . $appRoot . '/api/updatedataforodoo.php';
 if ($scheduler_token_saved !== '') $schedule_hint_url .= '?token=' . urlencode($scheduler_token_saved);
 
