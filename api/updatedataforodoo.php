@@ -12,7 +12,8 @@ $now = time();
 $debug = [
     'server_time' => date('d M Y H:i:s'),
     'server_tz' => date_default_timezone_get(),
-    'now' => $now
+    'now' => $now,
+    'is_due' => false
 ];
 
 $enabled = get_setting('odoo_sync_enabled', '0') === '1';
@@ -21,6 +22,11 @@ $interval = (int) get_setting('odoo_sync_interval_minutes', '0');
 $weekday = (int) get_setting('odoo_sync_weekday', '0');
 $time = get_setting('odoo_sync_time', '20:00');
 $lastRun = (int) get_setting('odoo_sync_last_run', '0');
+$debug['mode'] = $mode;
+$debug['interval_minutes'] = $interval;
+$debug['time_setting'] = $time;
+$debug['last_run'] = $lastRun;
+$debug['last_run_text'] = $lastRun ? date('d M Y H:i:s', $lastRun) : '-';
 $dbToken = trim((string)get_setting('odoo_sync_token', ''));
 $sysToken = $dbToken !== '' ? $dbToken : (string)ODOO_SYNC_SYSTEM_TOKEN;
 $providedToken = (string)($_GET['token'] ?? ($_SERVER['HTTP_X_INTERNAL_TOKEN'] ?? ''));
@@ -49,6 +55,7 @@ $force = isset($_GET['force']) && $_GET['force'] === '1';
 if ($mode === 'interval' && $interval > 0) {
     // Tambahkan buffer 5 detik agar tidak terpicu 2x jika terpanggil sangat cepat di detik yang sama
     $due = ($lastRun === 0) || ($now - $lastRun >= ($interval * 60) - 5);
+    if ($due) $debug['is_due'] = true;
 }
 
 if ($mode === 'daily') {
@@ -56,6 +63,7 @@ if ($mode === 'daily') {
     // Cek: Sekarang sudah melewati jam target DAN terakhir jalan adalah SEBELUM jam target hari ini
     if ($now >= $target && $lastRun < $target) {
         $due = true;
+        $debug['is_due'] = true;
     }
 }
 
@@ -68,6 +76,7 @@ if ($mode === 'weekly') {
         // Cek: Sekarang sudah melewati jam target DAN terakhir jalan adalah SEBELUM jam target hari ini
         if ($now >= $target && $lastRun < $target) {
             $due = true;
+            $debug['is_due'] = true;
         }
     }
 }
@@ -86,11 +95,6 @@ if ($quick) {
 }
 
 if (!$due && !$force) {
-    $debug['mode'] = $mode;
-    $debug['interval_minutes'] = $interval;
-    $debug['time_setting'] = $time;
-    $debug['last_run'] = $lastRun;
-    $debug['last_run_text'] = $lastRun ? date('d M Y H:i:s', $lastRun) : '-';
     $debug['target'] = $target;
     $debug['target_text'] = $target ? date('d M Y H:i:s', $target) : '-';
     echo json_encode(['success' => true, 'ran' => false, 'message' => 'Not due', 'debug' => $debug], JSON_UNESCAPED_UNICODE);
