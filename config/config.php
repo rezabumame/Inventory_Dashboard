@@ -3,7 +3,7 @@ date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Asia/Jakarta');
 $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? (getenv('APP_HOST') ?: 'localhost');
 $base_dir = trim((string)(getenv('APP_BASE_DIR') ?: ''));
-// Detect base path correctly for local and hosting (like InfinityFree/Vercel)
+// Detect base path correctly for local and hosting (like InfinityFree)
 if ($base_dir === '') {
     // Check if we are on InfinityFree by looking for specific server patterns
     $is_infinityfree = isset($_SERVER['HTTP_X_FORWARDED_HOST']) || 

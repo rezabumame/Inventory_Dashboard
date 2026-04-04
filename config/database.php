@@ -12,8 +12,7 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
     $conn = mysqli_init();
     if ($ssl) {
-        // TiDB Cloud requires SSL. We don't necessarily need to provide a CA file on Vercel 
-        // as it uses system CA, but we must set the SSL flag.
+        // TiDB Cloud requires SSL.
         $conn->ssl_set(NULL, NULL, NULL, NULL, NULL);
         $conn->real_connect($host, $user, $pass, $db, $port, NULL, MYSQLI_CLIENT_SSL);
     } else {
