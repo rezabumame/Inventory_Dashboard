@@ -49,11 +49,9 @@ function http_get_json($url, $headers = []) {
     $resp = curl_exec($ch);
     if ($resp === false) {
         $err = curl_error($ch);
-        curl_close($ch);
         throw new Exception("HTTP error: $err");
     }
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
     if ($code < 200 || $code >= 300) {
         throw new Exception("HTTP status $code for $url");
     }

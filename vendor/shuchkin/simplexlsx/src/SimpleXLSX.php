@@ -561,25 +561,11 @@ class SimpleXLSX
             }
             $entry_xml = trim($entry_xml);
 
-//            $m1 = memory_get_usage();
-            // XML External Entity (XXE) Prevention, libxml_disable_entity_loader deprecated in PHP 8
-            if (LIBXML_VERSION < 20900 && function_exists('libxml_disable_entity_loader')) {
-                $_old = libxml_disable_entity_loader();
-            }
-
             $_old_uie = libxml_use_internal_errors(true);
 
             $entry_xmlobj = simplexml_load_string($entry_xml, 'SimpleXMLElement', LIBXML_COMPACT | LIBXML_PARSEHUGE);
 
             libxml_use_internal_errors($_old_uie);
-
-            if (LIBXML_VERSION < 20900 && function_exists('libxml_disable_entity_loader')) {
-                /** @noinspection PhpUndefinedVariableInspection */
-                libxml_disable_entity_loader($_old);
-            }
-
-//            $m2 = memory_get_usage();
-//            echo round( ($m2-$m1) / (1024 * 1024), 2).' MB'.PHP_EOL;
 
             if ($entry_xmlobj) {
                 return $entry_xmlobj;
