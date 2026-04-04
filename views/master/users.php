@@ -62,8 +62,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
 }
 
 // Fetch Data
+$filter_role = $_GET['role'] ?? '';
+$filter_klinik = $_GET['klinik_id'] ?? '';
+
+$where_clauses = [];
+if ($filter_role !== '') {
+    $where_clauses[] = "u.role = '" . $conn->real_escape_string($filter_role) . "'";
+}
+if ($filter_klinik !== '') {
+    $where_clauses[] = "u.klinik_id = " . (int)$filter_klinik;
+}
+
+$where_sql = "";
+if (!empty($where_clauses)) {
+    $where_sql = " WHERE " . implode(" AND ", $where_clauses);
+}
+
 $users = [];
-$res = $conn->query("SELECT u.*, k.nama_klinik FROM users u LEFT JOIN klinik k ON u.klinik_id = k.id ORDER BY u.nama_lengkap ASC");
+$res = $conn->query("SELECT u.*, k.nama_klinik FROM users u LEFT JOIN klinik k ON u.klinik_id = k.id $where_sql ORDER BY u.nama_lengkap ASC");
 while ($row = $res->fetch_assoc()) $users[] = $row;
 
 $kliniks = [];
@@ -76,6 +92,47 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
     <button class="btn btn-primary shadow-sm px-4" data-bs-toggle="modal" data-bs-target="#modalAdd">
         <i class="fas fa-plus me-2"></i>Tambah User
     </button>
+</div>
+
+<!-- Filter Section -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3 align-items-end">
+            <input type="hidden" name="page" value="users">
+            <div class="col-md-4">
+                <label class="form-label small text-muted">Filter Role</label>
+                <select name="role" class="form-select">
+                    <option value="">-- Semua Role --</option>
+                    <option value="super_admin" <?= $filter_role === 'super_admin' ? 'selected' : '' ?>>Super Admin</option>
+                    <option value="admin_gudang" <?= $filter_role === 'admin_gudang' ? 'selected' : '' ?>>Admin Gudang</option>
+                    <option value="admin_klinik" <?= $filter_role === 'admin_klinik' ? 'selected' : '' ?>>Admin Klinik</option>
+                    <option value="spv_klinik" <?= $filter_role === 'spv_klinik' ? 'selected' : '' ?>>SPV Klinik</option>
+                    <option value="petugas_hc" <?= $filter_role === 'petugas_hc' ? 'selected' : '' ?>>Petugas HC</option>
+                    <option value="cs" <?= $filter_role === 'cs' ? 'selected' : '' ?>>CS</option>
+                    <option value="b2b_ops" <?= $filter_role === 'b2b_ops' ? 'selected' : '' ?>>B2B Ops</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small text-muted">Filter Klinik</label>
+                <select name="klinik_id" class="form-select">
+                    <option value="">-- Semua Lokasi --</option>
+                    <?php foreach ($kliniks as $k): ?>
+                    <option value="<?= $k['id'] ?>" <?= (string)$filter_klinik === (string)$k['id'] ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($k['nama_klinik']) ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                    <i class="fas fa-filter me-2"></i>Filter
+                </button>
+                <a href="index.php?page=users" class="btn btn-outline-secondary">
+                    <i class="fas fa-undo"></i>
+                </a>
+            </div>
+        </form>
+    </div>
 </div>
 
 <?php if ($error): ?><div class="alert alert-danger"><?= $error ?></div><?php endif; ?>
