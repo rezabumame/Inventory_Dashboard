@@ -3,12 +3,22 @@ $host = getenv('DB_HOST') ?: '127.0.0.1';
 $user = getenv('DB_USER') ?: 'root';
 $pass = getenv('DB_PASS') !== false ? (string)getenv('DB_PASS') : '';
 $db   = getenv('DB_NAME') ?: 'bumame_inventory_v2';
+$port = getenv('DB_PORT') ?: 3306;
+$ssl  = getenv('DB_SSL') === 'true';
 
 // Enable error reporting for mysqli to throw exceptions
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 try {
-    $conn = new mysqli($host, $user, $pass, $db);
+    $conn = mysqli_init();
+    if ($ssl) {
+        // TiDB Cloud requires SSL. We don't necessarily need to provide a CA file on Vercel 
+        // as it uses system CA, but we must set the SSL flag.
+        $conn->ssl_set(NULL, NULL, NULL, NULL, NULL);
+        $conn->real_connect($host, $user, $pass, $db, $port, NULL, MYSQLI_CLIENT_SSL);
+    } else {
+        $conn->real_connect($host, $user, $pass, $db, $port);
+    }
     $conn->set_charset("utf8mb4");
 } catch (mysqli_sql_exception $e) {
     die("Connection failed: " . $e->getMessage());
