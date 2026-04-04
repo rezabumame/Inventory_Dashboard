@@ -1229,3 +1229,4 @@ class SimpleXLSX
         return $value === 'true' || $value === 'TRUE';
     }
 }
+
