@@ -17,7 +17,13 @@ function stock_resolve_location(mysqli $conn, string $code): string {
 
 function stock_multiplier(mysqli $conn, int $barang_id): float {
     $barang_id = (int)$barang_id;
-    $r = $conn->query("SELECT multiplier FROM barang_uom_conversion WHERE barang_id = $barang_id LIMIT 1");
+    $r = $conn->query("
+        SELECT c.multiplier 
+        FROM barang_uom_conversion c
+        JOIN barang b ON b.kode_barang = c.kode_barang
+        WHERE b.id = $barang_id 
+        LIMIT 1
+    ");
     $m = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['multiplier'] ?? 1) : 1);
     if ($m <= 0) $m = 1;
     return $m;

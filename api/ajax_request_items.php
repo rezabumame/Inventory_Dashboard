@@ -76,7 +76,13 @@ function conv_multiplier(mysqli $conn, int $barang_id): float {
     static $cache = [];
     if ($barang_id <= 0) return 1.0;
     if (isset($cache[$barang_id])) return (float)$cache[$barang_id];
-    $r = $conn->query("SELECT multiplier FROM barang_uom_conversion WHERE barang_id = $barang_id LIMIT 1");
+    $r = $conn->query("
+        SELECT c.multiplier 
+        FROM barang_uom_conversion c
+        JOIN barang b ON b.kode_barang = c.kode_barang
+        WHERE b.id = $barang_id 
+        LIMIT 1
+    ");
     $m = 1.0;
     if ($r && $r->num_rows > 0) $m = (float)($r->fetch_assoc()['multiplier'] ?? 1);
     if ($m <= 0) $m = 1.0;
@@ -88,7 +94,13 @@ function conv_to_uom(mysqli $conn, int $barang_id, string $fallback): string {
     static $cache = [];
     if ($barang_id <= 0) return $fallback;
     if (isset($cache[$barang_id])) return (string)$cache[$barang_id];
-    $r = $conn->query("SELECT COALESCE(to_uom, '') AS u FROM barang_uom_conversion WHERE barang_id = $barang_id LIMIT 1");
+    $r = $conn->query("
+        SELECT COALESCE(c.to_uom, '') AS u 
+        FROM barang_uom_conversion c
+        JOIN barang b ON b.kode_barang = c.kode_barang
+        WHERE b.id = $barang_id 
+        LIMIT 1
+    ");
     $u = '';
     if ($r && $r->num_rows > 0) $u = trim((string)($r->fetch_assoc()['u'] ?? ''));
     if ($u === '') $u = $fallback;
@@ -100,7 +112,13 @@ function conv_from_uom(mysqli $conn, int $barang_id): string {
     static $cache = [];
     if ($barang_id <= 0) return '';
     if (isset($cache[$barang_id])) return (string)$cache[$barang_id];
-    $r = $conn->query("SELECT COALESCE(from_uom, '') AS u FROM barang_uom_conversion WHERE barang_id = $barang_id LIMIT 1");
+    $r = $conn->query("
+        SELECT COALESCE(c.from_uom, '') AS u 
+        FROM barang_uom_conversion c
+        JOIN barang b ON b.kode_barang = c.kode_barang
+        WHERE b.id = $barang_id 
+        LIMIT 1
+    ");
     $u = '';
     if ($r && $r->num_rows > 0) $u = trim((string)($r->fetch_assoc()['u'] ?? ''));
     $cache[$barang_id] = $u;

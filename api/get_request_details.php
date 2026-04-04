@@ -52,7 +52,7 @@ if ($user_role == 'spv_klinik' && $req['dari_level'] == 'klinik' && (int)$req['d
 $sql = "SELECT d.*, b.kode_barang, b.odoo_product_id, b.nama_barang, COALESCE(uc.to_uom, b.satuan) AS satuan
         FROM request_barang_detail d 
         JOIN barang b ON d.barang_id = b.id
-        LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+        LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         WHERE d.request_barang_id = $request_id";
 $res = $conn->query($sql);
 

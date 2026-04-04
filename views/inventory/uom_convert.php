@@ -5,20 +5,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
     $action = (string)($_POST['action'] ?? '');
     if ($action === 'save') {
-        $barang_id = (int)($_POST['barang_id'] ?? 0);
+        $kode_barang = trim((string)($_POST['kode_barang'] ?? ''));
         $from_uom = trim((string)($_POST['from_uom'] ?? ''));
         $to_uom = trim((string)($_POST['to_uom'] ?? ''));
         $multiplier = (string)($_POST['multiplier'] ?? '1');
         $note = trim((string)($_POST['note'] ?? ''));
         $mult = (float)$multiplier;
-        if ($barang_id > 0 && $mult > 0) {
-            $base = $conn->query("SELECT COALESCE(NULLIF(uom,''),'') AS uom, COALESCE(NULLIF(satuan,''),'') AS satuan FROM barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
+        if ($kode_barang !== '' && $mult > 0) {
+            $base = $conn->query("SELECT COALESCE(NULLIF(uom,''),'') AS uom, COALESCE(NULLIF(satuan,''),'') AS satuan FROM barang WHERE kode_barang = '" . $conn->real_escape_string($kode_barang) . "' LIMIT 1")->fetch_assoc();
             $base_uom = trim((string)($base['uom'] ?? ''));
             $satuan_db = trim((string)($base['satuan'] ?? ''));
             if ($base_uom !== '') $from_uom = $base_uom;
             if ($to_uom === '' && $satuan_db !== '') $to_uom = $satuan_db;
-            $stmt = $conn->prepare("INSERT INTO barang_uom_conversion (barang_id, from_uom, to_uom, multiplier, note) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE from_uom = VALUES(from_uom), to_uom = VALUES(to_uom), multiplier = VALUES(multiplier), note = VALUES(note)");
-            $stmt->bind_param("issds", $barang_id, $from_uom, $to_uom, $mult, $note);
+            $stmt = $conn->prepare("INSERT INTO barang_uom_conversion (kode_barang, from_uom, to_uom, multiplier, note) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE from_uom = VALUES(from_uom), to_uom = VALUES(to_uom), multiplier = VALUES(multiplier), note = VALUES(note)");
+            $stmt->bind_param("sssds", $kode_barang, $from_uom, $to_uom, $mult, $note);
             $stmt->execute();
             $_SESSION['success'] = 'Konversi UOM berhasil disimpan.';
         } else {
@@ -27,10 +27,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('index.php?page=uom_convert');
     }
     if ($action === 'delete') {
-        $barang_id = (int)($_POST['barang_id'] ?? 0);
-        if ($barang_id > 0) {
-            $stmt = $conn->prepare("DELETE FROM barang_uom_conversion WHERE barang_id = ?");
-            $stmt->bind_param("i", $barang_id);
+        $kode_barang = trim((string)($_POST['kode_barang'] ?? ''));
+        if ($kode_barang !== '') {
+            $stmt = $conn->prepare("DELETE FROM barang_uom_conversion WHERE kode_barang = ?");
+            $stmt->bind_param("s", $kode_barang);
             $stmt->execute();
             $_SESSION['success'] = 'Konversi UOM berhasil dihapus.';
         }
@@ -44,9 +44,9 @@ while ($res && ($row = $res->fetch_assoc())) $barang_list[] = $row;
 
 $conv_list = [];
 $res = $conn->query("
-    SELECT c.barang_id, c.from_uom, c.to_uom, c.multiplier, c.note, c.updated_at, b.kode_barang, b.nama_barang, b.satuan
+    SELECT c.kode_barang, c.from_uom, c.to_uom, c.multiplier, c.note, c.updated_at, b.id AS barang_id, b.nama_barang, b.satuan
     FROM barang_uom_conversion c
-    JOIN barang b ON b.id = c.barang_id
+    JOIN barang b ON b.kode_barang = c.kode_barang
     ORDER BY b.nama_barang ASC
 ");
 while ($res && ($row = $res->fetch_assoc())) $conv_list[] = $row;
@@ -89,10 +89,10 @@ while ($res && ($row = $res->fetch_assoc())) $conv_list[] = $row;
                 <input type="hidden" name="action" value="save">
                 <div class="col-md-6">
                     <label class="form-label fw-bold small text-muted mb-1">Nama Barang</label>
-                    <select name="barang_id" class="form-select" required>
+                    <select name="kode_barang" class="form-select" required>
                         <option value="">- Pilih Barang -</option>
                         <?php foreach ($barang_list as $b): ?>
-                            <option value="<?= (int)$b['id'] ?>" data-satuan="<?= htmlspecialchars((string)($b['satuan'] ?? ''), ENT_QUOTES) ?>" data-uom-odoo="<?= htmlspecialchars((string)($b['uom'] ?? ''), ENT_QUOTES) ?>" data-label="<?= htmlspecialchars(($b['kode_barang'] ?? '-') . ' - ' . ($b['nama_barang'] ?? '-')) ?>"><?= htmlspecialchars(($b['kode_barang'] ?? '-') . ' - ' . ($b['nama_barang'] ?? '-') . ' (' . ($b['satuan'] ?? '-') . ')') ?></option>
+                            <option value="<?= htmlspecialchars((string)$b['kode_barang'], ENT_QUOTES) ?>" data-satuan="<?= htmlspecialchars((string)($b['satuan'] ?? ''), ENT_QUOTES) ?>" data-uom-odoo="<?= htmlspecialchars((string)($b['uom'] ?? ''), ENT_QUOTES) ?>" data-label="<?= htmlspecialchars(($b['kode_barang'] ?? '-') . ' - ' . ($b['nama_barang'] ?? '-')) ?>"><?= htmlspecialchars(($b['kode_barang'] ?? '-') . ' - ' . ($b['nama_barang'] ?? '-') . ' (' . ($b['satuan'] ?? '-') . ')') ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -153,7 +153,7 @@ while ($res && ($row = $res->fetch_assoc())) $conv_list[] = $row;
                                     <td class="text-end">
                                         <button type="button"
                                                 class="btn btn-sm btn-outline-primary me-1 btnEditConv"
-                                                data-barang-id="<?= (int)$c['barang_id'] ?>"
+                                                data-kode-barang="<?= htmlspecialchars((string)($c['kode_barang'] ?? ''), ENT_QUOTES) ?>"
                                                 data-from-uom="<?= htmlspecialchars((string)($c['from_uom'] ?? ''), ENT_QUOTES) ?>"
                                                 data-to-uom="<?= htmlspecialchars((string)($c['to_uom'] ?? ''), ENT_QUOTES) ?>"
                                                 data-multiplier="<?= htmlspecialchars((string)($c['multiplier'] ?? '1'), ENT_QUOTES) ?>"
@@ -164,7 +164,7 @@ while ($res && ($row = $res->fetch_assoc())) $conv_list[] = $row;
                                         <form method="POST" class="d-inline">
                                             <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                                             <input type="hidden" name="action" value="delete">
-                                            <input type="hidden" name="barang_id" value="<?= (int)$c['barang_id'] ?>">
+                                            <input type="hidden" name="kode_barang" value="<?= htmlspecialchars((string)$c['kode_barang'], ENT_QUOTES) ?>">
                                             <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Hapus konversi ini?')">
                                                 <i class="fas fa-trash"></i>
                                             </button>
@@ -191,7 +191,7 @@ function fmtPreviewNumber(v) {
 }
 
 function updatePreview() {
-    var sel = document.querySelector('select[name="barang_id"]');
+    var sel = document.querySelector('select[name="kode_barang"]');
     var from = document.querySelector('input[name="from_uom"]');
     var to = document.querySelector('input[name="to_uom"]');
     var mult = document.querySelector('input[name="multiplier"]');
@@ -211,7 +211,7 @@ function updatePreview() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    var sel = document.querySelector('select[name="barang_id"]');
+    var sel = document.querySelector('select[name="kode_barang"]');
     var from = document.querySelector('input[name="from_uom"]');
     var to = document.querySelector('input[name="to_uom"]');
     var mult = document.querySelector('input[name="multiplier"]');
@@ -252,13 +252,13 @@ document.addEventListener('DOMContentLoaded', function() {
     updatePreview();
     document.querySelectorAll('.btnEditConv').forEach(function(btn){
         btn.addEventListener('click', function(){
-            var bid = this.getAttribute('data-barang-id');
+            var kb = this.getAttribute('data-kode-barang');
             var fu = this.getAttribute('data-from-uom') || '';
             var tu = this.getAttribute('data-to-uom') || '';
             var mm = this.getAttribute('data-multiplier') || '1';
             var nt = this.getAttribute('data-note') || '';
             var label = this.getAttribute('data-label') || '';
-            if (sel) sel.value = bid || '';
+            if (sel) sel.value = kb || '';
             var fh = document.getElementById('fromUomHidden'); if (fh) fh.value = fu || '';
             if (to) to.value = tu || '';
             if (mult) mult.value = mm || '1';

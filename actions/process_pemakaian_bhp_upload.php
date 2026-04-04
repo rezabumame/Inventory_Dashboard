@@ -153,7 +153,11 @@ try {
     }
 
     $master_uom = [];
-    $res_uom = $conn->query("SELECT barang_id, from_uom, to_uom, multiplier FROM barang_uom_conversion");
+    $res_uom = $conn->query("
+        SELECT c.kode_barang, b.id AS barang_id, c.from_uom, c.to_uom, c.multiplier 
+        FROM barang_uom_conversion c
+        JOIN barang b ON b.kode_barang = c.kode_barang
+    ");
     while($r = $res_uom->fetch_assoc()) {
         $master_uom[$r['barang_id']][] = $r;
     }

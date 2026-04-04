@@ -26,13 +26,9 @@ $sysToken = $dbToken !== '' ? $dbToken : (string)ODOO_SYNC_SYSTEM_TOKEN;
 $providedToken = (string)($_GET['token'] ?? ($_SERVER['HTTP_X_INTERNAL_TOKEN'] ?? ''));
 
 if ($sysToken !== '' && !hash_equals($sysToken, $providedToken)) {
-    // Allow if user is logged in as super_admin (for browser 'tick')
-    if (session_status() === PHP_SESSION_NONE) session_start();
-    if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'super_admin') {
-        http_response_code(403);
-        echo json_encode(['success' => false, 'ran' => false, 'message' => 'Forbidden', 'debug' => $debug], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
+    http_response_code(403);
+    echo json_encode(['success' => false, 'ran' => false, 'message' => 'Forbidden: Invalid Token', 'debug' => $debug], JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 if (!$enabled) {
@@ -122,10 +118,28 @@ if (!$lock_ok) {
     exit;
 }
 
+function post_lark_text($text) {
+    $url = trim((string)get_setting('webhook_lark_url', ''));
+    if ($url === '') return;
+    $payload = json_encode([
+        'msg_type' => 'text',
+        'content' => ['text' => $text]
+    ]);
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_exec($ch);
+}
+
 try {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
     $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/'));
+    // Normalisasi script name untuk handle double slashes //api/...
+    $script = preg_replace('#/+#', '/', $script);
     $dir1 = rtrim(dirname($script), '/');
     $appRoot = rtrim(dirname($dir1), '/');
     if ($appRoot === '') $appRoot = '/';
@@ -149,12 +163,18 @@ try {
             echo json_encode(['success' => true, 'ran' => true, 'message' => 'Sync selesai', 'debug' => $debug], JSON_UNESCAPED_UNICODE);
         }
     } else {
-        http_response_code(500);
         $snippet = '';
         $resp_s = (string)$resp;
         if ($resp_s !== '') $snippet = substr($resp_s, 0, 300);
+        $errMsg = "Sync request failed. HTTP: $code. Snippet: $snippet";
+        post_lark_text("[SCHEDULER] Gagal memicu sinkronisasi:\n$errMsg\nURL: $targetUrl");
+        http_response_code(500);
         echo json_encode(['success' => false, 'ran' => false, 'message' => 'Sync request failed', 'http_code' => $code, 'body' => $snippet, 'debug' => $debug], JSON_UNESCAPED_UNICODE);
     }
+} catch (Exception $e) {
+    post_lark_text("[SCHEDULER] Exception:\n" . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['success' => false, 'ran' => false, 'message' => $e->getMessage(), 'debug' => $debug], JSON_UNESCAPED_UNICODE);
 } finally {
     try {
         $conn->query("DO RELEASE_LOCK('odoo_sync_schedule')");

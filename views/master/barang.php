@@ -16,7 +16,7 @@ $q = $conn->query("
         COALESCE(NULLIF(uc.to_uom, ''), COALESCE(b.satuan, '')) AS uom_operasional,
         COALESCE(uc.multiplier, 1) AS uom_ratio
     FROM barang b
-    LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     ORDER BY nama_barang ASC
 ");
 $rows = [];

@@ -98,7 +98,7 @@ SELECT
     b.id AS barang_id,
     COALESCE(sm.qty, 0) * COALESCE(uc.multiplier, 1) AS baseline_qty
 FROM barang b
-LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
 LEFT JOIN stock_mirror sm
   ON TRIM(sm.location_code) = '$loc_esc'
  AND (

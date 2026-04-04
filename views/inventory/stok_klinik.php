@@ -349,7 +349,7 @@ if ($active_tab == 'stok') {
                           LEFT JOIN stock_mirror sm_k ON sm_k.odoo_product_id = p.odoo_product_id AND TRIM(sm_k.location_code) = '$kode_klinik_esc'
                           LEFT JOIN stock_mirror sm_h ON sm_h.odoo_product_id = p.odoo_product_id AND TRIM(sm_h.location_code) = '$kode_homecare_esc'
                           LEFT JOIN barang b ON (b.odoo_product_id = p.odoo_product_id OR b.kode_barang = p.kode_barang)
-                          LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+                          LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
                           JOIN klinik k ON k.id = $selected_klinik_id
                           WHERE 1=1";
 

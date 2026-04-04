@@ -90,12 +90,24 @@ $b = $conn->query("SELECT kode_barang, odoo_product_id FROM barang WHERE id = $b
 $kode_barang = trim((string)($b['kode_barang'] ?? ''));
 $odoo_product_id = trim((string)($b['odoo_product_id'] ?? ''));
 
-$conv = $conn->query("SELECT multiplier FROM barang_uom_conversion WHERE barang_id = $barang_id LIMIT 1")->fetch_assoc();
+$conv = $conn->query("
+    SELECT c.multiplier 
+    FROM barang_uom_conversion c
+    JOIN barang b ON b.kode_barang = c.kode_barang
+    WHERE b.id = $barang_id 
+    LIMIT 1
+")->fetch_assoc();
 $multiplier = (float)($conv['multiplier'] ?? 1);
 if ($multiplier <= 0) $multiplier = 1;
 
 $uom = '';
-$r_uom = $conn->query("SELECT COALESCE(uc.to_uom, b.satuan) AS satuan FROM barang b LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id WHERE b.id = $barang_id LIMIT 1");
+$r_uom = $conn->query("
+    SELECT COALESCE(uc.to_uom, b.satuan) AS satuan 
+    FROM barang b 
+    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang 
+    WHERE b.id = $barang_id 
+    LIMIT 1
+");
 if ($r_uom && $r_uom->num_rows > 0) $uom = (string)($r_uom->fetch_assoc()['satuan'] ?? '');
 
 $kb_esc = $conn->real_escape_string($kode_barang);

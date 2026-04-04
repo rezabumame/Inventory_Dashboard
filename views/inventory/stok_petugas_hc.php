@@ -74,7 +74,7 @@ if ($klinik_row && !empty($klinik_row['kode_homecare'])) {
             COALESCE(uc.multiplier, 1) AS ratio
         FROM stock_mirror sm
         LEFT JOIN barang b ON (b.odoo_product_id = sm.odoo_product_id OR b.kode_barang = sm.kode_barang)
-        LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+        LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         WHERE sm.location_code = '$loc'
     ");
     while ($res_hc_conv && ($hc_conv = $res_hc_conv->fetch_assoc())) {
@@ -100,7 +100,7 @@ if ($selected_klinik > 0) {
                 COALESCE(st.total_allocated, 0) AS total_allocated
             FROM stock_mirror sm
             LEFT JOIN barang b ON (b.odoo_product_id = sm.odoo_product_id OR b.kode_barang = sm.kode_barang)
-            LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+            LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
             LEFT JOIN (
                 SELECT barang_id, SUM(qty) AS total_allocated 
                 FROM stok_tas_hc 
@@ -136,7 +136,7 @@ if ($petugas_row && $selected_klinik > 0) {
             COALESCE(st.qty, 0) AS qty
         FROM stok_tas_hc st
         JOIN barang b ON b.id = st.barang_id
-        LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+        LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         WHERE st.user_id = $uid AND st.klinik_id = $selected_klinik AND st.qty <> 0
         ORDER BY b.nama_barang ASC
     ");
@@ -808,7 +808,7 @@ function openDistribusi(idx) {
                 COALESCE(NULLIF(uc.from_uom,''), b.uom) AS uom_odoo,
                 COALESCE(uc.multiplier, 1) AS uom_ratio
             FROM barang b
-            LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+            LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
             ORDER BY b.nama_barang ASC
         ");
         while ($r && ($row = $r->fetch_assoc())) {
@@ -1074,7 +1074,7 @@ function fmtQty(v){ var n=parseFloat(v||0); return (Math.abs(n-Math.round(n))<0.
                                                                     COALESCE(NULLIF(uc.from_uom,''), '') AS uom_odoo,
                                                                     COALESCE(uc.multiplier, 1) AS uom_ratio
                                                                 FROM barang b
-                                                                LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+                                                                LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
                                                                 ORDER BY b.nama_barang ASC
                                                             ");
                                                             while ($res_b2 && ($bb2 = $res_b2->fetch_assoc())):
@@ -1312,7 +1312,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                                                     COALESCE(NULLIF(uc.from_uom,''), '') AS uom_odoo,
                                                                     COALESCE(uc.multiplier, 1) AS uom_ratio
                                                                 FROM barang b
-                                                                LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+                                                                LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
                                                                 ORDER BY b.nama_barang ASC
                                                             ");
                                                             while ($res_b && ($bb = $res_b->fetch_assoc())):

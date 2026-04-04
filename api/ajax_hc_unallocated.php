@@ -70,7 +70,7 @@ while ($r && ($row = $r->fetch_assoc())) {
                 COALESCE(NULLIF(uc.from_uom,''), b.uom) AS uom_odoo,
                 COALESCE(uc.multiplier, 1) AS uom_ratio
             FROM barang b
-            LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+            LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
             WHERE b.id = $barang_id
             LIMIT 1
         ");

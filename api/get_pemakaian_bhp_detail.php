@@ -45,7 +45,7 @@ $stmt = $conn->prepare("
     FROM pemakaian_bhp_detail pbd
     JOIN pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
     LEFT JOIN barang b ON pbd.barang_id = b.id
-    LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     LEFT JOIN klinik k ON pb.klinik_id = k.id
     LEFT JOIN stock_mirror sm ON sm.odoo_product_id = b.odoo_product_id AND sm.location_code = k.kode_klinik
     WHERE pbd.pemakaian_bhp_id = ?

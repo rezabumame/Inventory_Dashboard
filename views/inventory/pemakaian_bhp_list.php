@@ -95,7 +95,7 @@ if ($active_tab == 'list') {
         FROM pemakaian_bhp pb
         JOIN pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
         JOIN barang b ON pbd.barang_id = b.id
-        LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+        LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         LEFT JOIN users u_hc ON pb.user_hc_id = u_hc.id
         JOIN klinik k ON pb.klinik_id = k.id
         WHERE $where_clause
@@ -136,7 +136,7 @@ $stmt_barang = $conn->query("
         COALESCE(NULLIF(uc.from_uom, ''), '') AS uom_odoo,
         COALESCE(uc.multiplier, 1) AS uom_ratio
     FROM barang b
-    LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     WHERE b.odoo_product_id IS NOT NULL AND b.odoo_product_id <> ''
     ORDER BY b.nama_barang
 ");

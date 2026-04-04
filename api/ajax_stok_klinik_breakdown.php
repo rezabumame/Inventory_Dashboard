@@ -49,7 +49,13 @@ if (!$b) {
     exit;
 }
 
-$conv = $conn->query("SELECT from_uom, to_uom, multiplier FROM barang_uom_conversion WHERE barang_id = $barang_id LIMIT 1")->fetch_assoc();
+$conv = $conn->query("
+    SELECT c.from_uom, c.to_uom, c.multiplier 
+    FROM barang_uom_conversion c
+    JOIN barang b ON b.kode_barang = c.kode_barang
+    WHERE b.id = $barang_id 
+    LIMIT 1
+")->fetch_assoc();
 $multiplier = (float)($conv['multiplier'] ?? 1);
 if ($multiplier <= 0) $multiplier = 1;
 

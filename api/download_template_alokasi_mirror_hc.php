@@ -91,7 +91,7 @@ $r = $conn->query("
         COALESCE(NULLIF(uc.from_uom,''), '') AS uom_odoo,
         COALESCE(MAX(sm.qty), 0) AS mirror_qty_raw
     FROM barang b
-    LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     LEFT JOIN stock_mirror sm ON TRIM(sm.location_code) = '$loc'
         AND (
             (TRIM(COALESCE(b.odoo_product_id, '')) <> '' AND TRIM(sm.odoo_product_id) = TRIM(b.odoo_product_id))

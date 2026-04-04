@@ -36,7 +36,13 @@ for ($i = 0; $i < $max; $i++) {
     $q = (float)($qtys_raw[$i] ?? 0);
     $mode = trim((string)($uom_modes_raw[$i] ?? 'oper'));
     if ($bid <= 0 || $q <= 0) continue;
-    $conv = $conn->query("SELECT COALESCE(multiplier, 1) AS multiplier FROM barang_uom_conversion WHERE barang_id = $bid LIMIT 1")->fetch_assoc();
+    $conv = $conn->query("
+        SELECT COALESCE(c.multiplier, 1) AS multiplier 
+        FROM barang_uom_conversion c
+        JOIN barang b ON b.kode_barang = c.kode_barang
+        WHERE b.id = $bid 
+        LIMIT 1
+    ")->fetch_assoc();
     $ratio = (float)($conv['multiplier'] ?? 1);
     if ($ratio <= 0) $ratio = 1;
     $qty_oper = ($mode === 'odoo') ? ($q / $ratio) : $q;

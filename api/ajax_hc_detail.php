@@ -37,7 +37,7 @@ if ($role === 'petugas_hc' && (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_id)
 $b = $conn->query("
     SELECT b.id, b.kode_barang, b.odoo_product_id, b.nama_barang, COALESCE(uc.to_uom, b.satuan) AS satuan, COALESCE(uc.multiplier, 1) AS multiplier
     FROM barang b
-    LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     WHERE b.id = $barang_id
     LIMIT 1
 ")->fetch_assoc();

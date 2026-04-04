@@ -74,7 +74,13 @@ $loc_esc = $conn->real_escape_string($kode_homecare);
 $r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE odoo_product_id = '$odoo_esc' AND TRIM(location_code) = '$loc_esc' LIMIT 1");
 $mirror_qty = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
 
-$conv = $conn->query("SELECT COALESCE(multiplier, 1) AS multiplier FROM barang_uom_conversion WHERE barang_id = $barang_id LIMIT 1")->fetch_assoc();
+$conv = $conn->query("
+    SELECT COALESCE(c.multiplier, 1) AS multiplier 
+    FROM barang_uom_conversion c
+    JOIN barang b ON b.kode_barang = c.kode_barang
+    WHERE b.id = $barang_id 
+    LIMIT 1
+")->fetch_assoc();
 $ratio = (float)($conv['multiplier'] ?? 1);
 if ($ratio <= 0) $ratio = 1.0;
 $mirror_oper = $mirror_qty / $ratio;

@@ -112,7 +112,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $uniq_ids = array_values(array_unique(array_filter(array_map('intval', $items))));
     if (!empty($uniq_ids)) {
         $id_sql = implode(',', array_map('intval', $uniq_ids));
-        $res = $conn->query("SELECT barang_id, COALESCE(multiplier, 1) AS multiplier FROM barang_uom_conversion WHERE barang_id IN ($id_sql)");
+        $res = $conn->query("
+            SELECT b.id AS barang_id, COALESCE(c.multiplier, 1) AS multiplier 
+            FROM barang_uom_conversion c
+            JOIN barang b ON b.kode_barang = c.kode_barang
+            WHERE b.id IN ($id_sql)
+        ");
         while ($res && ($row = $res->fetch_assoc())) {
             $bid = (int)($row['barang_id'] ?? 0);
             $m = (float)($row['multiplier'] ?? 1);
@@ -352,7 +357,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 $r = $conn->query("
                                     SELECT b.kode_barang, b.odoo_product_id, b.nama_barang, COALESCE(uc.to_uom, b.satuan) AS satuan, COALESCE(uc.multiplier, 1) AS multiplier
                                     FROM barang b
-                                    LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+                                    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
                                     WHERE b.id = $barang_id
                                     LIMIT 1
                                 ");
@@ -673,7 +678,7 @@ $res_barang = $conn->query("
         COALESCE(NULLIF(uc.from_uom, ''), '') AS uom_odoo,
         COALESCE(uc.multiplier, 1) AS uom_ratio
     FROM barang b
-    LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     ORDER BY b.nama_barang ASC
 ");
 $barang_list = [];

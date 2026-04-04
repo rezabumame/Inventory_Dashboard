@@ -33,7 +33,13 @@ for ($i = 0; $i < $max; $i++) {
     $q = (float)($qtys_raw[$i] ?? 0);
     $mode = trim((string)($uom_modes_raw[$i] ?? 'oper'));
     if ($bid <= 0 || $q <= 0) continue;
-    $conv = $conn->query("SELECT COALESCE(multiplier, 1) AS multiplier FROM barang_uom_conversion WHERE barang_id = $bid LIMIT 1")->fetch_assoc();
+    $conv = $conn->query("
+        SELECT COALESCE(c.multiplier, 1) AS multiplier 
+        FROM barang_uom_conversion c
+        JOIN barang b ON b.kode_barang = c.kode_barang
+        WHERE b.id = $bid 
+        LIMIT 1
+    ")->fetch_assoc();
     $ratio = (float)($conv['multiplier'] ?? 1);
     if ($ratio <= 0) $ratio = 1;
     $qty_oper = ($mode === 'odoo') ? ($q / $ratio) : $q;
@@ -73,7 +79,13 @@ try {
         $b = $conn->query("SELECT id, kode_barang, odoo_product_id, nama_barang FROM barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
         if (!$b) throw new Exception('Barang tidak ditemukan.');
 
-        $conv = $conn->query("SELECT multiplier FROM barang_uom_conversion WHERE barang_id = $barang_id LIMIT 1")->fetch_assoc();
+        $conv = $conn->query("
+            SELECT c.multiplier 
+            FROM barang_uom_conversion c
+            JOIN barang b ON b.kode_barang = c.kode_barang
+            WHERE b.id = $barang_id 
+            LIMIT 1
+        ")->fetch_assoc();
         $mult = (float)($conv['multiplier'] ?? 1);
         if ($mult <= 0) $mult = 1;
 

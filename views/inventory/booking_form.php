@@ -33,13 +33,13 @@ while($r = $klinik_res->fetch_assoc()) $kliniks[] = $r;
 $conn->query("
     CREATE TABLE IF NOT EXISTS barang_uom_conversion (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        barang_id INT NOT NULL,
-        from_uom VARCHAR(20) NULL,
-        to_uom VARCHAR(20) NULL,
+        kode_barang VARCHAR(100) NOT NULL,
+        from_uom VARCHAR(50) NULL,
+        to_uom VARCHAR(50) NULL,
         multiplier DECIMAL(18,8) NOT NULL DEFAULT 1,
         note VARCHAR(255) NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_barang (barang_id)
+        UNIQUE KEY uniq_kode_barang (kode_barang)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
 ");
 
@@ -52,7 +52,7 @@ try {
         FROM klinik k
         JOIN stock_mirror sm ON sm.location_code = k.kode_klinik
         JOIN barang b ON b.odoo_product_id = sm.odoo_product_id
-        LEFT JOIN barang_uom_conversion uc ON uc.barang_id = b.id
+        LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         WHERE k.status = 'active' AND k.kode_klinik IS NOT NULL AND k.kode_klinik <> ''
         GROUP BY k.id, b.id
     ");
