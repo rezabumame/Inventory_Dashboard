@@ -22,7 +22,6 @@ A comprehensive web-based inventory and booking management system designed for h
 - **Booking Management**: Create and track patient bookings for various medical examinations.
 - **Stock Reservation**: Automatically reserves stock needed for upcoming bookings to ensure availability.
 - **Pemakaian BHP (Bahan Habis Pakai)**: Track the actual consumption of medical supplies, automatically deducting stock upon use.
-- **MCU Realization**: Specialized tracking for Medical Check-Up (MCU) fulfillment.
 
 ### 🔗 Integrations
 - **Odoo (RPC/JSON-RPC)**: Automated and manual synchronization of stock levels and warehouse data.
