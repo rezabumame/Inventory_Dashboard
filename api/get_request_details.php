@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 
 if (!isset($_SESSION['user_id']) || !isset($_GET['id'])) {
@@ -99,7 +100,7 @@ if ($res_dok && $res_dok->num_rows > 0) {
         <div class="small text-muted mb-1">Dokumen Odoo Tertaut</div>
         <?php foreach ($dokumens as $idx => $dok): ?>
             <div class="mb-2">
-                <a class="btn btn-sm btn-outline-primary" href="<?= htmlspecialchars((string)$dok['dokumen_path']) ?>" target="_blank" rel="noopener">
+                <a class="btn btn-sm btn-outline-primary" href="<?= htmlspecialchars(base_url((string)$dok['dokumen_path'])) ?>" target="_blank" rel="noopener">
                     <i class="fas fa-file-download me-1"></i>
                     <?= htmlspecialchars((string)($dok['dokumen_name'] ?? ('Dokumen ' . ($idx + 1)))) ?>
                 </a>
