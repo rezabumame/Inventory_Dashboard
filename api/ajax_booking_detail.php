@@ -31,8 +31,8 @@ $stmt = $conn->prepare("
     SELECT 
         b.*,
         k.nama_klinik
-    FROM booking_pemeriksaan b
-    JOIN klinik k ON b.klinik_id = k.id
+    FROM inventory_booking_pemeriksaan b
+    JOIN inventory_klinik k ON b.klinik_id = k.id
     WHERE $where
     LIMIT 1
 ");
@@ -46,8 +46,8 @@ if (!$header) {
 
 $stmt = $conn->prepare("
     SELECT GROUP_CONCAT(DISTINCT pg.nama_pemeriksaan ORDER BY pg.nama_pemeriksaan SEPARATOR ', ') AS jenis_pemeriksaan
-    FROM booking_pasien bp
-    JOIN pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
+    FROM inventory_booking_pasien bp
+    JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
     WHERE bp.booking_id = ?
 ");
 $stmt->bind_param("i", $id);
@@ -60,8 +60,8 @@ $stmt = $conn->prepare("
         b.nama_barang,
         b.satuan,
         SUM(bd.qty_gantung) AS qty
-    FROM booking_detail bd
-    JOIN barang b ON bd.barang_id = b.id
+    FROM inventory_booking_detail bd
+    JOIN inventory_barang b ON bd.barang_id = b.id
     WHERE bd.booking_id = ?
     GROUP BY b.kode_barang, b.nama_barang, b.satuan
     ORDER BY b.nama_barang ASC
@@ -78,9 +78,10 @@ $stmt = $conn->prepare("
         bp.nama_pasien, 
         bp.nomor_tlp, 
         bp.tanggal_lahir,
-        GROUP_CONCAT(pg.nama_pemeriksaan SEPARATOR ', ') as exams
-    FROM booking_pasien bp
-    JOIN pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
+        GROUP_CONCAT(pg.nama_pemeriksaan SEPARATOR ', ') as exams,
+        GROUP_CONCAT(pg.id SEPARATOR ',') as exam_ids
+    FROM inventory_booking_pasien bp
+    JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
     WHERE bp.booking_id = ?
     GROUP BY bp.nama_pasien, bp.nomor_tlp, bp.tanggal_lahir
     ORDER BY MIN(bp.id) ASC
@@ -89,7 +90,14 @@ $stmt->bind_param("i", $id);
 $stmt->execute();
 $pasien_list = [];
 $res = $stmt->get_result();
-while ($row = $res->fetch_assoc()) $pasien_list[] = $row;
+while ($row = $res->fetch_assoc()) {
+    if (!empty($row['exam_ids'])) {
+        $row['exam_ids'] = explode(',', $row['exam_ids']);
+    } else {
+        $row['exam_ids'] = [];
+    }
+    $pasien_list[] = $row;
+}
 
 echo json_encode([
     'success' => true,

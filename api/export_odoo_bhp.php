@@ -62,13 +62,13 @@ $stmt_exp = $conn->prepare("
         pb.tanggal as TANGGAL_PEMAKAIAN,
         pb.created_at as TANGGAL_INPUT_FULL,
         osd.reason as REASON
-    FROM pemakaian_bhp pb
-    JOIN pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
-    JOIN barang b ON pbd.barang_id = b.id
-    LEFT JOIN odoo_format_config ofc ON b.kode_barang = ofc.internal_reference
-    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-    JOIN klinik k ON pb.klinik_id = k.id
-    LEFT JOIN odoo_support_data osd ON osd.key_name = TRIM(SUBSTRING_INDEX(ofc.product_category, '/', 1))
+    FROM inventory_pemakaian_bhp pb
+    JOIN inventory_pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
+    JOIN inventory_barang b ON pbd.barang_id = b.id
+    LEFT JOIN inventory_odoo_format_config ofc ON b.kode_barang = ofc.internal_reference
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    JOIN inventory_klinik k ON pb.klinik_id = k.id
+    LEFT JOIN inventory_odoo_support_data osd ON osd.key_name = TRIM(SUBSTRING_INDEX(REPLACE(ofc.product_category, '/', ' '), ' ', 1))
     WHERE $where_clause
     ORDER BY TANGGAL_INPUT_FULL DESC, ID ASC
 ");

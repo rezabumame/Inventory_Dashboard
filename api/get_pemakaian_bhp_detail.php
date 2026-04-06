@@ -18,10 +18,10 @@ $stmt = $conn->prepare("
         k.nama_klinik,
         u_created.nama_lengkap as created_by_name,
         u_hc.nama_lengkap as hc_name
-    FROM pemakaian_bhp pb
-    LEFT JOIN klinik k ON pb.klinik_id = k.id
-    LEFT JOIN users u_created ON pb.created_by = u_created.id
-    LEFT JOIN users u_hc ON pb.user_hc_id = u_hc.id
+    FROM inventory_pemakaian_bhp pb
+    LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
+    LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
+    LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
     WHERE pb.id = ?
 ");
 $stmt->bind_param("i", $id);
@@ -42,12 +42,12 @@ $stmt = $conn->prepare("
         COALESCE(b.kode_barang, sm.kode_barang, '') AS kode_barang,
         COALESCE(b.nama_barang, sm.kode_barang) AS nama_barang,
         COALESCE(NULLIF(pbd.satuan, ''), uc.to_uom, b.satuan, '') AS satuan_display
-    FROM pemakaian_bhp_detail pbd
-    JOIN pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
-    LEFT JOIN barang b ON pbd.barang_id = b.id
-    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-    LEFT JOIN klinik k ON pb.klinik_id = k.id
-    LEFT JOIN stock_mirror sm ON sm.odoo_product_id = b.odoo_product_id AND sm.location_code = k.kode_klinik
+    FROM inventory_pemakaian_bhp_detail pbd
+    JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
+    LEFT JOIN inventory_barang b ON pbd.barang_id = b.id
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
+    LEFT JOIN inventory_stock_mirror sm ON sm.odoo_product_id = b.odoo_product_id AND sm.location_code = k.kode_klinik
     WHERE pbd.pemakaian_bhp_id = ?
     ORDER BY pbd.id
 ");

@@ -56,7 +56,7 @@ if (!$xlsx) {
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
 
-$kl = $conn->query("SELECT id, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$kl = $conn->query("SELECT id, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 $kode_homecare = trim((string)($kl['kode_homecare'] ?? ''));
 if ($kode_homecare === '') {
     $_SESSION['error'] = 'Klinik belum memiliki kode_homecare';
@@ -65,14 +65,14 @@ if ($kode_homecare === '') {
 
 $petugas_rows = [];
 if ($petugas_user_id > 0) {
-    $u = $conn->query("SELECT id, nama_lengkap FROM users WHERE id = $petugas_user_id AND role='petugas_hc' AND status='active' AND klinik_id=$klinik_id LIMIT 1")->fetch_assoc();
+    $u = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE id = $petugas_user_id AND role='petugas_hc' AND status='active' AND klinik_id=$klinik_id LIMIT 1")->fetch_assoc();
     if (!$u) {
         $_SESSION['error'] = 'Petugas tidak valid';
         redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
     }
     $petugas_rows[] = $u;
 } else {
-    $r = $conn->query("SELECT id, nama_lengkap FROM users WHERE role='petugas_hc' AND status='active' AND klinik_id=$klinik_id");
+    $r = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE role='petugas_hc' AND status='active' AND klinik_id=$klinik_id");
     while ($r && ($row = $r->fetch_assoc())) $petugas_rows[] = $row;
 }
 
@@ -104,9 +104,9 @@ $r = $conn->query("
         TRIM(COALESCE(b.barcode, '')) AS barcode,
         COALESCE(uc.multiplier, 1) AS multiplier,
         COALESCE(MAX(sm.qty), 0) AS mirror_qty_raw
-    FROM barang b
-    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-    LEFT JOIN stock_mirror sm ON TRIM(sm.location_code) = '$loc'
+    FROM inventory_barang b
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    LEFT JOIN inventory_stock_mirror sm ON TRIM(sm.location_code) = '$loc'
         AND (
             (TRIM(COALESCE(b.odoo_product_id, '')) <> '' AND TRIM(sm.odoo_product_id) = TRIM(b.odoo_product_id))
             OR
@@ -266,8 +266,8 @@ if (!empty($diffs) && !isset($_POST['confirm_over'])) {
 
 function apply_bulk_alloc(mysqli $conn, int $klinik_id, int $created_by, array $allocations): int {
     $count = 0;
-    $stmt_up = $conn->prepare("INSERT INTO stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
-    $stmt_del = $conn->prepare("DELETE FROM stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ? LIMIT 1");
+    $stmt_up = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+    $stmt_del = $conn->prepare("DELETE FROM inventory_stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ? LIMIT 1");
     foreach ($allocations as $uid => $items) {
         $uid = (int)$uid;
         if ($uid <= 0 || !is_array($items)) continue;

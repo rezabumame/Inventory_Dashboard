@@ -135,7 +135,7 @@ h1, h2, h3, h4, h5, h6 {
 .main-content {
     margin-left: var(--sidebar-width);
     min-height: 100vh;
-    padding: 16px 24px 24px 24px;
+    padding: 8px 24px 24px 24px;
     background: #ffffff;
     transition: margin-left var(--transition);
 }
@@ -146,7 +146,7 @@ h1, h2, h3, h4, h5, h6 {
     align-items: center;
     justify-content: space-between;
     padding: 0 24px;
-    margin: -16px -24px 16px -24px;
+    margin: -8px -24px 4px -24px;
     background: #ffffff;
     border-bottom: 1px solid var(--border-200);
     position: sticky;
@@ -258,6 +258,35 @@ table.dataTable > thead > tr > td {
 }
 
 /* DataTables length menu and search input fixes */
+.dataTables_wrapper .dataTables_filter {
+    float: right;
+    text-align: right;
+}
+
+.dataTables_wrapper .dataTables_filter label {
+    font-weight: 500;
+    color: var(--text-700);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.dataTables_wrapper .dataTables_filter input {
+    margin-left: 0 !important;
+    border-radius: 10px;
+    border: 1px solid var(--border-200);
+    padding: 6px 12px;
+    min-height: 38px;
+    width: 240px;
+    transition: all 0.2s;
+}
+
+.dataTables_wrapper .dataTables_filter input:focus {
+    border-color: var(--blue-600);
+    box-shadow: 0 0 0 3px rgba(32, 78, 171, 0.12);
+    outline: none;
+}
+
 .dataTables_length select {
     display: inline-block !important;
     width: auto !important;
@@ -288,6 +317,40 @@ table.dataTable > thead > tr > td {
     border: 1px solid var(--border-200);
     border-radius: 12px;
     box-shadow: none;
+}
+
+/* Global Modal Customization */
+.modal-header {
+    background-color: var(--blue-600) !important;
+    color: #ffffff !important;
+}
+
+.modal-title {
+    color: #ffffff !important;
+    font-weight: 600;
+}
+
+.modal-header .btn-close {
+    filter: brightness(0) invert(1); /* Make close button white */
+}
+
+.modal-footer .btn-primary, 
+.modal-footer button[type="submit"] {
+    background-color: var(--blue-600) !important;
+    border-color: var(--blue-600) !important;
+    color: #ffffff !important;
+}
+
+.modal-footer .btn-primary:hover, 
+.modal-footer button[type="submit"]:hover {
+    background-color: var(--blue-700) !important;
+    border-color: var(--blue-700) !important;
+}
+
+.modal-content {
+    border-radius: 12px;
+    overflow: hidden;
+    border: none;
 }
 
 @media (min-width: 769px) {

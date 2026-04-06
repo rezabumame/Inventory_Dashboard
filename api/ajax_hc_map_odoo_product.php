@@ -26,7 +26,7 @@ if ($barang_id <= 0 || $odoo_product_id === '') {
 }
 
 $odoo_esc = $conn->real_escape_string($odoo_product_id);
-$existing = $conn->query("SELECT id, kode_barang, nama_barang FROM barang WHERE odoo_product_id = '$odoo_esc' LIMIT 1")->fetch_assoc();
+$existing = $conn->query("SELECT id, kode_barang, nama_barang FROM inventory_barang WHERE odoo_product_id = '$odoo_esc' LIMIT 1")->fetch_assoc();
 if ($existing && (int)($existing['id'] ?? 0) !== $barang_id) {
     if (!$force) {
         $nm = (string)($existing['nama_barang'] ?? '');
@@ -35,10 +35,10 @@ if ($existing && (int)($existing['id'] ?? 0) !== $barang_id) {
         exit;
     }
     $eid = (int)($existing['id'] ?? 0);
-    if ($eid > 0) $conn->query("UPDATE barang SET odoo_product_id = NULL WHERE id = $eid");
+    if ($eid > 0) $conn->query("UPDATE inventory_barang SET odoo_product_id = NULL WHERE id = $eid");
 }
 
-$stmt = $conn->prepare("UPDATE barang SET odoo_product_id = ? WHERE id = ?");
+$stmt = $conn->prepare("UPDATE inventory_barang SET odoo_product_id = ? WHERE id = ?");
 $stmt->bind_param("si", $odoo_product_id, $barang_id);
 if (!$stmt->execute()) {
     echo json_encode(['success' => false, 'message' => 'Gagal update mapping']);

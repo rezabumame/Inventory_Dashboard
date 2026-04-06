@@ -13,10 +13,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (empty($message)) {
         if (!empty($password)) {
             $hashed = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("UPDATE users SET nama_lengkap = ?, password = ? WHERE id = ?");
+            $stmt = $conn->prepare("UPDATE inventory_users SET nama_lengkap = ?, password = ? WHERE id = ?");
             $stmt->bind_param("ssi", $nama_lengkap, $hashed, $user_id);
         } else {
-            $stmt = $conn->prepare("UPDATE users SET nama_lengkap = ? WHERE id = ?");
+            $stmt = $conn->prepare("UPDATE inventory_users SET nama_lengkap = ? WHERE id = ?");
             $stmt->bind_param("si", $nama_lengkap, $user_id);
         }
         
@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 
 // Fetch Current Data
-$user = $conn->query("SELECT u.*, k.nama_klinik FROM users u LEFT JOIN klinik k ON u.klinik_id = k.id WHERE u.id = $user_id")->fetch_assoc();
+$user = $conn->query("SELECT u.*, k.nama_klinik FROM inventory_users u LEFT JOIN inventory_klinik k ON u.klinik_id = k.id WHERE u.id = $user_id")->fetch_assoc();
 ?>
 
     <div class="row mb-4 align-items-center">

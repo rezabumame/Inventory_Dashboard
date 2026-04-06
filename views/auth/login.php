@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $username = $_POST['username'];
     $password = $_POST['password'];
 
-    $stmt = $conn->prepare("SELECT id, username, password, nama_lengkap, role, klinik_id, photo FROM users WHERE username = ? AND status = 'active'");
+    $stmt = $conn->prepare("SELECT id, username, password, nama_lengkap, role, klinik_id, photo FROM inventory_users WHERE username = ? AND status = 'active'");
     $stmt->bind_param("s", $username);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -163,10 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     </div>
                 </div>
                 <div class="mb-4">
-                    <div class="d-flex justify-content-between">
-                        <label class="form-label">Password</label>
-                        <a href="#" class="small text-decoration-none" style="color: #204EAB; font-weight: 500;">Forgot?</a>
-                    </div>
+                    <label class="form-label">Password</label>
                     <div class="input-group">
                         <span class="input-group-text"><i class="fas fa-lock"></i></span>
                         <input type="password" name="password" id="loginPassword" class="form-control" placeholder="••••••••" required>
@@ -176,20 +173,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     </div>
                 </div>
                 
-                <div class="mb-4">
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="rememberMe">
-                        <label class="form-check-label small text-muted" for="rememberMe">Stay signed in for 30 days</label>
-                    </div>
-                </div>
-                
                 <button type="submit" class="btn btn-primary w-100">
                     Sign In <i class="fas fa-arrow-right ms-2 small"></i>
                 </button>
             </form>
             
             <div class="mt-5 text-center">
-                <small class="text-muted">&copy; <?= date('Y') ?> PT Bumame Health</small>
+                <small class="text-muted">&copy; <?= date('Y') ?> Bumame Cahaya Medika. All rights reserved.</small>
             </div>
         </div>
     </div>

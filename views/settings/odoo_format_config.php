@@ -7,7 +7,7 @@ if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], ['super_admin',
 }
 
 // Auto-create tables if not exists
-$conn->query("CREATE TABLE IF NOT EXISTS odoo_format_config (
+$conn->query("CREATE TABLE IF NOT EXISTS `inventory_odoo_format_config` (
     id INT AUTO_INCREMENT PRIMARY KEY,
     internal_reference VARCHAR(100),
     name VARCHAR(255),
@@ -19,7 +19,7 @@ $conn->query("CREATE TABLE IF NOT EXISTS odoo_format_config (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 )");
-$conn->query("CREATE TABLE IF NOT EXISTS odoo_support_data (
+$conn->query("CREATE TABLE IF NOT EXISTS `inventory_odoo_support_data` (
     id INT AUTO_INCREMENT PRIMARY KEY,
     key_name VARCHAR(100),
     reason VARCHAR(255),
@@ -29,9 +29,9 @@ $conn->query("CREATE TABLE IF NOT EXISTS odoo_support_data (
 )");
 
 // Check if key_name column exists (migration)
-$res = $conn->query("SHOW COLUMNS FROM odoo_support_data LIKE 'key_name'");
+$res = $conn->query("SHOW COLUMNS FROM `inventory_odoo_support_data` LIKE 'key_name'");
 if ($res && $res->num_rows == 0) {
-    $conn->query("ALTER TABLE odoo_support_data ADD COLUMN key_name VARCHAR(100) AFTER id");
+    $conn->query("ALTER TABLE `inventory_odoo_support_data` ADD COLUMN key_name VARCHAR(100) AFTER id");
 }
 
 // Handle Form Submission
@@ -49,14 +49,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $expense = $conn->real_escape_string($_POST['expense_account']);
 
             if ($id > 0) {
-                $sql = "UPDATE odoo_format_config SET 
+                $sql = "UPDATE inventory_odoo_format_config SET 
                         internal_reference = '$internal_ref', name = '$name', uom = '$uom', 
                         product_category = '$category', income_account = '$income', 
                         valuation_account = '$valuation', expense_account = '$expense' 
                         WHERE id = $id";
                 $msg = "Data master Odoo berhasil diperbarui.";
             } else {
-                $sql = "INSERT INTO odoo_format_config (internal_reference, name, uom, product_category, income_account, valuation_account, expense_account) 
+                $sql = "INSERT INTO inventory_odoo_format_config (internal_reference, name, uom, product_category, income_account, valuation_account, expense_account) 
                         VALUES ('$internal_ref', '$name', '$uom', '$category', '$income', '$valuation', '$expense')";
                 $msg = "Data master Odoo berhasil ditambahkan.";
             }
@@ -73,10 +73,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $notes = $conn->real_escape_string($_POST['notes']);
 
             if ($id > 0) {
-                $sql = "UPDATE odoo_support_data SET key_name = '$key', reason = '$reason', notes = '$notes' WHERE id = $id";
+                $sql = "UPDATE inventory_odoo_support_data SET key_name = '$key', reason = '$reason', notes = '$notes' WHERE id = $id";
                 $msg = "Data pendukung berhasil diperbarui.";
             } else {
-                $sql = "INSERT INTO odoo_support_data (key_name, reason, notes) VALUES ('$key', '$reason', '$notes')";
+                $sql = "INSERT INTO inventory_odoo_support_data (key_name, reason, notes) VALUES ('$key', '$reason', '$notes')";
                 $msg = "Data pendukung berhasil ditambahkan.";
             }
 
@@ -87,11 +87,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } elseif ($_POST['action'] === 'delete_config') {
             $id = (int)$_POST['id'];
-            $conn->query("DELETE FROM odoo_format_config WHERE id = $id");
+            $conn->query("DELETE FROM inventory_odoo_format_config WHERE id = $id");
             $_SESSION['success'] = "Data berhasil dihapus.";
         } elseif ($_POST['action'] === 'delete_support') {
             $id = (int)$_POST['id'];
-            $conn->query("DELETE FROM odoo_support_data WHERE id = $id");
+            $conn->query("DELETE FROM inventory_odoo_support_data WHERE id = $id");
             $_SESSION['success'] = "Data berhasil dihapus.";
         } elseif ($_POST['action'] === 'upload_odoo_config') {
             if (isset($_FILES['file']) && $_FILES['file']['error'] == 0) {
@@ -116,16 +116,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if (empty($internal_ref)) continue;
 
                         // Check if internal_reference exists
-                        $check = $conn->query("SELECT id FROM odoo_format_config WHERE internal_reference = '$internal_ref'");
+                        $check = $conn->query("SELECT id FROM inventory_odoo_format_config WHERE internal_reference = '$internal_ref'");
                         if ($check && $check->num_rows > 0) {
                             $row_id = $check->fetch_assoc()['id'];
-                            $conn->query("UPDATE odoo_format_config SET 
+                            $conn->query("UPDATE inventory_odoo_format_config SET 
                                 name = '$name', uom = '$uom', product_category = '$category', 
                                 income_account = '$income', valuation_account = '$valuation', expense_account = '$expense' 
                                 WHERE id = $row_id");
                             $updated++;
                         } else {
-                            $conn->query("INSERT INTO odoo_format_config (internal_reference, name, uom, product_category, income_account, valuation_account, expense_account) 
+                            $conn->query("INSERT INTO inventory_odoo_format_config (internal_reference, name, uom, product_category, income_account, valuation_account, expense_account) 
                                 VALUES ('$internal_ref', '$name', '$uom', '$category', '$income', '$valuation', '$expense')");
                             $success++;
                         }
@@ -180,8 +180,8 @@ $expense_options = [
     '520101004 BEBAN LANGSUNG MEDICAL EXPERTISE SERVICE'
 ];
 
-$configs = $conn->query("SELECT * FROM odoo_format_config ORDER BY id DESC");
-$supports = $conn->query("SELECT * FROM odoo_support_data ORDER BY id DESC");
+$configs = $conn->query("SELECT * FROM inventory_odoo_format_config ORDER BY id DESC");
+$supports = $conn->query("SELECT * FROM inventory_odoo_support_data ORDER BY id DESC");
 ?>
 
 <div class="container-fluid">

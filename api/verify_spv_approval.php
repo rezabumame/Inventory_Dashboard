@@ -19,9 +19,9 @@ $q = $conn->query("
         r.spv_approved_at,
         u.nama_lengkap AS spv_name,
         k.nama_klinik AS klinik_name
-    FROM request_barang r
-    LEFT JOIN users u ON r.spv_approved_by = u.id
-    LEFT JOIN klinik k ON (r.dari_level = 'klinik' AND r.dari_id = k.id)
+    FROM inventory_request_barang r
+    LEFT JOIN inventory_users u ON r.spv_approved_by = u.id
+    LEFT JOIN inventory_klinik k ON (r.dari_level = 'klinik' AND r.dari_id = k.id)
     WHERE r.spv_qr_token = '$tok'
     LIMIT 1
 ");

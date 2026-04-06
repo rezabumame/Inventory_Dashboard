@@ -8,9 +8,9 @@ $can_choose_klinik = in_array($role, ['super_admin'], true);
 $message = '';
 
 if (function_exists('ensure_enum_value')) {
-    ensure_enum_value($conn, 'users', 'role', 'petugas_hc');
+    ensure_enum_value($conn, 'inventory_users', 'role', 'petugas_hc');
 }
-$conn->query("UPDATE users SET role = 'petugas_hc' WHERE role = '' AND klinik_id IS NOT NULL AND username IS NOT NULL AND username <> ''");
+$conn->query("UPDATE inventory_users SET role = 'petugas_hc' WHERE role = '' AND klinik_id IS NOT NULL AND username IS NOT NULL AND username <> ''");
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
@@ -29,24 +29,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($klinik_id <= 0 || $nama_lengkap === '' || $username === '') {
             $message = '<div class="alert alert-danger mb-3">Data tidak valid. Klinik, Nama, dan Username wajib diisi.</div>';
         } else {
-            $r = $conn->query("SELECT kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1");
+            $r = $conn->query("SELECT kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1");
             $kode_homecare = '';
             if ($r && $r->num_rows > 0) $kode_homecare = trim((string)($r->fetch_assoc()['kode_homecare'] ?? ''));
             if ($kode_homecare === '') {
                 $message = '<div class="alert alert-danger mb-3">Klinik belum memiliki Kode Homecare. Isi dulu Kode Homecare agar stok HC bisa terbaca.</div>';
             } else {
                 if ($id > 0) {
-                    $row_old = $conn->query("SELECT id, klinik_id FROM users WHERE id = $id AND role = 'petugas_hc' LIMIT 1")->fetch_assoc();
+                    $row_old = $conn->query("SELECT id, klinik_id FROM inventory_users WHERE id = $id AND role = 'petugas_hc' LIMIT 1")->fetch_assoc();
                     if (!$row_old) {
                         $message = '<div class="alert alert-danger mb-3">User tidak ditemukan.</div>';
                     } elseif (!$can_choose_klinik && (int)$row_old['klinik_id'] !== $user_klinik_id) {
                         $message = '<div class="alert alert-danger mb-3">Access denied.</div>';
                     } else {
-                        $sql = "UPDATE users SET username = ?, nama_lengkap = ?, klinik_id = ?, status = ? WHERE id = ? AND role = 'petugas_hc'";
+                        $sql = "UPDATE inventory_users SET username = ?, nama_lengkap = ?, klinik_id = ?, status = ? WHERE id = ? AND role = 'petugas_hc'";
                         $params = [$username, $nama_lengkap, $klinik_id, $status, $id];
                         $types = "ssisi";
                         if ($password !== '') {
-                            $sql = "UPDATE users SET username = ?, nama_lengkap = ?, klinik_id = ?, status = ?, password = ? WHERE id = ? AND role = 'petugas_hc'";
+                            $sql = "UPDATE inventory_users SET username = ?, nama_lengkap = ?, klinik_id = ?, status = ?, password = ? WHERE id = ? AND role = 'petugas_hc'";
                             $hashed = password_hash($password, PASSWORD_DEFAULT);
                             $params = [$username, $nama_lengkap, $klinik_id, $status, $hashed, $id];
                             $types = "ssissi";
@@ -60,12 +60,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($password === '') {
                         $message = '<div class="alert alert-danger mb-3">Password wajib diisi untuk petugas baru.</div>';
                     } else {
-                        $stmt = $conn->prepare("INSERT INTO users (username, password, nama_lengkap, role, klinik_id, status) VALUES (?, ?, ?, 'petugas_hc', ?, ?)");
+                        $stmt = $conn->prepare("INSERT INTO inventory_users (username, password, nama_lengkap, role, klinik_id, status) VALUES (?, ?, ?, 'petugas_hc', ?, ?)");
                         $hashed = password_hash($password, PASSWORD_DEFAULT);
                         $stmt->bind_param("sssis", $username, $hashed, $nama_lengkap, $klinik_id, $status);
                         if ($stmt->execute()) {
                             $new_id = (int)$conn->insert_id;
-                            $conn->query("UPDATE users SET role = 'petugas_hc' WHERE id = $new_id AND role = ''");
+                            $conn->query("UPDATE inventory_users SET role = 'petugas_hc' WHERE id = $new_id AND role = ''");
                             $message = '<div class="alert alert-success mb-3">Petugas HC berhasil ditambahkan.</div>';
                         }
                         else $message = '<div class="alert alert-danger mb-3">Gagal menambah petugas: ' . htmlspecialchars($stmt->error) . '</div>';
@@ -75,13 +75,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'delete') {
         if ($id > 0) {
-            $row_old = $conn->query("SELECT id, klinik_id FROM users WHERE id = $id AND role = 'petugas_hc' LIMIT 1")->fetch_assoc();
+            $row_old = $conn->query("SELECT id, klinik_id FROM inventory_users WHERE id = $id AND role = 'petugas_hc' LIMIT 1")->fetch_assoc();
             if (!$row_old) {
                 $message = '<div class="alert alert-danger mb-3">User tidak ditemukan.</div>';
             } elseif (!$can_choose_klinik && (int)$row_old['klinik_id'] !== $user_klinik_id) {
                 $message = '<div class="alert alert-danger mb-3">Access denied.</div>';
             } else {
-                $conn->query("DELETE FROM users WHERE id = $id AND role = 'petugas_hc'");
+                $conn->query("DELETE FROM inventory_users WHERE id = $id AND role = 'petugas_hc'");
                 $message = '<div class="alert alert-success mb-3">Petugas HC berhasil dihapus.</div>';
             }
         }
@@ -90,10 +90,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $kliniks = [];
 if ($can_choose_klinik) {
-    $res = $conn->query("SELECT id, nama_klinik, kode_homecare FROM klinik WHERE status = 'active' ORDER BY nama_klinik ASC");
+    $res = $conn->query("SELECT id, nama_klinik, kode_homecare FROM inventory_klinik WHERE status = 'active' ORDER BY nama_klinik ASC");
     while ($res && ($row = $res->fetch_assoc())) $kliniks[] = $row;
 } else {
-    $res = $conn->query("SELECT id, nama_klinik, kode_homecare FROM klinik WHERE id = $user_klinik_id LIMIT 1");
+    $res = $conn->query("SELECT id, nama_klinik, kode_homecare FROM inventory_klinik WHERE id = $user_klinik_id LIMIT 1");
     if ($res && $res->num_rows > 0) $kliniks[] = $res->fetch_assoc();
 }
 
@@ -111,8 +111,8 @@ if ($search_query !== '') {
 $petugas = [];
 $res = $conn->query("
     SELECT u.id, u.username, u.nama_lengkap, u.status, u.klinik_id, k.nama_klinik, k.kode_homecare
-    FROM users u
-    JOIN klinik k ON k.id = u.klinik_id
+    FROM inventory_users u
+    JOIN inventory_klinik k ON k.id = u.klinik_id
     WHERE u.role = 'petugas_hc' AND $where
     ORDER BY k.nama_klinik ASC, u.nama_lengkap ASC
 ");
@@ -179,7 +179,7 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
     <div class="card shadow-sm">
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-hover align-middle">
+                <table class="table table-hover align-middle datatable">
                     <thead class="bg-light">
                         <tr>
                             <th>Klinik</th>

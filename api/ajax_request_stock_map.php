@@ -54,7 +54,7 @@ function resolve_location_code(mysqli $conn, string $input): string {
 
     foreach ($prefer as $c) {
         $esc = $conn->real_escape_string($c);
-        $r = $conn->query("SELECT 1 FROM stock_mirror WHERE location_code = '$esc' LIMIT 1");
+        $r = $conn->query("SELECT 1 FROM inventory_stock_mirror WHERE location_code = '$esc' LIMIT 1");
         if ($r && $r->num_rows > 0) return $c;
     }
 
@@ -66,7 +66,7 @@ if ($ke_level === 'klinik') {
         echo json_encode(['success' => true, 'stock' => $stock], JSON_UNESCAPED_UNICODE);
         exit;
     }
-    $r = $conn->query("SELECT kode_klinik FROM klinik WHERE id = $ke_id LIMIT 1");
+    $r = $conn->query("SELECT kode_klinik FROM inventory_klinik WHERE id = $ke_id LIMIT 1");
     $kode_klinik = '';
     if ($r && $r->num_rows > 0) $kode_klinik = (string)($r->fetch_assoc()['kode_klinik'] ?? '');
     if ($kode_klinik === '') {
@@ -79,8 +79,8 @@ if ($ke_level === 'klinik') {
         SELECT 
             b.id AS barang_id,
             COALESCE(MAX(sm.qty), 0) AS qty
-        FROM barang b
-        LEFT JOIN stock_mirror sm 
+        FROM inventory_barang b
+        LEFT JOIN inventory_stock_mirror sm 
             ON sm.location_code = '$loc'
             AND (
                 (b.odoo_product_id IS NOT NULL AND TRIM(b.odoo_product_id) <> '' AND TRIM(sm.odoo_product_id) = TRIM(b.odoo_product_id))
@@ -106,8 +106,8 @@ if ($ke_level === 'gudang_utama') {
             SELECT 
                 b.id AS barang_id,
                 COALESCE(MAX(sm.qty), 0) AS qty
-            FROM barang b
-            LEFT JOIN stock_mirror sm 
+            FROM inventory_barang b
+            LEFT JOIN inventory_stock_mirror sm 
                 ON sm.location_code = '$loc'
                 AND (
                     (b.odoo_product_id IS NOT NULL AND TRIM(b.odoo_product_id) <> '' AND TRIM(sm.odoo_product_id) = TRIM(b.odoo_product_id))
@@ -123,7 +123,7 @@ if ($ke_level === 'gudang_utama') {
         echo json_encode(['success' => true, 'stock' => $stock, 'location_code' => $resolved_loc], JSON_UNESCAPED_UNICODE);
         exit;
     } else {
-        $res = $conn->query("SELECT barang_id, qty FROM stok_gudang_utama");
+        $res = $conn->query("SELECT barang_id, qty FROM inventory_stok_gudang_utama");
         while ($res && ($row = $res->fetch_assoc())) {
             $stock[(int)$row['barang_id']] = (int)$row['qty'];
         }

@@ -33,18 +33,18 @@ function resolve_location(mysqli $conn, string $code): string {
     $code = trim($code);
     if ($code === '') return '';
     $esc = $conn->real_escape_string($code);
-    $r = $conn->query("SELECT 1 FROM stock_mirror WHERE TRIM(location_code) = '$esc' LIMIT 1");
+    $r = $conn->query("SELECT 1 FROM inventory_stock_mirror WHERE TRIM(location_code) = '$esc' LIMIT 1");
     if ($r && $r->num_rows > 0) return $code;
     $cand = [$code . '/Stock', $code . '-Stock', $code . ' Stock'];
     foreach ($cand as $c) {
         $e = $conn->real_escape_string($c);
-        $r = $conn->query("SELECT 1 FROM stock_mirror WHERE TRIM(location_code) = '$e' LIMIT 1");
+        $r = $conn->query("SELECT 1 FROM inventory_stock_mirror WHERE TRIM(location_code) = '$e' LIMIT 1");
         if ($r && $r->num_rows > 0) return $c;
     }
     return $code;
 }
 
-$t = $conn->query("SELECT * FROM hc_petugas_transfer WHERE id = $transfer_id AND klinik_id = $klinik_id LIMIT 1")->fetch_assoc();
+$t = $conn->query("SELECT * FROM inventory_hc_petugas_transfer WHERE id = $transfer_id AND klinik_id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$t) {
     $_SESSION['error'] = 'Transfer tidak ditemukan.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . '&tab=' . urlencode($tab));
@@ -62,20 +62,20 @@ if ($qty <= 0) {
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . '&tab=' . urlencode($tab));
 }
 
-$cur = $conn->query("SELECT COALESCE(qty, 0) AS qty FROM stok_tas_hc WHERE klinik_id = $klinik_id AND user_id = $user_hc_id AND barang_id = $barang_id LIMIT 1")->fetch_assoc();
+$cur = $conn->query("SELECT COALESCE(qty, 0) AS qty FROM inventory_stok_tas_hc WHERE klinik_id = $klinik_id AND user_id = $user_hc_id AND barang_id = $barang_id LIMIT 1")->fetch_assoc();
 $cur_qty = (float)($cur['qty'] ?? 0);
 if ($cur_qty + 0.00005 < $qty) {
     $_SESSION['error'] = 'Stok tas petugas tidak mencukupi untuk reversal. Qty saat ini: ' . fmt_qty($cur_qty);
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . '&petugas_user_id=' . (int)$petugas_user_id . '&tab=' . urlencode($tab));
 }
 
-$kl = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$kl = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$kl) {
     $_SESSION['error'] = 'Klinik tidak ditemukan.';
     redirect('index.php?page=stok_petugas_hc');
 }
 
-$b = $conn->query("SELECT id, kode_barang, odoo_product_id, nama_barang FROM barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
+$b = $conn->query("SELECT id, kode_barang, odoo_product_id, nama_barang FROM inventory_barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
 if (!$b) {
     $_SESSION['error'] = 'Barang tidak ditemukan.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
@@ -102,18 +102,18 @@ try {
     $cat_orig = trim((string)($t['catatan'] ?? ''));
     if ($cat_orig !== '') $cat_detail .= ' - ' . $cat_orig;
 
-    $stmt = $conn->prepare("INSERT INTO hc_petugas_transfer (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt = $conn->prepare("INSERT INTO inventory_hc_petugas_transfer (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
     $neg = 0 - $qty;
     $stmt->bind_param("iiidsi", $klinik_id, $user_hc_id, $barang_id, $neg, $cat, $created_by);
     $stmt->execute();
 
-    $stmt = $conn->prepare("UPDATE stok_tas_hc SET qty = qty - ?, updated_by = ? WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+    $stmt = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ? WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
     $stmt->bind_param("diiii", $qty, $created_by, $barang_id, $user_hc_id, $klinik_id);
     $stmt->execute();
 
     $qty_after_onsite = (float)$effective_onsite + $qty;
     $stmt = $conn->prepare("
-        INSERT INTO transaksi_stok
+        INSERT INTO inventory_transaksi_stok
         (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
         VALUES (?, 'klinik', ?, 'in', ?, ?, ?, 'hc_petugas_transfer', ?, ?, ?, NOW())
     ");
@@ -123,7 +123,7 @@ try {
     $qty_after_hc = (float)$effective_hc - $qty;
     if ($qty_after_hc < 0) $qty_after_hc = 0;
     $stmt = $conn->prepare("
-        INSERT INTO transaksi_stok
+        INSERT INTO inventory_transaksi_stok
         (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
         VALUES (?, 'hc', ?, 'out', ?, ?, ?, 'hc_petugas_transfer', ?, ?, ?, NOW())
     ");

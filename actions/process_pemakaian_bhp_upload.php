@@ -147,7 +147,7 @@ try {
 
     // Cache master data for performance
     $master_items = [];
-    $res_items = $conn->query("SELECT id, kode_barang, nama_barang, satuan FROM barang WHERE odoo_product_id IS NOT NULL");
+    $res_items = $conn->query("SELECT id, kode_barang, nama_barang, satuan FROM inventory_barang WHERE odoo_product_id IS NOT NULL");
     while($r = $res_items->fetch_assoc()) {
         $master_items[strtolower($r['kode_barang'])] = $r;
     }
@@ -155,21 +155,21 @@ try {
     $master_uom = [];
     $res_uom = $conn->query("
         SELECT c.kode_barang, b.id AS barang_id, c.from_uom, c.to_uom, c.multiplier 
-        FROM barang_uom_conversion c
-        JOIN barang b ON b.kode_barang = c.kode_barang
+        FROM inventory_barang_uom_conversion c
+        JOIN inventory_barang b ON b.kode_barang = c.kode_barang
     ");
     while($r = $res_uom->fetch_assoc()) {
         $master_uom[$r['barang_id']][] = $r;
     }
 
     $master_nakes = [];
-    $res_nakes = $conn->query("SELECT id, nama_lengkap, klinik_id FROM users WHERE role = 'petugas_hc' AND status = 'active'");
+    $res_nakes = $conn->query("SELECT id, nama_lengkap, klinik_id FROM inventory_users WHERE role = 'petugas_hc' AND status = 'active'");
     while($r = $res_nakes->fetch_assoc()) {
         $master_nakes[strtolower(trim($r['nama_lengkap']))] = $r;
     }
 
     $master_klinik = [];
-    $res_klinik = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare, alamat FROM klinik WHERE status = 'active'");
+    $res_klinik = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare, alamat FROM inventory_klinik WHERE status = 'active'");
     while($r = $res_klinik->fetch_assoc()) {
         $master_klinik[strtolower(trim($r['nama_klinik']))] = $r;
         $master_klinik[strtolower(trim($r['kode_klinik']))] = $r;
@@ -313,7 +313,7 @@ try {
     // 5. Check if any errors occurred
     if (!empty($errors)) {
         // Log failure
-        $stmt_log = $conn->prepare("INSERT INTO upload_logs (user_id, filename, status, rows_success, rows_failed, error_details) VALUES (?, ?, 'failed', 0, ?, ?)");
+        $stmt_log = $conn->prepare("INSERT INTO inventory_upload_logs (user_id, filename, status, rows_success, rows_failed, error_details) VALUES (?, ?, 'failed', 0, ?, ?)");
         $err_json = json_encode($errors);
         $stmt_log->bind_param("iiis", $user_id, $filename, $row_count, $err_json);
         $stmt_log->execute();
@@ -352,7 +352,7 @@ try {
         $prefix = 'PBH-' . $dateKey . '-';
         $nomor_pemakaian = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
-        $stmt = $conn->prepare("INSERT INTO pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->bind_param("sssiisis", $nomor_pemakaian, $tanggal, $jenis_pemakaian, $m['klinik_id'], $m['user_hc_id'], $catatan_transaksi, $user_id, $created_at);
         $stmt->execute();
         $pemakaian_id = $conn->insert_id;
@@ -363,7 +363,7 @@ try {
             $input_qty = $it['qty'];
             $input_uom = $it['uom'];
             
-            $stmt_b = $conn->prepare("SELECT id, satuan FROM barang WHERE id = ?");
+            $stmt_b = $conn->prepare("SELECT id, satuan FROM inventory_barang WHERE id = ?");
             $stmt_b->bind_param("i", $item_id);
             $stmt_b->execute();
             $barang = $stmt_b->get_result()->fetch_assoc();
@@ -382,7 +382,7 @@ try {
             
             $final_qty = (float)round($input_qty / $ratio, 4);
 
-            $stmt_d = $conn->prepare("INSERT INTO pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan) VALUES (?, ?, ?, ?)");
+            $stmt_d = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan) VALUES (?, ?, ?, ?)");
             $stmt_d->bind_param("iids", $pemakaian_id, $item_id, $final_qty, $satuan_db);
             $stmt_d->execute();
 
@@ -392,30 +392,30 @@ try {
             $qty_before = 0;
 
             if ($level === 'klinik') {
-                $stmt_stok = $conn->prepare("SELECT qty FROM stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ?");
+                $stmt_stok = $conn->prepare("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ?");
                 $stmt_stok->bind_param("ii", $item_id, $level_id);
                 $stmt_stok->execute();
                 $res_stok = $stmt_stok->get_result();
                 if ($res_stok->num_rows > 0) $qty_before = $res_stok->fetch_assoc()['qty'];
                 
-                $stmt_upd = $conn->prepare("UPDATE stok_gudang_klinik SET qty = qty - ?, updated_by = ? WHERE barang_id = ? AND klinik_id = ?");
+                $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ? WHERE barang_id = ? AND klinik_id = ?");
                 $stmt_upd->bind_param("diii", $final_qty, $user_id, $item_id, $level_id);
                 $stmt_upd->execute();
             } else {
-                // HC Stock from stok_tas_hc
-                $stmt_stok = $conn->prepare("SELECT qty FROM stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+                // HC Stock from inventory_stok_tas_hc
+                $stmt_stok = $conn->prepare("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
                 $stmt_stok->bind_param("iii", $item_id, $m['user_hc_id'], $level_id);
                 $stmt_stok->execute();
                 $res_stok = $stmt_stok->get_result();
                 if ($res_stok->num_rows > 0) $qty_before = $res_stok->fetch_assoc()['qty'];
 
-                $stmt_upd = $conn->prepare("UPDATE stok_tas_hc SET qty = qty - ?, updated_by = ? WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+                $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ? WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
                 $stmt_upd->bind_param("diiii", $final_qty, $user_id, $item_id, $m['user_hc_id'], $level_id);
                 $stmt_upd->execute();
             }
 
             $qty_after = $qty_before - $final_qty;
-            $stmt_t = $conn->prepare("INSERT INTO transaksi_stok (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at) VALUES (?, ?, ?, 'out', ?, ?, ?, 'pemakaian_bhp', ?, ?, ?, ?)");
+            $stmt_t = $conn->prepare("INSERT INTO inventory_transaksi_stok (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at) VALUES (?, ?, ?, 'out', ?, ?, ?, 'pemakaian_bhp', ?, ?, ?, ?)");
             $cat = "Upload BHP: $nomor_pemakaian - " . $catatan_transaksi;
             $stmt_t->bind_param("isidddsisis", $item_id, $level, $level_id, $final_qty, $qty_before, $qty_after, $pemakaian_id, $cat, $user_id, $created_at);
             $stmt_t->execute();
@@ -425,7 +425,7 @@ try {
     $conn->commit();
 
     // Log success
-    $stmt_log = $conn->prepare("INSERT INTO upload_logs (user_id, filename, status, rows_success, rows_failed, error_details) VALUES (?, ?, 'success', ?, 0, NULL)");
+    $stmt_log = $conn->prepare("INSERT INTO inventory_upload_logs (user_id, filename, status, rows_success, rows_failed, error_details) VALUES (?, ?, 'success', ?, 0, NULL)");
     $stmt_log->bind_param("isi", $user_id, $filename, $row_count);
     $stmt_log->execute();
 
@@ -443,7 +443,7 @@ try {
     }
     
     // Log failure
-    $stmt_log = $conn->prepare("INSERT INTO upload_logs (user_id, filename, status, rows_success, rows_failed, error_details) VALUES (?, ?, 'failed', 0, ?, ?)");
+    $stmt_log = $conn->prepare("INSERT INTO inventory_upload_logs (user_id, filename, status, rows_success, rows_failed, error_details) VALUES (?, ?, 'failed', 0, ?, ?)");
     $msg = $e->getMessage();
     $stmt_log->bind_param("isis", $user_id, $filename, $row_count, $msg);
     $stmt_log->execute();

@@ -137,7 +137,7 @@ function mirror_stats(mysqli $conn): array {
             COUNT(*) AS rows_cnt,
             COALESCE(SUM(qty), 0) AS qty_sum,
             MAX(updated_at) AS last_update
-        FROM stock_mirror
+        FROM inventory_stock_mirror
         GROUP BY TRIM(location_code)
     ");
     if (!$res) return $stats;
@@ -179,7 +179,7 @@ function loc_candidates(string $code): array {
 
 function build_loc_group_map(mysqli $conn): array {
     $map = [];
-    $res = $conn->query("SELECT nama_klinik, kode_klinik, kode_homecare FROM klinik WHERE status = 'active'");
+    $res = $conn->query("SELECT nama_klinik, kode_klinik, kode_homecare FROM inventory_klinik WHERE status = 'active'");
     while ($res && ($row = $res->fetch_assoc())) {
         $nm = trim((string)($row['nama_klinik'] ?? ''));
         if ($nm === '') $nm = 'Klinik';
@@ -395,9 +395,9 @@ function ensure_index_exists($table, $indexName, $createSql) {
 try {
     $mirror_before = mirror_stats($conn);
 
-    // Upsert products into barang mirror
+    // Upsert products into inventory_barang mirror
     $ins_prod = $conn->prepare("
-        INSERT INTO barang (odoo_product_id, kode_barang, nama_barang, satuan, uom, barcode, stok_minimum, kategori)
+        INSERT INTO inventory_barang (odoo_product_id, kode_barang, nama_barang, satuan, uom, barcode, stok_minimum, kategori)
         VALUES (?, ?, ?, ?, ?, ?, 0, 'Odoo')
         ON DUPLICATE KEY UPDATE 
             odoo_product_id = VALUES(odoo_product_id),
@@ -409,9 +409,9 @@ try {
             kategori = 'Odoo'
     ");
 
-    // Build locations from klinik: kode_klinik and kode_homecare
+    // Build locations from inventory_klinik: kode_klinik and kode_homecare
     $locations = [];
-    $res = $conn->query("SELECT kode_klinik, kode_homecare FROM klinik WHERE status = 'active'");
+    $res = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE status = 'active'");
     while ($row = $res->fetch_assoc()) {
         if (!empty($row['kode_klinik'])) $locations[] = $row['kode_klinik'];
         if (!empty($row['kode_homecare'])) $locations[] = $row['kode_homecare'];
@@ -422,7 +422,7 @@ try {
 
     // Pull stock per location and refresh snapshot in mirror
     $ins_stock = $conn->prepare("
-        INSERT INTO stock_mirror (odoo_product_id, kode_barang, location_code, qty)
+        INSERT INTO inventory_stock_mirror (odoo_product_id, kode_barang, location_code, qty)
         VALUES (?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE qty = VALUES(qty), kode_barang = VALUES(kode_barang)
     ");
@@ -493,7 +493,7 @@ try {
             $conn->begin_transaction();
             try {
                 $loc_esc = $conn->real_escape_string($loc);
-                $conn->query("DELETE FROM stock_mirror WHERE location_code = '$loc_esc'");
+                $conn->query("DELETE FROM inventory_stock_mirror WHERE location_code = '$loc_esc'");
 
                 if (!empty($product_ids)) {
                     $products = odoo_rpc_execute_kw($rpc_url, $rpc_db, $uid, $rpc_pass, 'product.product', 'read', [$product_ids], ['fields' => ['id', 'default_code', 'name', 'barcode', 'uom_id']]);
@@ -615,7 +615,7 @@ try {
         $conn->begin_transaction();
         try {
             $loc_esc = $conn->real_escape_string($loc);
-            $conn->query("DELETE FROM stock_mirror WHERE location_code = '$loc_esc'");
+            $conn->query("DELETE FROM inventory_stock_mirror WHERE location_code = '$loc_esc'");
 
             foreach ($stock_rows as $s) {
                 $odoo_id = (string)($s['odoo_product_id'] ?? $s['product_id'] ?? $s['id'] ?? '');
@@ -623,7 +623,7 @@ try {
                 $qty = (float)($s['qty'] ?? $s['quantity'] ?? 0);
                 if ($odoo_id === '' && $code === '') continue;
                 if ($code === '' && $odoo_id !== '') {
-                    $r = $conn->query("SELECT kode_barang FROM barang WHERE odoo_product_id = '" . $conn->real_escape_string($odoo_id) . "' LIMIT 1");
+                    $r = $conn->query("SELECT kode_barang FROM inventory_barang WHERE odoo_product_id = '" . $conn->real_escape_string($odoo_id) . "' LIMIT 1");
                     if ($r && $r->num_rows > 0) {
                         $code = $r->fetch_assoc()['kode_barang'];
                     } else {

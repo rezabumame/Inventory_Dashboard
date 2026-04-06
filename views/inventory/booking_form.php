@@ -18,7 +18,7 @@ $cs_name = '';
 try {
     $uid = (int)($_SESSION['user_id'] ?? 0);
     if ($uid > 0) {
-        $r = $conn->query("SELECT nama_lengkap FROM users WHERE id = $uid LIMIT 1");
+        $r = $conn->query("SELECT nama_lengkap FROM inventory_users WHERE id = $uid LIMIT 1");
         if ($r && $r->num_rows > 0) $cs_name = (string)($r->fetch_assoc()['nama_lengkap'] ?? '');
     }
 } catch (Exception $e) {
@@ -26,7 +26,7 @@ try {
 }
 
 // Fetch Master Data
-$klinik_res = $conn->query("SELECT * FROM klinik WHERE status = 'active'");
+$klinik_res = $conn->query("SELECT * FROM inventory_klinik WHERE status = 'active'");
 $kliniks = [];
 while($r = $klinik_res->fetch_assoc()) $kliniks[] = $r;
 
@@ -49,10 +49,10 @@ $stok_data = [];
 try {
     $res_stok = $conn->query("
         SELECT k.id AS klinik_id, b.id AS barang_id, COALESCE(MAX(sm.qty), 0) * COALESCE(uc.multiplier, 1) AS qty
-        FROM klinik k
-        JOIN stock_mirror sm ON sm.location_code = k.kode_klinik
-        JOIN barang b ON b.odoo_product_id = sm.odoo_product_id
-        LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+        FROM inventory_klinik k
+        JOIN inventory_stock_mirror sm ON sm.location_code = k.kode_klinik
+        JOIN inventory_barang b ON b.odoo_product_id = sm.odoo_product_id
+        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         WHERE k.status = 'active' AND k.kode_klinik IS NOT NULL AND k.kode_klinik <> ''
         GROUP BY k.id, b.id
     ");
@@ -68,10 +68,10 @@ try {
 // 2. Get all Recipes: recipe[exam_id][] = {barang_id, qty}
 $recipes = [];
 $exams = [];
-$res_exams = $conn->query("SELECT * FROM pemeriksaan_grup ORDER BY nama_pemeriksaan");
+$res_exams = $conn->query("SELECT * FROM inventory_pemeriksaan_grup ORDER BY nama_pemeriksaan");
 while($ex = $res_exams->fetch_assoc()) {
     $exams[$ex['id']] = $ex['nama_pemeriksaan'];
-    $res_det = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = " . $ex['id']);
+    $res_det = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = " . $ex['id']);
     while($d = $res_det->fetch_assoc()) {
         $recipes[$ex['id']][] = $d;
     }
@@ -157,7 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $pid = $exam['pemeriksaan_id'];
                 $qty_multiplier = $exam['qty'];
                 
-                $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+                $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
                 while($row = $res->fetch_assoc()) {
                     $bid = $row['barang_id'];
                     $qty = $row['qty_per_pemeriksaan'] * $qty_multiplier;
@@ -169,7 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if (empty($total_needed)) throw new Exception("Tidak ada item yang perlu dibooking (cek master pemeriksaan).");
 
             // 2. Check Availability ONCE for the whole batch
-            $klinik_row = $conn->query("SELECT kode_klinik, kode_homecare FROM klinik WHERE id = " . (int)$klinik_id . " LIMIT 1")->fetch_assoc();
+            $klinik_row = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = " . (int)$klinik_id . " LIMIT 1")->fetch_assoc();
             $kode_klinik = (string)($klinik_row['kode_klinik'] ?? '');
             $kode_homecare = (string)($klinik_row['kode_homecare'] ?? '');
             $is_hc = (stripos((string)$status_booking, 'HC') !== false);
@@ -178,13 +178,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $loc_esc = $conn->real_escape_string($location_code);
 
             foreach ($total_needed as $bid => $qty_need) {
-                $bname_row = $conn->query("SELECT nama_barang, odoo_product_id FROM barang WHERE id = " . (int)$bid . " LIMIT 1")->fetch_assoc();
+                $bname_row = $conn->query("SELECT nama_barang, odoo_product_id FROM inventory_barang WHERE id = " . (int)$bid . " LIMIT 1")->fetch_assoc();
                 $bname = (string)($bname_row['nama_barang'] ?? ("ID:$bid"));
                 $odoo_pid = (string)($bname_row['odoo_product_id'] ?? '');
                 if ($odoo_pid === '') throw new Exception("Produk $bname belum punya odoo_product_id.");
 
                 $odoo_pid_esc = $conn->real_escape_string($odoo_pid);
-                $rqty = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE odoo_product_id = '$odoo_pid_esc' AND location_code = '$loc_esc' LIMIT 1");
+                $rqty = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE odoo_product_id = '$odoo_pid_esc' AND location_code = '$loc_esc' LIMIT 1");
                 $rowq = $rqty ? $rqty->fetch_assoc() : null;
                 $available = (int)floor((float)($rowq['qty'] ?? 0));
                 if ($available < (int)$qty_need) {
@@ -194,17 +194,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             // 3. Create Booking Header
             $nomor = "BK-TMP-" . time();
-            $stmt = $conn->prepare("INSERT INTO booking_pemeriksaan (nomor_booking, order_id, klinik_id, status_booking, booking_type, jam_layanan, jotform_submitted, cs_name, nama_pemesan, nomor_tlp, tanggal_lahir, jumlah_pax, catatan, tanggal_pemeriksaan, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, NOW())");
+            $stmt = $conn->prepare("INSERT INTO inventory_booking_pemeriksaan (nomor_booking, order_id, klinik_id, status_booking, booking_type, jam_layanan, jotform_submitted, cs_name, nama_pemesan, nomor_tlp, tanggal_lahir, jumlah_pax, catatan, tanggal_pemeriksaan, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, NOW())");
             $stmt->bind_param("ssisssissssissi", $nomor, $order_id, $klinik_id, $status_booking, $booking_type, $jam_layanan, $jotform_submitted, $cs_name, $nama_pemesan, $nomor_tlp, $tanggal_lahir, $jumlah_pax, $catatan, $tanggal, $created_by);
             $stmt->execute();
             $book_id = $conn->insert_id;
             $nomor_final = "BK-" . str_pad((string)$book_id, 6, '0', STR_PAD_LEFT);
-            $stmt_up = $conn->prepare("UPDATE booking_pemeriksaan SET nomor_booking = ? WHERE id = ?");
+            $stmt_up = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET nomor_booking = ? WHERE id = ?");
             $stmt_up->bind_param("si", $nomor_final, $book_id);
             $stmt_up->execute();
 
             // 4. Insert Patients (one entry with nama_pemesan)
-            $stmt_pasien = $conn->prepare("INSERT INTO booking_pasien (booking_id, nama_pasien, pemeriksaan_grup_id) VALUES (?, ?, ?)");
+            $stmt_pasien = $conn->prepare("INSERT INTO inventory_booking_pasien (booking_id, nama_pasien, pemeriksaan_grup_id) VALUES (?, ?, ?)");
             
             // 5. Insert Details for each exam
             foreach ($exams as $exam) {
@@ -219,7 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $pasien_id = $conn->insert_id;
 
                 // Get items for this exam
-                $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+                $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
                 while($row = $res->fetch_assoc()) {
                     $qty_total = $row['qty_per_pemeriksaan'] * $qty_multiplier;
                     
@@ -234,7 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     }
                     
                     // Insert Detail
-                    $stmt_detail = $conn->prepare("INSERT INTO booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?)");
+                    $stmt_detail = $conn->prepare("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?)");
                     $stmt_detail->bind_param("iiiiii", $book_id, $pasien_id, $row['barang_id'], $qty_total, $qty_reserved_onsite, $qty_reserved_hc);
                     $stmt_detail->execute();
                 }

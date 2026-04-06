@@ -36,20 +36,20 @@ if ($role === 'petugas_hc' && (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_id)
 
 $b = $conn->query("
     SELECT b.id, b.kode_barang, b.odoo_product_id, b.nama_barang, COALESCE(uc.to_uom, b.satuan) AS satuan, COALESCE(uc.multiplier, 1) AS multiplier
-    FROM barang b
-    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    FROM inventory_barang b
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     WHERE b.id = $barang_id
     LIMIT 1
 ")->fetch_assoc();
 
-$k = $conn->query("SELECT id, nama_klinik, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$k = $conn->query("SELECT id, nama_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$b || !$k) {
     echo '<div class="alert alert-warning">Data tidak ditemukan</div>';
     exit;
 }
 
 $petugas = [];
-$res_p = $conn->query("SELECT id, nama_lengkap FROM users WHERE role = 'petugas_hc' AND status = 'active' AND klinik_id = $klinik_id ORDER BY nama_lengkap ASC");
+$res_p = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE role = 'petugas_hc' AND status = 'active' AND klinik_id = $klinik_id ORDER BY nama_lengkap ASC");
 while ($res_p && ($row = $res_p->fetch_assoc())) $petugas[] = $row;
 
 function fmt_qty($v) {
@@ -77,10 +77,10 @@ if (!empty($petugas)) {
     if ($oid !== '') $clauses[] = "TRIM(odoo_product_id) = '$oid'";
     if (empty($clauses)) $clauses[] = "1=0";
     $match = '(' . implode(' OR ', $clauses) . ')';
-    $r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE TRIM(location_code) = '$loc' AND $match");
+    $r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc' AND $match");
     $q = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
     $q = $q / $mult;
-    $res_u = $conn->query("SELECT MAX(updated_at) AS last_update FROM stock_mirror WHERE TRIM(location_code) = '$loc'");
+    $res_u = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc'");
     $last_update = (string)($res_u && $res_u->num_rows > 0 ? ($res_u->fetch_assoc()['last_update'] ?? '') : '');
 
     echo '<div class="mb-2">';
@@ -107,7 +107,7 @@ if (!empty($petugas)) {
     $total_tas = 0.0;
     foreach ($petugas as $p) {
         $uid = (int)$p['id'];
-        $r_t = $conn->query("SELECT COALESCE(qty,0) AS qty FROM stok_tas_hc WHERE barang_id = $barang_id AND user_id = $uid AND klinik_id = $klinik_id LIMIT 1");
+        $r_t = $conn->query("SELECT COALESCE(qty,0) AS qty FROM inventory_stok_tas_hc WHERE barang_id = $barang_id AND user_id = $uid AND klinik_id = $klinik_id LIMIT 1");
         $qt = (float)($r_t && $r_t->num_rows > 0 ? ($r_t->fetch_assoc()['qty'] ?? 0) : 0);
         $total_tas += $qt;
         echo '<tr>';
@@ -133,8 +133,8 @@ if (!empty($petugas)) {
     }
     $rs = $conn->query("
         SELECT COALESCE(SUM(pbd.qty),0) AS qty
-        FROM pemakaian_bhp_detail pbd
-        JOIN pemakaian_bhp pb ON pb.id = pbd.pemakaian_bhp_id
+        FROM inventory_pemakaian_bhp_detail pbd
+        JOIN inventory_pemakaian_bhp pb ON pb.id = pbd.pemakaian_bhp_id
         WHERE $filter
     ");
     if ($rs && $rs->num_rows > 0) $sellout_total = (float)($rs->fetch_assoc()['qty'] ?? 0);
@@ -143,10 +143,10 @@ if (!empty($petugas)) {
         SELECT pb.nomor_pemakaian, pb.tanggal, pb.created_at, pb.user_hc_id, pb.created_by, pbd.qty,
                u_hc.nama_lengkap AS hc_name,
                u_created.nama_lengkap AS created_by_name
-        FROM pemakaian_bhp_detail pbd
-        JOIN pemakaian_bhp pb ON pb.id = pbd.pemakaian_bhp_id
-        LEFT JOIN users u_hc ON u_hc.id = pb.user_hc_id
-        LEFT JOIN users u_created ON u_created.id = pb.created_by
+        FROM inventory_pemakaian_bhp_detail pbd
+        JOIN inventory_pemakaian_bhp pb ON pb.id = pbd.pemakaian_bhp_id
+        LEFT JOIN inventory_users u_hc ON u_hc.id = pb.user_hc_id
+        LEFT JOIN inventory_users u_created ON u_created.id = pb.created_by
         WHERE $filter
         ORDER BY pb.created_at DESC
         LIMIT 15
@@ -189,7 +189,7 @@ if (!empty($petugas)) {
     }
     $loc = $conn->real_escape_string($kode_homecare);
     $kb = $conn->real_escape_string((string)$b['kode_barang']);
-    $r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE location_code = '$loc' AND TRIM(kode_barang) = '$kb'");
+    $r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE location_code = '$loc' AND TRIM(kode_barang) = '$kb'");
     $q = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
     $q = $q / $mult;
     echo '<div class="table-responsive">';

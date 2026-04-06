@@ -27,11 +27,11 @@ $sql = "
         u_app.nama_lengkap AS approver_name,
         k_from.nama_klinik AS dari_klinik_nama,
         k_to.nama_klinik AS ke_klinik_nama
-    FROM request_barang r
-    LEFT JOIN users u_req ON r.created_by = u_req.id
-    LEFT JOIN users u_app ON r.spv_approved_by = u_app.id
-    LEFT JOIN klinik k_from ON (r.dari_level = 'klinik' AND r.dari_id = k_from.id)
-    LEFT JOIN klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+    FROM inventory_request_barang r
+    LEFT JOIN inventory_users u_req ON r.created_by = u_req.id
+    LEFT JOIN inventory_users u_app ON r.spv_approved_by = u_app.id
+    LEFT JOIN inventory_klinik k_from ON (r.dari_level = 'klinik' AND r.dari_id = k_from.id)
+    LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
 ";
 
 if ($who === 'approver') {

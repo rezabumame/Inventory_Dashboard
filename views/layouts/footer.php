@@ -1,37 +1,8 @@
     </div> <!-- End Container Fluid -->
 </div> <!-- End Main Content -->
 
-<!-- Bootstrap 5 JS Bundle with Popper -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<!-- DataTables -->
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
-<!-- Select2 JS -->
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-
 <script>
     $(document).ready(function() {
-        // Global DataTable defaults
-        $.extend(true, $.fn.dataTable.defaults, {
-            "language": {
-                "emptyTable": "Tidak ada data yang tersedia pada tabel ini",
-                "info": "Menampilkan _START_ sampai _END_ dari _TOTAL_ entri",
-                "infoEmpty": "Menampilkan 0 sampai 0 dari 0 entri",
-                "infoFiltered": "(disaring dari _MAX_ entri keseluruhan)",
-                "lengthMenu": "Tampilkan _MENU_ entri",
-                "loadingRecords": "Sedang memuat...",
-                "processing": "Sedang memproses...",
-                "search": "Cari:",
-                "zeroRecords": "Tidak ditemukan data yang sesuai",
-                "paginate": {
-                    "first": "Pertama",
-                    "last": "Terakhir",
-                    "next": "<i class='fas fa-chevron-right'></i>",
-                    "previous": "<i class='fas fa-chevron-left'></i>"
-                }
-            }
-        });
-
         // Init DataTable - Newest first (index 1 is Tanggal/Created At)
         $('.datatable').DataTable({
             "order": [[ 1, "desc" ]]
@@ -55,8 +26,9 @@
     const toggleBtn = document.getElementById('sidebar-toggle');
     const overlay = document.getElementById('sidebar-overlay');
     
-    // Restore sidebar state from localStorage
-    if (localStorage.getItem('sidebarActive') === 'true') {
+    // Restore sidebar state from localStorage (only for desktop)
+    const isMobile = window.innerWidth <= 768;
+    if (!isMobile && localStorage.getItem('sidebarActive') === 'true') {
         sidebar.classList.add('active');
         if (mainContent) mainContent.classList.add('active');
         if (overlay) overlay.classList.add('active');

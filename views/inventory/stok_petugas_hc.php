@@ -23,7 +23,7 @@ if (in_array($role, ['petugas_hc', 'admin_klinik', 'spv_klinik'], true)) {
 
 $petugas_list = [];
 if ($selected_klinik > 0 && $role !== 'petugas_hc') {
-    $res = $conn->query("SELECT id, nama_lengkap FROM users WHERE role = 'petugas_hc' AND status = 'active' AND klinik_id = $selected_klinik ORDER BY nama_lengkap ASC");
+    $res = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE role = 'petugas_hc' AND status = 'active' AND klinik_id = $selected_klinik ORDER BY nama_lengkap ASC");
     while ($res && ($row = $res->fetch_assoc())) $petugas_list[] = $row;
 }
 
@@ -34,14 +34,14 @@ if ($role !== 'petugas_hc' && count($petugas_list) === 1 && $petugas_user_id ===
 
 $petugas_row = null;
 $klinik_row = null;
-if ($selected_klinik > 0) $klinik_row = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM klinik WHERE id = $selected_klinik LIMIT 1")->fetch_assoc();
+if ($selected_klinik > 0) $klinik_row = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $selected_klinik LIMIT 1")->fetch_assoc();
 if (in_array($role, ['admin_klinik', 'spv_klinik'], true) && $selected_klinik !== $user_klinik_id) $selected_klinik = $user_klinik_id;
 
 if ($role === 'petugas_hc') {
     $petugas_row = ['id' => $user_id, 'nama_lengkap' => (string)($_SESSION['nama_lengkap'] ?? 'Petugas HC')];
 } elseif ($petugas_user_id > 0) {
-    $petugas_row = $conn->query("SELECT id, nama_lengkap FROM users WHERE id = $petugas_user_id AND role = 'petugas_hc' LIMIT 1")->fetch_assoc();
-    if ($petugas_row && $selected_klinik > 0 && (int)($conn->query("SELECT klinik_id FROM users WHERE id = $petugas_user_id LIMIT 1")->fetch_assoc()['klinik_id'] ?? 0) !== $selected_klinik) {
+    $petugas_row = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE id = $petugas_user_id AND role = 'petugas_hc' LIMIT 1")->fetch_assoc();
+    if ($petugas_row && $selected_klinik > 0 && (int)($conn->query("SELECT klinik_id FROM inventory_users WHERE id = $petugas_user_id LIMIT 1")->fetch_assoc()['klinik_id'] ?? 0) !== $selected_klinik) {
         $petugas_row = null;
     }
 }
@@ -59,12 +59,29 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $history_from)) $history_from = '';
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $history_to)) $history_to = '';
 
 if ($klinik_row && !empty($klinik_row['kode_homecare'])) {
-    $loc = $conn->real_escape_string((string)$klinik_row['kode_homecare']);
-    $res_u = $conn->query("SELECT MAX(updated_at) AS last_update FROM stock_mirror WHERE location_code = '$loc'");
+    $loc_hc = $conn->real_escape_string((string)$klinik_row['kode_homecare']);
+    $loc_onsite = $conn->real_escape_string((string)($klinik_row['kode_klinik'] ?? ''));
+    
+    // Get general last update across all clinic locations
+    $locs = ["'$loc_hc'"];
+    if ($loc_onsite !== '') $locs[] = "'$loc_onsite'";
+    $locs_str = implode(',', $locs);
+
+    $res_u = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE location_code IN ($locs_str)");
+    $u = '';
     if ($res_u && $res_u->num_rows > 0) {
         $u = (string)($res_u->fetch_assoc()['last_update'] ?? '');
-        if ($u !== '') $last_update_text = date('d M Y H:i', strtotime($u));
     }
+    
+    // Fallback to global setting if mirror is empty
+    if ($u === '') {
+        $res_gs = $conn->query("SELECT v FROM inventory_app_settings WHERE k = 'odoo_sync_last_run' LIMIT 1");
+        if ($res_gs && ($gs = $res_gs->fetch_assoc())) {
+            $u = date('Y-m-d H:i:s', (int)$gs['v']);
+        }
+    }
+
+    if ($u !== '') $last_update_text = date('d M Y H:i', strtotime($u));
     
     // Perbaikan perhitungan hc_total (Mirror HC): konversi ke satuan operasional
     $hc_total = 0.0;
@@ -72,10 +89,10 @@ if ($klinik_row && !empty($klinik_row['kode_homecare'])) {
         SELECT 
             sm.qty AS mirror_qty,
             COALESCE(uc.multiplier, 1) AS ratio
-        FROM stock_mirror sm
-        LEFT JOIN barang b ON (b.odoo_product_id = sm.odoo_product_id OR b.kode_barang = sm.kode_barang)
-        LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-        WHERE sm.location_code = '$loc'
+        FROM inventory_stock_mirror sm
+        LEFT JOIN inventory_barang b ON (b.odoo_product_id = sm.odoo_product_id OR b.kode_barang = sm.kode_barang)
+        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+        WHERE sm.location_code = '$loc_hc'
     ");
     while ($res_hc_conv && ($hc_conv = $res_hc_conv->fetch_assoc())) {
         $m_qty = (float)$hc_conv['mirror_qty'];
@@ -86,7 +103,7 @@ if ($klinik_row && !empty($klinik_row['kode_homecare'])) {
 }
 
 if ($selected_klinik > 0) {
-    $res_sum = $conn->query("SELECT COALESCE(SUM(qty),0) AS total FROM stok_tas_hc WHERE klinik_id = $selected_klinik");
+    $res_sum = $conn->query("SELECT COALESCE(SUM(qty),0) AS total FROM inventory_stok_tas_hc WHERE klinik_id = $selected_klinik");
     if ($res_sum && $res_sum->num_rows > 0) $allocated_total = (float)($res_sum->fetch_assoc()['total'] ?? 0);
     
     // Perbaikan perhitungan unallocated: jumlahkan sisa per item
@@ -98,12 +115,12 @@ if ($selected_klinik > 0) {
                 sm.qty AS mirror_qty,
                 COALESCE(uc.multiplier, 1) AS ratio,
                 COALESCE(st.total_allocated, 0) AS total_allocated
-            FROM stock_mirror sm
-            LEFT JOIN barang b ON (b.odoo_product_id = sm.odoo_product_id OR b.kode_barang = sm.kode_barang)
-            LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+            FROM inventory_stock_mirror sm
+            LEFT JOIN inventory_barang b ON (b.odoo_product_id = sm.odoo_product_id OR b.kode_barang = sm.kode_barang)
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
             LEFT JOIN (
                 SELECT barang_id, SUM(qty) AS total_allocated 
-                FROM stok_tas_hc 
+                FROM inventory_stok_tas_hc 
                 WHERE klinik_id = $selected_klinik 
                 GROUP BY barang_id
             ) st ON st.barang_id = b.id
@@ -134,9 +151,9 @@ if ($petugas_row && $selected_klinik > 0) {
             COALESCE(uc.from_uom, '') AS uom_odoo,
             COALESCE(uc.multiplier, 1) AS uom_multiplier,
             COALESCE(st.qty, 0) AS qty
-        FROM stok_tas_hc st
-        JOIN barang b ON b.id = st.barang_id
-        LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+        FROM inventory_stok_tas_hc st
+        JOIN inventory_barang b ON b.id = st.barang_id
+        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         WHERE st.user_id = $uid AND st.klinik_id = $selected_klinik AND st.qty <> 0
         ORDER BY b.nama_barang ASC
     ");
@@ -146,8 +163,8 @@ if ($petugas_row && $selected_klinik > 0) {
 if ($selected_klinik > 0 && $role !== 'petugas_hc') {
     $res_ps = $conn->query("
         SELECT u.id, u.nama_lengkap, COALESCE(SUM(st.qty), 0) AS total_qty
-        FROM users u
-        LEFT JOIN stok_tas_hc st ON st.user_id = u.id AND st.klinik_id = " . (int)$selected_klinik . "
+        FROM inventory_users u
+        LEFT JOIN inventory_stok_tas_hc st ON st.user_id = u.id AND st.klinik_id = " . (int)$selected_klinik . "
         WHERE u.role = 'petugas_hc' AND u.status = 'active' AND u.klinik_id = " . (int)$selected_klinik . "
         GROUP BY u.id, u.nama_lengkap
         ORDER BY u.nama_lengkap ASC
@@ -183,7 +200,7 @@ if ($selected_klinik > 0 && in_array($role, ['admin_klinik', 'super_admin', 'spv
                 t.catatan,
                 t.created_by,
                 t.created_at
-            FROM hc_petugas_transfer t
+            FROM inventory_hc_petugas_transfer t
             UNION ALL
             SELECT
                 'allocasi' AS tipe,
@@ -195,11 +212,11 @@ if ($selected_klinik > 0 && in_array($role, ['admin_klinik', 'super_admin', 'spv
                 a.catatan,
                 a.created_by,
                 a.created_at
-            FROM hc_tas_allocation a
+            FROM inventory_hc_tas_allocation a
         ) x
         WHERE $where
         ORDER BY x.created_at DESC
-        LIMIT 200
+        LIMIT 500
     ");
     while ($res_h && ($rh = $res_h->fetch_assoc())) $history[] = $rh;
 }
@@ -217,12 +234,12 @@ if (!empty($history)) {
     }
     if (!empty($user_ids)) {
         $ids = implode(',', array_map('intval', array_keys($user_ids)));
-        $r = $conn->query("SELECT id, nama_lengkap FROM users WHERE id IN ($ids)");
+        $r = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE id IN ($ids)");
         while ($r && ($row = $r->fetch_assoc())) $petugas_name_map[(int)$row['id']] = (string)$row['nama_lengkap'];
     }
     if (!empty($barang_ids)) {
         $ids = implode(',', array_map('intval', array_keys($barang_ids)));
-        $r = $conn->query("SELECT id, kode_barang, nama_barang FROM barang WHERE id IN ($ids)");
+        $r = $conn->query("SELECT id, kode_barang, nama_barang FROM inventory_barang WHERE id IN ($ids)");
         while ($r && ($row = $r->fetch_assoc())) {
             $kode = trim((string)($row['kode_barang'] ?? ''));
             $nama = (string)($row['nama_barang'] ?? '-');
@@ -233,7 +250,7 @@ if (!empty($history)) {
 
 $kliniks = [];
 if (in_array($role, ['super_admin', 'admin_gudang'], true)) {
-    $res = $conn->query("SELECT id, nama_klinik FROM klinik WHERE status='active' ORDER BY nama_klinik ASC");
+    $res = $conn->query("SELECT id, nama_klinik FROM inventory_klinik WHERE status='active' ORDER BY nama_klinik ASC");
     while ($res && ($row = $res->fetch_assoc())) $kliniks[] = $row;
 }
 
@@ -397,7 +414,7 @@ if ($bulk_cancel) {
                                         <div class="fw-semibold"><?= htmlspecialchars($petugas_row['nama_lengkap'] ?? '') ?></div>
                                     </div>
                                     <div class="table-responsive">
-                                        <table class="table table-hover align-middle">
+                                        <table class="table table-hover datatable align-middle">
                                             <thead class="bg-light">
                                                 <tr>
                                                     <th>Kode Barang</th>
@@ -512,7 +529,7 @@ if ($bulk_cancel) {
                             <div class="text-muted small">Belum ada history untuk filter saat ini.</div>
                         <?php else: ?>
                             <div class="table-responsive">
-                                <table class="table table-hover align-middle mb-0">
+                                <table class="table table-hover datatable align-middle mb-0">
                                     <thead class="table-light">
                                         <tr>
                                             <th>Waktu</th>
@@ -807,8 +824,8 @@ function openDistribusi(idx) {
                 COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom_oper,
                 COALESCE(NULLIF(uc.from_uom,''), b.uom) AS uom_odoo,
                 COALESCE(uc.multiplier, 1) AS uom_ratio
-            FROM barang b
-            LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+            FROM inventory_barang b
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
             ORDER BY b.nama_barang ASC
         ");
         while ($r && ($row = $r->fetch_assoc())) {
@@ -1073,8 +1090,8 @@ function fmtQty(v){ var n=parseFloat(v||0); return (Math.abs(n-Math.round(n))<0.
                                                                     COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom_oper,
                                                                     COALESCE(NULLIF(uc.from_uom,''), '') AS uom_odoo,
                                                                     COALESCE(uc.multiplier, 1) AS uom_ratio
-                                                                FROM barang b
-                                                                LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+                                                                FROM inventory_barang b
+                                                                LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
                                                                 ORDER BY b.nama_barang ASC
                                                             ");
                                                             while ($res_b2 && ($bb2 = $res_b2->fetch_assoc())):
@@ -1216,7 +1233,7 @@ function fmtQty(v){ var n=parseFloat(v||0); return (Math.abs(n-Math.round(n))<0.
                             $name_map = [];
                             if (!empty($ids)) {
                                 $id_sql = implode(',', array_map('intval', $ids));
-                                $r = $conn->query("SELECT id, kode_barang, nama_barang FROM barang WHERE id IN ($id_sql)");
+                                $r = $conn->query("SELECT id, kode_barang, nama_barang FROM inventory_barang WHERE id IN ($id_sql)");
                                 while ($r && ($row = $r->fetch_assoc())) {
                                     $kode = trim((string)($row['kode_barang'] ?? ''));
                                     $nama = (string)($row['nama_barang'] ?? '-');
@@ -1311,8 +1328,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                                                     COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom_oper,
                                                                     COALESCE(NULLIF(uc.from_uom,''), '') AS uom_odoo,
                                                                     COALESCE(uc.multiplier, 1) AS uom_ratio
-                                                                FROM barang b
-                                                                LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+                                                                FROM inventory_barang b
+                                                                LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
                                                                 ORDER BY b.nama_barang ASC
                                                             ");
                                                             while ($res_b && ($bb = $res_b->fetch_assoc())):

@@ -23,11 +23,11 @@ if ($id <= 0) {
 
 $conn->begin_transaction();
 try {
-    $stmt = $conn->prepare("DELETE FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ?");
+    $stmt = $conn->prepare("DELETE FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
 
-    $stmt = $conn->prepare("DELETE FROM pemeriksaan_grup WHERE id = ?");
+    $stmt = $conn->prepare("DELETE FROM inventory_pemeriksaan_grup WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
 

@@ -25,7 +25,7 @@ if ($role === 'admin_klinik' && (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_i
     exit;
 }
 
-$klin = $conn->query("SELECT kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$klin = $conn->query("SELECT kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 $loc = trim((string)($klin['kode_homecare'] ?? ''));
 if ($loc === '') {
     echo json_encode(['success' => false, 'message' => 'Klinik belum memiliki Kode HC']);
@@ -46,10 +46,10 @@ SELECT
     COALESCE(b_kode.kode_barang, b_id.kode_barang) AS suggested_kode_barang,
     COALESCE(b_kode.nama_barang, b_id.nama_barang) AS suggested_nama_barang,
     COALESCE(b_kode.satuan, b_id.satuan) AS suggested_satuan
-FROM stock_mirror sm
-LEFT JOIN barang b_odoo ON b_odoo.odoo_product_id = sm.odoo_product_id
-LEFT JOIN barang b_kode ON TRIM(b_kode.kode_barang) = TRIM(sm.kode_barang)
-LEFT JOIN barang b_id ON b_id.id = CAST(TRIM(sm.kode_barang) AS UNSIGNED)
+FROM inventory_stock_mirror sm
+LEFT JOIN inventory_barang b_odoo ON b_odoo.odoo_product_id = sm.odoo_product_id
+LEFT JOIN inventory_barang b_kode ON TRIM(b_kode.kode_barang) = TRIM(sm.kode_barang)
+LEFT JOIN inventory_barang b_id ON b_id.id = CAST(TRIM(sm.kode_barang) AS UNSIGNED)
 WHERE TRIM(sm.location_code) = '$loc_esc'
 ";
 $rows = [];
@@ -69,8 +69,8 @@ while ($r && ($row = $r->fetch_assoc())) {
                 COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom_oper,
                 COALESCE(NULLIF(uc.from_uom,''), b.uom) AS uom_odoo,
                 COALESCE(uc.multiplier, 1) AS uom_ratio
-            FROM barang b
-            LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+            FROM inventory_barang b
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
             WHERE b.id = $barang_id
             LIMIT 1
         ");
@@ -81,7 +81,7 @@ while ($r && ($row = $r->fetch_assoc())) {
             $ratio = (float)($c['uom_ratio'] ?? 1);
             if ($ratio <= 0) $ratio = 1.0;
         }
-        $res_a = $conn->query("SELECT COALESCE(SUM(qty),0) AS total FROM stok_tas_hc WHERE klinik_id = $klinik_id AND barang_id = $barang_id");
+        $res_a = $conn->query("SELECT COALESCE(SUM(qty),0) AS total FROM inventory_stok_tas_hc WHERE klinik_id = $klinik_id AND barang_id = $barang_id");
         if ($res_a && $res_a->num_rows > 0) $allocated = (float)($res_a->fetch_assoc()['total'] ?? 0);
     }
     $mirror_oper = $barang_id > 0 ? ($mirror_qty / $ratio) : $mirror_qty;

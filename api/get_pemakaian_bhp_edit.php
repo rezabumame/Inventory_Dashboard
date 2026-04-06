@@ -19,8 +19,8 @@ if (!$id) {
 // Get header
 $stmt = $conn->prepare("
     SELECT pb.*, k.nama_klinik
-    FROM pemakaian_bhp pb
-    LEFT JOIN klinik k ON pb.klinik_id = k.id
+    FROM inventory_pemakaian_bhp pb
+    LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
     WHERE pb.id = ?
 ");
 $stmt->bind_param("i", $id);
@@ -44,8 +44,8 @@ if (!$is_today || !$is_creator) {
 // Get details
 $stmt_d = $conn->prepare("
     SELECT pbd.*, b.nama_barang, b.kode_barang
-    FROM pemakaian_bhp_detail pbd
-    JOIN barang b ON pbd.barang_id = b.id
+    FROM inventory_pemakaian_bhp_detail pbd
+    JOIN inventory_barang b ON pbd.barang_id = b.id
     WHERE pbd.pemakaian_bhp_id = ?
 ");
 $stmt_d->bind_param("i", $id);

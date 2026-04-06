@@ -62,7 +62,7 @@ if ($total_req <= 0) {
     exit;
 }
 
-$kl = $conn->query("SELECT id, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$kl = $conn->query("SELECT id, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 $kode_homecare = trim((string)($kl['kode_homecare'] ?? ''));
 if ($kode_homecare === '') {
     echo json_encode(['success' => false, 'message' => 'Klinik belum memiliki kode_homecare']);
@@ -71,13 +71,13 @@ if ($kode_homecare === '') {
 
 $odoo_esc = $conn->real_escape_string($odoo_product_id);
 $loc_esc = $conn->real_escape_string($kode_homecare);
-$r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE odoo_product_id = '$odoo_esc' AND TRIM(location_code) = '$loc_esc' LIMIT 1");
+$r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE odoo_product_id = '$odoo_esc' AND TRIM(location_code) = '$loc_esc' LIMIT 1");
 $mirror_qty = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
 
 $conv = $conn->query("
     SELECT COALESCE(c.multiplier, 1) AS multiplier 
-    FROM barang_uom_conversion c
-    JOIN barang b ON b.kode_barang = c.kode_barang
+    FROM inventory_barang_uom_conversion c
+    JOIN inventory_barang b ON b.kode_barang = c.kode_barang
     WHERE b.id = $barang_id 
     LIMIT 1
 ")->fetch_assoc();
@@ -85,7 +85,7 @@ $ratio = (float)($conv['multiplier'] ?? 1);
 if ($ratio <= 0) $ratio = 1.0;
 $mirror_oper = $mirror_qty / $ratio;
 
-$r = $conn->query("SELECT COALESCE(SUM(qty), 0) AS total FROM stok_tas_hc WHERE klinik_id = $klinik_id AND barang_id = $barang_id");
+$r = $conn->query("SELECT COALESCE(SUM(qty), 0) AS total FROM inventory_stok_tas_hc WHERE klinik_id = $klinik_id AND barang_id = $barang_id");
 $allocated_qty = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['total'] ?? 0) : 0);
 $unallocated = $mirror_oper - $allocated_qty;
 if ($unallocated < 0) $unallocated = 0;
@@ -100,7 +100,7 @@ if ($total_req_oper > $unalloc_avail + 0.00005) {
 }
 
 $ids = implode(',', array_map('intval', array_keys($items)));
-$ru = $conn->query("SELECT id FROM users WHERE role='petugas_hc' AND status='active' AND klinik_id=$klinik_id AND id IN ($ids)");
+$ru = $conn->query("SELECT id FROM inventory_users WHERE role='petugas_hc' AND status='active' AND klinik_id=$klinik_id AND id IN ($ids)");
 $valid = [];
 while ($ru && ($row = $ru->fetch_assoc())) $valid[(int)$row['id']] = true;
 foreach ($items as $uid => $qty) {
@@ -121,11 +121,11 @@ try {
         $qty_oper = (float)round($qty_oper, 4);
         if ($qty_oper <= 0) continue;
 
-        $stmt = $conn->prepare("INSERT INTO hc_tas_allocation (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO inventory_hc_tas_allocation (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
         $stmt->bind_param("iiidsi", $klinik_id, $uid, $barang_id, $qty_oper, $catatan, $created_by);
         $stmt->execute();
 
-        $stmt = $conn->prepare("INSERT INTO stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE klinik_id=VALUES(klinik_id), qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+        $stmt = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE klinik_id=VALUES(klinik_id), qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
         $stmt->bind_param("iiidi", $barang_id, $uid, $klinik_id, $qty_oper, $created_by);
         $stmt->execute();
     }

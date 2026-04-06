@@ -25,11 +25,52 @@
     <!-- SweetAlert2 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
 
+    <!-- Bootstrap 5 JS Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
     <!-- jQuery (Moved from Footer) -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     
+    <!-- DataTables JS -->
+    <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+
+    <!-- Select2 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
     <!-- SweetAlert2 JS -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <script>
+        $(document).ready(function() {
+            // Global DataTable defaults
+            if ($.fn.dataTable) {
+                $.extend(true, $.fn.dataTable.defaults, {
+                    "pageLength": 10,
+                    "lengthChange": false,
+                    "searching": true,
+                    "language": {
+                        "emptyTable": "Tidak ada data yang tersedia pada tabel ini",
+                        "info": "Menampilkan _START_ sampai _END_ dari _TOTAL_ entri",
+                        "infoEmpty": "Menampilkan 0 sampai 0 dari 0 entri",
+                        "infoFiltered": "(disaring dari _MAX_ entri keseluruhan)",
+                        "lengthMenu": "Tampilkan _MENU_ entri",
+                        "loadingRecords": "Sedang memuat...",
+                        "processing": "Sedang memproses...",
+                         "search": "Cari:",
+                         "searchPlaceholder": "Cari...",
+                         "zeroRecords": "Tidak ditemukan data yang sesuai",
+                        "paginate": {
+                            "first": "Pertama",
+                            "last": "Terakhir",
+                            "next": "<i class='fas fa-chevron-right'></i>",
+                            "previous": "<i class='fas fa-chevron-left'></i>"
+                        }
+                    }
+                });
+            }
+        });
+    </script>
     
     <!-- Custom Notifications -->
     <script src="<?= base_url('assets/js/notifications.js') ?>"></script>

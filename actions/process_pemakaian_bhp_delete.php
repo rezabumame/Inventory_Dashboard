@@ -29,7 +29,7 @@ $conn->begin_transaction();
 
 try {
     // 1. Get header data to know clinic/hc and type
-    $stmt = $conn->prepare("SELECT * FROM pemakaian_bhp WHERE id = ?");
+    $stmt = $conn->prepare("SELECT * FROM inventory_pemakaian_bhp WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $header = $stmt->get_result()->fetch_assoc();
@@ -42,16 +42,16 @@ try {
     $klinik_id = $header['klinik_id'];
 
     // 3. Delete details
-    $stmt = $conn->prepare("DELETE FROM pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+    $stmt = $conn->prepare("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
 
-    $stmt = $conn->prepare("DELETE FROM transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = ?");
+    $stmt = $conn->prepare("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
 
     // 4. Delete header
-    $stmt = $conn->prepare("DELETE FROM pemakaian_bhp WHERE id = ?");
+    $stmt = $conn->prepare("DELETE FROM inventory_pemakaian_bhp WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
 

@@ -17,14 +17,14 @@ if (isset($_SESSION['user_id'])) {
         } else {
             $where_inc = "ke_level = 'klinik' AND ke_id = $u_klinik_id";
         }
-        $q_inc = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE $where_inc AND status IN ('pending', 'pending_gudang')");
+        $q_inc = $conn->query("SELECT COUNT(*) as cnt FROM inventory_request_barang WHERE $where_inc AND status IN ('pending', 'pending_gudang')");
         $badge_incoming = (int)($q_inc->fetch_assoc()['cnt'] ?? 0);
     }
 
     // 2. SPV Pending Count (Requests from my clinic awaiting my approval)
     if (in_array($u_role, ['super_admin', 'spv_klinik'], true)) {
         $where_spv = ($u_role == 'super_admin') ? "status = 'pending_spv'" : "dari_level = 'klinik' AND dari_id = $u_klinik_id AND status = 'pending_spv'";
-        $q_spv = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE $where_spv");
+        $q_spv = $conn->query("SELECT COUNT(*) as cnt FROM inventory_request_barang WHERE $where_spv");
         $badge_spv = (int)($q_spv->fetch_assoc()['cnt'] ?? 0);
     }
 }
@@ -59,7 +59,7 @@ if (isset($_SESSION['user_id'])) {
         <?php if (in_array($role, ['cs', 'super_admin', 'admin_klinik', 'spv_klinik'])): ?>
         <?php $booking_url = in_array($role, ['admin_klinik', 'spv_klinik'], true) ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1'; ?>
         <a href="<?= $booking_url ?>" class="sidebar-link <?= in_array($current_page, ['booking', 'booking_create']) ? 'active' : '' ?>">
-            <i class="fas fa-calendar-check"></i> Booking & Pending
+            <i class="fas fa-calendar-check"></i> CS Booking
         </a>
         <?php endif; ?>
 
@@ -74,7 +74,7 @@ if (isset($_SESSION['user_id'])) {
         </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'b2b_ops'])): ?>
+        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'])): ?>
         <a href="index.php?page=pemakaian_bhp_list" class="sidebar-link <?= $current_page == 'pemakaian_bhp_list' ? 'active' : '' ?>">
             <i class="fas fa-clipboard-list"></i> Pemakaian BHP
         </a>
@@ -181,7 +181,7 @@ if (isset($_SESSION['user_id'])) {
         </div>
     </nav>
     <div class="content-wrapper">
-    <div class="container-fluid py-4">
+    <div class="container-fluid pt-2 pb-4">
         <!-- Global Alert Messages -->
         <?php if (isset($_SESSION['error'])): ?>
         <div class="alert alert-danger alert-dismissible fade show shadow-sm" role="alert">

@@ -19,7 +19,7 @@ if ($grup_id <= 0) {
     exit;
 }
 
-$stmt = $conn->prepare("SELECT id, nama_pemeriksaan FROM pemeriksaan_grup WHERE id = ?");
+$stmt = $conn->prepare("SELECT id, nama_pemeriksaan FROM inventory_pemeriksaan_grup WHERE id = ?");
 $stmt->bind_param("i", $grup_id);
 $stmt->execute();
 $grup = $stmt->get_result()->fetch_assoc();
@@ -33,11 +33,12 @@ $stmt = $conn->prepare("
         d.id,
         d.barang_id,
         d.qty_per_pemeriksaan,
+        d.is_mandatory,
         b.odoo_product_id,
         b.nama_barang,
         b.satuan
-    FROM pemeriksaan_grup_detail d
-    JOIN barang b ON d.barang_id = b.id
+    FROM inventory_pemeriksaan_grup_detail d
+    JOIN inventory_barang b ON d.barang_id = b.id
     WHERE d.pemeriksaan_grup_id = ?
     ORDER BY b.nama_barang ASC
 ");
@@ -47,7 +48,7 @@ $res = $stmt->get_result();
 $details = [];
 while ($row = $res->fetch_assoc()) $details[] = $row;
 
-$cnt_stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ?");
+$cnt_stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ?");
 $cnt_stmt->bind_param("i", $grup_id);
 $cnt_stmt->execute();
 $cnt = (int)($cnt_stmt->get_result()->fetch_assoc()['cnt'] ?? 0);

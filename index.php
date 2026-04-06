@@ -18,7 +18,7 @@ if (!in_array($page, $public_pages) && !isset($_SESSION['user_id'])) {
 }
 
 // Layout structure
-if (!in_array($page, $public_pages)) {
+if (!in_array($page, $public_pages) && !isset($_GET['layout'])) {
     include 'views/layouts/header.php';
     include 'views/layouts/sidebar.php';
 }
@@ -118,7 +118,7 @@ switch ($page) {
         break;
 }
 
-if (!in_array($page, $public_pages)) {
+if (!in_array($page, $public_pages) && !isset($_GET['layout'])) {
     include 'views/layouts/footer.php';
 }
 ?>

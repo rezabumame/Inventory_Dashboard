@@ -16,8 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 try {
     if (function_exists('ensure_enum_value')) {
-        ensure_enum_value($conn, 'request_barang', 'status', 'pending_spv');
-        ensure_enum_value($conn, 'request_barang', 'status', 'rejected_spv');
+        ensure_enum_value($conn, 'inventory_request_barang', 'status', 'pending_spv');
+        ensure_enum_value($conn, 'inventory_request_barang', 'status', 'rejected_spv');
     }
     $cols = [
         'spv_approved_by' => "INT NULL",
@@ -30,22 +30,22 @@ try {
     ];
     foreach ($cols as $c => $def) {
         $cc = $conn->real_escape_string($c);
-        $res = $conn->query("SHOW COLUMNS FROM `request_barang` LIKE '$cc'");
+        $res = $conn->query("SHOW COLUMNS FROM `inventory_request_barang` LIKE '$cc'");
         if ($res && $res->num_rows === 0) {
-            $conn->query("ALTER TABLE `request_barang` ADD COLUMN `$c` $def");
+            $conn->query("ALTER TABLE `inventory_request_barang` ADD COLUMN `$c` $def");
         }
     }
-    $res = $conn->query("SHOW INDEX FROM `request_barang` WHERE Key_name = 'idx_spv_token'");
+    $res = $conn->query("SHOW INDEX FROM `inventory_request_barang` WHERE Key_name = 'idx_spv_token'");
     if ($res && $res->num_rows === 0) {
-        $conn->query("ALTER TABLE `request_barang` ADD UNIQUE KEY `idx_spv_token` (`spv_qr_token`)");
+        $conn->query("ALTER TABLE `inventory_request_barang` ADD UNIQUE KEY `idx_spv_token` (`spv_qr_token`)");
     }
-    $res = $conn->query("SHOW INDEX FROM `request_barang` WHERE Key_name = 'idx_request_token'");
+    $res = $conn->query("SHOW INDEX FROM `inventory_request_barang` WHERE Key_name = 'idx_request_token'");
     if ($res && $res->num_rows === 0) {
-        $conn->query("ALTER TABLE `request_barang` ADD UNIQUE KEY `idx_request_token` (`request_qr_token`)");
+        $conn->query("ALTER TABLE `inventory_request_barang` ADD UNIQUE KEY `idx_request_token` (`request_qr_token`)");
     }
-    $res = $conn->query("SHOW TABLES LIKE 'request_barang_dokumen'");
+    $res = $conn->query("SHOW TABLES LIKE 'inventory_request_barang_dokumen'");
     if ($res && $res->num_rows === 0) {
-        $conn->query("CREATE TABLE request_barang_dokumen (
+        $conn->query("CREATE TABLE `inventory_request_barang_dokumen` (
             id INT AUTO_INCREMENT PRIMARY KEY,
             request_barang_id INT NOT NULL,
             dokumen_path VARCHAR(255) NOT NULL,
@@ -53,8 +53,8 @@ try {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             created_by INT NULL
         )");
-        $conn->query("INSERT INTO request_barang_dokumen (request_barang_id, dokumen_path, dokumen_name, created_by)
-            SELECT id, dokumen_path, dokumen_name, processed_by FROM request_barang WHERE dokumen_path IS NOT NULL AND dokumen_path != ''");
+        $conn->query("INSERT INTO inventory_request_barang_dokumen (request_barang_id, dokumen_path, dokumen_name, created_by)
+            SELECT id, dokumen_path, dokumen_name, processed_by FROM inventory_request_barang WHERE dokumen_path IS NOT NULL AND dokumen_path != ''");
     }
 } catch (Exception $e) {
 }
@@ -92,15 +92,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $ke_id = 0;
 
     // Determine Source (Requestor) and Destination
-    if (in_array($user_role, ['admin_klinik', 'spv_klinik'], true)) {
-        $dari_level = 'klinik';
-        $dari_id = (int)$user_klinik;
+    if (in_array($user_role, ['admin_klinik', 'spv_klinik', 'super_admin'], true)) {
+        if ($user_role === 'super_admin') {
+            $dari_level = (string)($_POST['dari_level'] ?? 'klinik');
+            $dari_id = (int)($_POST['dari_id'] ?? 0);
+        } else {
+            $dari_level = 'klinik';
+            $dari_id = (int)$user_klinik;
+        }
+        
         if ($ke_level === 'gudang_utama') {
             $ke_id = 0;
         } else {
             $ke_level = 'klinik';
             $ke_id = $ke_id_post;
-            if ($ke_id <= 0 || $ke_id == $dari_id) {
+            if ($ke_id <= 0 || ($dari_level === 'klinik' && $ke_id == $dari_id)) {
                 $message = '<div class="alert alert-warning">Tujuan request harus klinik lain.</div>';
                 $ke_id = 0;
             }
@@ -114,8 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
         $id_sql = implode(',', array_map('intval', $uniq_ids));
         $res = $conn->query("
             SELECT b.id AS barang_id, COALESCE(c.multiplier, 1) AS multiplier 
-            FROM barang_uom_conversion c
-            JOIN barang b ON b.kode_barang = c.kode_barang
+            FROM inventory_barang_uom_conversion c
+            JOIN inventory_barang b ON b.kode_barang = c.kode_barang
             WHERE b.id IN ($id_sql)
         ");
         while ($res && ($row = $res->fetch_assoc())) {
@@ -147,20 +153,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
         $conn->begin_transaction();
         try {
             $nomor_request = generate_request_number($conn);
-            $status = ($user_role === 'admin_klinik') ? 'pending_spv' : 'pending';
+            $status = ($user_role === 'spv_klinik') ? 'pending' : 'pending_spv';
             $spv_by = null;
             $spv_token = null;
             $req_token = bin2hex(random_bytes(16));
-            if ($user_role === 'spv_klinik' || $user_role === 'super_admin') {
+            if ($user_role === 'spv_klinik') {
                 $spv_by = $user_id;
                 $spv_token = bin2hex(random_bytes(16));
             }
-            $stmt = $conn->prepare("INSERT INTO request_barang (nomor_request, dari_level, dari_id, ke_level, ke_id, status, catatan, created_by, spv_approved_by, spv_approved_at, spv_qr_token, request_qr_token, request_qr_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, IF(? IS NULL, NULL, NOW()), ?, ?, NOW())");
+            $stmt = $conn->prepare("INSERT INTO inventory_request_barang (nomor_request, dari_level, dari_id, ke_level, ke_id, status, catatan, created_by, spv_approved_by, spv_approved_at, spv_qr_token, request_qr_token, request_qr_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, IF(? IS NULL, NULL, NOW()), ?, ?, NOW())");
             $stmt->bind_param("ssisissiisss", $nomor_request, $dari_level, $dari_id, $ke_level, $ke_id, $status, $catatan, $user_id, $spv_by, $spv_by, $spv_token, $req_token);
             $stmt->execute();
             $request_id = $conn->insert_id;
 
-            $stmt_detail = $conn->prepare("INSERT INTO request_barang_detail (request_barang_id, barang_id, qty_request) VALUES (?, ?, ?)");
+            $stmt_detail = $conn->prepare("INSERT INTO inventory_request_barang_detail (request_barang_id, barang_id, qty_request) VALUES (?, ?, ?)");
             foreach ($pairs as $p) {
                 $barang_id = (int)$p['barang_id'];
                 $qty = (float)$p['qty'];
@@ -188,12 +194,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $status_action = $_POST['status_action']; // approve_all, reject
     
     // Fetch Request Info
-    $req = $conn->query("SELECT * FROM request_barang WHERE id = $request_id")->fetch_assoc();
+    $req = $conn->query("SELECT * FROM inventory_request_barang WHERE id = $request_id")->fetch_assoc();
     
     // Validate Permissions
     $can_approve = false;
     $can_spv = false;
-    if ($user_role == 'super_admin') $can_approve = true;
+    if ($user_role == 'super_admin') {
+        $can_approve = true;
+        if ($req['status'] === 'pending_spv') $can_spv = true;
+    }
     if ($user_role === 'spv_klinik' && $req['dari_level'] === 'klinik' && (int)$req['dari_id'] === (int)$user_klinik && $req['status'] === 'pending_spv') {
         $can_spv = true;
     }
@@ -207,20 +216,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 
     if ($can_spv) {
         if ($status_action == 'reject') {
-            $stmt = $conn->prepare("UPDATE request_barang SET status = 'rejected_spv', spv_rejected_by = ?, spv_rejected_at = NOW() WHERE id = ?");
+            $stmt = $conn->prepare("UPDATE inventory_request_barang SET status = 'rejected_spv', spv_rejected_by = ?, spv_rejected_at = NOW() WHERE id = ?");
             $stmt->bind_param("ii", $user_id, $request_id);
             $stmt->execute();
             $message = '<div class="alert alert-warning">Request ditolak oleh SPV/Manager.</div>';
         } else {
             $token = bin2hex(random_bytes(16));
-            $stmt = $conn->prepare("UPDATE request_barang SET status = 'pending', spv_approved_by = ?, spv_approved_at = NOW(), spv_qr_token = ? WHERE id = ?");
+            $stmt = $conn->prepare("UPDATE inventory_request_barang SET status = 'pending', spv_approved_by = ?, spv_approved_at = NOW(), spv_qr_token = ? WHERE id = ?");
             $stmt->bind_param("isi", $user_id, $token, $request_id);
             $stmt->execute();
             $message = '<div class="alert alert-success">Request disetujui oleh SPV/Manager dan diteruskan ke tujuan.</div>';
         }
     } elseif ($can_approve) {
         if ($status_action == 'reject') {
-            $conn->query("UPDATE request_barang SET status = 'rejected', approved_by = $user_id WHERE id = $request_id");
+            $conn->query("UPDATE inventory_request_barang SET status = 'rejected', approved_by = $user_id WHERE id = $request_id");
             $message = '<div class="alert alert-warning">Permintaan barang telah ditolak.</div>';
         } else {
             $conn->begin_transaction();
@@ -229,14 +238,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                     throw new Exception("Request level HC sudah tidak digunakan");
                 }
 
-                $stmt_req_upd = $conn->prepare("UPDATE request_barang_detail SET qty_approved = ? WHERE request_barang_id = ? AND barang_id = ?");
+                $stmt_req_upd = $conn->prepare("UPDATE inventory_request_barang_detail SET qty_approved = ? WHERE request_barang_id = ? AND barang_id = ?");
 
                 $all_approved = true;
 
                 foreach ($approved_items as $idx => $b_id) {
                     $qty_app = (float)($approved_qtys[$idx] ?? 0);
                     
-                    $res_req_det = $conn->query("SELECT qty_request FROM request_barang_detail WHERE request_barang_id = $request_id AND barang_id = $b_id");
+                    $res_req_det = $conn->query("SELECT qty_request FROM inventory_request_barang_detail WHERE request_barang_id = $request_id AND barang_id = $b_id");
                     $row_req_det = $res_req_det->fetch_assoc();
                     $qty_req = (float)($row_req_det['qty_request'] ?? 0);
 
@@ -251,7 +260,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                 }
 
                 $final_status = $all_approved ? 'approved' : 'partial';
-                $conn->query("UPDATE request_barang SET status = '$final_status', approved_by = $user_id WHERE id = $request_id");
+                $conn->query("UPDATE inventory_request_barang SET status = '$final_status', approved_by = $user_id WHERE id = $request_id");
 
                 $conn->commit();
                 $message = '<div class="alert alert-success">Permintaan barang telah disetujui. Silakan unggah dokumen untuk memproses pergerakan stok.</div>';
@@ -267,7 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 // 2a. Cancel Request
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'cancel_request') {
     $request_id = (int)($_POST['request_id'] ?? 0);
-    $req = $conn->query("SELECT * FROM request_barang WHERE id = $request_id")->fetch_assoc();
+    $req = $conn->query("SELECT * FROM inventory_request_barang WHERE id = $request_id")->fetch_assoc();
     if (!$req) {
         $message = '<div class="alert alert-danger">Permintaan tidak ditemukan.</div>';
     } else {
@@ -278,14 +287,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
             $message = '<div class="alert alert-danger">Anda tidak dapat membatalkan request ini.</div>';
         } else {
             try {
-                if (function_exists('ensure_enum_value')) ensure_enum_value($conn, 'request_barang', 'status', 'cancelled');
+                if (function_exists('ensure_enum_value')) ensure_enum_value($conn, 'inventory_request_barang', 'status', 'cancelled');
                 // Add cancel audit columns if missing
                 foreach (['cancelled_by' => "INT NULL", 'cancelled_at' => "DATETIME NULL"] as $c => $def) {
                     $cc = $conn->real_escape_string($c);
-                    $res = $conn->query("SHOW COLUMNS FROM `request_barang` LIKE '$cc'");
-                    if ($res && $res->num_rows === 0) $conn->query("ALTER TABLE `request_barang` ADD COLUMN `$c` $def");
+                    $res = $conn->query("SHOW COLUMNS FROM `inventory_request_barang` LIKE '$cc'");
+                    if ($res && $res->num_rows === 0) $conn->query("ALTER TABLE `inventory_request_barang` ADD COLUMN `$c` $def");
                 }
-                $stmt = $conn->prepare("UPDATE request_barang SET status = 'cancelled', cancelled_by = ?, cancelled_at = NOW() WHERE id = ?");
+                $stmt = $conn->prepare("UPDATE inventory_request_barang SET status = 'cancelled', cancelled_by = ?, cancelled_at = NOW() WHERE id = ?");
                 $stmt->bind_param("ii", $user_id, $request_id);
                 $stmt->execute();
                 $message = '<div class="alert alert-success">Request berhasil dibatalkan.</div>';
@@ -301,7 +310,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $received_items = $_POST['received_items'] ?? [];
     $received_qtys = $_POST['received_qtys'] ?? [];
 
-    $req = $conn->query("SELECT * FROM request_barang WHERE id = $request_id")->fetch_assoc();
+    $req = $conn->query("SELECT * FROM inventory_request_barang WHERE id = $request_id")->fetch_assoc();
     if (!$req) {
         $message = '<div class="alert alert-danger">Permintaan barang tidak ditemukan.</div>';
     } else {
@@ -342,13 +351,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 
                             $nomor_transfer = generate_transfer_number($conn);
                             $catatan_trf = "Pemenuhan permintaan barang " . $req['nomor_request'];
-                            $stmt_trf = $conn->prepare("INSERT INTO transfer_barang (nomor_transfer, request_barang_id, dari_level, dari_id, ke_level, ke_id, status, transfer_by, catatan) VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?)");
+                            $stmt_trf = $conn->prepare("INSERT INTO inventory_transfer_barang (nomor_transfer, request_barang_id, dari_level, dari_id, ke_level, ke_id, status, transfer_by, catatan) VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?)");
                             $stmt_trf->bind_param("sisissis", $nomor_transfer, $request_id, $source_level, $source_id, $dest_level, $dest_id, $user_id, $catatan_trf);
                             $stmt_trf->execute();
                             $transfer_id = (int)$conn->insert_id;
 
-                            $stmt_trf_det = $conn->prepare("INSERT INTO transfer_barang_detail (transfer_barang_id, barang_id, qty) VALUES (?, ?, ?)");
-                            $stmt_req_recv = $conn->prepare("UPDATE request_barang_detail SET qty_received = qty_received + ? WHERE request_barang_id = ? AND barang_id = ?");
+                            $stmt_trf_det = $conn->prepare("INSERT INTO inventory_transfer_barang_detail (transfer_barang_id, barang_id, qty) VALUES (?, ?, ?)");
+                            $stmt_req_recv = $conn->prepare("UPDATE inventory_request_barang_detail SET qty_received = qty_received + ? WHERE request_barang_id = ? AND barang_id = ?");
 
                             $barang_cache = [];
                             $get_barang_info = function(int $barang_id) use ($conn, &$barang_cache): array {
@@ -356,8 +365,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 if (isset($barang_cache[$barang_id])) return $barang_cache[$barang_id];
                                 $r = $conn->query("
                                     SELECT b.kode_barang, b.odoo_product_id, b.nama_barang, COALESCE(uc.to_uom, b.satuan) AS satuan, COALESCE(uc.multiplier, 1) AS multiplier
-                                    FROM barang b
-                                    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+                                    FROM inventory_barang b
+                                    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
                                     WHERE b.id = $barang_id
                                     LIMIT 1
                                 ");
@@ -412,7 +421,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 foreach ($locs as $loc) {
                                     $loc_esc = $conn->real_escape_string(trim($loc));
                                     $where = "TRIM(location_code) = '$loc_esc' AND (" . implode(' OR ', $clauses) . ")";
-                                    $res = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE $where");
+                                    $res = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE $where");
                                     $q = (float)($res && $res->num_rows > 0 ? ($res->fetch_assoc()['qty'] ?? 0) : 0);
                                     if ($q > $best_qty) {
                                         $best_qty = $q;
@@ -422,7 +431,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 $last_update = '';
                                 if ($best_loc !== '') {
                                     $loc_esc = $conn->real_escape_string(trim($best_loc));
-                                    $ru = $conn->query("SELECT MAX(updated_at) AS last_update FROM stock_mirror WHERE TRIM(location_code) = '$loc_esc'");
+                                    $ru = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc_esc'");
                                     if ($ru && $ru->num_rows > 0) $last_update = (string)($ru->fetch_assoc()['last_update'] ?? '');
                                 }
                                 return ['loc' => $best_loc, 'qty' => $best_qty, 'last_update' => $last_update];
@@ -441,7 +450,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                         $qty = (float)($mirror['qty'] ?? 0) / $mult;
                                         return ['qty' => $qty, 'loc' => (string)($mirror['loc'] ?? '')];
                                     } else {
-                                        $stmt = $conn->prepare("SELECT qty FROM stok_gudang_utama WHERE barang_id = ? LIMIT 1");
+                                        $stmt = $conn->prepare("SELECT qty FROM inventory_stok_gudang_utama WHERE barang_id = ? LIMIT 1");
                                         $stmt->bind_param("i", $barang_id);
                                         $stmt->execute();
                                         $qty = (float)($stmt->get_result()->fetch_assoc()['qty'] ?? 0);
@@ -450,7 +459,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 }
 
                                 if ($level !== 'klinik' || $level_id <= 0) return ['qty' => 0, 'loc' => ''];
-                                $r = $conn->query("SELECT kode_klinik, nama_klinik FROM klinik WHERE id = $level_id LIMIT 1");
+                                $r = $conn->query("SELECT kode_klinik, nama_klinik FROM inventory_klinik WHERE id = $level_id LIMIT 1");
                                 $kode_klinik = '';
                                 if ($r && $r->num_rows > 0) $kode_klinik = (string)($r->fetch_assoc()['kode_klinik'] ?? '');
                                 $locs = $location_candidates($kode_klinik);
@@ -466,7 +475,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                         SELECT
                                             COALESCE(SUM(CASE WHEN tipe_transaksi = 'in' THEN qty ELSE 0 END), 0) AS in_qty,
                                             COALESCE(SUM(CASE WHEN tipe_transaksi = 'out' THEN qty ELSE 0 END), 0) AS out_qty
-                                        FROM transaksi_stok
+                                        FROM inventory_transaksi_stok
                                         WHERE barang_id = $barang_id AND level = 'klinik' AND level_id = $level_id AND created_at > '$lu_esc'
                                     ");
                                     if ($res && $res->num_rows > 0) {
@@ -480,7 +489,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 if ($eff < 0) $eff = 0;
 
                                 if (($mirror['loc'] ?? '') === '' && $lu === '') {
-                                    $stmt = $conn->prepare("SELECT qty FROM stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ? LIMIT 1");
+                                    $stmt = $conn->prepare("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ? LIMIT 1");
                                     $stmt->bind_param("ii", $barang_id, $level_id);
                                     $stmt->execute();
                                     $eff = (float)($stmt->get_result()->fetch_assoc()['qty'] ?? 0);
@@ -489,14 +498,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 return ['qty' => $eff, 'loc' => (string)($mirror['loc'] ?? '')];
                             };
 
-                            $stmt_set_src_utama = $conn->prepare("INSERT INTO stok_gudang_utama (barang_id, qty, updated_by) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE qty = VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
-                            $stmt_set_src_klinik = $conn->prepare("INSERT INTO stok_gudang_klinik (barang_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                            $stmt_set_src_utama = $conn->prepare("INSERT INTO inventory_stok_gudang_utama (barang_id, qty, updated_by) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE qty = VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                            $stmt_set_src_klinik = $conn->prepare("INSERT INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
 
-                            $stmt_inc_check = $conn->prepare("SELECT id, qty FROM stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ?");
-                            $stmt_inc_ins = $conn->prepare("INSERT INTO stok_gudang_klinik (barang_id, klinik_id, qty) VALUES (?, ?, ?)");
-                            $stmt_inc_upd = $conn->prepare("UPDATE stok_gudang_klinik SET qty = qty + ? WHERE barang_id = ? AND klinik_id = ?");
+                            $stmt_inc_check = $conn->prepare("SELECT id, qty FROM inventory_stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ?");
+                            $stmt_inc_ins = $conn->prepare("INSERT INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES (?, ?, ?)");
+                            $stmt_inc_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ? WHERE barang_id = ? AND klinik_id = ?");
 
-                            $stmt_log = $conn->prepare("INSERT INTO transaksi_stok (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'transfer', ?, ?)");
+                            $stmt_log = $conn->prepare("INSERT INTO inventory_transaksi_stok (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'transfer', ?, ?)");
 
                             $all_full = true;
                             foreach ($received_items as $idx => $b_id_raw) {
@@ -506,7 +515,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 if ($qty_recv < 0) throw new Exception('Qty tidak valid');
                                 $qty_recv = (float)round($qty_recv, 4);
 
-                                $row_det = $conn->query("SELECT qty_request, qty_approved, qty_received FROM request_barang_detail WHERE request_barang_id = $request_id AND barang_id = $b_id")->fetch_assoc();
+                                $row_det = $conn->query("SELECT qty_request, qty_approved, qty_received FROM inventory_request_barang_detail WHERE request_barang_id = $request_id AND barang_id = $b_id")->fetch_assoc();
                                 if (!$row_det) continue;
                                 $qty_app = (float)($row_det['qty_approved'] ?? 0);
                                 $qty_req = (float)($row_det['qty_request'] ?? 0);
@@ -532,7 +541,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                     $label = ($kode !== '' ? ($kode . ' - ') : '') . $nm;
                                     $src_name = ($source_level === 'gudang_utama') ? 'Gudang Utama' : 'Klinik sumber';
                                     if ($source_level === 'klinik') {
-                                        $r = $conn->query("SELECT nama_klinik FROM klinik WHERE id = " . (int)$source_id . " LIMIT 1");
+                                        $r = $conn->query("SELECT nama_klinik FROM inventory_klinik WHERE id = " . (int)$source_id . " LIMIT 1");
                                         if ($r && $r->num_rows > 0) $src_name = (string)($r->fetch_assoc()['nama_klinik'] ?? $src_name);
                                     }
                                     throw new Exception("Stok tidak mencukupi di $src_name untuk barang: $label. Tersedia: $source_qty_before" . ($uom !== '' ? " $uom" : '') . ", Diterima: $qty_recv" . ($uom !== '' ? " $uom" : ''));
@@ -548,16 +557,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 }
 
                                 $dest_qty_before = 0;
+                                $dest_stok_eff = $get_effective_qty((string)$dest_level, (int)$dest_id, (int)$b_id);
+                                $dest_qty_before = (float)($dest_stok_eff['qty'] ?? 0);
+
                                 $stmt_inc_check->bind_param("ii", $b_id, $dest_id);
                                 $stmt_inc_check->execute();
                                 $res_check = $stmt_inc_check->get_result();
                                 if ($res_check->num_rows > 0) {
-                                    $row_dest = $res_check->fetch_assoc();
-                                    $dest_qty_before = (float)($row_dest['qty'] ?? 0);
                                     $stmt_inc_upd->bind_param("dii", $qty_recv, $b_id, $dest_id);
                                     $stmt_inc_upd->execute();
                                 } else {
-                                    $dest_qty_before = 0;
                                     $stmt_inc_ins->bind_param("iid", $b_id, $dest_id, $qty_recv);
                                     $stmt_inc_ins->execute();
                                 }
@@ -584,11 +593,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                             if (!$all_full && $user_choice === 'partial') {
                                 $final_status = 'partial';
                             }
-                            $stmt_up = $conn->prepare("UPDATE request_barang SET status = ?, dokumen_path = ?, dokumen_name = ?, processed_by = ?, processed_at = NOW() WHERE id = ?");
+                            $stmt_up = $conn->prepare("UPDATE inventory_request_barang SET status = ?, dokumen_path = ?, dokumen_name = ?, processed_by = ?, processed_at = NOW() WHERE id = ?");
                             $stmt_up->bind_param("sssii", $final_status, $dok_rel, $dok_name, $user_id, $request_id);
                             $stmt_up->execute();
 
-                            $stmt_dok = $conn->prepare("INSERT INTO request_barang_dokumen (request_barang_id, dokumen_path, dokumen_name, created_by) VALUES (?, ?, ?, ?)");
+                            $stmt_dok = $conn->prepare("INSERT INTO inventory_request_barang_dokumen (request_barang_id, dokumen_path, dokumen_name, created_by) VALUES (?, ?, ?, ?)");
                             $stmt_dok->bind_param("issi", $request_id, $dok_rel, $dok_name, $user_id);
                             $stmt_dok->execute();
 
@@ -608,14 +617,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 // 2c. Force Complete Request
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'force_complete_request') {
     $request_id = (int)($_POST['request_id'] ?? 0);
-    $req = $conn->query("SELECT * FROM request_barang WHERE id = $request_id")->fetch_assoc();
+    $req = $conn->query("SELECT * FROM inventory_request_barang WHERE id = $request_id")->fetch_assoc();
     if ($req && $req['status'] === 'partial') {
         $can_process = false;
         if ($user_role === 'super_admin') $can_process = true;
         if ($user_role === 'admin_klinik' && $req['dari_level'] === 'klinik' && (int)$req['dari_id'] === (int)$user_klinik) $can_process = true;
         
         if ($can_process) {
-            $stmt = $conn->prepare("UPDATE request_barang SET status = 'completed', processed_by = ?, processed_at = NOW() WHERE id = ?");
+            $stmt = $conn->prepare("UPDATE inventory_request_barang SET status = 'completed', processed_by = ?, processed_at = NOW() WHERE id = ?");
             $stmt->bind_param("ii", $user_id, $request_id);
             if ($stmt->execute()) {
                 $message = '<div class="alert alert-success">Permintaan berhasil ditandai selesai. Sisa barang tidak akan diproses lagi.</div>';
@@ -634,12 +643,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'cancel_request') {
     $request_id = $_POST['request_id'];
     // Validate ownership: Must be created by user and status pending
-    $stmt = $conn->prepare("SELECT id FROM request_barang WHERE id = ? AND created_by = ? AND status = 'pending'");
+    $stmt = $conn->prepare("SELECT id FROM inventory_request_barang WHERE id = ? AND created_by = ? AND status = 'pending'");
     $stmt->bind_param("ii", $request_id, $user_id);
     $stmt->execute();
     if ($stmt->get_result()->num_rows > 0) {
         $cat = $conn->real_escape_string("Dibatalkan oleh pemohon");
-        $conn->query("UPDATE request_barang SET status = 'rejected', catatan = CONCAT(COALESCE(catatan,''), '\n', '$cat') WHERE id = $request_id");
+        $conn->query("UPDATE inventory_request_barang SET status = 'rejected', catatan = CONCAT(COALESCE(catatan,''), '\n', '$cat') WHERE id = $request_id");
         $message = '<div class="alert alert-success">Permintaan barang berhasil dibatalkan.</div>';
     } else {
         $message = '<div class="alert alert-danger">Permintaan barang tidak dapat dibatalkan.</div>';
@@ -655,10 +664,10 @@ $stock_available = [];
 $seeded_barang_from_mirror = false;
 try {
     $conn->query("
-        INSERT INTO barang (odoo_product_id, kode_barang, nama_barang, satuan, stok_minimum, kategori)
+        INSERT INTO inventory_barang (odoo_product_id, kode_barang, nama_barang, satuan, stok_minimum, kategori)
         SELECT DISTINCT sm.odoo_product_id, sm.kode_barang, sm.kode_barang, 'Unit', 0, 'Odoo'
-        FROM stock_mirror sm
-        LEFT JOIN barang b ON b.odoo_product_id = sm.odoo_product_id
+        FROM inventory_stock_mirror sm
+        LEFT JOIN inventory_barang b ON b.odoo_product_id = sm.odoo_product_id
         WHERE sm.odoo_product_id IS NOT NULL AND sm.odoo_product_id <> ''
           AND b.id IS NULL
     ");
@@ -677,17 +686,18 @@ $res_barang = $conn->query("
         COALESCE(NULLIF(uc.to_uom, ''), b.satuan) AS satuan,
         COALESCE(NULLIF(uc.from_uom, ''), '') AS uom_odoo,
         COALESCE(uc.multiplier, 1) AS uom_ratio
-    FROM barang b
-    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    FROM inventory_barang b
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     ORDER BY b.nama_barang ASC
 ");
 $barang_list = [];
 while ($b = $res_barang->fetch_assoc()) $barang_list[] = $b;
 
 $target_kliniks = [];
-if (in_array($user_role, ['admin_klinik', 'spv_klinik'], true)) {
+if (in_array($user_role, ['admin_klinik', 'spv_klinik', 'super_admin'], true)) {
     $kid = (int)$user_klinik;
-    $res = $conn->query("SELECT id, nama_klinik, status FROM klinik WHERE id <> $kid ORDER BY (status='active') DESC, nama_klinik ASC");
+    $where_k = ($user_role === 'super_admin') ? "1=1" : "id <> $kid";
+    $res = $conn->query("SELECT id, nama_klinik, status FROM inventory_klinik WHERE $where_k ORDER BY (status='active') DESC, nama_klinik ASC");
     while ($res && ($row = $res->fetch_assoc())) $target_kliniks[] = $row;
 }
 
@@ -707,10 +717,11 @@ if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_
                         WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
                         ELSE UPPER(r.ke_level)
                     END AS tujuan_label
-                  FROM request_barang r 
-                  JOIN users u ON r.created_by = u.id
-                  LEFT JOIN klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
-                  ORDER BY r.created_at DESC";
+                  FROM inventory_request_barang r 
+                  JOIN inventory_users u ON r.created_by = u.id
+                  LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+                  ORDER BY r.created_at DESC
+                  LIMIT 500";
     } elseif ($user_role === 'spv_klinik') {
         // SPV melihat semua request dari kliniknya (permintaan saya = klinik saya)
         $query = "SELECT 
@@ -721,11 +732,12 @@ if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_
                         WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
                         ELSE UPPER(r.ke_level)
                     END AS tujuan_label
-                  FROM request_barang r 
-                  JOIN users u ON r.created_by = u.id
-                  LEFT JOIN klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+                  FROM inventory_request_barang r 
+                  JOIN inventory_users u ON r.created_by = u.id
+                  LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
                   WHERE r.dari_level = 'klinik' AND r.dari_id = $user_klinik
-                  ORDER BY r.created_at DESC";
+                  ORDER BY r.created_at DESC
+                  LIMIT 500";
     } else {
         // Admin Klinik & Petugas HC: permintaan saya = yang saya buat
         $query = "SELECT 
@@ -736,11 +748,12 @@ if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_
                         WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
                         ELSE UPPER(r.ke_level)
                     END AS tujuan_label
-                  FROM request_barang r 
-                  JOIN users u ON r.created_by = u.id
-                  LEFT JOIN klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+                  FROM inventory_request_barang r 
+                  JOIN inventory_users u ON r.created_by = u.id
+                  LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
                   WHERE r.created_by = $user_id 
-                  ORDER BY r.created_at DESC";
+                  ORDER BY r.created_at DESC
+                  LIMIT 500";
     }
     $res = $conn->query($query);
     while($row = $res->fetch_assoc()) $outgoing_requests[] = $row;
@@ -771,12 +784,13 @@ if (in_array($user_role, ['admin_gudang', 'admin_klinik', 'spv_klinik', 'super_a
                     WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
                     ELSE UPPER(r.ke_level)
                 END AS tujuan_label
-              FROM request_barang r 
-              JOIN users u ON r.created_by = u.id
-              LEFT JOIN klinik k_from ON (r.dari_level = 'klinik' AND r.dari_id = k_from.id)
-              LEFT JOIN klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+              FROM inventory_request_barang r 
+              JOIN inventory_users u ON r.created_by = u.id
+              LEFT JOIN inventory_klinik k_from ON (r.dari_level = 'klinik' AND r.dari_id = k_from.id)
+              LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
               WHERE $where
-              ORDER BY r.created_at DESC";
+              ORDER BY r.created_at DESC
+              LIMIT 500";
     $res = $conn->query($query);
     while($row = $res->fetch_assoc()) $incoming_requests[] = $row;
 }
@@ -836,7 +850,7 @@ function get_status_badge($status) {
 }
 ?>
 
-<div class="row mb-4 align-items-center">
+<div class="row mb-2 align-items-center">
     <div class="col">
         <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
             <i class="fas fa-boxes me-2"></i>Request Barang
@@ -849,7 +863,7 @@ function get_status_badge($status) {
         </nav>
     </div>
     <div class="col-auto">
-        <?php if (in_array($user_role, ['admin_klinik', 'spv_klinik'], true)): ?>
+        <?php if (in_array($user_role, ['admin_klinik', 'spv_klinik', 'super_admin'], true)): ?>
         <button class="btn shadow-sm text-white px-4" style="background-color: #204EAB;" data-bs-toggle="modal" data-bs-target="#modalRequest">
             <i class="fas fa-plus me-2"></i>Buat Request
         </button>
@@ -1002,11 +1016,24 @@ function get_status_badge($status) {
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <?php if ($user_role === 'super_admin'): ?>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Asal Request (Klinik)</label>
+                            <select name="dari_id" class="form-select" required>
+                                <option value="">- Pilih Klinik Asal -</option>
+                                <?php foreach ($target_kliniks as $k): ?>
+                                    <option value="<?= (int)$k['id'] ?>"><?= htmlspecialchars($k['nama_klinik']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <input type="hidden" name="dari_level" value="klinik">
+                        </div>
+                    </div>
+                    <?php endif; ?>
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Tujuan Request</label>
-                            <?php if (in_array($user_role, ['admin_klinik','spv_klinik'], true)): ?>
-                                <?php $default_target_id = !empty($target_kliniks) ? (int)$target_kliniks[0]['id'] : 0; ?>
+                            <?php if (in_array($user_role, ['admin_klinik','spv_klinik','super_admin'], true)): ?>
                                 <select class="form-select" id="tujuanRequest">
                                     <option value="gudang_utama:0">Gudang Utama</option>
                                     <?php foreach ($target_kliniks as $k): ?>
@@ -1404,11 +1431,11 @@ function validateStock() {
     var keLevelEl = document.getElementById('ke_level');
     var keIdEl = document.getElementById('ke_id');
     if (keLevelEl && keIdEl && keLevelEl.value === 'klinik' && (!keIdEl.value || keIdEl.value === '0')) {
-        alert('Silakan pilih klinik tujuan terlebih dahulu.');
+        Swal.fire('Peringatan', 'Silakan pilih klinik tujuan terlebih dahulu.', 'warning');
         return false;
     }
     if (!stockDataLoaded) {
-        alert('Ketersediaan belum dimuat. Silakan coba kembali.');
+        Swal.fire('Info', 'Ketersediaan belum dimuat. Silakan coba kembali.', 'info');
         return false;
     }
     var valid = true;
@@ -1425,7 +1452,7 @@ function validateStock() {
         if (id) {
             var avail = (stockData[id] !== undefined) ? parseFloat(stockData[id]) : 0;
             if (qtyOper > avail + 0.00005) {
-                alert('Ketersediaan stok tidak mencukupi untuk salah satu item.');
+                Swal.fire('Stok Kurang', 'Ketersediaan stok tidak mencukupi untuk salah satu item.', 'error');
                 valid = false;
                 return false;
             }
@@ -1517,7 +1544,7 @@ function processUpload() {
     var fileInput = document.querySelector('input[name="dokumen"]');
     
     if (fileInput && fileInput.files.length === 0) {
-        alert('Harap unggah dokumen Odoo terlebih dahulu.');
+        Swal.fire('Dokumen Wajib', 'Harap unggah dokumen Odoo terlebih dahulu.', 'warning');
         return;
     }
 
@@ -1527,52 +1554,98 @@ function processUpload() {
         if (val > 0) isZero = false;
         if (val < max) isPartial = true;
         if (val > max) {
-            alert('Qty diterima (' + val + ') tidak boleh lebih dari sisa (' + max + ')');
+            Swal.fire('Input Salah', 'Qty diterima (' + val + ') tidak boleh lebih dari sisa (' + max + ')', 'error');
             return;
         }
     }
     
     if (isZero && inputs.length > 0) {
-        alert('Minimal ada 1 barang yang diterima.');
+        Swal.fire('Peringatan', 'Minimal ada 1 barang yang diterima.', 'warning');
         return;
     }
 
     if (isPartial) {
-        var msg = "Terdapat barang yang diterima kurang dari sisa persetujuan.\n\nApakah masih ada pengiriman untuk sisa barang ini di kemudian hari?\n- Klik OK jika YA (Status tetap Partial)\n- Klik Cancel jika TIDAK (Status Completed, sisa hangus)";
-        var ans = confirm(msg);
-        if (ans) {
-            $('#status_action').val('partial');
-        } else {
-            $('#status_action').val('completed');
-        }
+        Swal.fire({
+            title: 'Konfirmasi Penerimaan Parsial',
+            html: "Terdapat barang yang diterima kurang dari sisa persetujuan.<br><br><b>Apakah masih ada pengiriman untuk sisa barang ini di kemudian hari?</b>",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#204EAB',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: '<i class="fas fa-check me-1"></i> YA (Tetap Partial)',
+            cancelButtonText: '<i class="fas fa-times me-1"></i> TIDAK (Selesai/Hangus)',
+            reverseButtons: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                $('#status_action').val('partial');
+                $('#approvalForm').submit();
+            } else if (result.dismiss === Swal.DismissReason.cancel) {
+                $('#status_action').val('completed');
+                $('#approvalForm').submit();
+            }
+        });
     } else {
         $('#status_action').val('completed');
-    }
-    
-    $('#approvalForm').submit();
-}
-
-function forceComplete(id) {
-    if (confirm('Yakin ingin menandai pesanan ini SELESAI?\n\nSisa barang tidak akan diproses lagi / hangus.')) {
-        $('#form_action').val('force_complete_request');
         $('#approvalForm').submit();
     }
 }
 
+function forceComplete(id) {
+    Swal.fire({
+        title: 'Tandai Selesai?',
+        text: "Yakin ingin menandai pesanan ini SELESAI? Sisa barang tidak akan diproses lagi / hangus.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#204EAB',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Ya, Selesaikan!',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $('#form_action').val('force_complete_request');
+            $('#approvalForm').submit();
+        }
+    });
+}
+
 function submitApproval(action) {
     if (action == 'reject') {
-        if(!confirm('Yakin ingin menolak request ini?')) return;
-        $('#status_action').val('reject');
+        Swal.fire({
+            title: 'Tolak Request?',
+            text: "Yakin ingin menolak request ini?",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Ya, Tolak!',
+            cancelButtonText: 'Batal'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                $('#status_action').val('reject');
+                $('#approvalForm').submit();
+            }
+        });
     } else {
         $('#status_action').val('approve_all');
+        $('#approvalForm').submit();
     }
-    $('#approvalForm').submit();
 }
 
 function cancelRequest(id) {
-    if(confirm('Yakin ingin membatalkan request ini?')) {
-        $('#cancel_request_id').val(id);
-        $('#cancelForm').submit();
-    }
+    Swal.fire({
+        title: 'Batalkan Request?',
+        text: "Yakin ingin membatalkan request ini?",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Ya, Batalkan!',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $('#cancel_request_id').val(id);
+            $('#cancelForm').submit();
+        }
+    });
 }
 </script>

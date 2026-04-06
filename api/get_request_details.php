@@ -12,7 +12,7 @@ $user_role = $_SESSION['role'];
 $user_klinik = $_SESSION['klinik_id'];
 
 // Get Request Header
-$req = $conn->query("SELECT * FROM request_barang WHERE id = $request_id")->fetch_assoc();
+$req = $conn->query("SELECT * FROM inventory_request_barang WHERE id = $request_id")->fetch_assoc();
 if (!$req) {
     echo '<div class="alert alert-danger mb-0">Permintaan barang tidak ditemukan.</div>';
     exit;
@@ -50,9 +50,9 @@ if ($user_role == 'spv_klinik' && $req['dari_level'] == 'klinik' && (int)$req['d
 
 // Get Request Details
 $sql = "SELECT d.*, b.kode_barang, b.odoo_product_id, b.nama_barang, COALESCE(uc.to_uom, b.satuan) AS satuan
-        FROM request_barang_detail d 
-        JOIN barang b ON d.barang_id = b.id
-        LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+        FROM inventory_request_barang_detail d 
+        JOIN inventory_barang b ON d.barang_id = b.id
+        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         WHERE d.request_barang_id = $request_id";
 $res = $conn->query($sql);
 
@@ -80,7 +80,7 @@ if ($can_cancel) {
 
 <?php 
 $dokumens = [];
-$res_dok = $conn->query("SELECT * FROM request_barang_dokumen WHERE request_barang_id = $request_id ORDER BY created_at ASC");
+$res_dok = $conn->query("SELECT * FROM inventory_request_barang_dokumen WHERE request_barang_id = $request_id ORDER BY created_at ASC");
 if ($res_dok && $res_dok->num_rows > 0) {
     while ($d = $res_dok->fetch_assoc()) {
         $dokumens[] = $d;
@@ -147,7 +147,7 @@ if ($res_dok && $res_dok->num_rows > 0) {
                     <?php endif; ?>
                     <?php if ($max_recv > 0): ?>
                         <input type="number" name="received_qtys[]" class="form-control form-control-sm"
-                               value="<?= htmlspecialchars((string)$max_recv) ?>" max="<?= htmlspecialchars((string)$max_recv) ?>" min="0" step="0.0001" placeholder="isi qty diterima" required>
+                               value="" max="<?= htmlspecialchars((string)$max_recv) ?>" min="0" step="0.0001" placeholder="isi qty diterima" required>
                     <?php else: ?>
                         <span class="badge bg-success">Lengkap</span>
                         <input type="hidden" name="received_qtys[]" value="0">

@@ -21,7 +21,7 @@ if ($detail_id <= 0) {
     exit;
 }
 
-$stmt = $conn->prepare("DELETE FROM pemeriksaan_grup_detail WHERE id = ?");
+$stmt = $conn->prepare("DELETE FROM inventory_pemeriksaan_grup_detail WHERE id = ?");
 $stmt->bind_param("i", $detail_id);
 $stmt->execute();
 

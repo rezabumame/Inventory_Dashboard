@@ -62,7 +62,7 @@ if ($ke_level === 'klinik') {
         echo json_encode(['success' => true, 'qty' => 0, 'location_code' => ''], JSON_UNESCAPED_UNICODE);
         exit;
     }
-    $r = $conn->query("SELECT kode_klinik FROM klinik WHERE id = $ke_id LIMIT 1");
+    $r = $conn->query("SELECT kode_klinik FROM inventory_klinik WHERE id = $ke_id LIMIT 1");
     $kode_klinik = '';
     if ($r && $r->num_rows > 0) $kode_klinik = (string)($r->fetch_assoc()['kode_klinik'] ?? '');
     if ($kode_klinik === '') {
@@ -73,7 +73,7 @@ if ($ke_level === 'klinik') {
 } elseif ($ke_level === 'gudang_utama') {
     $gudang_loc = trim((string)get_setting('odoo_location_gudang_utama', ''));
     if ($gudang_loc === '') {
-        $stmt = $conn->prepare("SELECT qty FROM stok_gudang_utama WHERE barang_id = ? LIMIT 1");
+        $stmt = $conn->prepare("SELECT qty FROM inventory_stok_gudang_utama WHERE barang_id = ? LIMIT 1");
         $stmt->bind_param("i", $barang_id);
         $stmt->execute();
         $qty = (int)($stmt->get_result()->fetch_assoc()['qty'] ?? 0);
@@ -86,14 +86,14 @@ if ($ke_level === 'klinik') {
     exit;
 }
 
-$b = $conn->query("SELECT kode_barang, odoo_product_id FROM barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
+$b = $conn->query("SELECT kode_barang, odoo_product_id FROM inventory_barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
 $kode_barang = trim((string)($b['kode_barang'] ?? ''));
 $odoo_product_id = trim((string)($b['odoo_product_id'] ?? ''));
 
 $conv = $conn->query("
     SELECT c.multiplier 
-    FROM barang_uom_conversion c
-    JOIN barang b ON b.kode_barang = c.kode_barang
+    FROM inventory_barang_uom_conversion c
+    JOIN inventory_barang b ON b.kode_barang = c.kode_barang
     WHERE b.id = $barang_id 
     LIMIT 1
 ")->fetch_assoc();
@@ -103,8 +103,8 @@ if ($multiplier <= 0) $multiplier = 1;
 $uom = '';
 $r_uom = $conn->query("
     SELECT COALESCE(uc.to_uom, b.satuan) AS satuan 
-    FROM barang b 
-    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang 
+    FROM inventory_barang b 
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang 
     WHERE b.id = $barang_id 
     LIMIT 1
 ");
@@ -122,7 +122,7 @@ $best_loc = '';
 foreach ($location_candidates as $loc) {
     $loc_esc = $conn->real_escape_string(trim($loc));
     $where = "TRIM(location_code) = '$loc_esc' AND (" . implode(' OR ', $clauses) . ")";
-    $res = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE $where");
+    $res = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE $where");
     $q = (int)floor((float)($res && $res->num_rows > 0 ? ($res->fetch_assoc()['qty'] ?? 0) : 0));
     if ($q > $best_qty) {
         $best_qty = $q;

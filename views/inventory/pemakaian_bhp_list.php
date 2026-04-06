@@ -7,13 +7,13 @@ if (!in_array($_SESSION['role'], $allowed_roles)) {
 
 $user_klinik_id = $_SESSION['klinik_id'] ?? null;
 $user_role = $_SESSION['role'];
-$can_choose_klinik = in_array($user_role, ['super_admin', 'admin_gudang', 'b2b_ops', 'cs', 'admin_sales'], true);
+$can_choose_klinik = in_array($user_role, ['super_admin', 'admin_gudang', 'cs', 'admin_sales'], true);
 
 try {
-    $t = $conn->real_escape_string('pemakaian_bhp');
+    $t = $conn->real_escape_string('inventory_pemakaian_bhp');
     $res = $conn->query("SHOW COLUMNS FROM `$t` LIKE 'user_hc_id'");
     if ($res && $res->num_rows === 0) {
-        $conn->query("ALTER TABLE `pemakaian_bhp` ADD COLUMN `user_hc_id` INT NULL AFTER `klinik_id`");
+        $conn->query("ALTER TABLE `$t` ADD COLUMN `user_hc_id` INT NULL AFTER `klinik_id`");
     }
 } catch (Exception $e) {
 }
@@ -64,12 +64,13 @@ if ($active_tab == 'list') {
             pb.*,
             k.nama_klinik,
             u_created.nama_lengkap as created_by_name,
-            (SELECT COUNT(*) FROM pemakaian_bhp_detail WHERE pemakaian_bhp_id = pb.id) as total_items
-        FROM pemakaian_bhp pb
-        LEFT JOIN klinik k ON pb.klinik_id = k.id
-        LEFT JOIN users u_created ON pb.created_by = u_created.id
+            (SELECT COUNT(*) FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = pb.id) as total_items
+        FROM inventory_pemakaian_bhp pb
+        LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
+        LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
         WHERE $where_clause
         ORDER BY pb.tanggal DESC, pb.created_at DESC
+        LIMIT 500
     ";
 
     $stmt = $conn->prepare($query);
@@ -92,14 +93,15 @@ if ($active_tab == 'list') {
             u_hc.nama_lengkap as hc_name,
             k.nama_klinik,
             k.id as klinik_id
-        FROM pemakaian_bhp pb
-        JOIN pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
-        JOIN barang b ON pbd.barang_id = b.id
-        LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-        LEFT JOIN users u_hc ON pb.user_hc_id = u_hc.id
-        JOIN klinik k ON pb.klinik_id = k.id
+        FROM inventory_pemakaian_bhp pb
+        JOIN inventory_pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
+        JOIN inventory_barang b ON pbd.barang_id = b.id
+        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+        LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
+        JOIN inventory_klinik k ON pb.klinik_id = k.id
         WHERE $where_clause
         ORDER BY pb.tanggal DESC, pb.created_at DESC
+        LIMIT 500
     ";
     
     $stmt_out = $conn->prepare($query_out);
@@ -114,10 +116,10 @@ if ($active_tab == 'list') {
 $seeded_barang_from_mirror = false;
 try {
     $conn->query("
-        INSERT INTO barang (odoo_product_id, kode_barang, nama_barang, satuan, stok_minimum, kategori)
+        INSERT INTO inventory_barang (odoo_product_id, kode_barang, nama_barang, satuan, stok_minimum, kategori)
         SELECT DISTINCT sm.odoo_product_id, sm.kode_barang, sm.kode_barang, 'Unit', 0, 'Odoo'
-        FROM stock_mirror sm
-        LEFT JOIN barang b ON b.odoo_product_id = sm.odoo_product_id
+        FROM inventory_stock_mirror sm
+        LEFT JOIN inventory_barang b ON b.odoo_product_id = sm.odoo_product_id
         WHERE sm.odoo_product_id IS NOT NULL AND sm.odoo_product_id <> ''
           AND b.id IS NULL
     ");
@@ -135,8 +137,8 @@ $stmt_barang = $conn->query("
         COALESCE(uc.to_uom, b.satuan) AS satuan,
         COALESCE(NULLIF(uc.from_uom, ''), '') AS uom_odoo,
         COALESCE(uc.multiplier, 1) AS uom_ratio
-    FROM barang b
-    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    FROM inventory_barang b
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     WHERE b.odoo_product_id IS NOT NULL AND b.odoo_product_id <> ''
     ORDER BY b.nama_barang
 ");
@@ -147,14 +149,14 @@ while ($row_barang = $stmt_barang->fetch_assoc()) {
 $hc_list = [];
 
 $klinik_options = [];
-$res_k = $conn->query("SELECT id, nama_klinik, kode_homecare FROM klinik WHERE status='active' ORDER BY nama_klinik");
+$res_k = $conn->query("SELECT id, nama_klinik, kode_homecare FROM inventory_klinik WHERE status='active' ORDER BY nama_klinik");
 while ($res_k && ($row_k = $res_k->fetch_assoc())) {
     $klinik_options[] = $row_k;
 }
 $default_modal_klinik_id = $user_klinik_id ?: (isset($klinik_options[0]['id']) ? (int)$klinik_options[0]['id'] : null);
 
 $petugas_by_klinik = [];
-$res_p = $conn->query("SELECT id, klinik_id, nama_lengkap FROM users WHERE role = 'petugas_hc' AND status = 'active' AND klinik_id IS NOT NULL ORDER BY nama_lengkap ASC");
+$res_p = $conn->query("SELECT id, klinik_id, nama_lengkap FROM inventory_users WHERE role = 'petugas_hc' AND status = 'active' AND klinik_id IS NOT NULL ORDER BY nama_lengkap ASC");
 while ($res_p && ($rp = $res_p->fetch_assoc())) {
     $kid = (int)($rp['klinik_id'] ?? 0);
     if ($kid <= 0) continue;
@@ -165,10 +167,12 @@ while ($res_p && ($rp = $res_p->fetch_assoc())) {
 $available_klinik_map = [];
 try {
     $res_av_k = $conn->query("
-        SELECT k.id as klinik_id, b.id as barang_id
-        FROM klinik k
-        JOIN stock_mirror sm ON sm.location_code = k.kode_klinik
-        JOIN barang b ON b.odoo_product_id = sm.odoo_product_id
+        SELECT k.id as klinik_id, b.id as barang_id, SUM(sm.qty) as total_qty_odoo,
+               COALESCE(uc.multiplier, 1) as multiplier
+        FROM inventory_klinik k
+        JOIN inventory_stock_mirror sm ON sm.location_code = k.kode_klinik
+        JOIN inventory_barang b ON b.odoo_product_id = sm.odoo_product_id
+        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         WHERE k.status='active'
           AND k.kode_klinik IS NOT NULL AND k.kode_klinik <> ''
           AND sm.qty > 0
@@ -177,8 +181,12 @@ try {
     while ($res_av_k && ($r = $res_av_k->fetch_assoc())) {
         $kid = (int)$r['klinik_id'];
         $bid = (int)$r['barang_id'];
+        
+        // Simpan stok RAW (satuan terkecil dari Mirror)
+        $qty_mirror = (float)$r['total_qty_odoo'];
+        
         if (!isset($available_klinik_map[$kid])) $available_klinik_map[$kid] = [];
-        $available_klinik_map[$kid][] = $bid;
+        $available_klinik_map[$kid][$bid] = $qty_mirror;
     }
 } catch (Exception $e) {
     $available_klinik_map = [];
@@ -187,10 +195,10 @@ try {
 $available_hc_map = [];
 try {
     $res_av_h = $conn->query("
-        SELECT k.id as klinik_id, b.id as barang_id
-        FROM klinik k
-        JOIN stock_mirror sm ON sm.location_code = k.kode_homecare
-        JOIN barang b ON b.odoo_product_id = sm.odoo_product_id
+        SELECT k.id as klinik_id, b.id as barang_id, SUM(sm.qty) as total_qty_mirror
+        FROM inventory_klinik k
+        JOIN inventory_stock_mirror sm ON sm.location_code = k.kode_homecare
+        JOIN inventory_barang b ON b.odoo_product_id = sm.odoo_product_id
         WHERE k.status='active'
           AND k.kode_homecare IS NOT NULL AND k.kode_homecare <> ''
           AND sm.qty > 0
@@ -199,8 +207,12 @@ try {
     while ($res_av_h && ($r = $res_av_h->fetch_assoc())) {
         $kid = (int)$r['klinik_id'];
         $bid = (int)$r['barang_id'];
+        
+        // Simpan stok RAW
+        $qty_mirror = (float)$r['total_qty_mirror'];
+
         if (!isset($available_hc_map[$kid])) $available_hc_map[$kid] = [];
-        $available_hc_map[$kid][] = $bid;
+        $available_hc_map[$kid][$bid] = $qty_mirror;
     }
 } catch (Exception $e) {
     $available_hc_map = [];
@@ -208,7 +220,7 @@ try {
 
 $klinik_name = '';
 if ($default_modal_klinik_id) {
-    $stmt_klinik = $conn->prepare("SELECT nama_klinik FROM klinik WHERE id = ?");
+    $stmt_klinik = $conn->prepare("SELECT nama_klinik FROM inventory_klinik WHERE id = ?");
     $stmt_klinik->bind_param("i", $default_modal_klinik_id);
     $stmt_klinik->execute();
     $result_klinik = $stmt_klinik->get_result();
@@ -218,7 +230,7 @@ if ($default_modal_klinik_id) {
 }
 ?>
 
-<div class="row mb-4 align-items-center">
+<div class="row mb-2 align-items-center">
         <div class="col">
             <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
                 <i class="fas fa-clipboard-list me-2"></i><?= ($user_role === 'petugas_hc') ? 'BHP Saya' : 'Pemakaian BHP' ?>
@@ -234,7 +246,7 @@ if ($default_modal_klinik_id) {
             <button type="button" class="btn shadow-sm text-white px-4 me-2" style="background-color: #204EAB;" data-bs-toggle="modal" data-bs-target="#modalTambah">
                 <i class="fas fa-plus me-2"></i>Tambah Pemakaian
             </button>
-            <?php if (in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'b2b_ops'], true)): ?>
+            <?php if (in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)): ?>
             <button type="button" class="btn btn-success shadow-sm px-4" data-bs-toggle="modal" data-bs-target="#modalUpload">
                 <i class="fas fa-file-excel me-2"></i>Upload Excel
             </button>
@@ -299,7 +311,7 @@ if ($default_modal_klinik_id) {
     <div class="card shadow-sm">
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-hover" id="tablePemakaianBHP">
+                <table class="table table-hover datatable" id="tablePemakaianBHP">
                     <thead class="table-light">
                         <tr>
                             <th>No. Pemakaian</th>
@@ -375,7 +387,7 @@ if ($default_modal_klinik_id) {
                 </a>
             </div>
             <div class="table-responsive rounded-top scrollbar-custom">
-                <table class="table table-spreadsheet align-middle mb-0" id="tableDataOut">
+                <table class="table table-spreadsheet datatable align-middle mb-0" id="tableDataOut">
                     <thead>
                         <tr>
                             <th width="120"><i class="far fa-calendar-alt me-1"></i> Tanggal</th>
@@ -554,7 +566,7 @@ if ($default_modal_klinik_id) {
 <div class="modal fade" id="modalEdit" tabindex="-1" aria-labelledby="modalEditLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content border-0 shadow">
-            <div class="modal-header border-0 py-3 text-white" style="background-color: #e67e22;">
+            <div class="modal-header border-0 py-3 text-white" style="background-color: #204EAB;">
                 <h5 class="modal-title fw-bold text-white" id="modalEditLabel"><i class="fas fa-edit me-2"></i>Edit Pemakaian BHP</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -563,7 +575,7 @@ if ($default_modal_klinik_id) {
                 <input type="hidden" name="id" id="editId">
                 <div class="modal-body p-4 bg-light">
                     <div id="editLoadingSpinner" class="text-center py-5">
-                        <div class="spinner-border text-warning" role="status"><span class="visually-hidden">Loading...</span></div>
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
                         <p class="mt-2 text-muted">Memuat data...</p>
                     </div>
                     <div id="editFormContent" style="display:none;">
@@ -573,13 +585,13 @@ if ($default_modal_klinik_id) {
                                 <div class="row g-3">
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold small mb-1">
-                                            <i class="fas fa-calendar-alt text-warning me-1"></i>Tanggal <span class="text-danger">*</span>
+                                            <i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal <span class="text-danger">*</span>
                                         </label>
                                         <input type="date" name="tanggal" id="editTanggal" class="form-control" required>
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold small mb-1">
-                                            <i class="fas fa-tags text-warning me-1"></i>Jenis Pemakaian <span class="text-danger">*</span>
+                                            <i class="fas fa-tags text-primary me-1"></i>Jenis Pemakaian <span class="text-danger">*</span>
                                         </label>
                                         <select name="jenis_pemakaian" id="editJenisPemakaian" class="form-select" required <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>
                                             <option value="klinik">Pemakaian Klinik</option>
@@ -592,14 +604,14 @@ if ($default_modal_klinik_id) {
 
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold small mb-1">
-                                            <i class="fas fa-hospital text-warning me-1"></i>Klinik
+                                            <i class="fas fa-hospital text-primary me-1"></i>Klinik
                                         </label>
                                         <input type="text" class="form-control bg-light" id="editKlinikName" value="" readonly>
                                         <input type="hidden" name="klinik_id" id="editKlinikId" value="">
                                     </div>
                                     <div class="col-md-3" id="editPetugasHcWrap" style="<?= ($user_role === 'petugas_hc') ? 'display:block;' : 'display:none;' ?>">
                                         <label class="form-label fw-semibold small mb-1">
-                                            <i class="fas fa-user-nurse text-warning me-1"></i>Petugas HC <span class="text-danger">*</span>
+                                            <i class="fas fa-user-nurse text-primary me-1"></i>Petugas HC <span class="text-danger">*</span>
                                         </label>
                                         <?php if ($user_role === 'petugas_hc'): ?>
                                             <input type="text" class="form-control bg-light" value="<?= htmlspecialchars($_SESSION['nama_lengkap']) ?>" readonly>
@@ -614,7 +626,7 @@ if ($default_modal_klinik_id) {
                                 <div class="row mt-3">
                                     <div class="col-12">
                                         <label class="form-label fw-semibold small mb-1">
-                                            <i class="fas fa-sticky-note text-warning me-1"></i>Catatan Transaksi
+                                            <i class="fas fa-sticky-note text-primary me-1"></i>Catatan Transaksi
                                         </label>
                                         <textarea name="catatan_transaksi" id="editCatatan" class="form-control" rows="2"></textarea>
                                     </div>
@@ -625,7 +637,7 @@ if ($default_modal_klinik_id) {
                         <!-- Item Table -->
                         <div class="card border-0 shadow-sm">
                             <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-                                <h6 class="mb-0 fw-bold text-warning"><i class="fas fa-boxes me-2"></i>Daftar Item Barang</h6>
+                                <h6 class="mb-0 fw-bold text-primary"><i class="fas fa-boxes me-2"></i>Daftar Item Barang</h6>
                                 <button type="button" class="btn btn-success btn-sm" id="editAddRowBtn">
                                     <i class="fas fa-plus-circle me-1"></i> Tambah Item
                                 </button>
@@ -653,7 +665,7 @@ if ($default_modal_klinik_id) {
                 </div>
                 <div class="modal-footer bg-light border-0 py-3">
                     <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" id="editSubmitBtn" class="btn btn-warning px-5 shadow-sm rounded-pill py-2 fw-bold" style="display:none;">
+                    <button type="submit" id="editSubmitBtn" class="btn btn-primary px-5 shadow-sm rounded-pill py-2 fw-bold" style="display:none;">
                         <i class="fas fa-save me-2"></i>Simpan Perubahan
                     </button>
                 </div>
@@ -928,40 +940,60 @@ $(document).ready(function() {
     function initBarangSelect2($select) {
         if (!$select || !$select.length) return;
         if (!window.jQuery || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') return;
+        
+        // Re-init if needed or skip if already active
         if ($select.hasClass('select2-hidden-accessible')) return;
+
         const $modal = $select.closest('.modal');
         const opts = {
             theme: 'bootstrap-5',
             width: '100%',
             placeholder: '-- Pilih Barang --',
-            allowClear: true,
-            minimumInputLength: 2
+            allowClear: true
+            // Removed minimumInputLength to show items immediately
         };
-        if ($modal.length) opts.dropdownParent = $modal;
+        
+        if ($modal.length) {
+            opts.dropdownParent = $modal;
+        }
+        
         $select.select2(opts);
     }
 
     function getAllowedIds(klinikId, jenis) {
         if (!klinikId || !jenis) return null;
         const kid = String(klinikId);
-        if (jenis === 'hc') return availableHc[kid] || [];
-        return availableKlinik[kid] || [];
+        if (jenis === 'hc') return availableHc[kid] || {};
+        return availableKlinik[kid] || {};
     }
 
     function buildOptionsHtml(klinikId, jenis) {
         if (!jenis) return '<option value="">-- Pilih Jenis Pemakaian dahulu --</option>';
         if (!klinikId) return '<option value="">-- Pilih Klinik dahulu --</option>';
-        const ids = getAllowedIds(klinikId, jenis);
+        const map = getAllowedIds(klinikId, jenis);
+        const ids = Object.keys(map);
         if (!ids || ids.length === 0) return '<option value="">-- Tidak ada barang tersedia --</option>';
         const items = ids
-            .map(id => ({ id: String(id), name: (barangMaster[String(id)] && barangMaster[String(id)].name) ? barangMaster[String(id)].name : String(id) }))
+            .map(id => ({ 
+                id: String(id), 
+                name: (barangMaster[String(id)] && barangMaster[String(id)].name) ? barangMaster[String(id)].name : String(id),
+                rawQty: map[id] || 0
+            }))
             .sort((a, b) => a.name.localeCompare(b.name));
         let html = '<option value="">-- Pilih Barang --</option>';
         items.forEach(it => {
-            const satuan = (barangMaster[it.id] && barangMaster[it.id].satuan) ? barangMaster[it.id].satuan : '';
+            const master = barangMaster[it.id] || {};
+            const satuan = master.satuan || '';
+            const ratio = Number(master.uom_ratio) || 1;
+            
+            // Default: Satuan Operasional
+            const displayQty = it.rawQty / ratio;
+            
             const safeName = String(it.name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             const safeSatuan = String(satuan).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            html += `<option value="${it.id}" data-satuan="${safeSatuan}">${safeName}</option>`;
+            const qtyText = Number(displayQty).toLocaleString('id-ID');
+            
+            html += `<option value="${it.id}" data-satuan="${safeSatuan}" data-raw-qty="${it.rawQty}">${safeName} (Stok: ${qtyText})</option>`;
         });
         return html;
     }
@@ -977,6 +1009,7 @@ $(document).ready(function() {
         if ($select.hasClass('select2-hidden-accessible')) {
             $select.trigger('change.select2');
         } else {
+            // Trigger change to update UOM dropdown if needed
             $select.trigger('change');
         }
     }
@@ -996,16 +1029,24 @@ $(document).ready(function() {
         const jenis = $('#editJenisPemakaian').val();
         $('.edit-barang-select').each(function() {
             const $s = $(this);
+            const $row = $s.closest('tr');
+            const prevUom = $row.find('.edit-uom-select').val();
+            
             fillSelectOptions($s, klinikId, jenis, keepValue);
             initBarangSelect2($s);
+            
+            if (prevUom) {
+                $row.find('.edit-uom-select').val(prevUom).trigger('change');
+            }
         });
     }
 
-    // Initialize DataTable for list tab
-    if ($('#tablePemakaianBHP').length) {
-        $('#tablePemakaianBHP').DataTable({
-            order: [[1, 'desc']]
-        });
+    // Initialize DataOut if present
+    if ($('#tableDataOut').length && !$('#tableDataOut').hasClass('select2-hidden-accessible')) {
+        // No explicit init needed if it has .datatable class, 
+        // but we want to ensure it sorts by Tanggal (index 0)
+        // Actually, the global one in footer.php will handle it with index 1.
+        // Let's explicitly override if needed or just let it be.
     }
 
     // View detail
@@ -1075,6 +1116,46 @@ $(document).ready(function() {
     
     // --- MODAL TAMBAH LOGIC ---
     let modalRowIndex = 1;
+
+    // Handle UOM selection change
+    $(document).on('change', '.modal-uom-select, .edit-uom-select', function() {
+        const row = $(this).closest('tr');
+        const $barangSelect = row.find('.modal-barang-select, .edit-barang-select');
+        const barangId = $barangSelect.val();
+        if (!barangId) return;
+
+        const master = barangMaster[barangId] || {};
+        const ratio = Number(master.uom_ratio) || 1;
+        const uomMode = $(this).val(); // 'oper' or 'odoo'
+        
+        // Ambil raw qty dari option yang terpilih
+        const $selectedOption = $barangSelect.find('option:selected');
+        const rawQty = Number($selectedOption.attr('data-raw-qty')) || 0;
+        
+        let displayQty = 0;
+        if (uomMode === 'odoo') {
+            displayQty = rawQty; // Satuan kecil (mL/pcs)
+        } else {
+            displayQty = rawQty / ratio; // Satuan besar (Btl/Box)
+        }
+        
+        // Update teks di option
+        const qtyText = Number(displayQty).toLocaleString('id-ID');
+        const baseName = master.name || barangId;
+        const newText = `${baseName} (Stok: ${qtyText})`;
+        
+        $selectedOption.text(newText);
+        
+        // Force Select2 to refresh its displayed label
+        if ($barangSelect.hasClass('select2-hidden-accessible')) {
+            // Select2 refresh label hack: trigger change and then manually update container if needed
+            $barangSelect.trigger('change.select2');
+            
+            // Additional fallback: update the select2 selection text directly
+            const $container = $barangSelect.next('.select2-container');
+            $container.find('.select2-selection__rendered').text(newText).attr('title', newText);
+        }
+    });
 
     // Handle barang selection in modal
     $(document).on('change', '.modal-barang-select', function() {
@@ -1149,9 +1230,9 @@ $(document).ready(function() {
 
     // Form validation in modal
     $('#formPemakaianBHP').on('submit', function(e) {
+        e.preventDefault();
         const rowCount = $('.modal-item-row').length;
         if (rowCount === 0) {
-            e.preventDefault();
             Swal.fire({
                 icon: 'warning',
                 title: 'Perhatian',
@@ -1160,13 +1241,37 @@ $(document).ready(function() {
             return false;
         }
         
-        return true;
+        const $btn = $(this).find('button[type="submit"]');
+        const oldHtml = $btn.html();
+        $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...');
+
+        $.ajax({
+            url: $(this).attr('action'),
+            method: 'POST',
+            data: $(this).serialize(),
+            dataType: 'json',
+            success: function(res) {
+                if (res.success) {
+                    Swal.fire('Berhasil', res.message, 'success').then(() => {
+                        location.reload();
+                    });
+                } else {
+                    Swal.fire('Gagal', res.message, 'error');
+                    $btn.prop('disabled', false).html(oldHtml);
+                }
+            },
+            error: function() {
+                Swal.fire('Error', 'Terjadi kesalahan sistem', 'error');
+                $btn.prop('disabled', false).html(oldHtml);
+            }
+        });
+        return false;
     });
 
     // --- MODAL EDIT LOGIC ---
     let editRowIndex = 0;
 
-    function makeEditRow(idx, barangId, qty, satuan, catatan) {
+    function makeEditRow(idx, barangId, qty, satuan, catatan, uomMode) {
         return `
             <tr class="edit-item-row">
                 <td class="p-2">
@@ -1178,7 +1283,10 @@ $(document).ready(function() {
                     <input type="number" name="items[${idx}][qty]" class="form-control form-control-sm" min="1" value="${qty || ''}" placeholder="0" required>
                 </td>
                 <td class="p-2">
-                    <input type="text" name="items[${idx}][satuan]" class="form-control form-control-sm edit-satuan-field bg-light" value="${satuan || ''}" readonly>
+                    <select name="items[${idx}][uom_mode]" class="form-select form-select-sm edit-uom-select" required>
+                        <option value="oper">-</option>
+                    </select>
+                    <input type="hidden" name="items[${idx}][satuan]" class="edit-satuan-hidden" value="${satuan || ''}">
                 </td>
                 <td class="p-2">
                     <input type="text" name="items[${idx}][catatan_item]" class="form-control form-control-sm" value="${catatan || ''}" placeholder="Catatan">
@@ -1230,11 +1338,22 @@ $(document).ready(function() {
 
                 editRowIndex = 0;
                 res.details.forEach(function(d) {
-                    const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, d.catatan_item);
+                    const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, d.catatan_item, d.uom_mode);
                     $('#editItemTableBody').append(rowHtml);
                     const $row = $('#editItemTableBody tr:last');
-                    fillSelectOptions($row.find('.edit-barang-select'), h.klinik_id, h.jenis_pemakaian, false);
-                    $row.find('.edit-barang-select').val(String(d.barang_id)).trigger('change');
+                    const $barangSelect = $row.find('.edit-barang-select');
+                    
+                    fillSelectOptions($barangSelect, h.klinik_id, h.jenis_pemakaian, false);
+                    $barangSelect.val(String(d.barang_id)).trigger('change');
+                    
+                    // Initialize Select2 for this row
+                    initBarangSelect2($barangSelect);
+                    
+                    // Set UOM Mode after barang change (since barang change resets UOM options)
+                    if (d.uom_mode) {
+                        $row.find('.edit-uom-select').val(d.uom_mode).trigger('change');
+                    }
+                    
                     editRowIndex++;
                 });
 
@@ -1253,13 +1372,31 @@ $(document).ready(function() {
     // Barang change in edit modal
     $(document).on('change', '.edit-barang-select', function() {
         const id = $(this).val();
-        const satuan = (id && barangMaster[id] && barangMaster[id].satuan) ? barangMaster[id].satuan : '';
-        $(this).closest('tr').find('.edit-satuan-field').val(satuan);
+        const row = $(this).closest('tr');
+        const master = barangMaster[id] || {};
+        const satuan = master.satuan || '';
+        const uomOdoo = master.uom_odoo || '';
+        const ratio = Number(master.uom_ratio) || 1;
+        const $uomSelect = row.find('.edit-uom-select');
+        const $hiddenSatuan = row.find('.edit-satuan-hidden');
+
+        $hiddenSatuan.val(satuan);
+        let opts = '';
+        if (uomOdoo && ratio && ratio !== 1 && String(uomOdoo).toLowerCase() !== String(satuan).toLowerCase()) {
+            opts += `<option value="oper">${satuan}</option>`;
+            opts += `<option value="odoo">${uomOdoo}</option>`;
+            $uomSelect.prop('disabled', false);
+        } else {
+            opts += `<option value="oper">${satuan || '-'}</option>`;
+            $uomSelect.prop('disabled', true);
+        }
+        $uomSelect.html(opts).val('oper');
+        $uomSelect.trigger('change'); // trigger stock label update
     });
 
     // Add row in edit modal
     $('#editAddRowBtn').on('click', function() {
-        const rowHtml = makeEditRow(editRowIndex, null, '', '', '');
+        const rowHtml = makeEditRow(editRowIndex, null, '', '', '', 'oper');
         $('#editItemTableBody').append(rowHtml);
         const $sel = $('#editItemTableBody tr:last').find('.edit-barang-select');
         fillSelectOptions($sel, $('#editKlinikId').val(), $('#editJenisPemakaian').val(), false);
@@ -1276,12 +1413,37 @@ $(document).ready(function() {
 
     // Validate edit form on submit
     $('#formEditPemakaianBHP').on('submit', function(e) {
+        e.preventDefault();
         if ($('.edit-item-row').length === 0) {
-            e.preventDefault();
             Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'Minimal harus ada 1 item barang' });
             return false;
         }
-        return true;
+        
+        const $btn = $(this).find('button[type="submit"]');
+        const oldHtml = $btn.html();
+        $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...');
+
+        $.ajax({
+            url: $(this).attr('action'),
+            method: 'POST',
+            data: $(this).serialize(),
+            dataType: 'json',
+            success: function(res) {
+                if (res.success) {
+                    Swal.fire('Berhasil', res.message, 'success').then(() => {
+                        location.reload();
+                    });
+                } else {
+                    Swal.fire('Gagal', res.message, 'error');
+                    $btn.prop('disabled', false).html(oldHtml);
+                }
+            },
+            error: function() {
+                Swal.fire('Error', 'Terjadi kesalahan sistem', 'error');
+                $btn.prop('disabled', false).html(oldHtml);
+            }
+        });
+        return false;
     });
 
     $('#modalJenisPemakaian').on('change', function() {

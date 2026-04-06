@@ -32,7 +32,7 @@ if ($role === 'admin_klinik' && (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_i
 
 $dest = (stripos($status_booking, 'hc') !== false) ? 'hc' : 'klinik';
 
-$kl = $conn->query("SELECT id, kode_klinik, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$kl = $conn->query("SELECT id, kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$kl) {
     echo json_encode([]);
     exit;
@@ -48,7 +48,7 @@ if ($loc_code === '') {
 $loc_esc = $conn->real_escape_string($loc_code);
 
 $last_update = '';
-$r = $conn->query("SELECT MAX(updated_at) AS last_update FROM stock_mirror WHERE TRIM(location_code) = '$loc_esc'");
+$r = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc_esc'");
 if ($r && $r->num_rows > 0) $last_update = (string)($r->fetch_assoc()['last_update'] ?? '');
 
 $month_start = date('Y-m-01');
@@ -60,7 +60,7 @@ $today_esc = $conn->real_escape_string($today);
 $last_update_esc = $last_update !== '' ? $conn->real_escape_string($last_update) : '';
 
 $exams = [];
-$res_ex = $conn->query("SELECT id, nama_pemeriksaan FROM pemeriksaan_grup ORDER BY nama_pemeriksaan ASC");
+$res_ex = $conn->query("SELECT id, nama_pemeriksaan FROM inventory_pemeriksaan_grup ORDER BY nama_pemeriksaan ASC");
 while ($res_ex && ($row = $res_ex->fetch_assoc())) {
     $exams[(int)$row['id']] = [
         'id' => (int)$row['id'],
@@ -69,7 +69,7 @@ while ($res_ex && ($row = $res_ex->fetch_assoc())) {
     ];
 }
 
-$res_det = $conn->query("SELECT pemeriksaan_grup_id, barang_id, qty_per_pemeriksaan FROM pemeriksaan_grup_detail");
+$res_det = $conn->query("SELECT pemeriksaan_grup_id, barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail");
 while ($res_det && ($d = $res_det->fetch_assoc())) {
     $gid = (int)($d['pemeriksaan_grup_id'] ?? 0);
     if (!isset($exams[$gid])) continue;
@@ -97,9 +97,9 @@ $q = "
 SELECT
     b.id AS barang_id,
     COALESCE(sm.qty, 0) * COALESCE(uc.multiplier, 1) AS baseline_qty
-FROM barang b
-LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-LEFT JOIN stock_mirror sm
+FROM inventory_barang b
+LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+LEFT JOIN inventory_stock_mirror sm
   ON TRIM(sm.location_code) = '$loc_esc'
  AND (
       (TRIM(b.odoo_product_id) <> '' AND sm.odoo_product_id = b.odoo_product_id)
@@ -119,8 +119,8 @@ if ($last_update_esc !== '') $sellout_filter .= " AND pb.created_at > '$last_upd
 $jenis_cond = $dest === 'hc' ? "pb.jenis_pemakaian = 'hc'" : "pb.jenis_pemakaian <> 'hc'";
 $r = $conn->query("
     SELECT pbd.barang_id, COALESCE(SUM(pbd.qty), 0) AS qty
-    FROM pemakaian_bhp_detail pbd
-    JOIN pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
+    FROM inventory_pemakaian_bhp_detail pbd
+    JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
     WHERE pb.klinik_id = $klinik_id
       AND $jenis_cond
       AND $sellout_filter
@@ -134,8 +134,8 @@ $reserve_cond = $dest === 'hc' ? "bp.status_booking LIKE '%HC%'" : "bp.status_bo
 $reserve_field = $dest === 'hc' ? "CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END" : "CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END";
 $r = $conn->query("
     SELECT bd.barang_id, COALESCE(SUM($reserve_field), 0) AS qty
-    FROM booking_detail bd
-    JOIN booking_pemeriksaan bp ON bd.booking_id = bp.id
+    FROM inventory_booking_detail bd
+    JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
     WHERE bp.klinik_id = $klinik_id
       AND bp.status = 'booked'
       AND $reserve_cond
@@ -154,7 +154,7 @@ if ($last_update_esc !== '') {
             SELECT ts.barang_id,
                    COALESCE(SUM(CASE WHEN ts.tipe_transaksi='in' THEN ts.qty ELSE 0 END), 0) AS qty_in,
                    COALESCE(SUM(CASE WHEN ts.tipe_transaksi='out' THEN ts.qty ELSE 0 END), 0) AS qty_out
-            FROM transaksi_stok ts
+            FROM inventory_transaksi_stok ts
             WHERE ts.level = 'hc'
               AND ts.level_id = $klinik_id
               AND ts.referensi_tipe = 'hc_petugas_transfer'
@@ -168,7 +168,7 @@ if ($last_update_esc !== '') {
             SELECT ts.barang_id,
                    COALESCE(SUM(CASE WHEN ts.tipe_transaksi='in' THEN ts.qty ELSE 0 END), 0) AS qty_in,
                    COALESCE(SUM(CASE WHEN ts.tipe_transaksi='out' THEN ts.qty ELSE 0 END), 0) AS qty_out
-            FROM transaksi_stok ts
+            FROM inventory_transaksi_stok ts
             WHERE ts.level = 'klinik'
               AND ts.level_id = $klinik_id
               AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')

@@ -108,21 +108,15 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
 ?>
 
 <div class="container-fluid">
-    <div class="row mb-4 align-items-center">
+    <div class="row mb-2 align-items-center">
         <div class="col">
-            <div class="d-flex align-items-center">
-                <div class="me-3 rounded-circle bg-primary bg-opacity-10 p-3">
-                    <i class="fas fa-cogs fa-lg text-primary"></i>
-                </div>
-                <div>
-                    <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">Pengaturan Integrasi Odoo</h1>
-                    <div class="small text-muted">Atur jadwal dan jalankan sinkronisasi data dari Odoo</div>
-                </div>
-            </div>
+            <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
+                <i class="fas fa-cogs me-2"></i>Integrasi Odoo
+            </h1>
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-0">
                     <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
-                    <li class="breadcrumb-item active">Pengaturan Integrasi</li>
+                    <li class="breadcrumb-item active">Integrasi Odoo</li>
                 </ol>
             </nav>
         </div>

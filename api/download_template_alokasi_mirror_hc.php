@@ -36,7 +36,7 @@ if ($klinik_id <= 0) {
     exit;
 }
 
-$kl = $conn->query("SELECT id, nama_klinik, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$kl = $conn->query("SELECT id, nama_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$kl) {
     http_response_code(404);
     echo 'Klinik not found';
@@ -51,7 +51,7 @@ if ($kode_homecare === '') {
 
 $petugas = [];
 if ($petugas_user_id > 0) {
-    $u = $conn->query("SELECT id, nama_lengkap FROM users WHERE id = $petugas_user_id AND role = 'petugas_hc' AND status = 'active' AND klinik_id = $klinik_id LIMIT 1")->fetch_assoc();
+    $u = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE id = $petugas_user_id AND role = 'petugas_hc' AND status = 'active' AND klinik_id = $klinik_id LIMIT 1")->fetch_assoc();
     if (!$u) {
         http_response_code(400);
         echo 'Petugas tidak valid';
@@ -62,11 +62,11 @@ if ($petugas_user_id > 0) {
     $ids = array_filter(array_map('intval', explode(',', $petugas_ids_str)));
     if (!empty($ids)) {
         $ids_sql = implode(',', $ids);
-        $r = $conn->query("SELECT id, nama_lengkap FROM users WHERE id IN ($ids_sql) AND role = 'petugas_hc' AND status = 'active' AND klinik_id = $klinik_id ORDER BY nama_lengkap ASC");
+        $r = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE id IN ($ids_sql) AND role = 'petugas_hc' AND status = 'active' AND klinik_id = $klinik_id ORDER BY nama_lengkap ASC");
         while ($r && ($row = $r->fetch_assoc())) $petugas[] = $row;
     }
 } else {
-    $r = $conn->query("SELECT id, nama_lengkap FROM users WHERE role = 'petugas_hc' AND status = 'active' AND klinik_id = $klinik_id ORDER BY nama_lengkap ASC");
+    $r = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE role = 'petugas_hc' AND status = 'active' AND klinik_id = $klinik_id ORDER BY nama_lengkap ASC");
     while ($r && ($row = $r->fetch_assoc())) $petugas[] = $row;
 }
 
@@ -90,9 +90,9 @@ $r = $conn->query("
         COALESCE(NULLIF(uc.to_uom,''), '') AS uom_oper,
         COALESCE(NULLIF(uc.from_uom,''), '') AS uom_odoo,
         COALESCE(MAX(sm.qty), 0) AS mirror_qty_raw
-    FROM barang b
-    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-    LEFT JOIN stock_mirror sm ON TRIM(sm.location_code) = '$loc'
+    FROM inventory_barang b
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    LEFT JOIN inventory_stock_mirror sm ON TRIM(sm.location_code) = '$loc'
         AND (
             (TRIM(COALESCE(b.odoo_product_id, '')) <> '' AND TRIM(sm.odoo_product_id) = TRIM(b.odoo_product_id))
             OR
@@ -108,7 +108,7 @@ if (!empty($petugas)) {
     $ids = implode(',', array_map('intval', array_column($petugas, 'id')));
     $r = $conn->query("
         SELECT user_id, barang_id, COALESCE(qty, 0) AS qty
-        FROM stok_tas_hc
+        FROM inventory_stok_tas_hc
         WHERE klinik_id = $klinik_id AND user_id IN ($ids)
     ");
     while ($r && ($row = $r->fetch_assoc())) {

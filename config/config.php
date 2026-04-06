@@ -14,9 +14,29 @@ if ($base_dir === '') {
         $base_dir = '/';
     } else {
         // Fallback for local subfolders or other environments
-        $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
-        $base_dir = rtrim(dirname($script_name), '/\\') . '/';
-        if ($base_dir === '//' || $base_dir === '\\' || $base_dir === '') $base_dir = '/';
+        // Instead of dirname($_SERVER['SCRIPT_NAME']), we want the project root.
+        // We assume the project root is where index.php is.
+        $script_name = $_SERVER['SCRIPT_NAME'] ?? ''; // e.g., /bumame_iventory2/actions/process_barang_min_stok.php
+        $script_path = explode('/', trim($script_name, '/'));
+        
+        // Find 'bumame_iventory2' (the project folder name) or use a more robust way
+        // Let's use the first segment if it's not 'index.php' or 'actions' etc.
+        // A better way: find where this file (config.php) is relative to the root.
+        // This file is in /config/config.php, so root is two levels up.
+        $abs_path = str_replace('\\', '/', __DIR__); // /c:/xampp/htdocs/bumame_iventory2/config
+        $root_path = dirname($abs_path); // /c:/xampp/htdocs/bumame_iventory2
+        
+        $doc_root = str_replace('\\', '/', $_SERVER['DOCUMENT_ROOT'] ?? ''); 
+        $rel_path = ($doc_root !== '') ? str_replace($doc_root, '', $root_path) : ''; 
+        
+        $base_dir = rtrim($rel_path, '/') . '/';
+        if ($base_dir === '//' || $base_dir === '\\' || $base_dir === '' || $base_dir === '/') $base_dir = '/';
+        
+        // Final sanity check for local XAMPP
+        if (strpos($base_dir, 'htdocs/') !== false) {
+            $base_dir = str_replace('htdocs/', '/', $base_dir);
+        }
+        $base_dir = '/' . ltrim($base_dir, '/');
     }
 }
 define('BASE_URL', $protocol . '://' . $host . $base_dir);

@@ -22,9 +22,9 @@ $query = "
         pb.jenis_pemakaian,
         pbd.qty,
         u_created.nama_lengkap as created_by_name
-    FROM pemakaian_bhp pb
-    JOIN pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
-    LEFT JOIN users u_created ON pb.created_by = u_created.id
+    FROM inventory_pemakaian_bhp pb
+    JOIN inventory_pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
+    LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
     WHERE pbd.barang_id = $barang_id AND pb.klinik_id = $klinik_id $where_type
     ORDER BY pb.tanggal DESC, pb.created_at DESC
 ";

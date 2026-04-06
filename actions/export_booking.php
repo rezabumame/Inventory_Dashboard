@@ -52,13 +52,13 @@ if ($filter_fu === '1') {
 }
 
 $query = "SELECT b.*, k.nama_klinik,
-          (SELECT COUNT(DISTINCT bd.barang_id) FROM booking_detail bd WHERE bd.booking_id = b.id) as total_items,
+          (SELECT COUNT(DISTINCT bd.barang_id) FROM inventory_booking_detail bd WHERE bd.booking_id = b.id) as total_items,
           (SELECT GROUP_CONCAT(DISTINCT pg.nama_pemeriksaan ORDER BY pg.nama_pemeriksaan SEPARATOR ', ')
-           FROM booking_pasien bp
-           JOIN pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
+           FROM inventory_booking_pasien bp
+           JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
            WHERE bp.booking_id = b.id) as jenis_pemeriksaan
-          FROM booking_pemeriksaan b 
-          JOIN klinik k ON b.klinik_id = k.id 
+          FROM inventory_booking_pemeriksaan b 
+          JOIN inventory_klinik k ON b.klinik_id = k.id 
           WHERE $where
           ORDER BY b.tanggal_pemeriksaan ASC, b.id DESC";
 $result = $conn->query($query);

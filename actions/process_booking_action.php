@@ -1,8 +1,13 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/config.php';
+
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../lib/stock.php';
+require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../lib/webhooks.php';
+
+header('Content-Type: application/json');
 
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
@@ -21,7 +26,7 @@ require_csrf();
 
 $role = (string)($_SESSION['role'] ?? '');
 
-$booking = $conn->query("SELECT * FROM booking_pemeriksaan WHERE id = $id")->fetch_assoc();
+$booking = $conn->query("SELECT * FROM inventory_booking_pemeriksaan WHERE id = $id")->fetch_assoc();
 
 if (!$booking || $booking['status'] != 'booked') {
     $_SESSION['error'] = 'Booking tidak ditemukan atau sudah diproses';
@@ -38,7 +43,7 @@ if ($role === 'admin_klinik') {
 $conn->begin_transaction();
 try {
     // Get all items from details
-    $sql_items = "SELECT bd.* FROM booking_detail bd WHERE bd.booking_id = $id";
+    $sql_items = "SELECT bd.* FROM inventory_booking_detail bd WHERE bd.booking_id = $id";
     $details = $conn->query($sql_items);
     
     $items_to_process = [];
@@ -54,7 +59,7 @@ try {
                 throw new Exception('Access denied');
             }
             $setType = ($role === 'cs') ? ", booking_type = 'cancel'" : "";
-            $conn->query("UPDATE booking_pemeriksaan SET status = 'cancelled', butuh_fu = 0 $setType WHERE id = $id");
+            $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'cancelled', butuh_fu = 0 $setType WHERE id = $id");
             $msg = "Booking dibatalkan.";
             break;
         
@@ -62,7 +67,7 @@ try {
             if (!in_array($role, ['admin_klinik', 'super_admin'], true)) {
                 throw new Exception('Access denied');
             }
-            $conn->query("UPDATE booking_pemeriksaan SET status = 'completed', butuh_fu = 0 WHERE id = $id");
+            $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'completed', butuh_fu = 0 WHERE id = $id");
             $msg = "Booking selesai.";
             break;
 
@@ -70,7 +75,7 @@ try {
             if (!in_array($role, ['admin_klinik', 'super_admin'], true)) {
                 throw new Exception('Access denied');
             }
-            $conn->query("UPDATE booking_pemeriksaan SET butuh_fu = 1 WHERE id = $id");
+            $conn->query("UPDATE inventory_booking_pemeriksaan SET butuh_fu = 1 WHERE id = $id");
             $msg = "Booking ditandai FU jadwal kedatangan.";
             break;
             
@@ -104,11 +109,11 @@ try {
                     }
                 }
 
-                $conn->query("UPDATE booking_pemeriksaan SET status_booking = '" . $conn->real_escape_string($new_status) . "' WHERE id = $id");
+                $conn->query("UPDATE inventory_booking_pemeriksaan SET status_booking = '" . $conn->real_escape_string($new_status) . "' WHERE id = $id");
                 if ($target_is_hc) {
-                    $conn->query("UPDATE booking_detail SET qty_reserved_hc = qty_gantung, qty_reserved_onsite = 0 WHERE booking_id = $id");
+                    $conn->query("UPDATE inventory_booking_detail SET qty_reserved_hc = qty_gantung, qty_reserved_onsite = 0 WHERE booking_id = $id");
                 } else {
-                    $conn->query("UPDATE booking_detail SET qty_reserved_onsite = qty_gantung, qty_reserved_hc = 0 WHERE booking_id = $id");
+                    $conn->query("UPDATE inventory_booking_detail SET qty_reserved_onsite = qty_gantung, qty_reserved_hc = 0 WHERE booking_id = $id");
                 }
                 $msg = "Booking berhasil dipindahkan ke $new_status.";
             } finally {
@@ -117,59 +122,79 @@ try {
             break;
             
         case 'adjust':
-            // Adjust pax - add additional pax with all existing exams
+            // Adjust pax - add additional pax with specific exams
             if (!in_array($role, ['admin_klinik', 'super_admin'], true)) {
                 throw new Exception('Access denied');
             }
-            $additional_pax = (int)($_POST['additional_pax'] ?? ($_GET['additional_pax'] ?? 0));
+            $additional_pax = (int)($_POST['additional_pax'] ?? 0);
+            $patients_json = $_POST['patients'] ?? '[]';
+            $additional_patients = json_decode($patients_json, true) ?: [];
             
-            if ($additional_pax <= 0) {
-                throw new Exception("Jumlah pax tambahan tidak valid");
+            if ($additional_pax <= 0 || empty($additional_patients)) {
+                throw new Exception("Data tambahan pax tidak valid");
             }
             
             $old_pax = (int)($booking['jumlah_pax'] ?? 0);
-            if ($old_pax <= 0) throw new Exception("Jumlah pax saat ini tidak valid");
             $new_total_pax = $old_pax + $additional_pax;
-
             $is_hc = (stripos((string)$booking['status_booking'], 'HC') !== false);
-            $lock_name = 'booking_action_' . (int)($booking['klinik_id'] ?? 0);
-            $lock_esc = $conn->real_escape_string($lock_name);
-            $rl = $conn->query("SELECT GET_LOCK('$lock_esc', 10) AS got");
-            $got_lock = (int)($rl && $rl->num_rows > 0 ? ($rl->fetch_assoc()['got'] ?? 0) : 0);
-            if ($got_lock !== 1) throw new Exception('Sistem sedang memproses booking lain. Coba lagi sebentar.');
+            $target_klinik_id = (int)($booking['klinik_id'] ?? 0);
 
-            try {
-                foreach ($items_to_process as $item) {
-                    $barang_id = (int)($item['barang_id'] ?? 0);
-                    $cur_qty = (int)($item['qty_gantung'] ?? 0);
-                    if ($barang_id <= 0 || $cur_qty <= 0) continue;
-                    $additional_qty = (int)round(((float)$cur_qty / (float)$old_pax) * (float)$additional_pax);
-                    if ($additional_qty <= 0) continue;
-
-                    $ef = stock_effective($conn, (int)($booking['klinik_id'] ?? 0), $is_hc, $barang_id);
-                    if (!$ef['ok']) throw new Exception((string)$ef['message']);
-                    $avail = (float)($ef['available'] ?? 0);
-                    if ($avail < $additional_qty) {
-                        $nm = (string)($ef['barang_name'] ?? ("ID:$barang_id"));
-                        throw new Exception("Stok tidak cukup untuk tambah pax. $nm tersedia: $avail, dibutuhkan: $additional_qty");
+            // 1. Calculate total items needed for all NEW patients
+            $total_needed = [];
+            foreach ($additional_patients as $p) {
+                $p_exams = $p['exams'] ?? [];
+                foreach ($p_exams as $pid) {
+                    $pid = intval($pid);
+                    $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+                    while($row = $res->fetch_assoc()) {
+                        $bid = (int)$row['barang_id'];
+                        $qty = (float)$row['qty_per_pemeriksaan'];
+                        $total_needed[$bid] = ($total_needed[$bid] ?? 0) + $qty;
                     }
-
-                    $new_qty_gantung = $cur_qty + $additional_qty;
-                    $new_qty_reserved_onsite = (int)$item['qty_reserved_onsite'];
-                    $new_qty_reserved_hc = (int)$item['qty_reserved_hc'];
-                    if (stripos((string)$booking['status_booking'], 'Clinic') !== false) {
-                        $new_qty_reserved_onsite += $additional_qty;
-                    } elseif (stripos((string)$booking['status_booking'], 'HC') !== false) {
-                        $new_qty_reserved_hc += $additional_qty;
-                    }
-                    $conn->query("UPDATE booking_detail SET qty_gantung = $new_qty_gantung, qty_reserved_onsite = $new_qty_reserved_onsite, qty_reserved_hc = $new_qty_reserved_hc WHERE id = {$item['id']}");
                 }
-
-                $conn->query("UPDATE booking_pemeriksaan SET jumlah_pax = $new_total_pax WHERE id = $id");
-                $msg = "Berhasil menambah $additional_pax pax (total: $new_total_pax).";
-            } finally {
-                $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
             }
+
+            // 2. Check stock for ALL needed items
+            foreach ($total_needed as $bid => $qty_need) {
+                $ef = stock_effective($conn, $target_klinik_id, $is_hc, $bid);
+                if (!$ef['ok']) throw new Exception((string)$ef['message']);
+                if ((float)$ef['available'] < $qty_need) {
+                    $nm = (string)($ef['barang_name'] ?? ("ID:$bid"));
+                    throw new Exception("Stok tidak cukup untuk $nm. Butuh: $qty_need, Tersedia: {$ef['available']}");
+                }
+            }
+
+            // 3. Process insertion
+            $stmt_pasien = $conn->prepare("INSERT INTO inventory_booking_pasien (booking_id, nama_pasien, pemeriksaan_grup_id) VALUES (?, ?, ?)");
+            $stmt_detail = $conn->prepare("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?)");
+
+            foreach ($additional_patients as $p) {
+                $p_nama = $p['nama'];
+                $p_exams = $p['exams'] ?? [];
+
+                foreach ($p_exams as $pid) {
+                    $pid = intval($pid);
+                    $stmt_pasien->bind_param("isi", $id, $p_nama, $pid);
+                    $stmt_pasien->execute();
+                    $pasien_row_id = (int)$conn->insert_id;
+
+                    $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+                    while ($i_row = $res_items->fetch_assoc()) {
+                        $bid = (int)$i_row['barang_id'];
+                        $qty_unit = (float)$i_row['qty_per_pemeriksaan'];
+                        
+                        $qty_onsite = 0; $qty_hc = 0;
+                        if (!$is_hc) $qty_onsite = $qty_unit;
+                        else $qty_hc = $qty_unit;
+
+                        $stmt_detail->bind_param("iiiiii", $id, $pasien_row_id, $bid, $qty_unit, $qty_onsite, $qty_hc);
+                        $stmt_detail->execute();
+                    }
+                }
+            }
+
+            $conn->query("UPDATE inventory_booking_pemeriksaan SET jumlah_pax = $new_total_pax WHERE id = $id");
+            $msg = "Berhasil menambah $additional_pax pax (total: $new_total_pax).";
             break;
             
         default:
@@ -177,14 +202,31 @@ try {
     }
 
     $conn->commit();
-    $_SESSION['success'] = $msg;
+
+    // Notify Google Sheets
+    notify_gsheet_booking($conn, $id, 'booking_updated');
+
     $return_url = ($role === 'admin_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
+    
+    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
+        echo json_encode(['success' => true, 'message' => $msg, 'redirect' => $return_url]);
+        exit;
+    }
+    
+    $_SESSION['success'] = $msg;
     redirect($return_url);
 
 } catch (Exception $e) {
     $conn->rollback();
-    $_SESSION['error'] = $e->getMessage();
+    $msg_err = $e->getMessage();
     $return_url = ($role === 'admin_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
+    
+    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
+        echo json_encode(['success' => false, 'message' => $msg_err]);
+        exit;
+    }
+    
+    $_SESSION['error'] = $msg_err;
     redirect($return_url);
 }
 

@@ -13,7 +13,7 @@ $id = intval($_GET['id']);
 // Fetch Request Header
 $has_spv = false;
 try {
-    $res_col = $conn->query("SHOW COLUMNS FROM `request_barang` LIKE 'spv_approved_by'");
+    $res_col = $conn->query("SHOW COLUMNS FROM `inventory_request_barang` LIKE 'spv_approved_by'");
     if ($res_col && $res_col->num_rows > 0) $has_spv = true;
 } catch (Exception $e) {}
 
@@ -23,12 +23,12 @@ $query = "SELECT r.*,
             ($has_spv ? " u_spv.nama_lengkap as spv_approver_name," : "") . "
             k_dari.nama_klinik as dari_klinik_nama,
             k_ke.nama_klinik as ke_klinik_nama
-          FROM request_barang r
-          JOIN users u_req ON r.created_by = u_req.id
-          LEFT JOIN users u_app ON r.approved_by = u_app.id" .
-          ($has_spv ? " LEFT JOIN users u_spv ON r.spv_approved_by = u_spv.id" : "") . "
-          LEFT JOIN klinik k_dari ON (r.dari_level = 'klinik' AND r.dari_id = k_dari.id)
-          LEFT JOIN klinik k_ke ON (r.ke_level = 'klinik' AND r.ke_id = k_ke.id)
+          FROM inventory_request_barang r
+          JOIN inventory_users u_req ON r.created_by = u_req.id
+          LEFT JOIN inventory_users u_app ON r.approved_by = u_app.id" .
+          ($has_spv ? " LEFT JOIN inventory_users u_spv ON r.spv_approved_by = u_spv.id" : "") . "
+          LEFT JOIN inventory_klinik k_dari ON (r.dari_level = 'klinik' AND r.dari_id = k_dari.id)
+          LEFT JOIN inventory_klinik k_ke ON (r.ke_level = 'klinik' AND r.ke_id = k_ke.id)
           WHERE r.id = $id";
 $res = $conn->query($query);
 $req = $res->fetch_assoc();
@@ -38,11 +38,11 @@ if (!$req) {
 }
 
 try {
-    $res_col = $conn->query("SHOW COLUMNS FROM `request_barang` LIKE 'request_qr_token'");
+    $res_col = $conn->query("SHOW COLUMNS FROM `inventory_request_barang` LIKE 'request_qr_token'");
     if ($res_col && $res_col->num_rows > 0) {
         if (empty($req['request_qr_token'])) {
             $newTok = bin2hex(random_bytes(16));
-            $stmt = $conn->prepare("UPDATE request_barang SET request_qr_token = ?, request_qr_at = COALESCE(request_qr_at, NOW()) WHERE id = ?");
+            $stmt = $conn->prepare("UPDATE inventory_request_barang SET request_qr_token = ?, request_qr_at = COALESCE(request_qr_at, NOW()) WHERE id = ?");
             $stmt->bind_param("si", $newTok, $id);
             $stmt->execute();
             $req['request_qr_token'] = $newTok;
@@ -52,8 +52,8 @@ try {
 
 // Fetch Details
 $query_det = "SELECT d.*, b.kode_barang, b.nama_barang, b.satuan 
-              FROM request_barang_detail d
-              JOIN barang b ON d.barang_id = b.id
+              FROM inventory_request_barang_detail d
+              JOIN inventory_barang b ON d.barang_id = b.id
               WHERE d.request_barang_id = $id";
 $details = $conn->query($query_det);
 

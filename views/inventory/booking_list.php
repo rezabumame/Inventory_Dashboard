@@ -4,9 +4,9 @@ check_role(['cs', 'super_admin', 'admin_klinik']);
 function ensure_booking_col($column, $definition) {
     global $conn;
     $c = $conn->real_escape_string($column);
-    $res = $conn->query("SHOW COLUMNS FROM `booking_pemeriksaan` LIKE '$c'");
+    $res = $conn->query("SHOW COLUMNS FROM `inventory_booking_pemeriksaan` LIKE '$c'");
     if ($res && $res->num_rows === 0) {
-        $conn->query("ALTER TABLE `booking_pemeriksaan` ADD COLUMN `$column` $definition");
+        $conn->query("ALTER TABLE `inventory_booking_pemeriksaan` ADD COLUMN `$column` $definition");
     }
 }
 
@@ -20,11 +20,11 @@ ensure_booking_col('tanggal_lahir', "DATE NULL");
 
 // Normalize nomor_booking to a shorter format (not critical identifier; ID is the primary key)
 $need_norm = 0;
-$r_norm = $conn->query("SELECT COUNT(*) AS cnt FROM booking_pemeriksaan WHERE (nomor_booking IS NULL OR nomor_booking = '' OR nomor_booking LIKE 'BOOK/%')");
+$r_norm = $conn->query("SELECT COUNT(*) AS cnt FROM inventory_booking_pemeriksaan WHERE (nomor_booking IS NULL OR nomor_booking = '' OR nomor_booking LIKE 'BOOK/%')");
 if ($r_norm && $r_norm->num_rows > 0) $need_norm = (int)($r_norm->fetch_assoc()['cnt'] ?? 0);
 if ($need_norm > 0) {
     $conn->query("
-        UPDATE booking_pemeriksaan
+        UPDATE inventory_booking_pemeriksaan
         SET nomor_booking = CONCAT('BK-', LPAD(id, 6, '0'))
         WHERE (nomor_booking IS NULL OR nomor_booking = '' OR nomor_booking LIKE 'BOOK/%')
     ");
@@ -83,20 +83,21 @@ if ($filter_fu === '1') {
 }
 
 $query = "SELECT b.*, k.nama_klinik,
-          (SELECT COUNT(DISTINCT bd.barang_id) FROM booking_detail bd WHERE bd.booking_id = b.id) as total_items,
+          (SELECT COUNT(DISTINCT bd.barang_id) FROM inventory_booking_detail bd WHERE bd.booking_id = b.id) as total_items,
           (SELECT GROUP_CONCAT(DISTINCT pg.nama_pemeriksaan ORDER BY pg.nama_pemeriksaan SEPARATOR ', ')
-           FROM booking_pasien bp
-           JOIN pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
+           FROM inventory_booking_pasien bp
+           JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
            WHERE bp.booking_id = b.id) as jenis_pemeriksaan
-          FROM booking_pemeriksaan b 
-          JOIN klinik k ON b.klinik_id = k.id 
+          FROM inventory_booking_pemeriksaan b 
+          JOIN inventory_klinik k ON b.klinik_id = k.id 
           WHERE $where
-          ORDER BY b.tanggal_pemeriksaan DESC, COALESCE(b.jam_layanan, '') DESC, b.id DESC";
+          ORDER BY b.tanggal_pemeriksaan DESC, COALESCE(b.jam_layanan, '') DESC, b.id DESC
+          LIMIT 500";
 $result = $conn->query($query);
 ?>
 
 <div class="container-fluid">
-    <div class="row mb-4 align-items-center">
+    <div class="row mb-2 align-items-center">
         <div class="col">
             <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
                 <i class="fas fa-calendar-check me-2"></i>Booking & Stok Pending
@@ -140,11 +141,66 @@ $result = $conn->query($query);
     .booking-primary { color: #204EAB; }
     .booking-no { max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: bottom; }
     .booking-table th:last-child { position: sticky; right: 0; background: #f8fafc; }
-    .booking-table td:last-child { position: sticky; right: 0; background: #fff; vertical-align: top; }
+    .booking-table td:last-child { position: sticky; right: 0; background: #fff; vertical-align: middle; }
     .booking-table thead th:last-child { z-index: 7; }
     .booking-table tbody td:last-child { z-index: 6; }
-    .booking-table tbody td:last-child .dropdown { position: relative; z-index: 8; }
-    .booking-table tbody td.booking-aksi-open { z-index: 9999 !important; }
+    
+    /* Remove old Action Button logic */
+    .booking-table .dropdown-menu { 
+        position: absolute;
+        margin: 0;
+    }
+
+    /* Action Drawer Styling - Compact 2 Rows */
+    .action-drawer {
+        height: 0;
+        overflow: hidden;
+        transition: all 0.3s ease-out;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 0;
+        justify-content: flex-end;
+        width: 110px; /* Force wrapping into 2 rows */
+    }
+    .action-drawer.open {
+        height: auto;
+        margin-top: 8px;
+        padding-bottom: 4px;
+    }
+    .btn-drawer-icon {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+    }
+    .btn-drawer-icon:hover {
+        transform: scale(1.1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .btn-aksi-toggle {
+        transition: all 0.2s;
+        width: 100%;
+        display: block;
+    }
+    .btn-aksi-toggle.active {
+        background-color: #64748b !important;
+        border-color: #64748b !important;
+    }
+    .btn-aksi-toggle.active i {
+        transform: rotate(180deg);
+    }
+    .btn-view-eye {
+        margin-bottom: 6px;
+        width: 100%;
+    }
 
     /* Segmented Control Styling */
     .segmented-control {
@@ -404,65 +460,50 @@ $result = $conn->query($query);
                                 <span class="badge <?= $badge ?>"><?= ucfirst($row['status']) ?></span>
                             <?php endif; ?>
                         </td>
-                        <td class="text-end">
+                        <td class="text-end" style="vertical-align: top; width: 120px;">
+                            <!-- Always show Eye/Detail button at the top -->
+                            <button type="button" class="btn btn-sm btn-outline-primary btn-view-eye px-3 rounded-pill mb-2" title="Lihat Detail" onclick="return openBookingDetail(<?= (int)$row['id'] ?>);">
+                                <i class="fas fa-eye me-1"></i>Detail
+                            </button>
+
                             <?php if ($row['status'] == 'booked'): ?>
-                            <div class="dropdown d-flex justify-content-end align-items-start">
-                                <button type="button" class="btn btn-sm btn-primary dropdown-toggle" data-bs-toggle="dropdown" data-bs-boundary="viewport">
-                                    <i class="fas fa-sliders-h me-1"></i>Aksi
+                                <button type="button" class="btn btn-sm btn-primary px-3 rounded-pill btn-aksi-toggle" onclick="toggleActionDrawer(this)">
+                                    <i class="fas fa-chevron-down me-1"></i>Aksi
                                 </button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    <li>
-                                        <a class="dropdown-item" href="#" onclick="return openBookingDetail(<?= (int)$row['id'] ?>);">
-                                            <i class="fas fa-list text-primary"></i> Detail
-                                        </a>
-                                    </li>
+                                
+                                <div class="action-drawer">
                                     <?php if (in_array($_SESSION['role'] ?? '', ['super_admin', 'admin_klinik'], true)): ?>
-                                    <li>
-                                        <a class="dropdown-item" href="#" onclick="openMoveModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>', '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>'); return false;">
-                                            <i class="fas fa-exchange-alt text-info"></i> Move
-                                        </a>
-                                    </li>
-                                    <li>
-                                        <a class="dropdown-item" href="#" onclick="openAdjustModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>', <?= $row['jumlah_pax'] ?? 1 ?>); return false;">
-                                            <i class="fas fa-user-plus text-info"></i> Adjust Pax
-                                        </a>
-                                    </li>
-                                    <li><hr class="dropdown-divider"></li>
+                                        <button type="button" class="btn-drawer-icon text-info" title="Move" onclick="openMoveModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>', '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>');">
+                                            <i class="fas fa-exchange-alt"></i>
+                                        </button>
+                                        <button type="button" class="btn-drawer-icon text-info" title="Adjust Pax" onclick="openAdjustModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>', <?= $row['jumlah_pax'] ?? 1 ?>, <?= (int)$row['klinik_id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>');">
+                                            <i class="fas fa-user-plus"></i>
+                                        </button>
                                     <?php endif; ?>
+
                                     <?php if (in_array($_SESSION['role'] ?? '', ['cs', 'super_admin'], true)): ?>
-                                    <li>
-                                        <a class="dropdown-item" href="index.php?page=booking_edit&id=<?= (int)$row['id'] ?>">
-                                            <i class="fas fa-edit text-warning"></i> Edit Booking
-                                        </a>
-                                    </li>
+                                        <button type="button" class="btn-drawer-icon text-warning" title="Edit" onclick="openEditBooking(<?= (int)$row['id'] ?>)">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
                                     <?php endif; ?>
-                                    <?php if (in_array($_SESSION['role'] ?? '', ['admin_klinik', 'super_admin'], true) && (int)($row['butuh_fu'] ?? 0) === 0): ?>
-                                    <li>
-                                        <a class="dropdown-item" href="#" onclick="return confirmButuhFU(<?= (int)$row['id'] ?>);">
-                                            <i class="fas fa-phone text-danger"></i> FU Jadwal Kedatangan
-                                        </a>
-                                    </li>
-                                    <?php endif; ?>
+
                                     <?php if (in_array($_SESSION['role'] ?? '', ['admin_klinik', 'super_admin'], true)): ?>
-                                    <li>
-                                        <a class="dropdown-item" href="#" onclick="return confirmComplete(<?= (int)$row['id'] ?>);">
-                                            <i class="fas fa-check text-success"></i> Completed
-                                        </a>
-                                    </li>
+                                        <?php if ((int)($row['butuh_fu'] ?? 0) === 0): ?>
+                                            <button type="button" class="btn-drawer-icon text-danger" title="FU" onclick="return confirmButuhFU(<?= (int)$row['id'] ?>);">
+                                                <i class="fas fa-phone"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                        <button type="button" class="btn-drawer-icon text-success" title="Done" onclick="return confirmComplete(<?= (int)$row['id'] ?>);">
+                                            <i class="fas fa-check"></i>
+                                        </button>
                                     <?php endif; ?>
+
                                     <?php if (in_array($_SESSION['role'] ?? '', ['cs', 'super_admin'], true)): ?>
-                                    <li>
-                                        <a class="dropdown-item text-danger" href="#" onclick="return confirmCancel(<?= (int)$row['id'] ?>);">
-                                            <i class="fas fa-times"></i> Cancel
-                                        </a>
-                                    </li>
+                                        <button type="button" class="btn-drawer-icon text-danger" title="Cancel" onclick="return confirmCancel(<?= (int)$row['id'] ?>);">
+                                            <i class="fas fa-times"></i>
+                                        </button>
                                     <?php endif; ?>
-                                </ul>
-                            </div>
-                            <?php else: ?>
-                                <a href="#" class="btn btn-sm btn-outline-primary" onclick="return openBookingDetail(<?= (int)$row['id'] ?>);">
-                                    <i class="fas fa-list"></i> Detail
-                                </a>
+                                </div>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -478,18 +519,18 @@ $result = $conn->query($query);
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <div>
-                    <h5 class="modal-title fw-bold mb-0" id="modalBookingBaruLabel">
-                        <i class="fas fa-calendar-plus me-2 text-primary-custom"></i>Buat Booking Baru
-                    </h5>
-                    <div class="small text-muted">Isi data utama, lalu pilih pemeriksaan. Qty pemeriksaan otomatis mengikuti Pax.</div>
-                </div>
+                <h5 class="modal-title fw-bold" id="modalBookingBaruLabel">
+                    <i class="fas fa-calendar-plus me-2"></i>Buat Booking Baru
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form id="formBooking" method="POST">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <input type="hidden" name="client_request_id" id="client_request_id" value="">
                 <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="fas fa-info-circle me-1"></i> Isi data utama, lalu pilih pemeriksaan. Qty pemeriksaan otomatis mengikuti Pax.
+                    </div>
                     <div class="row g-3">
                         <div class="col-12">
                             <div class="card border-0 shadow-sm mb-3">
@@ -514,7 +555,7 @@ $result = $conn->query($query);
                                             <select name="klinik_id" id="klinik_id_modal" class="form-select" required>
                                                 <option value="">Pilih Klinik...</option>
                                                 <?php 
-                                                $klinik_res = $conn->query("SELECT * FROM klinik WHERE status = 'active' ORDER BY nama_klinik");
+                                                $klinik_res = $conn->query("SELECT * FROM inventory_klinik WHERE status = 'active' ORDER BY nama_klinik");
                                                 while($k = $klinik_res->fetch_assoc()): 
                                                 ?>
                                                     <option value="<?= $k['id'] ?>"><?= $k['nama_klinik'] ?></option>
@@ -597,7 +638,11 @@ $(document).ready(function() {
     $('#bookingTable').DataTable({
         order: [], 
         pageLength: 10,
-        columnDefs: [{ orderable: false, targets: [7] }]
+        lengthChange: false,
+        columnDefs: [{ orderable: false, targets: [7] }],
+        language: {
+            searchPlaceholder: "Cari..."
+        }
     });
 
     $(document).on('change', '.assign-tag input', function() {
@@ -786,6 +831,8 @@ window.renderPaxSections = function(paxCount) {
     }
 };
 
+const BOOKING_CSRF = '<?= csrf_token() ?>';
+
 window.addPatientExamRow = function(patientIdx, selectedId = '') {
     var $list = $(`.patient-exams-list[data-patient-idx="${patientIdx}"]`);
     var rowIdx = $list.find('.exam-row').length;
@@ -818,8 +865,8 @@ window.removePatientExamRow = function(btn) {
     else showWarning('Setiap pasien minimal memiliki 1 pemeriksaan!');
 };
 
-window.loadExamOptions = function(klinikId) {
-    var statusBooking = $('#status_booking').val() || '';
+window.loadExamOptions = function(klinikId, callback) {
+    var statusBooking = $('#status_booking').val() || $('#modalAdjust').data('status-booking') || '';
     $.ajax({
         url: 'api/get_exam_availability.php',
         method: 'GET',
@@ -835,10 +882,12 @@ window.loadExamOptions = function(klinikId) {
                 examOptionsModal = '<option value="">Tidak ada pemeriksaan available</option>';
             }
             updateAllExamSelects();
+            if (typeof callback === 'function') callback();
         },
         error: function() {
             examOptionsModal = '<option value="">Error loading data</option>';
             updateAllExamSelects();
+            if (typeof callback === 'function') callback();
         }
     });
 };
@@ -852,19 +901,81 @@ window.updateAllExamSelects = function() {
 };
 
 window.postBookingAction = function(params) {
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = 'actions/process_booking_action.php';
     const payload = Object.assign({ _csrf: BOOKING_CSRF }, params || {});
-    Object.keys(payload).forEach(function(k) {
-        const inp = document.createElement('input');
-        inp.type = 'hidden';
-        inp.name = k;
-        inp.value = String(payload[k] == null ? '' : payload[k]);
-        form.appendChild(inp);
+    
+    // Tampilkan loading
+    Swal.fire({
+        title: 'Memproses...',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
     });
-    document.body.appendChild(form);
-    form.submit();
+
+    $.ajax({
+        url: 'actions/process_booking_action.php',
+        method: 'POST',
+        data: payload,
+        dataType: 'json',
+        success: function(res) {
+            Swal.close();
+            if (res.success) {
+                showSuccessRedirect(res.message, res.redirect || 'index.php?page=booking');
+            } else {
+                showError(res.message || 'Terjadi kesalahan');
+            }
+        },
+        error: function() {
+            Swal.close();
+            showError('Gagal terhubung ke server');
+        }
+    });
+};
+
+window.openEditBooking = function(id) {
+    const containerId = 'modalEditBookingContainer';
+    let $container = $('#' + containerId);
+    if (!$container.length) {
+        $container = $('<div id="' + containerId + '"></div>').appendTo('body');
+    }
+    
+    // Tampilkan SweetAlert loading yang lebih clean daripada modal manual
+    Swal.fire({
+        title: 'Memuat Form Edit...',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    $.ajax({
+        url: 'index.php?page=booking_edit&id=' + id + '&layout=none',
+        success: function(html) {
+            Swal.close();
+            $container.html(html);
+            
+            // Tunggu sebentar agar DOM stabil, lalu cari modal di dalam html yang baru dimuat
+            setTimeout(function() {
+                const $newModal = $container.find('.modal');
+                if ($newModal.length) {
+                    const inst = new bootstrap.Modal($newModal[0], { backdrop: 'static' });
+                    inst.show();
+                    
+                    // Pastikan saat modal ditutup, container dibersihkan
+                    $newModal.on('hidden.bs.modal', function() {
+                        $container.empty();
+                        // Hapus sisa-sisa backdrop jika ada
+                        $('.modal-backdrop').remove();
+                        $('body').removeClass('modal-open').css('overflow', '');
+                    });
+                }
+            }, 100);
+        },
+        error: function() {
+            Swal.close();
+            showError('Gagal memuat form edit');
+        }
+    });
 };
 
 window.confirmCancel = function(id) {
@@ -958,35 +1069,281 @@ window.openMoveModal = function(id, currentStatus, nomorBooking) {
     $('#moveBookingId').val(id);
     $('#moveNomorBooking').text(nomorBooking);
     $('#moveCurrentStatus').text(currentStatus);
-    $('#moveNewStatus').val(currentStatus.includes('Clinic') ? 'Reserved - HC' : 'Reserved - Clinic');
+    
+    // Determine target status
+    let target = '';
+    let label = '';
+    if (currentStatus.toLowerCase().includes('clinic')) {
+        target = 'Reserved - HC';
+        label = 'Homecare (HC)';
+    } else {
+        target = 'Reserved - Clinic';
+        label = 'Klinik (Clinic)';
+    }
+    
+    $('#moveNewStatus').val(target);
+    $('#moveTargetLabel').text(label);
+    
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalMove')).show();
 };
 
-window.openAdjustModal = function(id, nomorBooking, currentPax) {
+window.openAdjustModal = function(id, nomorBooking, currentPax, klinikId, statusBooking) {
     $('#adjustBookingId').val(id);
     $('#adjustNomorBooking').text(nomorBooking);
     $('#adjustCurrentPax').text(currentPax);
     $('#adjustAdditionalPax').val(1);
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAdjust')).show();
-};
+    
+    // Simpan context untuk load exam
+    $('#modalAdjust').data('klinik-id', klinikId);
+    $('#modalAdjust').data('status-booking', statusBooking);
+    
+    // Ambil jenis pemeriksaan pasien utama dari detail (via AJAX)
+    $.ajax({
+        url: 'api/ajax_booking_detail.php',
+        method: 'POST',
+        dataType: 'json',
+        data: { id: id },
+        success: function(res) {
+            var firstPatientExamId = '';
+            if (res && res.success && res.pasien_list && res.pasien_list.length > 0) {
+                // Ambil pemeriksaan pertama dari pasien pertama
+                var firstP = res.pasien_list[0];
+                if (firstP.exam_ids && firstP.exam_ids.length > 0) {
+                    firstPatientExamId = firstP.exam_ids[0];
+                }
+            }
+            $('#modalAdjust').data('primary-exam-id', firstPatientExamId);
 
-window.submitMove = function() {
-    const id = $('#moveBookingId').val();
-    const newStatus = $('#moveNewStatus').val();
-    showConfirm('Pindahkan booking ke ' + newStatus + '?', 'Konfirmasi', function() {
-        postBookingAction({ action: 'move', id: id, new_status: newStatus });
+            // Pre-load exam options before showing
+            loadExamOptions(klinikId, function() {
+                renderAdjustPaxSections();
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAdjust')).show();
+            });
+        },
+        error: function() {
+            loadExamOptions(klinikId, function() {
+                renderAdjustPaxSections();
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAdjust')).show();
+            });
+        }
     });
 };
+
+window.renderAdjustPaxSections = function() {
+    var $wrapper = $('#adjustPaxSectionsWrapper');
+    var addCount = parseInt($('#adjustAdditionalPax').val()) || 1;
+    var currentPax = parseInt($('#adjustCurrentPax').text()) || 0;
+    var primaryExamId = $('#modalAdjust').data('primary-exam-id') || '';
+    
+    $wrapper.empty();
+    for (var i = 0; i < addCount; i++) {
+        var num = currentPax + i + 1;
+        var section = `
+            <div class="card border shadow-sm mb-3">
+                <div class="card-header bg-light py-2">
+                    <span class="small fw-bold"><i class="fas fa-user-plus me-1 text-primary"></i>Data Pasien ${num}</span>
+                </div>
+                <div class="card-body p-3">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold mb-1">Nama Pasien</label>
+                        <input type="text" name="additional_patients[${i}][nama]" class="form-control form-control-sm" placeholder="Pasien ${num}" value="Pasien ${num}">
+                    </div>
+                    <div>
+                        <label class="form-label small fw-bold text-success mb-1"><i class="fas fa-notes-medical me-1"></i>Pemeriksaan</label>
+                        <div class="additional-exams-list" data-idx="${i}"></div>
+                        <button type="button" class="btn btn-link btn-sm text-success p-0 x-small" onclick="addAdditionalExamRow(${i}, '${primaryExamId}')">
+                            <i class="fas fa-plus-circle me-1"></i>Tambah Pemeriksaan
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+        $wrapper.append(section);
+        addAdditionalExamRow(i, primaryExamId);
+    }
+};
+
+window.addAdditionalExamRow = function(pIdx, selectedId = '') {
+    var $list = $(`.additional-exams-list[data-idx="${pIdx}"]`);
+    var row = `
+        <div class="row g-2 mb-1 additional-exam-row">
+            <div class="col">
+                <select name="additional_patients[${pIdx}][exams][]" class="form-select form-select-sm" required>
+                    ${examOptionsModal}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="button" class="btn btn-outline-danger btn-sm border-0 py-0" onclick="$(this).closest('.additional-exam-row').remove()">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>`;
+    $list.append(row);
+    if (selectedId) {
+        $list.find('.additional-exam-row').last().find('select').val(selectedId);
+    }
+};
+
+$(document).on('input', '#adjustAdditionalPax', function() {
+    renderAdjustPaxSections();
+});
 
 window.submitAdjust = function() {
     const id = $('#adjustBookingId').val();
     const add = parseInt($('#adjustAdditionalPax').val());
     if (!add || add < 1) { showWarning('Minimal 1!'); return; }
+    
+    // Collect data pasien tambahan
+    var patients = [];
+    $('#adjustPaxSectionsWrapper .card').each(function(i) {
+        var exams = [];
+        $(this).find('select[name*="[exams]"]').each(function() {
+            if ($(this).val()) exams.push($(this).val());
+        });
+        patients.push({
+            nama: $(this).find('input[name*="[nama]"]').val() || `Pasien ${parseInt($('#adjustCurrentPax').text()) + i + 1}`,
+            exams: exams
+        });
+    });
+
     showConfirm(`Tambah ${add} pax?`, 'Konfirmasi', function() {
-        postBookingAction({ action: 'adjust', id: id, additional_pax: add });
+        postBookingAction({ 
+            action: 'adjust', 
+            id: id, 
+            additional_pax: add,
+            patients: JSON.stringify(patients)
+        });
     });
 };
 </script>
+
+<script>
+window.toggleActionDrawer = function(btn) {
+    const $btn = $(btn);
+    const $drawer = $btn.next('.action-drawer');
+    
+    // Close other drawers
+    $('.action-drawer.open').not($drawer).removeClass('open');
+    $('.btn-aksi-toggle.active').not($btn).removeClass('active');
+    
+    // Toggle current
+    $drawer.toggleClass('open');
+    $btn.toggleClass('active');
+};
+</script>
+
+<!-- Action Hub Modal -->
+<div class="modal fade" id="modalActionHub" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered" style="max-width: 340px;">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 20px;">
+            <div class="modal-header border-0 pb-0">
+                <h6 class="modal-title fw-bold text-muted">Pilih Aksi</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-3" id="actionHubBody">
+                <!-- Actions populated via JS -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+window.openActionHub = function(data) {
+    let html = '';
+    const canSuperAdmin = (data.role === 'super_admin');
+    const canAdminKlinik = (data.role === 'admin_klinik');
+    const canCS = (data.role === 'cs');
+
+    // 1. Detail (Always)
+    html += `
+        <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openBookingDetail(${data.id}); return false;">
+            <div class="action-hub-icon bg-light-primary text-primary"><i class="fas fa-list"></i></div>
+            <div class="action-hub-text">
+                <span class="action-hub-label">Lihat Detail</span>
+                <span class="action-hub-desc">Cek rincian item & pasien</span>
+            </div>
+        </a>`;
+
+    if (data.status === 'booked') {
+        // 2. Move (Super/Admin Klinik)
+        if (canSuperAdmin || canAdminKlinik) {
+            html += `
+                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openMoveModal(${data.id}, '${data.status_booking}', '${data.nomor_booking}'); return false;">
+                    <div class="action-hub-icon bg-light-info text-info"><i class="fas fa-exchange-alt"></i></div>
+                    <div class="action-hub-text">
+                        <span class="action-hub-label">Pindahkan Lokasi</span>
+                        <span class="action-hub-desc">Ubah ke Klinik / HC</span>
+                    </div>
+                </a>`;
+            
+            html += `
+                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openAdjustModal(${data.id}, '${data.nomor_booking}', ${data.jumlah_pax}, ${data.klinik_id}, '${data.status_booking}'); return false;">
+                    <div class="action-hub-icon bg-light-info text-info"><i class="fas fa-user-plus"></i></div>
+                    <div class="action-hub-text">
+                        <span class="action-hub-label">Sesuaikan Pax</span>
+                        <span class="action-hub-desc">Tambah jumlah pasien</span>
+                    </div>
+                </a>`;
+        }
+
+        // 3. Edit (Super/CS)
+        if (canSuperAdmin || canCS) {
+            html += `
+                <a href="index.php?page=booking_edit&id=${data.id}" class="action-hub-item">
+                    <div class="action-hub-icon bg-light-warning text-warning"><i class="fas fa-edit"></i></div>
+                    <div class="action-hub-text">
+                        <span class="action-hub-label">Edit Booking</span>
+                        <span class="action-hub-desc">Ubah data inputan</span>
+                    </div>
+                </a>`;
+        }
+
+        // 4. FU & Complete (Super/Admin Klinik)
+        if (canSuperAdmin || canAdminKlinik) {
+            if (data.butuh_fu === 0) {
+                html += `
+                    <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); confirmButuhFU(${data.id}); return false;">
+                        <div class="action-hub-icon bg-light-danger text-danger"><i class="fas fa-phone"></i></div>
+                        <div class="action-hub-text">
+                            <span class="action-hub-label">Butuh Follow Up</span>
+                            <span class="action-hub-desc">Tanya jadwal kedatangan</span>
+                        </div>
+                    </a>`;
+            }
+            html += `
+                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); confirmComplete(${data.id}); return false;">
+                    <div class="action-hub-icon bg-light-success text-success"><i class="fas fa-check"></i></div>
+                    <div class="action-hub-text">
+                        <span class="action-hub-label">Selesaikan Booking</span>
+                        <span class="action-hub-desc">Tandai sudah diproses</span>
+                    </div>
+                </a>`;
+        }
+
+        // 5. Cancel (Super/CS)
+        if (canSuperAdmin || canCS) {
+            html += `
+                <a href="#" class="action-hub-item text-danger" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); confirmCancel(${data.id}); return false;">
+                    <div class="action-hub-icon bg-light-danger text-danger"><i class="fas fa-times"></i></div>
+                    <div class="action-hub-text">
+                        <span class="action-hub-label text-danger">Batalkan Booking</span>
+                        <span class="action-hub-desc text-danger">Batalkan & lepas stok</span>
+                    </div>
+                </a>`;
+        }
+    }
+
+    $('#actionHubBody').html(html);
+    new bootstrap.Modal(document.getElementById('modalActionHub')).show();
+};
+</script>
+
+<style>
+    .bg-light-primary { background-color: rgba(32, 78, 171, 0.1); }
+    .bg-light-info { background-color: rgba(13, 202, 240, 0.1); }
+    .bg-light-warning { background-color: rgba(255, 193, 7, 0.1); }
+    .bg-light-success { background-color: rgba(25, 135, 84, 0.1); }
+    .bg-light-danger { background-color: rgba(220, 53, 69, 0.1); }
+</style>
 
 <!-- Modal Booking Detail -->
 <div class="modal fade" id="modalBookingDetail" tabindex="-1">
@@ -1020,19 +1377,20 @@ window.submitAdjust = function() {
             </div>
             <div class="modal-body">
                 <input type="hidden" id="moveBookingId">
+                <input type="hidden" id="moveNewStatus">
                 
-                <div class="alert alert-info">
-                    <strong>Booking:</strong> <span id="moveNomorBooking"></span><br>
-                    <strong>Status Saat Ini:</strong> <span id="moveCurrentStatus"></span>
+                <div class="alert alert-info mb-0">
+                    <div class="mb-2"><strong>Booking:</strong> <span id="moveNomorBooking"></span></div>
+                    <div class="mb-2"><strong>Status Saat Ini:</strong> <span id="moveCurrentStatus" class="badge bg-light text-dark border"></span></div>
+                    <hr>
+                    <div class="d-flex align-items-center text-primary">
+                        <i class="fas fa-info-circle me-2 fa-lg"></i>
+                        <div>
+                            Booking ini akan dipindahkan ke <strong><span id="moveTargetLabel"></span></strong>.
+                            <br><small class="text-muted">Stok akan dialokasikan ulang sesuai lokasi baru.</small>
+                        </div>
+                    </div>
                 </div>
-                
-                <label class="form-label fw-bold">
-                    <i class="fas fa-map-marker-alt"></i> Pindah Ke
-                </label>
-                <select id="moveNewStatus" class="form-select">
-                    <option value="Reserved - Clinic">Reserved - Clinic</option>
-                    <option value="Reserved - HC">Reserved - HC</option>
-                </select>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
@@ -1060,8 +1418,8 @@ window.submitAdjust = function() {
                 <input type="hidden" id="adjustBookingId">
                 
                 <div class="alert alert-info">
-                    <strong>Booking:</strong> <span id="adjustNomorBooking"></span><br>
-                    <strong>Pax Saat Ini:</strong> <span id="adjustCurrentPax"></span>
+                    <div class="mb-1"><strong>Booking:</strong> <span id="adjustNomorBooking"></span></div>
+                    <div><strong>Pax Saat Ini:</strong> <span id="adjustCurrentPax"></span></div>
                 </div>
                 
                 <div class="mb-3">
@@ -1069,13 +1427,10 @@ window.submitAdjust = function() {
                         <i class="fas fa-user-plus"></i> Tambahan Pax <span class="text-danger">*</span>
                     </label>
                     <input type="number" id="adjustAdditionalPax" class="form-control" min="1" value="1" required>
-                    <small class="text-muted">Masukkan jumlah pax tambahan (bukan total baru)</small>
+                    <small class="text-muted">Masukkan jumlah pax tambahan</small>
                 </div>
                 
-                <div class="alert alert-warning">
-                    <i class="fas fa-info-circle"></i> 
-                    <small>Semua pemeriksaan yang ada akan ditambahkan untuk pax tambahan ini.</small>
-                </div>
+                <div id="adjustPaxSectionsWrapper" class="mt-3"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">

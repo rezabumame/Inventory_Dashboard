@@ -38,8 +38,8 @@ for ($i = 0; $i < $max; $i++) {
     if ($bid <= 0 || $q <= 0) continue;
     $conv = $conn->query("
         SELECT COALESCE(c.multiplier, 1) AS multiplier 
-        FROM barang_uom_conversion c
-        JOIN barang b ON b.kode_barang = c.kode_barang
+        FROM inventory_barang_uom_conversion c
+        JOIN inventory_barang b ON b.kode_barang = c.kode_barang
         WHERE b.id = $bid 
         LIMIT 1
     ")->fetch_assoc();
@@ -61,24 +61,24 @@ function resolve_location(mysqli $conn, string $code): string {
     $code = trim($code);
     if ($code === '') return '';
     $esc = $conn->real_escape_string($code);
-    $r = $conn->query("SELECT 1 FROM stock_mirror WHERE TRIM(location_code) = '$esc' LIMIT 1");
+    $r = $conn->query("SELECT 1 FROM inventory_stock_mirror WHERE TRIM(location_code) = '$esc' LIMIT 1");
     if ($r && $r->num_rows > 0) return $code;
     $cand = [$code . '/Stock', $code . '-Stock', $code . ' Stock'];
     foreach ($cand as $c) {
         $e = $conn->real_escape_string($c);
-        $r = $conn->query("SELECT 1 FROM stock_mirror WHERE TRIM(location_code) = '$e' LIMIT 1");
+        $r = $conn->query("SELECT 1 FROM inventory_stock_mirror WHERE TRIM(location_code) = '$e' LIMIT 1");
         if ($r && $r->num_rows > 0) return $c;
     }
     return $code;
 }
 
-$kl = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$kl = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$kl) {
     $_SESSION['error'] = 'Klinik tidak ditemukan.';
     redirect('index.php?page=stok_petugas_hc');
 }
 
-$u = $conn->query("SELECT id, nama_lengkap, klinik_id FROM users WHERE id = $user_hc_id AND role = 'petugas_hc' LIMIT 1")->fetch_assoc();
+$u = $conn->query("SELECT id, nama_lengkap, klinik_id FROM inventory_users WHERE id = $user_hc_id AND role = 'petugas_hc' LIMIT 1")->fetch_assoc();
 if (!$u || (int)$u['klinik_id'] !== $klinik_id) {
     $_SESSION['error'] = 'Petugas HC tidak valid untuk klinik ini.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
@@ -105,48 +105,49 @@ try {
         $qty_oper = (float)$qty_int;
         if ($barang_id <= 0 || $qty_oper <= 0) continue;
 
-        $b = $conn->query("SELECT id, nama_barang FROM barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
+        $b = $conn->query("SELECT id, nama_barang FROM inventory_barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
         if (!$b) throw new Exception('Barang tidak ditemukan.');
         $bname = (string)($b['nama_barang'] ?? '');
 
         $ef_on = stock_effective($conn, $klinik_id, false, $barang_id);
         if (!$ef_on['ok']) throw new Exception((string)$ef_on['message']);
-        $effective_onsite = (float)($ef_on['available'] ?? 0);
-        if ($qty_oper > $effective_onsite + 0.00005) throw new Exception('Stok Onsite tidak mencukupi untuk item: ' . $bname);
+        $onsite_before = (float)($ef_on['on_hand'] ?? 0);
+        $onsite_available = (float)($ef_on['available'] ?? 0);
+        if ($qty_oper > $onsite_available + 0.00005) throw new Exception('Stok Onsite tidak mencukupi untuk item: ' . $bname);
 
         $ef_hc = stock_effective($conn, $klinik_id, true, $barang_id);
         if (!$ef_hc['ok']) throw new Exception((string)$ef_hc['message']);
-        $effective_hc = (float)($ef_hc['available'] ?? 0);
+        $hc_before = (float)($ef_hc['on_hand'] ?? 0);
 
-        $stmt = $conn->prepare("INSERT INTO hc_petugas_transfer (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO inventory_hc_petugas_transfer (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
         $stmt->bind_param("iiidsi", $klinik_id, $user_hc_id, $barang_id, $qty_oper, $catatan, $created_by);
         $stmt->execute();
         $transfer_id = (int)$conn->insert_id;
 
-        $stmt = $conn->prepare("INSERT INTO stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by)");
+        $stmt = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by)");
         $stmt->bind_param("iiidi", $barang_id, $user_hc_id, $klinik_id, $qty_oper, $created_by);
         $stmt->execute();
 
         $cat = 'Transfer HC Petugas #' . $transfer_id;
         if ($catatan !== '') $cat .= ' - ' . $catatan;
 
-        $qty_after_onsite = $effective_onsite - $qty_oper;
+        $qty_after_onsite = $onsite_before - $qty_oper;
         if ($qty_after_onsite < 0) $qty_after_onsite = 0;
         $stmt = $conn->prepare("
-            INSERT INTO transaksi_stok
+            INSERT INTO inventory_transaksi_stok
             (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
             VALUES (?, 'klinik', ?, 'out', ?, ?, ?, 'hc_petugas_transfer', ?, ?, ?, NOW())
         ");
-        $stmt->bind_param("iidddisi", $barang_id, $klinik_id, $qty_oper, $effective_onsite, $qty_after_onsite, $transfer_id, $cat, $created_by);
+        $stmt->bind_param("iidddisi", $barang_id, $klinik_id, $qty_oper, $onsite_before, $qty_after_onsite, $transfer_id, $cat, $created_by);
         $stmt->execute();
 
-        $qty_after_hc = $effective_hc + $qty_oper;
+        $qty_after_hc = $hc_before + $qty_oper;
         $stmt = $conn->prepare("
-            INSERT INTO transaksi_stok
+            INSERT INTO inventory_transaksi_stok
             (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
             VALUES (?, 'hc', ?, 'in', ?, ?, ?, 'hc_petugas_transfer', ?, ?, ?, NOW())
         ");
-        $stmt->bind_param("iidddisi", $barang_id, $klinik_id, $qty_oper, $effective_hc, $qty_after_hc, $transfer_id, $cat, $created_by);
+        $stmt->bind_param("iidddisi", $barang_id, $klinik_id, $qty_oper, $hc_before, $qty_after_hc, $transfer_id, $cat, $created_by);
         $stmt->execute();
     }
 

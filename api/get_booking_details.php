@@ -16,7 +16,7 @@ try {
     if ($role === 'admin_klinik') {
         // Secure IDOR: admin klinik can only get details of bookings from their own clinic
         $userKlinik = (int)($_SESSION['klinik_id'] ?? 0);
-        $check = $conn->query("SELECT klinik_id FROM booking_pemeriksaan WHERE id = $booking_id")->fetch_assoc();
+        $check = $conn->query("SELECT klinik_id FROM inventory_booking_pemeriksaan WHERE id = $booking_id")->fetch_assoc();
         if (!$check || (int)$check['klinik_id'] !== $userKlinik) {
             echo json_encode(['success' => false, 'message' => 'Access denied to this booking']);
             exit;
@@ -28,9 +28,9 @@ try {
                 pgd.pemeriksaan_grup_id as pemeriksaan_id,
                 pg.nama_pemeriksaan,
                 COUNT(DISTINCT bd.barang_id) as item_count
-              FROM booking_detail bd
-              JOIN pemeriksaan_grup_detail pgd ON bd.barang_id = pgd.barang_id
-              JOIN pemeriksaan_grup pg ON pgd.pemeriksaan_grup_id = pg.id
+              FROM inventory_booking_detail bd
+              JOIN inventory_pemeriksaan_grup_detail pgd ON bd.barang_id = pgd.barang_id
+              JOIN inventory_pemeriksaan_grup pg ON pgd.pemeriksaan_grup_id = pg.id
               WHERE bd.booking_id = ?
               GROUP BY pgd.pemeriksaan_grup_id, pg.nama_pemeriksaan
               ORDER BY pg.nama_pemeriksaan";

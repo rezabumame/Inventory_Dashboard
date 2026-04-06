@@ -53,7 +53,7 @@ try {
             $klinik_id = (int)($_SESSION['klinik_id'] ?? $klinik_id);
         }
         if (empty($user_hc_id)) throw new Exception('Petugas HC wajib dipilih');
-        $r_u = $conn->query("SELECT id, klinik_id FROM users WHERE id = " . (int)$user_hc_id . " AND role = 'petugas_hc' AND status = 'active' LIMIT 1");
+        $r_u = $conn->query("SELECT id, klinik_id FROM inventory_users WHERE id = " . (int)$user_hc_id . " AND role = 'petugas_hc' AND status = 'active' LIMIT 1");
         if (!$r_u || $r_u->num_rows === 0) throw new Exception('Petugas HC tidak valid');
         $urow = $r_u->fetch_assoc();
         if ((int)($urow['klinik_id'] ?? 0) !== (int)$klinik_id) throw new Exception('Petugas HC tidak terdaftar di klinik ini');
@@ -64,7 +64,7 @@ try {
     if ($edit_id) {
         // --- EDIT MODE ---
         // 1. Fetch old record for permission check and stock reversal
-        $stmt = $conn->prepare("SELECT * FROM pemakaian_bhp WHERE id = ?");
+        $stmt = $conn->prepare("SELECT * FROM inventory_pemakaian_bhp WHERE id = ?");
         $stmt->bind_param("i", $edit_id);
         $stmt->execute();
         $old_header = $stmt->get_result()->fetch_assoc();
@@ -81,7 +81,7 @@ try {
 
         /* 
         // 2. Reverse stock for old items (DISABLED: Sellout is now handled at view level)
-        $stmt = $conn->prepare("SELECT * FROM pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+        $stmt = $conn->prepare("SELECT * FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
         $stmt->bind_param("i", $edit_id);
         $stmt->execute();
         $old_details = $stmt->get_result();
@@ -91,11 +91,11 @@ try {
             $oqty = $old_item['qty'];
 
             if ($old_header['jenis_pemakaian'] === 'klinik') {
-                $stmt_upd = $conn->prepare("UPDATE stok_gudang_klinik SET qty = qty + ? WHERE barang_id = ? AND klinik_id = ?");
+                $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ? WHERE barang_id = ? AND klinik_id = ?");
                 $stmt_upd->bind_param("iii", $oqty, $obid, $old_header['klinik_id']);
                 $stmt_upd->execute();
             } else {
-                $stmt_upd = $conn->prepare("UPDATE stok_tas_hc SET qty = qty + ? WHERE barang_id = ? AND user_id = ?");
+                $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ? WHERE barang_id = ? AND user_id = ?");
                 $stmt_upd->bind_param("iii", $oqty, $obid, $old_header['user_hc_id']);
                 $stmt_upd->execute();
             }
@@ -105,7 +105,7 @@ try {
         // 3. Delete old details
         if ($old_header['jenis_pemakaian'] === 'hc' && !empty($old_header['user_hc_id'])) {
             $old_uid = (int)$old_header['user_hc_id'];
-            $stmt = $conn->prepare("SELECT barang_id, qty FROM pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+            $stmt = $conn->prepare("SELECT barang_id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
             $stmt->bind_param("i", $edit_id);
             $stmt->execute();
             $old_details = $stmt->get_result();
@@ -113,25 +113,25 @@ try {
                 $obid = (int)($od['barang_id'] ?? 0);
                 $oqty = (float)($od['qty'] ?? 0);
                 if ($obid > 0 && $oqty > 0) {
-                    $stmt_up = $conn->prepare("UPDATE stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+                    $stmt_up = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
                     $stmt_up->bind_param("diiii", $oqty, $created_by, $obid, $old_uid, $old_header['klinik_id']);
                     $stmt_up->execute();
                 }
             }
         }
 
-        $stmt = $conn->prepare("DELETE FROM pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+        $stmt = $conn->prepare("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
         $stmt->bind_param("i", $edit_id);
         $stmt->execute();
 
         // 3b. Delete old transaction records
-        $stmt = $conn->prepare("DELETE FROM transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = ?");
+        $stmt = $conn->prepare("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = ?");
         $stmt->bind_param("i", $edit_id);
         $stmt->execute();
 
         // 4. Update header
         $stmt = $conn->prepare("
-            UPDATE pemakaian_bhp 
+            UPDATE inventory_pemakaian_bhp 
             SET tanggal = ?, jenis_pemakaian = ?, klinik_id = ?, user_hc_id = ?, catatan_transaksi = ?
             WHERE id = ?
         ");
@@ -151,7 +151,7 @@ try {
 
         // Insert header
         $stmt = $conn->prepare("
-            INSERT INTO pemakaian_bhp 
+            INSERT INTO inventory_pemakaian_bhp 
             (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by) 
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ");
@@ -177,7 +177,7 @@ try {
 
         if ($jenis_pemakaian === 'hc') {
             $uid = (int)$user_hc_id;
-            $r_t = $conn->query("SELECT COALESCE(qty,0) AS qty FROM stok_tas_hc WHERE barang_id = $barang_id AND user_id = $uid AND klinik_id = " . (int)$klinik_id . " LIMIT 1");
+            $r_t = $conn->query("SELECT COALESCE(qty,0) AS qty FROM inventory_stok_tas_hc WHERE barang_id = $barang_id AND user_id = $uid AND klinik_id = " . (int)$klinik_id . " LIMIT 1");
             $avail = (float)($r_t && $r_t->num_rows > 0 ? ($r_t->fetch_assoc()['qty'] ?? 0) : 0);
             if ((float)$qty > $avail + 0.00005) {
                 throw new Exception('Stok tas HC tidak mencukupi untuk salah satu item.');
@@ -188,8 +188,8 @@ try {
                 COALESCE(NULLIF(uc.to_uom, ''), b.satuan) AS satuan,
                 COALESCE(NULLIF(uc.from_uom, ''), '') AS uom_odoo,
                 COALESCE(uc.multiplier, 1) AS uom_ratio
-            FROM barang b
-            LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+            FROM inventory_barang b
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
             WHERE b.id = $barang_id
             LIMIT 1
         ");
@@ -208,7 +208,7 @@ try {
 
         // Insert detail
         $stmt = $conn->prepare("
-            INSERT INTO pemakaian_bhp_detail 
+            INSERT INTO inventory_pemakaian_bhp_detail 
             (pemakaian_bhp_id, barang_id, qty, satuan, catatan_item) 
             VALUES (?, ?, ?, ?, ?)
         ");
@@ -219,32 +219,19 @@ try {
         $level_id = (int)$klinik_id;
         $qty_before = 0;
         if ($level === 'klinik') {
-            $stmt_q = $conn->prepare("SELECT qty FROM stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ? LIMIT 1");
+            $stmt_q = $conn->prepare("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ? LIMIT 1");
             $stmt_q->bind_param("ii", $barang_id, $klinik_id);
             $stmt_q->execute();
             $res_q = $stmt_q->get_result();
             if ($res_q && $res_q->num_rows > 0) $qty_before = (float)($res_q->fetch_assoc()['qty'] ?? 0);
         } else {
-            $kode_homecare = '';
-            $kode_barang = '';
-            $stmt_k = $conn->prepare("SELECT kode_homecare FROM klinik WHERE id = ? LIMIT 1");
-            $stmt_k->bind_param("i", $klinik_id);
-            $stmt_k->execute();
-            $res_k = $stmt_k->get_result();
-            if ($res_k && $res_k->num_rows > 0) $kode_homecare = (string)($res_k->fetch_assoc()['kode_homecare'] ?? '');
-
-            $stmt_b = $conn->prepare("SELECT kode_barang FROM barang WHERE id = ? LIMIT 1");
-            $stmt_b->bind_param("i", $barang_id);
-            $stmt_b->execute();
-            $res_b = $stmt_b->get_result();
-            if ($res_b && $res_b->num_rows > 0) $kode_barang = (string)($res_b->fetch_assoc()['kode_barang'] ?? '');
-
-            if ($kode_homecare !== '' && $kode_barang !== '') {
-                $stmt_sm = $conn->prepare("SELECT qty FROM stock_mirror WHERE location_code = ? AND kode_barang = ? ORDER BY updated_at DESC LIMIT 1");
-                $stmt_sm->bind_param("ss", $kode_homecare, $kode_barang);
-                $stmt_sm->execute();
-                $res_sm = $stmt_sm->get_result();
-                if ($res_sm && $res_sm->num_rows > 0) $qty_before = (float)floor((float)($res_sm->fetch_assoc()['qty'] ?? 0));
+            // Fix: Use local tas HC stock as before qty for consistency
+            $stmt_hc = $conn->prepare("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ? LIMIT 1");
+            $stmt_hc->bind_param("iii", $barang_id, $user_hc_id, $klinik_id);
+            $stmt_hc->execute();
+            $res_hc = $stmt_hc->get_result();
+            if ($res_hc && $res_hc->num_rows > 0) {
+                $qty_before = (float)($res_hc->fetch_assoc()['qty'] ?? 0);
             }
         }
         $qty_after = (float)$qty_before - (float)$qty;
@@ -256,7 +243,7 @@ try {
         if (!empty($catatan_item)) $catatan .= " - " . $catatan_item;
 
         $stmt_trans = $conn->prepare("
-            INSERT INTO transaksi_stok
+            INSERT INTO inventory_transaksi_stok
             (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
             VALUES (?, ?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?)
         ");
@@ -280,12 +267,12 @@ try {
         if ($jenis_pemakaian === 'hc') {
             $uid = (int)$user_hc_id;
             $q = (float)$qty;
-            $stmt_up = $conn->prepare("UPDATE stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+            $stmt_up = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
             $stmt_up->bind_param("diiii", $q, $created_by, $barang_id, $uid, $klinik_id);
             $stmt_up->execute();
 
             // Check if stock is sufficient
-            $stmt = $conn->prepare("SELECT qty FROM stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+            $stmt = $conn->prepare("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
             $stmt->bind_param("iii", $barang_id, $uid, $klinik_id);
             $stmt->execute();
             $result = $stmt->get_result();
@@ -298,7 +285,7 @@ try {
         } elseif ($jenis_pemakaian === 'klinik') {
             // Potong stok klinik
             $stmt = $conn->prepare("
-                UPDATE stok_gudang_klinik 
+                UPDATE inventory_stok_gudang_klinik 
                 SET qty = qty - ?, updated_by = ?, updated_at = NOW() 
                 WHERE barang_id = ? AND klinik_id = ?
             ");
@@ -307,7 +294,7 @@ try {
             $stmt->execute();
 
             // Check if stock is sufficient
-            $stmt = $conn->prepare("SELECT qty FROM stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ?");
+            $stmt = $conn->prepare("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ?");
             $stmt->bind_param("ii", $barang_id, $klinik_id);
             $stmt->execute();
             $result = $stmt->get_result();
@@ -321,17 +308,26 @@ try {
     }
 
     $conn->commit();
-    $_SESSION['success'] = $edit_id ? "Pemakaian BHP ($nomor_pemakaian) berhasil diperbarui" : "Pemakaian BHP berhasil disimpan dengan nomor: $nomor_pemakaian";
+    $msg_success = $edit_id ? "Pemakaian BHP ($nomor_pemakaian) berhasil diperbarui" : "Pemakaian BHP berhasil disimpan dengan nomor: $nomor_pemakaian";
+    
+    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
+        echo json_encode(['success' => true, 'message' => $msg_success]);
+        exit;
+    }
+    
+    $_SESSION['success'] = $msg_success;
     redirect('index.php?page=pemakaian_bhp_list');
 
 } catch (Exception $e) {
     $conn->rollback();
     
-    // Log error for debugging
-    error_log('Pemakaian BHP Error: ' . $e->getMessage());
-    error_log('Stack trace: ' . $e->getTraceAsString());
+    $msg_error = 'Gagal menyimpan pemakaian: ' . $e->getMessage();
+    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
+        echo json_encode(['success' => false, 'message' => $msg_error]);
+        exit;
+    }
     
-    $_SESSION['error'] = 'Gagal menyimpan pemakaian: ' . $e->getMessage();
+    $_SESSION['error'] = $msg_error;
     redirect('index.php?page=pemakaian_bhp_list');
 }
 

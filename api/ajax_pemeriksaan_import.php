@@ -42,11 +42,13 @@ try {
         $nama_pemeriksaan = trim((string)$rows[$i][0]);
         $kode_barang = trim((string)$rows[$i][1]);
         $qty = (float)($rows[$i][3] ?? 0);
+        $kategori_raw = strtolower(trim((string)($rows[$i][4] ?? 'mandatory')));
+        $is_mandatory = ($kategori_raw === 'optional' || $kategori_raw === '0') ? 0 : 1;
         
         if ($nama_pemeriksaan === '') continue;
         
         // 1. Get or Create Grup
-        $stmt = $conn->prepare("SELECT id FROM pemeriksaan_grup WHERE nama_pemeriksaan = ?");
+        $stmt = $conn->prepare("SELECT id FROM inventory_pemeriksaan_grup WHERE nama_pemeriksaan = ?");
         $stmt->bind_param("s", $nama_pemeriksaan);
         $stmt->execute();
         $res = $stmt->get_result();
@@ -54,7 +56,7 @@ try {
         if ($res->num_rows > 0) {
             $grup_id = $res->fetch_assoc()['id'];
         } else {
-            $stmt_ins = $conn->prepare("INSERT INTO pemeriksaan_grup (nama_pemeriksaan, keterangan) VALUES (?, '')");
+            $stmt_ins = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup (nama_pemeriksaan, keterangan) VALUES (?, '')");
             $stmt_ins->bind_param("s", $nama_pemeriksaan);
             $stmt_ins->execute();
             $grup_id = $conn->insert_id;
@@ -63,7 +65,7 @@ try {
         
         // 2. Mapping Item if kode_barang is provided
         if ($kode_barang !== '' && $qty > 0) {
-            $stmt_b = $conn->prepare("SELECT id FROM barang WHERE kode_barang = ?");
+            $stmt_b = $conn->prepare("SELECT id FROM inventory_barang WHERE kode_barang = ?");
             $stmt_b->bind_param("s", $kode_barang);
             $stmt_b->execute();
             $res_b = $stmt_b->get_result();
@@ -72,15 +74,22 @@ try {
                 $barang_id = $res_b->fetch_assoc()['id'];
                 
                 // Check if already mapped
-                $stmt_check = $conn->prepare("SELECT id FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ? AND barang_id = ?");
+                $stmt_check = $conn->prepare("SELECT id FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ? AND barang_id = ?");
                 $stmt_check->bind_param("ii", $grup_id, $barang_id);
                 $stmt_check->execute();
                 
                 if ($stmt_check->get_result()->num_rows === 0) {
-                    $stmt_map = $conn->prepare("INSERT INTO pemeriksaan_grup_detail (pemeriksaan_grup_id, barang_id, qty_per_pemeriksaan) VALUES (?, ?, ?)");
-                    $stmt_map->bind_param("iid", $grup_id, $barang_id, $qty);
+                    $stmt_map = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup_detail (pemeriksaan_grup_id, barang_id, qty_per_pemeriksaan, is_mandatory) VALUES (?, ?, ?, ?)");
+                    $stmt_map->bind_param("iidi", $grup_id, $barang_id, $qty, $is_mandatory);
                     $stmt_map->execute();
                     $mapping_count++;
+                } else {
+                    // Update existing mapping category/qty if re-imported? 
+                    // User didn't explicitly ask for update, but it's good practice.
+                    // For now, let's just stick to the request: ensure category exists.
+                    $stmt_upd = $conn->prepare("UPDATE inventory_pemeriksaan_grup_detail SET qty_per_pemeriksaan = ?, is_mandatory = ? WHERE pemeriksaan_grup_id = ? AND barang_id = ?");
+                    $stmt_upd->bind_param("diii", $qty, $is_mandatory, $grup_id, $barang_id);
+                    $stmt_upd->execute();
                 }
             }
         }

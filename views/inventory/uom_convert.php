@@ -12,12 +12,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $note = trim((string)($_POST['note'] ?? ''));
         $mult = (float)$multiplier;
         if ($kode_barang !== '' && $mult > 0) {
-            $base = $conn->query("SELECT COALESCE(NULLIF(uom,''),'') AS uom, COALESCE(NULLIF(satuan,''),'') AS satuan FROM barang WHERE kode_barang = '" . $conn->real_escape_string($kode_barang) . "' LIMIT 1")->fetch_assoc();
+            $base = $conn->query("SELECT COALESCE(NULLIF(uom,''),'') AS uom, COALESCE(NULLIF(satuan,''),'') AS satuan FROM inventory_barang WHERE kode_barang = '" . $conn->real_escape_string($kode_barang) . "' LIMIT 1")->fetch_assoc();
             $base_uom = trim((string)($base['uom'] ?? ''));
             $satuan_db = trim((string)($base['satuan'] ?? ''));
             if ($base_uom !== '') $from_uom = $base_uom;
             if ($to_uom === '' && $satuan_db !== '') $to_uom = $satuan_db;
-            $stmt = $conn->prepare("INSERT INTO barang_uom_conversion (kode_barang, from_uom, to_uom, multiplier, note) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE from_uom = VALUES(from_uom), to_uom = VALUES(to_uom), multiplier = VALUES(multiplier), note = VALUES(note)");
+            $stmt = $conn->prepare("INSERT INTO inventory_barang_uom_conversion (kode_barang, from_uom, to_uom, multiplier, note) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE from_uom = VALUES(from_uom), to_uom = VALUES(to_uom), multiplier = VALUES(multiplier), note = VALUES(note)");
             $stmt->bind_param("sssds", $kode_barang, $from_uom, $to_uom, $mult, $note);
             $stmt->execute();
             $_SESSION['success'] = 'Konversi UOM berhasil disimpan.';
@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'delete') {
         $kode_barang = trim((string)($_POST['kode_barang'] ?? ''));
         if ($kode_barang !== '') {
-            $stmt = $conn->prepare("DELETE FROM barang_uom_conversion WHERE kode_barang = ?");
+            $stmt = $conn->prepare("DELETE FROM inventory_barang_uom_conversion WHERE kode_barang = ?");
             $stmt->bind_param("s", $kode_barang);
             $stmt->execute();
             $_SESSION['success'] = 'Konversi UOM berhasil dihapus.';
@@ -39,14 +39,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $barang_list = [];
-$res = $conn->query("SELECT id, kode_barang, nama_barang, satuan, COALESCE(NULLIF(uom,''),'') AS uom FROM barang WHERE kode_barang IS NOT NULL AND TRIM(kode_barang) <> '' ORDER BY nama_barang ASC");
+$res = $conn->query("SELECT id, kode_barang, nama_barang, satuan, COALESCE(NULLIF(uom,''),'') AS uom FROM inventory_barang WHERE kode_barang IS NOT NULL AND TRIM(kode_barang) <> '' ORDER BY nama_barang ASC");
 while ($res && ($row = $res->fetch_assoc())) $barang_list[] = $row;
 
 $conv_list = [];
 $res = $conn->query("
     SELECT c.kode_barang, c.from_uom, c.to_uom, c.multiplier, c.note, c.updated_at, b.id AS barang_id, b.nama_barang, b.satuan
-    FROM barang_uom_conversion c
-    JOIN barang b ON b.kode_barang = c.kode_barang
+    FROM inventory_barang_uom_conversion c
+    JOIN inventory_barang b ON b.kode_barang = c.kode_barang
     ORDER BY b.nama_barang ASC
 ");
 while ($res && ($row = $res->fetch_assoc())) $conv_list[] = $row;

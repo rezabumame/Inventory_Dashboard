@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if ($action === 'delete') {
         $del_id = (int)($_POST['delete_id'] ?? 0);
         if ($del_id > 0) {
-            $stmt = $conn->prepare("DELETE FROM klinik WHERE id=?");
+            $stmt = $conn->prepare("DELETE FROM inventory_klinik WHERE id=?");
             $stmt->bind_param("i", $del_id);
             if ($stmt->execute()) {
                 $message = '<div class="alert alert-success">Klinik berhasil dihapus.</div>';
@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $status = $_POST['status'];
 
     if ($id) {
-        $stmt = $conn->prepare("UPDATE klinik SET kode_klinik=?, kode_homecare=?, nama_klinik=?, alamat=?, status=? WHERE id=?");
+        $stmt = $conn->prepare("UPDATE inventory_klinik SET kode_klinik=?, kode_homecare=?, nama_klinik=?, alamat=?, status=? WHERE id=?");
         $stmt->bind_param("sssssi", $kode_klinik, $kode_homecare, $nama_klinik, $alamat, $status, $id);
         if ($stmt->execute()) {
             $message = '<div class="alert alert-success">Klinik berhasil diupdate.</div>';
@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $message = '<div class="alert alert-danger">Error: ' . $stmt->error . '</div>';
         }
     } else {
-        $stmt = $conn->prepare("INSERT INTO klinik (kode_klinik, kode_homecare, nama_klinik, alamat, status) VALUES (?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO inventory_klinik (kode_klinik, kode_homecare, nama_klinik, alamat, status) VALUES (?, ?, ?, ?, ?)");
         $stmt->bind_param("sssss", $kode_klinik, $kode_homecare, $nama_klinik, $alamat, $status);
         if ($stmt->execute()) {
             $message = '<div class="alert alert-success">Klinik berhasil ditambahkan.</div>';
@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-$result = $conn->query("SELECT * FROM klinik ORDER BY id DESC");
+$result = $conn->query("SELECT * FROM inventory_klinik ORDER BY id DESC LIMIT 500");
 ?>
 
 <div class="container-fluid">

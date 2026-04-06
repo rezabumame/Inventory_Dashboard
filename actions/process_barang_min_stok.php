@@ -23,7 +23,7 @@ if ($barang_id <= 0 || $stok_minimum < 0) {
 }
 
 try {
-    $stmt = $conn->prepare("UPDATE barang SET stok_minimum = ? WHERE id = ?");
+    $stmt = $conn->prepare("UPDATE inventory_barang SET stok_minimum = ? WHERE id = ?");
     $stmt->bind_param("ii", $stok_minimum, $barang_id);
     $stmt->execute();
     $_SESSION['success'] = 'Min stok berhasil diperbarui.';

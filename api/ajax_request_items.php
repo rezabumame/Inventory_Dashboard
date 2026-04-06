@@ -49,7 +49,7 @@ function resolve_location_code(mysqli $conn, string $input): string {
 
     foreach ($prefer as $c) {
         $esc = $conn->real_escape_string($c);
-        $r = $conn->query("SELECT 1 FROM stock_mirror WHERE location_code = '$esc' LIMIT 1");
+        $r = $conn->query("SELECT 1 FROM inventory_stock_mirror WHERE location_code = '$esc' LIMIT 1");
         if ($r && $r->num_rows > 0) return $c;
     }
 
@@ -60,12 +60,12 @@ function find_or_create_barang_by_kode(mysqli $conn, string $kode_barang): array
     $kode_barang = trim($kode_barang);
     if ($kode_barang === '') return ['id' => 0, 'nama_barang' => '-', 'satuan' => '', 'kode_barang' => null, 'odoo_product_id' => null];
     $kb = $conn->real_escape_string($kode_barang);
-    $r = $conn->query("SELECT id, nama_barang, satuan, odoo_product_id, kode_barang FROM barang WHERE kode_barang = '$kb' ORDER BY id ASC LIMIT 1");
+    $r = $conn->query("SELECT id, nama_barang, satuan, odoo_product_id, kode_barang FROM inventory_barang WHERE kode_barang = '$kb' ORDER BY id ASC LIMIT 1");
     if ($r && $r->num_rows > 0) return $r->fetch_assoc();
     $nama = $kode_barang;
     $satuan = 'Unit';
     $kategori = 'Odoo';
-    $stmt = $conn->prepare("INSERT INTO barang (kode_barang, nama_barang, satuan, stok_minimum, kategori) VALUES (?, ?, ?, 0, ?)");
+    $stmt = $conn->prepare("INSERT INTO inventory_barang (kode_barang, nama_barang, satuan, stok_minimum, kategori) VALUES (?, ?, ?, 0, ?)");
     $stmt->bind_param("ssss", $kode_barang, $nama, $satuan, $kategori);
     $stmt->execute();
     $id = (int)$conn->insert_id;
@@ -78,8 +78,8 @@ function conv_multiplier(mysqli $conn, int $barang_id): float {
     if (isset($cache[$barang_id])) return (float)$cache[$barang_id];
     $r = $conn->query("
         SELECT c.multiplier 
-        FROM barang_uom_conversion c
-        JOIN barang b ON b.kode_barang = c.kode_barang
+        FROM inventory_barang_uom_conversion c
+        JOIN inventory_barang b ON b.kode_barang = c.kode_barang
         WHERE b.id = $barang_id 
         LIMIT 1
     ");
@@ -96,8 +96,8 @@ function conv_to_uom(mysqli $conn, int $barang_id, string $fallback): string {
     if (isset($cache[$barang_id])) return (string)$cache[$barang_id];
     $r = $conn->query("
         SELECT COALESCE(c.to_uom, '') AS u 
-        FROM barang_uom_conversion c
-        JOIN barang b ON b.kode_barang = c.kode_barang
+        FROM inventory_barang_uom_conversion c
+        JOIN inventory_barang b ON b.kode_barang = c.kode_barang
         WHERE b.id = $barang_id 
         LIMIT 1
     ");
@@ -114,8 +114,8 @@ function conv_from_uom(mysqli $conn, int $barang_id): string {
     if (isset($cache[$barang_id])) return (string)$cache[$barang_id];
     $r = $conn->query("
         SELECT COALESCE(c.from_uom, '') AS u 
-        FROM barang_uom_conversion c
-        JOIN barang b ON b.kode_barang = c.kode_barang
+        FROM inventory_barang_uom_conversion c
+        JOIN inventory_barang b ON b.kode_barang = c.kode_barang
         WHERE b.id = $barang_id 
         LIMIT 1
     ");
@@ -130,7 +130,7 @@ if ($ke_level === 'klinik') {
         echo json_encode(['success' => true, 'items' => [], 'location_code' => ''], JSON_UNESCAPED_UNICODE);
         exit;
     }
-    $r = $conn->query("SELECT kode_klinik FROM klinik WHERE id = $ke_id LIMIT 1");
+    $r = $conn->query("SELECT kode_klinik FROM inventory_klinik WHERE id = $ke_id LIMIT 1");
     $kode_klinik = '';
     if ($r && $r->num_rows > 0) $kode_klinik = (string)($r->fetch_assoc()['kode_klinik'] ?? '');
     if ($kode_klinik === '') {
@@ -139,7 +139,7 @@ if ($ke_level === 'klinik') {
     }
     $resolved_loc = resolve_location_code($conn, $kode_klinik);
     $loc = $conn->real_escape_string($resolved_loc);
-    $res = $conn->query("SELECT kode_barang, qty FROM stock_mirror WHERE location_code = '$loc' AND qty > 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
+    $res = $conn->query("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = '$loc' AND qty > 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
     $items = [];
     while ($res && ($row = $res->fetch_assoc())) {
         $b = find_or_create_barang_by_kode($conn, (string)($row['kode_barang'] ?? ''));
@@ -170,7 +170,7 @@ if ($ke_level === 'gudang_utama') {
     }
     $resolved_loc = resolve_location_code($conn, $gudang_loc);
     $loc = $conn->real_escape_string($resolved_loc);
-    $res = $conn->query("SELECT kode_barang, qty FROM stock_mirror WHERE location_code = '$loc' AND qty > 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
+    $res = $conn->query("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = '$loc' AND qty > 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
     $items = [];
     while ($res && ($row = $res->fetch_assoc())) {
         $b = find_or_create_barang_by_kode($conn, (string)($row['kode_barang'] ?? ''));

@@ -15,9 +15,10 @@ $q = $conn->query("
         COALESCE(NULLIF(uc.from_uom, ''), COALESCE(b.uom, '')) AS uom_odoo,
         COALESCE(NULLIF(uc.to_uom, ''), COALESCE(b.satuan, '')) AS uom_operasional,
         COALESCE(uc.multiplier, 1) AS uom_ratio
-    FROM barang b
-    LEFT JOIN barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    FROM inventory_barang b
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     ORDER BY nama_barang ASC
+    LIMIT 1000
 ");
 $rows = [];
 while ($q && ($r = $q->fetch_assoc())) $rows[] = $r;
@@ -28,7 +29,7 @@ foreach ($rows as $r) if ((int)($r['stok_minimum'] ?? 0) > 0) $with_min++;
 $without_min = $total - $with_min;
 ?>
 
-<div class="row mb-4 align-items-center">
+<div class="row mb-2 align-items-center">
         <div class="col">
             <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
                 <i class="fas fa-boxes me-2"></i>Database Barang
@@ -39,7 +40,6 @@ $without_min = $total - $with_min;
                     <li class="breadcrumb-item active">Database Barang</li>
                 </ol>
             </nav>
-            <div class="small text-muted mt-1">Halaman ini dipakai untuk mapping item dan pengaturan stok minimum (min stok).</div>
         </div>
     </div>
 
@@ -134,7 +134,9 @@ $without_min = $total - $with_min;
     <div class="modal-dialog modal-md modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold">Edit Min Stok</h5>
+                <h5 class="modal-title fw-bold">
+                    <i class="fas fa-edit me-2"></i>Edit Min Stok
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form method="POST" action="actions/process_barang_min_stok.php">

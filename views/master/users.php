@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $role = $_POST['role'];
         $klinik_id = ($_POST['klinik_id'] === '') ? null : (int)$_POST['klinik_id'];
         
-        $stmt = $conn->prepare("INSERT INTO users (username, password, nama_lengkap, role, klinik_id) VALUES (?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO inventory_users (username, password, nama_lengkap, role, klinik_id) VALUES (?, ?, ?, ?, ?)");
         $stmt->bind_param("ssssi", $username, $password, $nama_lengkap, $role, $klinik_id);
         
         if ($stmt->execute()) {
@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $role = $_POST['role'];
         $klinik_id = ($_POST['klinik_id'] === '') ? null : (int)$_POST['klinik_id'];
         
-        $sql = "UPDATE users SET nama_lengkap = ?, role = ?, klinik_id = ? WHERE id = ?";
+        $sql = "UPDATE inventory_users SET nama_lengkap = ?, role = ?, klinik_id = ? WHERE id = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("ssii", $nama_lengkap, $role, $klinik_id, $id);
         
@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
             // Update password if provided
             if (!empty($_POST['password'])) {
                 $pass = password_hash($_POST['password'], PASSWORD_DEFAULT);
-                $conn->query("UPDATE users SET password = '$pass' WHERE id = $id");
+                $conn->query("UPDATE inventory_users SET password = '$pass' WHERE id = $id");
             }
             $success = "User berhasil diperbarui.";
         } else {
@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         if ($id == $_SESSION['user_id']) {
             $error = "Anda tidak bisa menghapus akun sendiri.";
         } else {
-            if ($conn->query("DELETE FROM users WHERE id = $id")) {
+            if ($conn->query("DELETE FROM inventory_users WHERE id = $id")) {
                 $success = "User berhasil dihapus.";
             } else {
                 $error = "Gagal menghapus user.";
@@ -79,19 +79,31 @@ if (!empty($where_clauses)) {
 }
 
 $users = [];
-$res = $conn->query("SELECT u.*, k.nama_klinik FROM users u LEFT JOIN klinik k ON u.klinik_id = k.id $where_sql ORDER BY u.nama_lengkap ASC");
+$res = $conn->query("SELECT u.*, k.nama_klinik FROM inventory_users u LEFT JOIN inventory_klinik k ON u.klinik_id = k.id $where_sql ORDER BY u.nama_lengkap ASC LIMIT 500");
 while ($row = $res->fetch_assoc()) $users[] = $row;
 
 $kliniks = [];
-$res_k = $conn->query("SELECT id, nama_klinik FROM klinik WHERE status = 'active' ORDER BY nama_klinik ASC");
+$res_k = $conn->query("SELECT id, nama_klinik FROM inventory_klinik WHERE status = 'active' ORDER BY nama_klinik ASC");
 while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h1 class="h3 mb-0 fw-bold" style="color: #204EAB;">Data User</h1>
-    <button class="btn btn-primary shadow-sm px-4" data-bs-toggle="modal" data-bs-target="#modalAdd">
-        <i class="fas fa-plus me-2"></i>Tambah User
-    </button>
+<div class="row mb-2 align-items-center">
+    <div class="col">
+        <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
+            <i class="fas fa-users me-2"></i>Data User
+        </h1>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
+                <li class="breadcrumb-item active">Data User</li>
+            </ol>
+        </nav>
+    </div>
+    <div class="col-auto text-end">
+        <button class="btn btn-primary btn-sm px-3" data-bs-toggle="modal" data-bs-target="#modalAdd">
+            <i class="fas fa-plus me-1"></i>Tambah User
+        </button>
+    </div>
 </div>
 
 <!-- Filter Section -->
@@ -109,7 +121,6 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                     <option value="spv_klinik" <?= $filter_role === 'spv_klinik' ? 'selected' : '' ?>>SPV Klinik</option>
                     <option value="petugas_hc" <?= $filter_role === 'petugas_hc' ? 'selected' : '' ?>>Petugas HC</option>
                     <option value="cs" <?= $filter_role === 'cs' ? 'selected' : '' ?>>CS</option>
-                    <option value="b2b_ops" <?= $filter_role === 'b2b_ops' ? 'selected' : '' ?>>B2B Ops</option>
                 </select>
             </div>
             <div class="col-md-4">
@@ -186,7 +197,9 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="action" value="add_user">
                 <div class="modal-header">
-                    <h5 class="modal-title">Tambah User Baru</h5>
+                    <h5 class="modal-title fw-bold">
+                        <i class="fas fa-user-plus me-2"></i>Tambah User Baru
+                    </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -211,7 +224,6 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                             <option value="spv_klinik">SPV Klinik</option>
                             <option value="petugas_hc">Petugas HC</option>
                             <option value="cs">CS</option>
-                            <option value="b2b_ops">B2B Ops</option>
                         </select>
                     </div>
                     <div class="mb-3 klinik-select" style="display:none;">
@@ -242,7 +254,9 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                 <input type="hidden" name="action" value="edit_user">
                 <input type="hidden" name="id" id="edit_id">
                 <div class="modal-header">
-                    <h5 class="modal-title">Edit User</h5>
+                    <h5 class="modal-title fw-bold">
+                        <i class="fas fa-user-edit me-2"></i>Edit User
+                    </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -268,7 +282,6 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                             <option value="spv_klinik">SPV Klinik</option>
                             <option value="petugas_hc">Petugas HC</option>
                             <option value="cs">CS</option>
-                            <option value="b2b_ops">B2B Ops</option>
                         </select>
                     </div>
                     <div class="mb-3 klinik-select">
@@ -301,7 +314,7 @@ function toggleKlinik(select) {
     const role = select.value;
     const modal = select.closest('.modal');
     const klinikDiv = modal.querySelector('.klinik-select');
-    if (['admin_klinik', 'spv_klinik', 'petugas_hc', 'cs'].includes(role)) {
+    if (['admin_klinik', 'spv_klinik', 'petugas_hc'].includes(role)) {
         klinikDiv.style.display = 'block';
     } else {
         klinikDiv.style.display = 'none';

@@ -3,6 +3,8 @@ session_start();
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../lib/stock.php';
+require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../lib/webhooks.php';
 
 header('Content-Type: application/json');
 
@@ -26,10 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 require_csrf();
 
 $booking_id = intval($_POST['booking_id']);
-$exams = $_POST['exams'] ?? [];
-$nama_pemesan = trim((string)($_POST['nama_pemesan'] ?? ''));
-$nomor_tlp = !empty($_POST['nomor_tlp']) ? trim((string)$_POST['nomor_tlp']) : null;
-$tanggal_lahir = !empty($_POST['tanggal_lahir']) ? (string)$_POST['tanggal_lahir'] : null;
+$patients = $_POST['patients'] ?? [];
 $tanggal = (string)($_POST['tanggal'] ?? '');
 $booking_type = (string)($_POST['booking_type'] ?? 'keep');
 $jam_layanan = $_POST['jam_layanan'] ?? null;
@@ -38,12 +37,18 @@ $new_klinik_id = (int)($_POST['new_klinik_id'] ?? 0);
 $new_status_booking = trim((string)($_POST['new_status_booking'] ?? ''));
 $jumlah_pax = (int)($_POST['jumlah_pax'] ?? 0);
 
-if (empty($exams)) {
-    echo json_encode(['success' => false, 'message' => 'Tidak ada pemeriksaan yang dipilih']);
+if (empty($patients)) {
+    echo json_encode(['success' => false, 'message' => 'Data pasien tidak boleh kosong']);
     exit;
 }
+
+// Set nama_pemesan from the first patient
+$nama_pemesan = trim((string)($patients[0]['nama'] ?? ''));
+$nomor_tlp = !empty($patients[0]['nomor_tlp']) ? trim((string)$patients[0]['nomor_tlp']) : null;
+$tanggal_lahir = !empty($patients[0]['tanggal_lahir']) ? (string)$patients[0]['tanggal_lahir'] : null;
+
 if ($nama_pemesan === '' || $tanggal === '') {
-    echo json_encode(['success' => false, 'message' => 'Data tidak lengkap']);
+    echo json_encode(['success' => false, 'message' => 'Data tidak lengkap (Nama Pasien Utama & Tanggal wajib diisi)']);
     exit;
 }
 
@@ -73,7 +78,7 @@ $conn->begin_transaction();
 
 try {
     // Get booking info
-    $booking = $conn->query("SELECT * FROM booking_pemeriksaan WHERE id = $booking_id AND status = 'booked'")->fetch_assoc();
+    $booking = $conn->query("SELECT * FROM inventory_booking_pemeriksaan WHERE id = $booking_id AND status = 'booked'")->fetch_assoc();
     
     if (!$booking) {
         throw new Exception('Booking tidak ditemukan atau sudah diproses');
@@ -105,7 +110,7 @@ try {
         if (stripos((string)$target_status_booking, 'Clinic') !== false) $is_hc = false;
     }
 
-    $rk = $conn->query("SELECT id FROM klinik WHERE id = " . (int)$target_klinik_id . " LIMIT 1");
+    $rk = $conn->query("SELECT id FROM inventory_klinik WHERE id = " . (int)$target_klinik_id . " LIMIT 1");
     if (!$rk || $rk->num_rows === 0) throw new Exception('Klinik tidak ditemukan');
 
     $lock_name = 'booking_' . (int)$target_klinik_id . '_' . ($is_hc ? 'hc' : 'clinic');
@@ -117,41 +122,46 @@ try {
 
     $new_status = ($booking_type === 'cancel') ? 'cancelled' : 'booked';
     $butuh_fu = ($new_status === 'cancelled') ? 0 : (int)($booking['butuh_fu'] ?? 0);
-    $stmt_u = $conn->prepare("UPDATE booking_pemeriksaan SET nama_pemesan = ?, nomor_tlp = ?, tanggal_lahir = ?, tanggal_pemeriksaan = ?, booking_type = ?, jam_layanan = ?, jotform_submitted = ?, status = ?, butuh_fu = ?, klinik_id = ?, status_booking = ?, jumlah_pax = ? WHERE id = ?");
+    $stmt_u = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET nama_pemesan = ?, nomor_tlp = ?, tanggal_lahir = ?, tanggal_pemeriksaan = ?, booking_type = ?, jam_layanan = ?, jotform_submitted = ?, status = ?, butuh_fu = ?, klinik_id = ?, status_booking = ?, jumlah_pax = ? WHERE id = ?");
     $stmt_u->bind_param("ssssssisiisii", $nama_pemesan, $nomor_tlp, $tanggal_lahir, $tanggal, $booking_type, $jam_layanan, $jotform_submitted, $new_status, $butuh_fu, $target_klinik_id, $target_status_booking, $jumlah_pax, $booking_id);
     $stmt_u->execute();
 
     // Clear existing details
-    $conn->query("DELETE FROM booking_detail WHERE booking_id = $booking_id");
-    $conn->query("DELETE FROM booking_pasien WHERE booking_id = $booking_id");
+    $conn->query("DELETE FROM inventory_booking_detail WHERE booking_id = $booking_id");
+    $conn->query("DELETE FROM inventory_booking_pasien WHERE booking_id = $booking_id");
 
     if ($new_status === 'cancelled') {
         $conn->commit();
+        $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
+        notify_gsheet_booking($conn, $booking_id, 'booking_updated');
         echo json_encode(['success' => true, 'message' => 'Booking dibatalkan (CS)']);
         exit;
     }
 
-    // Calculate total needed items across all exams
+    // Calculate total needed items across ALL patients and THEIR SPECIFIC exams
     $total_needed = [];
-    foreach ($exams as $exam) {
-        if (empty($exam['pemeriksaan_id'])) continue;
-        $pid = intval($exam['pemeriksaan_id']);
-        $qty_multiplier = (int)$jumlah_pax;
-        if ($pid <= 0 || $qty_multiplier <= 0) continue;
-
-        $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
-        while ($res && ($row = $res->fetch_assoc())) {
-            $bid = (int)$row['barang_id'];
-            $qty = (int)$row['qty_per_pemeriksaan'] * $qty_multiplier;
-            if (!isset($total_needed[$bid])) $total_needed[$bid] = 0;
-            $total_needed[$bid] += $qty;
+    foreach ($patients as $p) {
+        $p_exams = $p['exams'] ?? [];
+        if (empty($p_exams)) {
+            throw new Exception("Pasien " . ($p['nama'] ?: 'tanpa nama') . " belum memilih pemeriksaan!");
+        }
+        foreach ($p_exams as $pid) {
+            $pid = intval($pid);
+            if ($pid <= 0) continue;
+            
+            $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+            while($row = $res->fetch_assoc()) {
+                $bid = intval($row['barang_id']);
+                $qty = (float)$row['qty_per_pemeriksaan'];
+                $total_needed[$bid] = ($total_needed[$bid] ?? 0) + $qty;
+            }
         }
     }
     if (empty($total_needed)) throw new Exception("Tidak ada item yang perlu dibooking (cek master pemeriksaan).");
 
     foreach ($total_needed as $bid => $qty_need) {
         $bid = (int)$bid;
-        $qty_need = (int)$qty_need;
+        $qty_need = (float)$qty_need;
         $ef = stock_effective($conn, (int)$target_klinik_id, $is_hc, $bid);
         if (!$ef['ok']) throw new Exception((string)$ef['message']);
         $available = (float)($ef['available'] ?? 0);
@@ -162,66 +172,48 @@ try {
     }
 
     // Insert again
-    $conn->query("ALTER TABLE booking_pasien ADD COLUMN IF NOT EXISTS nomor_tlp VARCHAR(30) NULL");
-    $conn->query("ALTER TABLE booking_pasien ADD COLUMN IF NOT EXISTS tanggal_lahir DATE NULL");
+    $conn->query("ALTER TABLE inventory_booking_pasien ADD COLUMN IF NOT EXISTS nomor_tlp VARCHAR(30) NULL");
+    $conn->query("ALTER TABLE inventory_booking_pasien ADD COLUMN IF NOT EXISTS tanggal_lahir DATE NULL");
 
-    $stmt_pasien = $conn->prepare("INSERT INTO booking_pasien (booking_id, nama_pasien, pemeriksaan_grup_id, nomor_tlp, tanggal_lahir) VALUES (?, ?, ?, ?, ?)");
-    $stmt_detail = $conn->prepare("INSERT INTO booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt_pasien = $conn->prepare("INSERT INTO inventory_booking_pasien (booking_id, nama_pasien, pemeriksaan_grup_id, nomor_tlp, tanggal_lahir) VALUES (?, ?, ?, ?, ?)");
+    $stmt_detail = $conn->prepare("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?)");
 
-    // Build full pasien list
-    $all_pasien = [['nama' => $nama_pemesan, 'nomor_tlp' => $nomor_tlp, 'tanggal_lahir' => $tanggal_lahir]];
-    $extra_pasien = $_POST['extra_pasien'] ?? [];
-    foreach ($extra_pasien as $ep) {
-        $ep_nama = trim((string)($ep['nama'] ?? ''));
-        if ($ep_nama !== '') {
-            $all_pasien[] = [
-                'nama'          => $ep_nama,
-                'nomor_tlp'     => !empty($ep['nomor_tlp']) ? trim($ep['nomor_tlp']) : null,
-                'tanggal_lahir' => !empty($ep['tanggal_lahir']) ? $ep['tanggal_lahir'] : null,
-            ];
-        }
-    }
+    foreach ($patients as $idx => $p) {
+        $pnama = !empty($p['nama']) ? $p['nama'] : "Pasien " . ($idx + 1);
+        $ptlp  = !empty($p['nomor_tlp']) ? trim($p['nomor_tlp']) : null;
+        $ptgl  = !empty($p['tanggal_lahir']) ? $p['tanggal_lahir'] : null;
+        $p_exams = $p['exams'] ?? [];
 
-    foreach ($exams as $exam) {
-        $pid = intval($exam['pemeriksaan_id'] ?? 0);
-        $qty_multiplier = (int)$jumlah_pax;
-        if ($pid <= 0 || $qty_multiplier <= 0) continue;
+        foreach ($p_exams as $pid) {
+            $pid = intval($pid);
+            if ($pid <= 0) continue;
 
-        $first_pasien_id = null;
-        foreach ($all_pasien as $pasien) {
-            $pnama = $pasien['nama'];
-            $ptlp  = $pasien['nomor_tlp'];
-            $ptgl  = $pasien['tanggal_lahir'];
+            // Insert patient-exam link
             $stmt_pasien->bind_param("isiss", $booking_id, $pnama, $pid, $ptlp, $ptgl);
-            $stmt_pasien->execute();
-            if ($first_pasien_id === null) {
-                $first_pasien_id = (int)$conn->insert_id;
+            if (!$stmt_pasien->execute()) throw new Exception("Error saving patient exam: " . $stmt_pasien->error);
+            $pasien_row_id = (int)$conn->insert_id;
+
+            // Insert inventory details for this specific patient
+            $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+            while ($res_items && ($i_row = $res_items->fetch_assoc())) {
+                $barang_id = (int)$i_row['barang_id'];
+                $qty_unit = (float)$i_row['qty_per_pemeriksaan'];
+                if ($qty_unit <= 0) continue;
+
+                $qty_onsite = 0; $qty_hc = 0;
+                if (stripos((string)$target_status_booking, 'Clinic') !== false) $qty_onsite = $qty_unit;
+                elseif (stripos((string)$target_status_booking, 'HC') !== false) $qty_hc = $qty_unit;
+
+                $stmt_detail->bind_param("iiiiii", $booking_id, $pasien_row_id, $barang_id, $qty_unit, $qty_onsite, $qty_hc);
+                if (!$stmt_detail->execute()) throw new Exception("Error saving detail: " . $stmt_detail->error);
             }
-        }
-
-        $items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
-        while ($items && ($row = $items->fetch_assoc())) {
-            $barang_id = (int)$row['barang_id'];
-            $qty_total = (int)$row['qty_per_pemeriksaan'] * $qty_multiplier;
-            if ($qty_total <= 0) continue;
-
-            $qty_reserved_onsite = 0;
-            $qty_reserved_hc = 0;
-            if (stripos((string)$target_status_booking, 'Clinic') !== false) {
-                $qty_reserved_onsite = $qty_total;
-            } elseif (stripos((string)$target_status_booking, 'HC') !== false) {
-                $qty_reserved_hc = $qty_total;
-            }
-
-            $stmt_detail->bind_param("iiiiii", $booking_id, $first_pasien_id, $barang_id, $qty_total, $qty_reserved_onsite, $qty_reserved_hc);
-            $stmt_detail->execute();
         }
     }
     
     $conn->commit();
     $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
+    notify_gsheet_booking($conn, $booking_id, 'booking_updated');
     echo json_encode(['success' => true, 'message' => 'Pemeriksaan berhasil diperbarui']);
-
 } catch (Exception $e) {
     if (isset($lock_esc) && $lock_esc !== '') {
         $conn->query("SELECT RELEASE_LOCK('$lock_esc')");

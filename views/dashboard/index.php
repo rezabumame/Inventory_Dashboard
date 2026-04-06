@@ -5,7 +5,7 @@ $klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
 
 $klinik_name = '';
 if ($klinik_id > 0) {
-    $rk = $conn->query("SELECT nama_klinik FROM klinik WHERE id = $klinik_id LIMIT 1");
+    $rk = $conn->query("SELECT nama_klinik FROM inventory_klinik WHERE id = $klinik_id LIMIT 1");
     if ($rk && $rk->num_rows > 0) $klinik_name = (string)($rk->fetch_assoc()['nama_klinik'] ?? '');
 }
 
@@ -16,56 +16,56 @@ $today_bookings = 0;
 $approval_klinik_cnt = 0;
 $last_mirror_update = '';
 
-$r = $conn->query("SELECT MAX(updated_at) AS last_update FROM stock_mirror");
+$r = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror");
 if ($r && $r->num_rows > 0) $last_mirror_update = (string)($r->fetch_assoc()['last_update'] ?? '');
 
 if (in_array($role, ['super_admin', 'admin_gudang'])) {
     // GLOBAL STATS (Odoo / Gudang Utama)
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM barang");
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_barang");
     $total_barang = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM stok_gudang_utama s JOIN barang b ON s.barang_id = b.id WHERE s.qty <= b.stok_minimum");
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_stok_gudang_utama s JOIN inventory_barang b ON s.barang_id = b.id WHERE s.qty <= b.stok_minimum");
     $low_stock = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE status IN ('pending', 'pending_gudang', 'pending_spv')");
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_request_barang WHERE status IN ('pending', 'pending_gudang', 'pending_spv')");
     $pending_requests = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM booking_pemeriksaan WHERE tanggal_pemeriksaan = CURDATE() AND status = 'booked'");
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_booking_pemeriksaan WHERE tanggal_pemeriksaan = CURDATE() AND status = 'booked'");
     $today_bookings = (int)($res->fetch_assoc()['cnt'] ?? 0);
 } elseif (in_array($role, ['admin_klinik', 'cs', 'spv_klinik'])) {
     // KLINIK STATS
     $kode_klinik = '';
-    $res_klinik = $conn->query("SELECT kode_klinik, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1");
+    $res_klinik = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1");
     if ($res_klinik && $res_klinik->num_rows > 0) {
         $k_row = $res_klinik->fetch_assoc();
         $kode_klinik = $conn->real_escape_string(trim((string)$k_row['kode_klinik']));
         $kode_homecare = $conn->real_escape_string(trim((string)$k_row['kode_homecare']));
         
-        $union_sql = "SELECT odoo_product_id FROM stock_mirror WHERE TRIM(location_code) = '$kode_klinik'";
+        $union_sql = "SELECT odoo_product_id FROM inventory_stock_mirror WHERE TRIM(location_code) = '$kode_klinik'";
         if ($kode_homecare !== '') {
-            $union_sql .= " UNION SELECT odoo_product_id FROM stock_mirror WHERE TRIM(location_code) = '$kode_homecare'";
+            $union_sql .= " UNION SELECT odoo_product_id FROM inventory_stock_mirror WHERE TRIM(location_code) = '$kode_homecare'";
         }
         $res = $conn->query("SELECT COUNT(*) as cnt FROM ($union_sql) t");
         if ($res) $total_barang = (int)($res->fetch_assoc()['cnt'] ?? 0);
         
-        $res = $conn->query("SELECT COUNT(*) as cnt FROM stock_mirror sm JOIN barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang) WHERE TRIM(sm.location_code) = '$kode_klinik' AND sm.qty <= b.stok_minimum");
+        $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_stock_mirror sm JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang) WHERE TRIM(sm.location_code) = '$kode_klinik' AND sm.qty <= b.stok_minimum");
         if ($res) $low_stock = (int)($res->fetch_assoc()['cnt'] ?? 0);
     }
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE ((dari_level = 'klinik' AND dari_id = $klinik_id) OR (ke_level = 'klinik' AND ke_id = $klinik_id)) AND status IN ('pending', 'pending_spv')");
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_request_barang WHERE ((dari_level = 'klinik' AND dari_id = $klinik_id) OR (ke_level = 'klinik' AND ke_id = $klinik_id)) AND status IN ('pending', 'pending_spv')");
     if ($res) $pending_requests = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM booking_pemeriksaan WHERE klinik_id = $klinik_id AND tanggal_pemeriksaan = CURDATE() AND status = 'booked'");
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_booking_pemeriksaan WHERE klinik_id = $klinik_id AND tanggal_pemeriksaan = CURDATE() AND status = 'booked'");
     if ($res) $today_bookings = (int)($res->fetch_assoc()['cnt'] ?? 0);
 } elseif ($role === 'petugas_hc') {
     // HC STATS
-    $res = $conn->query("SELECT COUNT(DISTINCT barang_id) as cnt FROM stok_tas_hc WHERE user_id = $user_id AND qty > 0");
+    $res = $conn->query("SELECT COUNT(DISTINCT barang_id) as cnt FROM inventory_stok_tas_hc WHERE user_id = $user_id AND qty > 0");
     if ($res) $total_barang = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM request_barang WHERE created_by = $user_id AND status = 'pending'");
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_request_barang WHERE created_by = $user_id AND status = 'pending'");
     if ($res) $pending_requests = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM booking_pemeriksaan WHERE tanggal_pemeriksaan = CURDATE() AND status = 'booked'");
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_booking_pemeriksaan WHERE tanggal_pemeriksaan = CURDATE() AND status = 'booked'");
     if ($res) $today_bookings = (int)($res->fetch_assoc()['cnt'] ?? 0);
 }
 
@@ -76,9 +76,9 @@ if (in_array($role, ['cs', 'admin_klinik', 'spv_klinik'], true) && $klinik_id > 
     $book_cond = "b.klinik_id = $klinik_id";
 }
 $sql_book = "SELECT b.*, k.nama_klinik,
-             (SELECT GROUP_CONCAT(bp.nama_pasien SEPARATOR ', ') FROM booking_pasien bp WHERE bp.booking_id = b.id) as nama_pasien_list
-             FROM booking_pemeriksaan b
-             LEFT JOIN klinik k ON b.klinik_id = k.id
+             (SELECT GROUP_CONCAT(bp.nama_pasien SEPARATOR ', ') FROM inventory_booking_pasien bp WHERE bp.booking_id = b.id) as nama_pasien_list
+             FROM inventory_booking_pemeriksaan b
+             LEFT JOIN inventory_klinik k ON b.klinik_id = k.id
              WHERE $book_cond
              AND b.tanggal_pemeriksaan BETWEEN CURDATE() AND (CURDATE() + INTERVAL 1 DAY)
              AND b.status = 'booked'
@@ -86,7 +86,7 @@ $sql_book = "SELECT b.*, k.nama_klinik,
 $res_book = $conn->query($sql_book);
 if ($res_book) while ($r = $res_book->fetch_assoc()) $upcoming_bookings[] = $r;
 ?>
-<div class="row mb-4 align-items-center">
+<div class="row mb-2 align-items-center">
     <div class="col">
         <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
             <i class="fas fa-tachometer-alt me-2"></i>Dashboard

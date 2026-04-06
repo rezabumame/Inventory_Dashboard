@@ -42,8 +42,8 @@ if (!is_array($allocations)) $allocations = [];
 
 function apply_bulk_alloc(mysqli $conn, int $klinik_id, int $created_by, array $allocations): int {
     $count = 0;
-    $stmt_up = $conn->prepare("INSERT INTO stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
-    $stmt_del = $conn->prepare("DELETE FROM stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ? LIMIT 1");
+    $stmt_up = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+    $stmt_del = $conn->prepare("DELETE FROM inventory_stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ? LIMIT 1");
     foreach ($allocations as $uid => $items) {
         $uid = (int)$uid;
         if ($uid <= 0 || !is_array($items)) continue;

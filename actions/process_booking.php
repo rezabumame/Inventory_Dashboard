@@ -5,6 +5,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/settings.php';
 require_once __DIR__ . '/../lib/stock.php';
+require_once __DIR__ . '/../lib/webhooks.php';
 
 header('Content-Type: application/json');
 
@@ -31,12 +32,12 @@ try {
     if ($client_request_id !== '') {
         $cid_esc = $conn->real_escape_string($client_request_id);
         $uid_esc = (int)$_SESSION['user_id'];
-        $exists = $conn->query("SELECT booking_id FROM booking_request_dedup WHERE client_request_id = '$cid_esc' AND created_by = $uid_esc LIMIT 1")->fetch_assoc();
+        $exists = $conn->query("SELECT booking_id FROM inventory_booking_request_dedup WHERE client_request_id = '$cid_esc' AND created_by = $uid_esc LIMIT 1")->fetch_assoc();
         if ($exists) {
             echo json_encode(['success' => true, 'message' => 'Request sudah diproses.', 'booking_id' => (int)($exists['booking_id'] ?? 0)]);
             exit;
         }
-        $conn->query("INSERT IGNORE INTO booking_request_dedup (client_request_id, created_by, booking_id) VALUES ('$cid_esc', $uid_esc, NULL)");
+        $conn->query("INSERT IGNORE INTO inventory_booking_request_dedup (client_request_id, created_by, booking_id) VALUES ('$cid_esc', $uid_esc, NULL)");
     }
 
     $status_booking = $_POST['status_booking'] ?? '';
@@ -78,7 +79,7 @@ try {
             $pid = intval($pid);
             if ($pid <= 0) continue;
             
-            $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+            $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
             while($row = $res->fetch_assoc()) {
                 $bid = intval($row['barang_id']);
                 $qty = (float)$row['qty_per_pemeriksaan'];
@@ -109,7 +110,7 @@ try {
     // 3. Create Booking Header
     $nomor = "BK-TMP-" . time();
     
-    $sql = "INSERT INTO booking_pemeriksaan 
+    $sql = "INSERT INTO inventory_booking_pemeriksaan 
             (nomor_booking, order_id, klinik_id, status_booking, booking_type, jam_layanan, jotform_submitted, cs_name, nama_pemesan, nomor_tlp, tanggal_lahir, jumlah_pax, catatan, tanggal_pemeriksaan, status, created_by, created_at) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, NOW())";
     
@@ -122,14 +123,14 @@ try {
     
     $book_id = $conn->insert_id;
     $nomor_final = "BK-" . str_pad((string)$book_id, 6, '0', STR_PAD_LEFT);
-    $conn->query("UPDATE booking_pemeriksaan SET nomor_booking = '$nomor_final' WHERE id = $book_id");
+    $conn->query("UPDATE inventory_booking_pemeriksaan SET nomor_booking = '$nomor_final' WHERE id = $book_id");
 
     // 4. Insert Patients + Details
-    $conn->query("ALTER TABLE booking_pasien ADD COLUMN IF NOT EXISTS nomor_tlp VARCHAR(30) NULL");
-    $conn->query("ALTER TABLE booking_pasien ADD COLUMN IF NOT EXISTS tanggal_lahir DATE NULL");
+    $conn->query("ALTER TABLE inventory_booking_pasien ADD COLUMN IF NOT EXISTS nomor_tlp VARCHAR(30) NULL");
+    $conn->query("ALTER TABLE inventory_booking_pasien ADD COLUMN IF NOT EXISTS tanggal_lahir DATE NULL");
 
-    $stmt_pasien = $conn->prepare("INSERT INTO booking_pasien (booking_id, nama_pasien, pemeriksaan_grup_id, nomor_tlp, tanggal_lahir) VALUES (?, ?, ?, ?, ?)");
-    $stmt_detail = $conn->prepare("INSERT INTO booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt_pasien = $conn->prepare("INSERT INTO inventory_booking_pasien (booking_id, nama_pasien, pemeriksaan_grup_id, nomor_tlp, tanggal_lahir) VALUES (?, ?, ?, ?, ?)");
+    $stmt_detail = $conn->prepare("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?)");
 
     foreach ($patients as $idx => $p) {
         $pnama = !empty($p['nama']) ? $p['nama'] : "Pasien " . ($idx + 1);
@@ -147,7 +148,7 @@ try {
             $pasien_row_id = (int)$conn->insert_id;
 
             // Insert inventory details for this specific patient
-            $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+            $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
             while ($res_items && ($i_row = $res_items->fetch_assoc())) {
                 $barang_id = (int)$i_row['barang_id'];
                 $qty_unit = (float)$i_row['qty_per_pemeriksaan'];
@@ -164,56 +165,9 @@ try {
     }
 
     $conn->commit();
-    $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
 
-    // Async notify Google Sheets
-    try {
-        $webhook = trim((string)get_setting('gsheet_booking_webhook_url', ''));
-        if ($webhook !== '') {
-            $klin_nm = '';
-            $rk = $conn->query("SELECT nama_klinik FROM klinik WHERE id = $klinik_id LIMIT 1");
-            if ($rk && $rk->num_rows > 0) $klin_nm = (string)($rk->fetch_assoc()['nama_klinik'] ?? '');
-            
-            // Build simple exams summary for gsheet
-            $exams_text_arr = [];
-            foreach ($patients as $p) {
-                foreach (($p['exams'] ?? []) as $pid) {
-                    $re = $conn->query("SELECT nama_pemeriksaan FROM pemeriksaan_grup WHERE id = " . intval($pid) . " LIMIT 1");
-                    if ($re && $re->num_rows > 0) {
-                        $exams_text_arr[] = (string)($re->fetch_assoc()['nama_pemeriksaan'] ?? '');
-                    }
-                }
-            }
-
-            $payload = [
-                'event' => 'booking_created',
-                'nomor_booking' => $nomor_final,
-                'tanggal_pemeriksaan' => $tanggal,
-                'jam_layanan' => $jam_layanan,
-                'status_booking' => $status_booking,
-                'booking_type' => $booking_type,
-                'klinik_id' => (int)$klinik_id,
-                'klinik_nama' => $klin_nm,
-                'cs_name' => $cs_name,
-                'nama_pemesan' => $nama_pemesan,
-                'nomor_tlp' => $nomor_tlp,
-                'tanggal_lahir' => $tanggal_lahir,
-                'jumlah_pax' => (int)$jumlah_pax,
-                'jotform_submitted' => (int)$jotform_submitted,
-                'created_by' => (int)$created_by,
-                'created_at' => date('Y-m-d H:i:s'),
-                'exams_text' => implode(' | ', array_unique($exams_text_arr))
-            ];
-
-            $ch = curl_init($webhook);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-            curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1800);
-            curl_exec($ch);
-        }
-    } catch (\Throwable $e) {}
+    // Notify Google Sheets
+    notify_gsheet_booking($conn, $book_id, 'booking_created');
 
     echo json_encode([
         'success' => true, 

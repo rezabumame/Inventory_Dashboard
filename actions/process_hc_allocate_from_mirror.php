@@ -35,8 +35,8 @@ for ($i = 0; $i < $max; $i++) {
     if ($bid <= 0 || $q <= 0) continue;
     $conv = $conn->query("
         SELECT COALESCE(c.multiplier, 1) AS multiplier 
-        FROM barang_uom_conversion c
-        JOIN barang b ON b.kode_barang = c.kode_barang
+        FROM inventory_barang_uom_conversion c
+        JOIN inventory_barang b ON b.kode_barang = c.kode_barang
         WHERE b.id = $bid 
         LIMIT 1
     ")->fetch_assoc();
@@ -54,13 +54,13 @@ if ($klinik_id <= 0 || $user_hc_id <= 0 || empty($items)) {
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
 
-$kl = $conn->query("SELECT id, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$kl = $conn->query("SELECT id, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$kl || trim((string)($kl['kode_homecare'] ?? '')) === '') {
     $_SESSION['error'] = 'Klinik belum memiliki kode_homecare.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
 
-$u = $conn->query("SELECT id, klinik_id FROM users WHERE id = $user_hc_id AND role = 'petugas_hc' AND status = 'active' LIMIT 1")->fetch_assoc();
+$u = $conn->query("SELECT id, klinik_id FROM inventory_users WHERE id = $user_hc_id AND role = 'petugas_hc' AND status = 'active' LIMIT 1")->fetch_assoc();
 if (!$u || (int)($u['klinik_id'] ?? 0) !== $klinik_id) {
     $_SESSION['error'] = 'Petugas HC tidak valid untuk klinik ini.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
@@ -76,13 +76,13 @@ try {
         $qty_oper = (float)$qty_int;
         if ($barang_id <= 0 || $qty_oper <= 0) continue;
 
-        $b = $conn->query("SELECT id, kode_barang, odoo_product_id, nama_barang FROM barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
+        $b = $conn->query("SELECT id, kode_barang, odoo_product_id, nama_barang FROM inventory_barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
         if (!$b) throw new Exception('Barang tidak ditemukan.');
 
         $conv = $conn->query("
             SELECT c.multiplier 
-            FROM barang_uom_conversion c
-            JOIN barang b ON b.kode_barang = c.kode_barang
+            FROM inventory_barang_uom_conversion c
+            JOIN inventory_barang b ON b.kode_barang = c.kode_barang
             WHERE b.id = $barang_id 
             LIMIT 1
         ")->fetch_assoc();
@@ -98,12 +98,12 @@ try {
         if (empty($clauses)) $clauses[] = "1=0";
         $match = '(' . implode(' OR ', $clauses) . ')';
 
-        $r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM stock_mirror WHERE TRIM(location_code) = '$kode_homecare' AND $match");
+        $r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) = '$kode_homecare' AND $match");
         $mirror_qty = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
         if ($mult <= 0) $mult = 1;
         $mirror_converted = (float)($mirror_qty / $mult);
 
-        $r = $conn->query("SELECT COALESCE(SUM(qty), 0) AS total FROM stok_tas_hc WHERE klinik_id = $klinik_id AND barang_id = $barang_id");
+        $r = $conn->query("SELECT COALESCE(SUM(qty), 0) AS total FROM inventory_stok_tas_hc WHERE klinik_id = $klinik_id AND barang_id = $barang_id");
         $allocated_item = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['total'] ?? 0) : 0);
         $unallocated = $mirror_converted - $allocated_item;
         if ($unallocated < 0) $unallocated = 0;
@@ -114,11 +114,11 @@ try {
             throw new Exception('Unallocated tidak cukup untuk item: ' . $label . '. Unallocated: ' . fmt_qty($unallocated) . ', Requested: ' . fmt_qty($qty_oper));
         }
 
-        $stmt = $conn->prepare("INSERT INTO hc_tas_allocation (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO inventory_hc_tas_allocation (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
         $stmt->bind_param("iiidsi", $klinik_id, $user_hc_id, $barang_id, $qty_oper, $catatan, $created_by);
         $stmt->execute();
 
-        $stmt = $conn->prepare("INSERT INTO stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by)");
+        $stmt = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by)");
         $stmt->bind_param("iiidi", $barang_id, $user_hc_id, $klinik_id, $qty_oper, $created_by);
         $stmt->execute();
         $count++;

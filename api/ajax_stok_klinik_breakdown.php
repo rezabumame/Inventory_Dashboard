@@ -37,13 +37,13 @@ $month_end = date('Y-m-t', strtotime($tanggal));
 $tanggal_end_ts = $tanggal . ' 23:59:59';
 $month_start_ts = $month_start . ' 00:00:00';
 
-$kl = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$kl = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$kl) {
     echo json_encode(['success' => false, 'message' => 'Klinik not found'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-$b = $conn->query("SELECT id, kode_barang, odoo_product_id, nama_barang, satuan FROM barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
+$b = $conn->query("SELECT id, kode_barang, odoo_product_id, nama_barang, satuan FROM inventory_barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
 if (!$b) {
     echo json_encode(['success' => false, 'message' => 'Barang not found'], JSON_UNESCAPED_UNICODE);
     exit;
@@ -51,8 +51,8 @@ if (!$b) {
 
 $conv = $conn->query("
     SELECT c.from_uom, c.to_uom, c.multiplier 
-    FROM barang_uom_conversion c
-    JOIN barang b ON b.kode_barang = c.kode_barang
+    FROM inventory_barang_uom_conversion c
+    JOIN inventory_barang b ON b.kode_barang = c.kode_barang
     WHERE b.id = $barang_id 
     LIMIT 1
 ")->fetch_assoc();
@@ -69,12 +69,12 @@ $loc_h = $conn->real_escape_string($kode_homecare);
 
 $last_update_klinik = '';
 if ($kode_klinik !== '') {
-    $r = $conn->query("SELECT MAX(updated_at) AS last_update FROM stock_mirror WHERE location_code = '$loc_k'");
+    $r = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE location_code = '$loc_k'");
     if ($r && $r->num_rows > 0) $last_update_klinik = (string)($r->fetch_assoc()['last_update'] ?? '');
 }
 $last_update_hc = '';
 if ($kode_homecare !== '') {
-    $r = $conn->query("SELECT MAX(updated_at) AS last_update FROM stock_mirror WHERE location_code = '$loc_h'");
+    $r = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE location_code = '$loc_h'");
     if ($r && $r->num_rows > 0) $last_update_hc = (string)($r->fetch_assoc()['last_update'] ?? '');
 }
 
@@ -93,12 +93,12 @@ $match_sql = '(' . implode(' OR ', $match) . ')';
 
 $baseline_onsite = 0.0;
 if ($kode_klinik !== '') {
-    $r = $conn->query("SELECT COALESCE(MAX(qty),0) AS qty FROM stock_mirror WHERE TRIM(location_code) = '$loc_k' AND $match_sql");
+    $r = $conn->query("SELECT COALESCE(MAX(qty),0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc_k' AND $match_sql");
     if ($r && $r->num_rows > 0) $baseline_onsite = (float)($r->fetch_assoc()['qty'] ?? 0);
 }
 $baseline_hc = 0.0;
 if ($kode_homecare !== '') {
-    $r = $conn->query("SELECT COALESCE(MAX(qty),0) AS qty FROM stock_mirror WHERE TRIM(location_code) = '$loc_h' AND $match_sql");
+    $r = $conn->query("SELECT COALESCE(MAX(qty),0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc_h' AND $match_sql");
     if ($r && $r->num_rows > 0) $baseline_hc = (float)($r->fetch_assoc()['qty'] ?? 0);
 }
 $baseline_onsite = $baseline_onsite / $multiplier;
@@ -132,7 +132,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
     // Rollback Onsite Transfers
     $r = $conn->query("
         SELECT COALESCE(SUM(ts.qty), 0) AS qty
-        FROM transaksi_stok ts
+        FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'klinik'
           AND ts.level_id = $klinik_id
@@ -145,7 +145,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
 
     $r = $conn->query("
         SELECT COALESCE(SUM(ts.qty), 0) AS qty
-        FROM transaksi_stok ts
+        FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'klinik'
           AND ts.level_id = $klinik_id
@@ -159,7 +159,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
     // Rollback HC Transfers
     $r = $conn->query("
         SELECT COALESCE(SUM(ts.qty), 0) AS qty
-        FROM transaksi_stok ts
+        FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'hc'
           AND ts.level_id = $klinik_id
@@ -172,7 +172,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
 
     $r = $conn->query("
         SELECT COALESCE(SUM(ts.qty), 0) AS qty
-        FROM transaksi_stok ts
+        FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'hc'
           AND ts.level_id = $klinik_id
@@ -191,8 +191,8 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
             pb.created_at,
             pb.jenis_pemakaian,
             SUM(pbd.qty) AS qty
-        FROM pemakaian_bhp pb
-        JOIN pemakaian_bhp_detail pbd ON pbd.pemakaian_bhp_id = pb.id
+        FROM inventory_pemakaian_bhp pb
+        JOIN inventory_pemakaian_bhp_detail pbd ON pbd.pemakaian_bhp_id = pb.id
         WHERE pb.klinik_id = $klinik_id
           AND pbd.barang_id = $barang_id
           AND pb.created_at > '$rs' AND pb.created_at <= '$re'
@@ -209,7 +209,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
 
     $r = $conn->query("
         SELECT ts.referensi_id AS transfer_id, ts.tipe_transaksi, ts.level, SUM(ts.qty) AS qty, MIN(ts.created_at) AS first_at, MAX(ts.created_at) AS last_at
-        FROM transaksi_stok ts
+        FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level_id = $klinik_id
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
@@ -231,8 +231,8 @@ $reserve = [
 
 $r = $conn->query("
     SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END), 0) AS qty
-    FROM booking_detail bd
-    JOIN booking_pemeriksaan bp ON bd.booking_id = bp.id
+    FROM inventory_booking_detail bd
+    JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
     WHERE bd.barang_id = $barang_id
       AND bp.klinik_id = $klinik_id
       AND bp.status = 'booked'
@@ -244,8 +244,8 @@ if ($r && $r->num_rows > 0) $reserve['onsite'] = (float)($r->fetch_assoc()['qty'
 
 $r = $conn->query("
     SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END), 0) AS qty
-    FROM booking_detail bd
-    JOIN booking_pemeriksaan bp ON bd.booking_id = bp.id
+    FROM inventory_booking_detail bd
+    JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
     WHERE bd.barang_id = $barang_id
       AND bp.klinik_id = $klinik_id
       AND bp.status = 'booked'
@@ -257,8 +257,8 @@ if ($r && $r->num_rows > 0) $reserve['hc'] = (float)($r->fetch_assoc()['qty'] ??
 
 $r = $conn->query("
     SELECT bp.nomor_booking, bp.tanggal_pemeriksaan, bp.status_booking, SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END) AS qty
-    FROM booking_detail bd
-    JOIN booking_pemeriksaan bp ON bd.booking_id = bp.id
+    FROM inventory_booking_detail bd
+    JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
     WHERE bd.barang_id = $barang_id
       AND bp.klinik_id = $klinik_id
       AND bp.status = 'booked'
@@ -288,8 +288,8 @@ $p_res = $conn->query("
         pb.created_at,
         pb.jenis_pemakaian,
         SUM(pbd.qty) AS qty
-    FROM pemakaian_bhp pb
-    JOIN pemakaian_bhp_detail pbd ON pbd.pemakaian_bhp_id = pb.id
+    FROM inventory_pemakaian_bhp pb
+    JOIN inventory_pemakaian_bhp_detail pbd ON pbd.pemakaian_bhp_id = pb.id
     WHERE pb.klinik_id = $klinik_id
       AND pbd.barang_id = $barang_id
       AND pb.tanggal >= '$ms_q' AND pb.tanggal <= '$t_q'

@@ -47,10 +47,10 @@ function ensure_unique_if_clean(mysqli $conn, string $table, string $column, str
 }
 
 try {
-    ensure_table($conn, "CREATE TABLE IF NOT EXISTS app_settings (k VARCHAR(100) PRIMARY KEY, v TEXT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
-    ensure_table($conn, "CREATE TABLE IF NOT EXISTS app_counters (k VARCHAR(50) NOT NULL, d CHAR(8) NOT NULL, seq INT NOT NULL DEFAULT 0, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (k, d)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    ensure_table($conn, "CREATE TABLE IF NOT EXISTS inventory_app_settings (k VARCHAR(100) PRIMARY KEY, v TEXT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    ensure_table($conn, "CREATE TABLE IF NOT EXISTS inventory_app_counters (k VARCHAR(50) NOT NULL, d CHAR(8) NOT NULL, seq INT NOT NULL DEFAULT 0, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (k, d)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
-    ensure_table($conn, "CREATE TABLE IF NOT EXISTS barang_uom_conversion (
+    ensure_table($conn, "CREATE TABLE IF NOT EXISTS inventory_barang_uom_conversion (
         id INT AUTO_INCREMENT PRIMARY KEY,
         kode_barang VARCHAR(100) NOT NULL,
         from_uom VARCHAR(50) NULL,
@@ -61,7 +61,7 @@ try {
         UNIQUE KEY uniq_kode_barang (kode_barang)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
-    ensure_table($conn, "CREATE TABLE IF NOT EXISTS stock_mirror (
+    ensure_table($conn, "CREATE TABLE IF NOT EXISTS inventory_stock_mirror (
         id INT AUTO_INCREMENT PRIMARY KEY,
         odoo_product_id VARCHAR(64) NOT NULL,
         kode_barang VARCHAR(64) NOT NULL,
@@ -71,7 +71,7 @@ try {
         UNIQUE KEY uniq_loc_prod (odoo_product_id, location_code)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
-    ensure_table($conn, "CREATE TABLE IF NOT EXISTS stok_tas_hc (
+    ensure_table($conn, "CREATE TABLE IF NOT EXISTS inventory_stok_tas_hc (
         id INT AUTO_INCREMENT PRIMARY KEY,
         barang_id INT NOT NULL,
         user_id INT NOT NULL,
@@ -82,7 +82,7 @@ try {
         UNIQUE KEY barang_user (barang_id, user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
-    ensure_table($conn, "CREATE TABLE IF NOT EXISTS hc_petugas_transfer (
+    ensure_table($conn, "CREATE TABLE IF NOT EXISTS inventory_hc_petugas_transfer (
         id INT AUTO_INCREMENT PRIMARY KEY,
         klinik_id INT NOT NULL,
         user_hc_id INT NOT NULL,
@@ -96,7 +96,7 @@ try {
         KEY idx_barang (barang_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
-    ensure_table($conn, "CREATE TABLE IF NOT EXISTS hc_tas_allocation (
+    ensure_table($conn, "CREATE TABLE IF NOT EXISTS inventory_hc_tas_allocation (
         id INT AUTO_INCREMENT PRIMARY KEY,
         klinik_id INT NOT NULL,
         user_hc_id INT NOT NULL,
@@ -110,7 +110,7 @@ try {
         KEY idx_barang (barang_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
-    ensure_table($conn, "CREATE TABLE IF NOT EXISTS booking_request_dedup (
+    ensure_table($conn, "CREATE TABLE IF NOT EXISTS inventory_booking_request_dedup (
         id INT AUTO_INCREMENT PRIMARY KEY,
         client_request_id VARCHAR(64) NOT NULL,
         created_by INT NOT NULL,
@@ -119,47 +119,48 @@ try {
         UNIQUE KEY uniq_client (client_request_id, created_by)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
-    ensure_column($conn, 'barang', 'kode_barang', "VARCHAR(64) NULL");
-    ensure_column($conn, 'barang', 'nama_barang', "VARCHAR(255) NULL");
-    ensure_column($conn, 'barang', 'satuan', "VARCHAR(64) NULL");
-    ensure_column($conn, 'barang', 'kategori', "VARCHAR(64) NULL");
-    ensure_column($conn, 'barang', 'stok_minimum', "INT NOT NULL DEFAULT 0");
-    ensure_column($conn, 'barang', 'odoo_product_id', "VARCHAR(64) NULL");
-    ensure_column($conn, 'barang', 'uom', "VARCHAR(64) NULL");
-    ensure_column($conn, 'barang', 'barcode', "VARCHAR(64) NULL");
+    ensure_column($conn, 'inventory_barang', 'kode_barang', "VARCHAR(64) NULL");
+    ensure_column($conn, 'inventory_barang', 'nama_barang', "VARCHAR(255) NULL");
+    ensure_column($conn, 'inventory_barang', 'satuan', "VARCHAR(64) NULL");
+    ensure_column($conn, 'inventory_barang', 'kategori', "VARCHAR(64) NULL");
+    ensure_column($conn, 'inventory_barang', 'stok_minimum', "INT NOT NULL DEFAULT 0");
+    ensure_column($conn, 'inventory_barang', 'odoo_product_id', "VARCHAR(64) NULL");
+    ensure_column($conn, 'inventory_barang', 'uom', "VARCHAR(64) NULL");
+    ensure_column($conn, 'inventory_barang', 'barcode', "VARCHAR(64) NULL");
 
-    ensure_column($conn, 'booking_pemeriksaan', 'booking_type', "VARCHAR(10) NULL");
-    ensure_column($conn, 'booking_pemeriksaan', 'jam_layanan', "VARCHAR(10) NULL");
-    ensure_column($conn, 'booking_pemeriksaan', 'jotform_submitted', "TINYINT(1) NOT NULL DEFAULT 0");
-    ensure_column($conn, 'booking_pemeriksaan', 'cs_name', "VARCHAR(100) NULL");
-    ensure_column($conn, 'booking_pemeriksaan', 'nomor_tlp', "VARCHAR(30) NULL");
-    ensure_column($conn, 'booking_pemeriksaan', 'tanggal_lahir', "DATE NULL");
-    ensure_column($conn, 'booking_pemeriksaan', 'butuh_fu', "TINYINT(1) NOT NULL DEFAULT 0");
+    ensure_column($conn, 'inventory_booking_pemeriksaan', 'booking_type', "VARCHAR(10) NULL");
+    ensure_column($conn, 'inventory_booking_pemeriksaan', 'jam_layanan', "VARCHAR(10) NULL");
+    ensure_column($conn, 'inventory_booking_pemeriksaan', 'jotform_submitted', "TINYINT(1) NOT NULL DEFAULT 0");
+    ensure_column($conn, 'inventory_booking_pemeriksaan', 'cs_name', "VARCHAR(100) NULL");
+    ensure_column($conn, 'inventory_booking_pemeriksaan', 'nomor_tlp', "VARCHAR(30) NULL");
+    ensure_column($conn, 'inventory_booking_pemeriksaan', 'tanggal_lahir', "DATE NULL");
+    ensure_column($conn, 'inventory_booking_pemeriksaan', 'butuh_fu', "TINYINT(1) NOT NULL DEFAULT 0");
 
-    ensure_column($conn, 'booking_pasien', 'nomor_tlp', "VARCHAR(30) NULL");
-    ensure_column($conn, 'booking_pasien', 'tanggal_lahir', "DATE NULL");
+    ensure_column($conn, 'inventory_booking_pasien', 'nomor_tlp', "VARCHAR(30) NULL");
+    ensure_column($conn, 'inventory_booking_pasien', 'tanggal_lahir', "DATE NULL");
 
-    ensure_column($conn, 'request_barang', 'dokumen_path', "VARCHAR(255) NULL");
-    ensure_column($conn, 'request_barang', 'dokumen_name', "VARCHAR(255) NULL");
-    ensure_column($conn, 'request_barang', 'processed_by', "INT NULL");
-    ensure_column($conn, 'request_barang', 'processed_at', "TIMESTAMP NULL");
-    ensure_column($conn, 'request_barang_detail', 'qty_received', "INT NOT NULL DEFAULT 0");
+    ensure_column($conn, 'inventory_request_barang', 'dokumen_path', "VARCHAR(255) NULL");
+    ensure_column($conn, 'inventory_request_barang', 'dokumen_name', "VARCHAR(255) NULL");
+    ensure_column($conn, 'inventory_request_barang', 'processed_by', "INT NULL");
+    ensure_column($conn, 'inventory_request_barang', 'processed_at', "TIMESTAMP NULL");
+    ensure_column($conn, 'inventory_request_barang_detail', 'qty_received', "INT NOT NULL DEFAULT 0");
+    ensure_column($conn, 'inventory_pemeriksaan_grup_detail', 'is_mandatory', "TINYINT(1) NOT NULL DEFAULT 1");
 
-    ensure_unique_if_clean($conn, 'barang', 'odoo_product_id', 'uniq_odoo_product_id');
-    ensure_unique_if_clean($conn, 'barang', 'kode_barang', 'uniq_kode_barang');
+    ensure_unique_if_clean($conn, 'inventory_barang', 'odoo_product_id', 'uniq_odoo_product_id');
+    ensure_unique_if_clean($conn, 'inventory_barang', 'kode_barang', 'uniq_kode_barang');
 
-    ensure_index($conn, 'booking_pemeriksaan', 'idx_bp_klinik_status_tgl', "CREATE INDEX idx_bp_klinik_status_tgl ON booking_pemeriksaan (klinik_id, status, tanggal_pemeriksaan)");
-    ensure_index($conn, 'pemakaian_bhp', 'idx_pbh_klinik_jenis_created', "CREATE INDEX idx_pbh_klinik_jenis_created ON pemakaian_bhp (klinik_id, jenis_pemakaian, created_at)");
-    ensure_index($conn, 'transaksi_stok', 'idx_ts_level_created_barang', "CREATE INDEX idx_ts_level_created_barang ON transaksi_stok (level, level_id, created_at, barang_id)");
-    ensure_index($conn, 'stock_mirror', 'idx_loc_code', "CREATE INDEX idx_loc_code ON stock_mirror (location_code, kode_barang)");
-    ensure_index($conn, 'booking_detail', 'idx_booking_id', "CREATE INDEX idx_booking_id ON booking_detail (booking_id)");
-    ensure_index($conn, 'booking_detail', 'idx_booking_barang', "CREATE INDEX idx_booking_barang ON booking_detail (barang_id)");
-    ensure_index($conn, 'request_barang_detail', 'idx_req_detail_req', "CREATE INDEX idx_req_detail_req ON request_barang_detail (request_barang_id)");
-    ensure_index($conn, 'request_barang_detail', 'idx_req_detail_barang', "CREATE INDEX idx_req_detail_barang ON request_barang_detail (barang_id)");
-    ensure_index($conn, 'transfer_barang_detail', 'idx_trf_detail_trf', "CREATE INDEX idx_trf_detail_trf ON transfer_barang_detail (transfer_barang_id)");
-    ensure_index($conn, 'transfer_barang_detail', 'idx_trf_detail_barang', "CREATE INDEX idx_trf_detail_barang ON transfer_barang_detail (barang_id)");
-    ensure_index($conn, 'stok_gudang_klinik', 'idx_sgk_klinik_barang', "CREATE INDEX idx_sgk_klinik_barang ON stok_gudang_klinik (klinik_id, barang_id)");
-    ensure_index($conn, 'stok_tas_hc', 'idx_sth_user_barang', "CREATE INDEX idx_sth_user_barang ON stok_tas_hc (user_id, barang_id)");
+    ensure_index($conn, 'inventory_booking_pemeriksaan', 'idx_bp_klinik_status_tgl', "CREATE INDEX idx_bp_klinik_status_tgl ON inventory_booking_pemeriksaan (klinik_id, status, tanggal_pemeriksaan)");
+    ensure_index($conn, 'inventory_pemakaian_bhp', 'idx_pbh_klinik_jenis_created', "CREATE INDEX idx_pbh_klinik_jenis_created ON inventory_pemakaian_bhp (klinik_id, jenis_pemakaian, created_at)");
+    ensure_index($conn, 'inventory_transaksi_stok', 'idx_ts_level_created_barang', "CREATE INDEX idx_ts_level_created_barang ON inventory_transaksi_stok (level, level_id, created_at, barang_id)");
+    ensure_index($conn, 'inventory_stock_mirror', 'idx_loc_code', "CREATE INDEX idx_loc_code ON inventory_stock_mirror (location_code, kode_barang)");
+    ensure_index($conn, 'inventory_booking_detail', 'idx_booking_id', "CREATE INDEX idx_booking_id ON inventory_booking_detail (booking_id)");
+    ensure_index($conn, 'inventory_booking_detail', 'idx_booking_barang', "CREATE INDEX idx_booking_barang ON inventory_booking_detail (barang_id)");
+    ensure_index($conn, 'inventory_request_barang_detail', 'idx_req_detail_req', "CREATE INDEX idx_req_detail_req ON inventory_request_barang_detail (request_barang_id)");
+    ensure_index($conn, 'inventory_request_barang_detail', 'idx_req_detail_barang', "CREATE INDEX idx_req_detail_barang ON inventory_request_barang_detail (barang_id)");
+    ensure_index($conn, 'inventory_transfer_barang_detail', 'idx_trf_detail_trf', "CREATE INDEX idx_trf_detail_trf ON inventory_transfer_barang_detail (transfer_barang_id)");
+    ensure_index($conn, 'inventory_transfer_barang_detail', 'idx_trf_detail_barang', "CREATE INDEX idx_trf_detail_barang ON inventory_transfer_barang_detail (barang_id)");
+    ensure_index($conn, 'inventory_stok_gudang_klinik', 'idx_sgk_klinik_barang', "CREATE INDEX idx_sgk_klinik_barang ON inventory_stok_gudang_klinik (klinik_id, barang_id)");
+    ensure_index($conn, 'inventory_stok_tas_hc', 'idx_sth_user_barang', "CREATE INDEX idx_sth_user_barang ON inventory_stok_tas_hc (user_id, barang_id)");
 
     echo "OK\n";
 } catch (Throwable $e) {

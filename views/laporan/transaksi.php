@@ -9,9 +9,9 @@ $tipe = isset($_GET['tipe']) ? $_GET['tipe'] : '';
 
 // Build Query
 $sql = "SELECT t.*, b.kode_barang, b.nama_barang, u.username as user_name
-        FROM transaksi_stok t
-        JOIN barang b ON t.barang_id = b.id
-        LEFT JOIN users u ON t.created_by = u.id
+        FROM inventory_transaksi_stok t
+        JOIN inventory_barang b ON t.barang_id = b.id
+        LEFT JOIN inventory_users u ON t.created_by = u.id
         WHERE DATE(t.created_at) BETWEEN '$start_date' AND '$end_date'";
 
 if (!empty($barang_id)) {
@@ -21,16 +21,16 @@ if (!empty($tipe)) {
     $sql .= " AND t.tipe_transaksi = '$tipe'";
 }
 
-$sql .= " ORDER BY t.created_at DESC";
+$sql .= " ORDER BY t.created_at DESC LIMIT 500";
 
 $result = $conn->query($sql);
 
 // Fetch Barang for Filter
-$barang_list = $conn->query("SELECT * FROM barang ORDER BY nama_barang ASC");
+$barang_list = $conn->query("SELECT * FROM inventory_barang ORDER BY nama_barang ASC");
 ?>
 
 <div class="container-fluid">
-    <div class="row mb-4 align-items-center">
+    <div class="row mb-2 align-items-center">
         <div class="col">
             <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
                 <i class="fas fa-history me-2"></i>Laporan Riwayat Transaksi

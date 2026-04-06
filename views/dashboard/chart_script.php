@@ -14,7 +14,7 @@ document.addEventListener("DOMContentLoaded", function() {
     for ($i = 6; $i >= 0; $i--) {
         $d = date('Y-m-d', strtotime("-$i days"));
         $labels[] = date('d M', strtotime($d));
-        $q = $conn->query("SELECT COUNT(*) as cnt FROM booking_pemeriksaan WHERE tanggal_pemeriksaan = '$d' AND status != 'cancelled'");
+        $q = $conn->query("SELECT COUNT(*) as cnt FROM inventory_booking_pemeriksaan WHERE tanggal_pemeriksaan = '$d' AND status != 'cancelled'");
         $cnt = 0;
         if ($q && $q->num_rows > 0) $cnt = (int)$q->fetch_assoc()['cnt'];
         $data[] = $cnt;
