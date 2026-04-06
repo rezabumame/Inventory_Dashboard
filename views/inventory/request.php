@@ -586,7 +586,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 $stmt_log->execute();
                             }
 
-                            $dok_rel = 'uploads/request_barang/' . $filename;
+                            $dok_rel = 'views/uploads/request_barang/' . $filename;
                             $dok_name = mb_substr(basename($name), 0, 255);
                             $final_status = 'completed';
                             $user_choice = $_POST['status_action'] ?? '';

@@ -100,7 +100,7 @@ if ($res_dok && $res_dok->num_rows > 0) {
         <div class="small text-muted mb-1">Dokumen Odoo Tertaut</div>
         <?php foreach ($dokumens as $idx => $dok): ?>
             <div class="mb-2">
-                <a class="btn btn-sm btn-outline-primary" href="<?= htmlspecialchars(base_url((string)$dok['dokumen_path'])) ?>" target="_blank" rel="noopener">
+                <a class="btn btn-sm btn-outline-primary" href="<?= htmlspecialchars(base_url(ltrim((string)$dok['dokumen_path'], '/'))) ?>" target="_blank" rel="noopener">
                     <i class="fas fa-file-download me-1"></i>
                     <?= htmlspecialchars((string)($dok['dokumen_name'] ?? ('Dokumen ' . ($idx + 1)))) ?>
                 </a>
