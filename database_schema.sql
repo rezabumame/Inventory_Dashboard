@@ -245,6 +245,7 @@ CREATE TABLE IF NOT EXISTS `inventory_pemeriksaan_grup_detail` (
   `pemeriksaan_grup_id` int(11) NOT NULL,
   `barang_id` int(11) NOT NULL,
   `qty_per_pemeriksaan` int(11) NOT NULL DEFAULT 1,
+  `is_mandatory` tinyint(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
