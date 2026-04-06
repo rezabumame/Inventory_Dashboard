@@ -188,8 +188,7 @@ foreach ($sheet_names as $si => $sname) {
         }
         $qty_new_raw = trim((string)($row[$hmap['qty alokasi']] ?? ''));
         if ($qty_new_raw === '') {
-            $errors[] = "Sheet '$sheet_name' Row " . ($ri + 1) . ": Qty Alokasi wajib diisi (boleh 0)";
-            continue;
+            $qty_new_raw = '0';
         }
         if (!is_numeric(str_replace([','], ['.'], $qty_new_raw))) {
             $errors[] = "Sheet '$sheet_name' Row " . ($ri + 1) . ": Qty Alokasi tidak valid";
