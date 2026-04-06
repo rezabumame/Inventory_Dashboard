@@ -34,6 +34,7 @@ $stmt = $conn->prepare("
         d.barang_id,
         d.qty_per_pemeriksaan,
         d.is_mandatory,
+        b.kode_barang,
         b.odoo_product_id,
         b.nama_barang,
         b.satuan

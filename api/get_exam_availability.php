@@ -69,7 +69,7 @@ while ($res_ex && ($row = $res_ex->fetch_assoc())) {
     ];
 }
 
-$res_det = $conn->query("SELECT pemeriksaan_grup_id, barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail");
+$res_det = $conn->query("SELECT pemeriksaan_grup_id, barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE is_mandatory = 1");
 while ($res_det && ($d = $res_det->fetch_assoc())) {
     $gid = (int)($d['pemeriksaan_grup_id'] ?? 0);
     if (!isset($exams[$gid])) continue;

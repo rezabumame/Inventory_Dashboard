@@ -71,7 +71,7 @@ $exams = [];
 $res_exams = $conn->query("SELECT * FROM inventory_pemeriksaan_grup ORDER BY nama_pemeriksaan");
 while($ex = $res_exams->fetch_assoc()) {
     $exams[$ex['id']] = $ex['nama_pemeriksaan'];
-    $res_det = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = " . $ex['id']);
+    $res_det = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = " . $ex['id'] . " AND is_mandatory = 1");
     while($d = $res_det->fetch_assoc()) {
         $recipes[$ex['id']][] = $d;
     }
@@ -157,7 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $pid = $exam['pemeriksaan_id'];
                 $qty_multiplier = $exam['qty'];
                 
-                $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+                $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid AND is_mandatory = 1");
                 while($row = $res->fetch_assoc()) {
                     $bid = $row['barang_id'];
                     $qty = $row['qty_per_pemeriksaan'] * $qty_multiplier;
@@ -218,8 +218,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt_pasien->execute();
                 $pasien_id = $conn->insert_id;
 
-                // Get items for this exam
-                $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+                // Get items for this exam (mandatory only - optional items don't affect stock reservation)
+                $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid AND is_mandatory = 1");
                 while($row = $res->fetch_assoc()) {
                     $qty_total = $row['qty_per_pemeriksaan'] * $qty_multiplier;
                     
