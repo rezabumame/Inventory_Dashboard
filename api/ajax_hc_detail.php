@@ -19,19 +19,21 @@ if (!in_array($_SESSION['role'], $allowed_roles)) {
 $barang_id = isset($_POST['barang_id']) ? (int)$_POST['barang_id'] : 0;
 $klinik_id = isset($_POST['klinik_id']) ? (int)$_POST['klinik_id'] : 0;
 
-if ($barang_id == 0 || $klinik_id == 0) {
+if ($barang_id == 0) {
     echo '<div class="alert alert-warning">Invalid parameters</div>';
     exit;
 }
 
 $role = (string)($_SESSION['role'] ?? '');
-if ($role === 'admin_klinik' && (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_id) {
-    echo '<div class="alert alert-danger">Access denied</div>';
-    exit;
-}
-if ($role === 'petugas_hc' && (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_id) {
-    echo '<div class="alert alert-danger">Access denied</div>';
-    exit;
+if ($klinik_id > 0) {
+    if ($role === 'admin_klinik' && (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_id) {
+        echo '<div class="alert alert-danger">Access denied</div>';
+        exit;
+    }
+    if ($role === 'petugas_hc' && (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_id) {
+        echo '<div class="alert alert-danger">Access denied</div>';
+        exit;
+    }
 }
 
 $b = $conn->query("
@@ -42,14 +44,17 @@ $b = $conn->query("
     LIMIT 1
 ")->fetch_assoc();
 
-$k = $conn->query("SELECT id, nama_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
-if (!$b || !$k) {
-    echo '<div class="alert alert-warning">Data tidak ditemukan</div>';
+if (!$b) {
+    echo '<div class="alert alert-warning">Barang tidak ditemukan</div>';
     exit;
 }
 
 $petugas = [];
-$res_p = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE role = 'petugas_hc' AND status = 'active' AND klinik_id = $klinik_id ORDER BY nama_lengkap ASC");
+if ($klinik_id === 0) {
+    $res_p = $conn->query("SELECT u.id, u.nama_lengkap, k.nama_klinik FROM inventory_users u JOIN inventory_klinik k ON u.klinik_id = k.id WHERE u.role = 'petugas_hc' AND u.status = 'active' AND k.status = 'active' ORDER BY k.nama_klinik, u.nama_lengkap ASC");
+} else {
+    $res_p = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE role = 'petugas_hc' AND status = 'active' AND klinik_id = $klinik_id ORDER BY nama_lengkap ASC");
+}
 while ($res_p && ($row = $res_p->fetch_assoc())) $petugas[] = $row;
 
 function fmt_qty($v) {
@@ -63,13 +68,34 @@ $mult = (float)($b['multiplier'] ?? 1);
 if ($mult <= 0) $mult = 1;
 
 if (!empty($petugas)) {
-    $kode_homecare = (string)($k['kode_homecare'] ?? '');
-    if ($kode_homecare === '' || (string)($b['kode_barang'] ?? '') === '') {
-        echo '<div class="alert alert-info mb-0"><i class="fas fa-info-circle"></i> Klinik ini belum memiliki Kode Homecare atau barang belum memiliki kode_barang.</div>';
+    if ($klinik_id === 0) {
+        $res_k = $conn->query("SELECT id, kode_homecare FROM inventory_klinik WHERE status = 'active' AND kode_homecare != ''");
+        $ids = [];
+        $locs = [];
+        while($rk = $res_k->fetch_assoc()) {
+            $ids[] = (int)$rk['id'];
+            $locs[] = "'" . $conn->real_escape_string(trim($rk['kode_homecare'])) . "'";
+        }
+        $loc_filter = "IN (" . implode(',', $locs) . ")";
+        $klinik_filter_pb = "pb.klinik_id IN (" . (empty($ids) ? "0" : implode(',', $ids)) . ")";
+        $kode_homecare_label = "Semua Klinik (HC)";
+    } else {
+        $k = $conn->query("SELECT nama_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+        if (!$k) {
+            echo '<div class="alert alert-warning">Klinik tidak ditemukan</div>';
+            exit;
+        }
+        $loc_filter = "= '" . $conn->real_escape_string(trim($k['kode_homecare'])) . "'";
+        $klinik_filter_pb = "pb.klinik_id = $klinik_id";
+        $kode_homecare_label = (string)($k['kode_homecare'] ?? '');
+    }
+
+    if ($loc_filter === "IN ()" || (string)($b['kode_barang'] ?? '') === '') {
+        echo '<div class="alert alert-info mb-0"><i class="fas fa-info-circle"></i> Klinik belum memiliki Kode Homecare atau barang belum memiliki kode_barang.</div>';
         $conn->close();
         exit;
     }
-    $loc = $conn->real_escape_string($kode_homecare);
+
     $kb = $conn->real_escape_string((string)$b['kode_barang']);
     $oid = $conn->real_escape_string((string)($b['odoo_product_id'] ?? ''));
     $clauses = [];
@@ -77,16 +103,18 @@ if (!empty($petugas)) {
     if ($oid !== '') $clauses[] = "TRIM(odoo_product_id) = '$oid'";
     if (empty($clauses)) $clauses[] = "1=0";
     $match = '(' . implode(' OR ', $clauses) . ')';
-    $r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc' AND $match");
+    
+    $r = $conn->query("SELECT COALESCE(SUM(qty), 0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) $loc_filter AND $match");
     $q = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
     $q = $q / $mult;
-    $res_u = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc'");
+    
+    $res_u = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE TRIM(location_code) $loc_filter");
     $last_update = (string)($res_u && $res_u->num_rows > 0 ? ($res_u->fetch_assoc()['last_update'] ?? '') : '');
 
     echo '<div class="mb-2">';
     echo '<div class="text-muted small">Stok HC (Mirror Odoo)</div>';
     echo '<div class="d-flex justify-content-between align-items-center">';
-    echo '<div class="fw-semibold">' . htmlspecialchars($kode_homecare) . '</div>';
+    echo '<div class="fw-semibold">' . htmlspecialchars($kode_homecare_label) . '</div>';
     echo '<div class="fw-bold">' . htmlspecialchars(fmt_qty($q)) . ' <small class="text-muted">' . htmlspecialchars((string)$b['satuan']) . '</small></div>';
     echo '</div>';
     if ($last_update !== '') {
@@ -99,7 +127,8 @@ if (!empty($petugas)) {
     echo '<table class="table table-sm table-hover mb-0">';
     echo '<thead class="table-light">';
     echo '<tr>';
-    echo '<th><i class="fas fa-user-nurse"></i> Petugas HC (' . htmlspecialchars($k['nama_klinik']) . ')</th>';
+    $header_label = ($klinik_id === 0) ? "Semua Klinik" : htmlspecialchars($k['nama_klinik']);
+    echo '<th><i class="fas fa-user-nurse"></i> Petugas HC (' . $header_label . ')</th>';
     echo '<th class="text-end"><i class="fas fa-briefcase-medical"></i> Stok Tas</th>';
     echo '</tr>';
     echo '</thead>';
@@ -107,11 +136,12 @@ if (!empty($petugas)) {
     $total_tas = 0.0;
     foreach ($petugas as $p) {
         $uid = (int)$p['id'];
-        $r_t = $conn->query("SELECT COALESCE(qty,0) AS qty FROM inventory_stok_tas_hc WHERE barang_id = $barang_id AND user_id = $uid AND klinik_id = $klinik_id LIMIT 1");
+        $tas_klinik_filter = ($klinik_id === 0) ? "" : " AND klinik_id = $klinik_id";
+        $r_t = $conn->query("SELECT COALESCE(qty,0) AS qty FROM inventory_stok_tas_hc WHERE barang_id = $barang_id AND user_id = $uid $tas_klinik_filter LIMIT 1");
         $qt = (float)($r_t && $r_t->num_rows > 0 ? ($r_t->fetch_assoc()['qty'] ?? 0) : 0);
         $total_tas += $qt;
         echo '<tr>';
-        echo '<td class="fw-semibold">' . htmlspecialchars($p['nama_lengkap']) . '</td>';
+        echo '<td class="fw-semibold">' . htmlspecialchars($p['nama_lengkap']) . ($klinik_id === 0 && !empty($p['nama_klinik']) ? " <small class='text-muted'>(" . htmlspecialchars($p['nama_klinik']) . ")</small>" : "") . '</td>';
         echo '<td class="text-end fw-bold">' . htmlspecialchars(fmt_qty($qt)) . ' <small class="text-muted">' . htmlspecialchars((string)$b['satuan']) . '</small></td>';
         echo '</tr>';
     }
@@ -127,7 +157,7 @@ if (!empty($petugas)) {
     $sellout_rows = [];
     if ($last_update !== '') {
         $lu = $conn->real_escape_string($last_update);
-        $filter = "pb.klinik_id = $klinik_id AND pb.jenis_pemakaian = 'hc' AND pbd.barang_id = $barang_id AND pb.created_at > '$lu'";
+        $filter = "$klinik_filter_pb AND pb.jenis_pemakaian = 'hc' AND pbd.barang_id = $barang_id AND pb.created_at > '$lu'";
     } else {
         $filter = "1=0";
     }
@@ -181,6 +211,11 @@ if (!empty($petugas)) {
         echo '</tbody></table></div></div>';
     }
 } else {
+    if ($klinik_id === 0) {
+        echo '<div class="alert alert-info mb-0"><i class="fas fa-info-circle"></i> Tidak ada petugas HC yang terdaftar di semua klinik aktif.</div>';
+        $conn->close();
+        exit;
+    }
     $kode_homecare = (string)($k['kode_homecare'] ?? '');
     if ($kode_homecare === '' || (string)($b['kode_barang'] ?? '') === '') {
         echo '<div class="alert alert-info mb-0"><i class="fas fa-info-circle"></i> Tidak ada stok HC untuk item ini.</div>';
@@ -196,7 +231,8 @@ if (!empty($petugas)) {
     echo '<table class="table table-sm table-hover mb-0">';
     echo '<thead class="table-light">';
     echo '<tr>';
-    echo '<th><i class="fas fa-user-nurse"></i> HC (' . htmlspecialchars($k['nama_klinik']) . ')</th>';
+    $header_label = htmlspecialchars($k['nama_klinik'] ?? 'Klinik');
+    echo '<th><i class="fas fa-user-nurse"></i> HC (' . $header_label . ')</th>';
     echo '<th class="text-end"><i class="fas fa-boxes"></i> Qty</th>';
     echo '</tr>';
     echo '</thead>';

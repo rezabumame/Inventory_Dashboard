@@ -9,14 +9,31 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $barang_id = (int)($_POST['barang_id'] ?? 0);
-$klinik_id = (int)($_POST['klinik_id'] ?? 0);
+$klinik_id_input = $_POST['klinik_id'] ?? 0;
 $tipe = (string)($_POST['tipe'] ?? 'in'); // 'in' or 'out'
 $tanggal = (string)($_POST['tanggal'] ?? date('Y-m-d'));
 
-if ($barang_id <= 0 || $klinik_id <= 0) {
+if ($barang_id <= 0 || ($klinik_id_input === '' || ($klinik_id_input !== 'all' && $klinik_id_input !== 'gudang_utama' && (int)$klinik_id_input <= 0))) {
     header('Content-Type: application/json');
     echo json_encode(['success' => false, 'message' => 'Invalid parameters']);
     exit;
+}
+
+$level_filter = "";
+if ($klinik_id_input === 'all') {
+    // Get all active clinic IDs
+    $res_k = $conn->query("SELECT id FROM inventory_klinik WHERE status = 'active'");
+    $ids = [];
+    while($rk = $res_k->fetch_assoc()) $ids[] = (int)$rk['id'];
+    if (empty($ids)) {
+        echo json_encode(['success' => true, 'data' => []]);
+        exit;
+    }
+    $level_filter = "(ts.level = 'klinik' AND ts.level_id IN (" . implode(',', $ids) . "))";
+} elseif ($klinik_id_input === 'gudang_utama') {
+    $level_filter = "(ts.level = 'gudang_utama')";
+} else {
+    $level_filter = "(ts.level = 'klinik' AND ts.level_id = " . (int)$klinik_id_input . ")";
 }
 
 // Determine date range (current month)
@@ -24,12 +41,12 @@ $month_start = date('Y-m-01', strtotime($tanggal)) . ' 00:00:00';
 $month_end = date('Y-m-t', strtotime($tanggal)) . ' 23:59:59';
 
 $tipe_esc = $conn->real_escape_string($tipe);
-$sql = "SELECT ts.*, u.nama_lengkap as creator_name
+$sql = "SELECT ts.*, u.nama_lengkap as creator_name, k.nama_klinik
         FROM inventory_transaksi_stok ts
         LEFT JOIN inventory_users u ON ts.created_by = u.id
+        LEFT JOIN inventory_klinik k ON ts.level_id = k.id AND ts.level = 'klinik'
         WHERE ts.barang_id = $barang_id 
-          AND ts.level = 'klinik' 
-          AND ts.level_id = $klinik_id 
+          AND $level_filter 
           AND ts.tipe_transaksi = '$tipe_esc'
           AND ts.created_at >= '$month_start' 
           AND ts.created_at <= '$month_end'
@@ -82,7 +99,7 @@ while ($row = $res->fetch_assoc()) {
         'tanggal' => date('d M Y H:i', strtotime($row['created_at'])),
         'qty' => (float)$row['qty'],
         'referensi' => $ref_label,
-        'detail' => $detail_info,
+        'detail' => $detail_info . ($klinik_id_input === 'all' && !empty($row['nama_klinik']) ? " (" . $row['nama_klinik'] . ")" : ""),
         'petugas' => $row['creator_name'] ?? '-'
     ];
 }
