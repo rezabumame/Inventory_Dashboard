@@ -53,15 +53,24 @@ $target = null;
 $force = isset($_GET['force']) && $_GET['force'] === '1';
 
 if ($mode === 'interval' && $interval > 0) {
+    $target = ($lastRun === 0) ? $now : $lastRun + ($interval * 60);
     // Tambahkan buffer 5 detik agar tidak terpicu 2x jika terpanggil sangat cepat di detik yang sama
-    $due = ($lastRun === 0) || ($now - $lastRun >= ($interval * 60) - 5);
+    $due = ($lastRun === 0) || ($now >= $target - 5);
     if ($due) $debug['is_due'] = true;
 }
 
 if ($mode === 'daily') {
     $target = strtotime(date('Y-m-d') . ' ' . $time);
+    // Jika sudah lewat jam target DAN sudah pernah jalan setelah/pada jam target hari ini, 
+    // maka target berikutnya adalah besok.
+    if ($now >= $target && $lastRun >= $target) {
+        $target = strtotime('+1 day', $target);
+    }
+    
     // Cek: Sekarang sudah melewati jam target DAN terakhir jalan adalah SEBELUM jam target hari ini
-    if ($now >= $target && $lastRun < $target) {
+    // Kita gunakan target hari ini untuk pengecekan due
+    $targetToday = strtotime(date('Y-m-d') . ' ' . $time);
+    if ($now >= $targetToday && $lastRun < $targetToday) {
         $due = true;
         $debug['is_due'] = true;
     }
@@ -71,10 +80,23 @@ if ($mode === 'weekly') {
     $todayW = (int) date('w');
     $debug['today_w'] = $todayW;
     $debug['weekday_setting'] = $weekday;
+    
+    // Hitung selisih hari ke hari target
+    $diff = $weekday - $todayW;
+    if ($diff < 0) $diff += 7;
+    
+    $target = strtotime(date('Y-m-d', strtotime("+$diff days")) . ' ' . $time);
+    
+    // Jika hari ini adalah hari target
     if ($weekday === $todayW) {
-        $target = strtotime(date('Y-m-d') . ' ' . $time);
-        // Cek: Sekarang sudah melewati jam target DAN terakhir jalan adalah SEBELUM jam target hari ini
-        if ($now >= $target && $lastRun < $target) {
+        // Jika sudah lewat jam target DAN sudah pernah jalan hari ini, target berikutnya adalah minggu depan
+        if ($now >= $target && $lastRun >= $target) {
+            $target = strtotime('+1 week', $target);
+        }
+        
+        // Cek due: hari ini hari target, sudah lewat jam target, dan belum jalan hari ini
+        $targetToday = strtotime(date('Y-m-d') . ' ' . $time);
+        if ($now >= $targetToday && $lastRun < $targetToday) {
             $due = true;
             $debug['is_due'] = true;
         }

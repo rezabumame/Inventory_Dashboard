@@ -84,21 +84,25 @@ function next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run) {
     $now = time();
     if ($mode === 'manual') return 'Manual';
     if ($mode === 'interval' && $interval > 0) {
-        $target = $last_run ? ($last_run + ($interval * 60)) : ($now + ($interval * 60));
+        $target = $last_run ? ($last_run + ($interval * 60)) : $now;
+        if ($now >= $target - 5 && $last_run >= $target - 5) {
+            $target += ($interval * 60);
+        }
         return date('d M Y H:i', $target);
     }
     if ($mode === 'daily') {
-        $today = strtotime(date('Y-m-d') . ' ' . $time);
-        $target = ($now <= $today) ? $today : strtotime('+1 day', $today);
+        $target = strtotime(date('Y-m-d') . ' ' . $time);
+        if ($now >= $target && $last_run >= $target) {
+            $target = strtotime('+1 day', $target);
+        }
         return date('d M Y H:i', $target);
     }
     if ($mode === 'weekly') {
         $todayW = (int) date('w');
-        $target = strtotime(date('Y-m-d') . ' ' . $time);
-        if ($todayW !== (int)$weekday || $now > $target) {
-            $days_ahead = ($weekday - $todayW + 7) % 7;
-            if ($days_ahead === 0) $days_ahead = 7;
-            $target = strtotime('+' . $days_ahead . ' day', strtotime(date('Y-m-d') . ' ' . $time));
+        $diff = ($weekday - $todayW + 7) % 7;
+        $target = strtotime(date('Y-m-d', strtotime("+$diff days")) . ' ' . $time);
+        if ($weekday === $todayW && $now >= $target && $last_run >= $target) {
+            $target = strtotime('+1 week', $target);
         }
         return date('d M Y H:i', $target);
     }
