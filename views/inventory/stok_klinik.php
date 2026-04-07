@@ -450,7 +450,7 @@ if ($active_tab == 'stok') {
                     }
                 }
 
-                $query .= " ORDER BY nama_barang ASC";
+                $query .= " ORDER BY kode_barang_master ASC, nama_barang ASC";
                 try {
                     $conn->query("SET SQL_BIG_SELECTS=1");
                     $result = $conn->query($query);
@@ -972,7 +972,7 @@ function openStokBreakdown(barangId, namaBarang) {
                 </div>
             <?php else: ?>
             <div class="table-responsive">
-                <table class="table table-hover datatable">
+                <table class="table table-hover datatable-stok">
                     <thead>
                         <tr>
                             <th>Kode Barang</th>
@@ -1149,6 +1149,15 @@ function openStokBreakdown(barangId, namaBarang) {
 $(document).ready(function() {
     $('.select2').select2({
         theme: 'bootstrap-5'
+    });
+
+    // Local DataTable init for Stok Klinik (sort by Kode Barang - index 0)
+    if ($.fn.DataTable.isDataTable('.datatable-stok')) {
+        $('.datatable-stok').DataTable().destroy();
+    }
+    $('.datatable-stok').DataTable({
+        "order": [[ 0, "asc" ]],
+        "pageLength": 50
     });
     
     // Simple search functionality for monitoring tab
