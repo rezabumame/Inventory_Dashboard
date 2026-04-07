@@ -617,7 +617,7 @@ if ($active_tab == 'stok') {
             </div>
         </div>
     </div>
-    <?php if ($show_hc && !empty($selected_klinik_row['kode_homecare'])): ?>
+    <?php if ($show_hc): ?>
     <div class="col-md">
         <div class="card h-100">
             <div class="card-body p-3">
@@ -658,7 +658,7 @@ if ($active_tab == 'stok') {
             </div>
         </div>
     </div>
-    <?php if ($show_hc && !empty($selected_klinik_row['kode_homecare'])): ?>
+    <?php if ($show_hc): ?>
     <div class="col-md">
         <div class="card h-100">
             <div class="card-body p-3">
