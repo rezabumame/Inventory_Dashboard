@@ -432,9 +432,6 @@ if ($selected_klinik) {
                 </ol>
             </nav>
         </div>
-        <div class="col-auto">
-            <img src="<?= base_url('assets/img/favicon.ico') ?>" alt="Logo" height="35">
-        </div>
     </div>
 
     <div class="card mb-4">
