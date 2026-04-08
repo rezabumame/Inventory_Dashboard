@@ -379,20 +379,30 @@ if ($bulk_cancel) {
             </div>
         <?php endif; ?>
 
-        <ul class="nav nav-pills mb-3" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link <?= $active_tab === 'stok' ? 'active' : '' ?>" id="tab-stok" data-bs-toggle="pill" data-bs-target="#tabpane-stok" type="button" role="tab">
-                    Stok Tas
-                </button>
+        <ul class="nav nav-pills mb-4" role="tablist">
+            <li class="nav-item">
+                <a class="nav-link rounded-pill py-2 px-4 me-2 <?= $active_tab == 'stok' ? 'active-blue' : 'text-muted border' ?>" 
+                   href="index.php?page=stok_petugas_hc&tab=stok&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>">
+                    <i class="fas fa-briefcase-medical me-2"></i>Stok Tas
+                </a>
             </li>
             <?php if (in_array($role, ['admin_klinik', 'super_admin', 'spv_klinik'], true)): ?>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link <?= $active_tab === 'history' ? 'active' : '' ?>" id="tab-history" data-bs-toggle="pill" data-bs-target="#tabpane-history" type="button" role="tab">
-                    History Transfer
-                </button>
+            <li class="nav-item">
+                <a class="nav-link rounded-pill py-2 px-4 <?= $active_tab == 'history' ? 'active-blue' : 'text-muted border' ?>" 
+                   href="index.php?page=stok_petugas_hc&tab=history&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>">
+                    <i class="fas fa-history me-2"></i>History Transfer
+                </a>
             </li>
             <?php endif; ?>
         </ul>
+
+        <style>
+            .active-blue {
+                background-color: #204EAB !important;
+                color: white !important;
+                box-shadow: 0 4px 6px rgba(32, 78, 171, 0.2);
+            }
+        </style>
 
         <div class="tab-content">
             <div class="tab-pane fade <?= $active_tab === 'stok' ? 'show active' : '' ?>" id="tabpane-stok" role="tabpanel" aria-labelledby="tab-stok">
