@@ -257,7 +257,8 @@ try {
             }
             $allowed_uoms = array_unique(array_filter($allowed_uoms));
             if (!in_array(strtolower($uom), $allowed_uoms)) {
-                add_error($errors, $row_num, 'Satuan (UoM)', "Satuan '$uom' tidak valid untuk item ini. Pilihan: " . implode(', ', $allowed_uoms));
+                $item_display_name = $master_items[$kode_barang]['nama_barang'] ?? $nama_item;
+                add_error($errors, $row_num, 'Satuan (UoM)', "Satuan '$uom' tidak valid untuk item '$item_display_name'. Pilihan: " . implode(', ', $allowed_uoms));
             }
         }
 
