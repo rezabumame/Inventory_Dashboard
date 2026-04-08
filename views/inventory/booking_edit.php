@@ -301,6 +301,11 @@ if ($can_cs_edit) {
         $list.append(row);
         var $select = $list.find('.exam-row').last().find('select');
         if (selectedId) $select.val(selectedId);
+        if (typeof $select.select2 === 'function') {
+            var $modal = $('#modalEditBookingReal');
+            if ($select.hasClass('select2-hidden-accessible')) $select.select2('destroy');
+            $select.select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: ($modal.length ? $modal : $(document.body)) });
+        }
     }
 
     function loadExamOptionsEdit(klinikId, callback) {
@@ -322,6 +327,14 @@ if ($can_cs_edit) {
                 $('.patient-exam-select').each(function() {
                     var val = $(this).val();
                     $(this).html(examOptionsEdit).val(val);
+                    if (typeof $(this).select2 === 'function') {
+                        var $modal = $('#modalEditBookingReal');
+                        if ($(this).hasClass('select2-hidden-accessible')) {
+                            $(this).trigger('change.select2');
+                        } else {
+                            $(this).select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: ($modal.length ? $modal : $(document.body)) });
+                        }
+                    }
                 });
                 if (callback) callback();
             }
