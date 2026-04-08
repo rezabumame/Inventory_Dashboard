@@ -1,9 +1,14 @@
 <?php
 date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Asia/Jakarta');
-$protocol = (
-    (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ||
-    (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
-) ? 'https' : 'http';
+
+// Robust HTTPS detection (supports reverse proxy/CDN)
+$is_https = false;
+if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') $is_https = true;
+if (!$is_https && isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443) $is_https = true;
+if (!$is_https && !empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') $is_https = true;
+if (!$is_https && !empty($_SERVER['HTTP_X_FORWARDED_SSL']) && strtolower($_SERVER['HTTP_X_FORWARDED_SSL']) === 'on') $is_https = true;
+if (!$is_https && !empty($_SERVER['HTTP_CF_VISITOR']) && strpos(strtolower($_SERVER['HTTP_CF_VISITOR']), 'https') !== false) $is_https = true;
+$protocol = $is_https ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? (getenv('APP_HOST') ?: 'localhost');
 $base_dir = trim((string)(getenv('APP_BASE_DIR') ?: ''));
 // Detect base path correctly for local and hosting (like InfinityFree)
