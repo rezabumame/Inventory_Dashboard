@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8081:80"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      APP_TIMEZONE: Asia/Jakarta
+    volumes:
+      - ./bumame-credentials.json:/var/www/html/bumame-credentials.json:ro
+    restart: unless-stopped
