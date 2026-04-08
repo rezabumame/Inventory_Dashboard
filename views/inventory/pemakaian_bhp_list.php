@@ -45,12 +45,12 @@ if ($user_role === 'petugas_hc') {
 
 if (!empty($start_date)) {
     $where_clause .= " AND pb.tanggal >= ?";
-    $params[] = $start_date;
+    $params[] = $start_date . ' 00:00:00';
     $types .= "s";
 }
 if (!empty($end_date)) {
     $where_clause .= " AND pb.tanggal <= ?";
-    $params[] = $end_date;
+    $params[] = $end_date . ' 23:59:59';
     $types .= "s";
 }
 
@@ -327,7 +327,7 @@ if ($default_modal_klinik_id) {
                         <?php while ($row = $result->fetch_assoc()): ?>
                         <tr>
                             <td><?= htmlspecialchars($row['nomor_pemakaian']) ?></td>
-                            <td><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
+                            <td><?= date('d/m/Y H:i', strtotime($row['tanggal'])) ?></td>
                             <td>
                                 <?php if ($row['jenis_pemakaian'] === 'klinik'): ?>
                                     <span class="badge bg-info">Pemakaian Klinik</span>
@@ -415,7 +415,7 @@ if ($default_modal_klinik_id) {
                                 $uom_odoo = $row['uom_odoo'] ?: $row['satuan'];
                             ?>
                             <tr>
-                                <td class="text-muted small"><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
+                                <td class="text-muted small"><?= date('d/m/Y H:i', strtotime($row['tanggal'])) ?></td>
                                 <td>
                                     <div class="item-pill">
                                         <?= htmlspecialchars($row['nama_barang']) ?>
@@ -916,6 +916,40 @@ $(document).on('shown.bs.modal', '#modalTambah', function() {
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Fix UOM -->
+<div class="modal fade" id="modalFixUom" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-0 py-3 text-white" style="background-color: #f39c12;">
+                <h5 class="modal-title fw-bold text-white"><i class="fas fa-exclamation-triangle me-2"></i>Sesuaikan Satuan (UoM)</h5>
+            </div>
+            <div class="modal-body p-4">
+                <p>Beberapa item dalam file Excel Anda memiliki satuan yang tidak terdaftar. Silakan pilih satuan yang benar untuk melanjutkan proses upload.</p>
+                <div class="table-responsive">
+                    <table class="table table-bordered align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Barang</th>
+                                <th>Satuan di Excel</th>
+                                <th width="200">Sesuaikan Ke</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fixUomTableBody">
+                            <!-- Items will be listed here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-0 py-3">
+                <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Batal Upload</button>
+                <button type="button" id="btnSaveUomFix" class="btn btn-warning px-5 shadow-sm rounded-pill py-2 fw-bold">
+                    <i class="fas fa-save me-2"></i>Simpan & Proses Ulang
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -1461,38 +1495,152 @@ $(document).ready(function() {
 
     // --- MODAL UPLOAD LOGIC ---
     $('#formUploadExcel').on('submit', function(e) {
+        e.preventDefault();
         const fileInput = $('#excelFile')[0];
         
         if (!fileInput.files.length) {
-            e.preventDefault();
-            Swal.fire({
-                icon: 'warning',
-                title: 'Perhatian',
-                text: 'Silakan pilih file Excel terlebih dahulu'
-            });
+            Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'Silakan pilih file Excel terlebih dahulu' });
             return false;
         }
 
-        const file = fileInput.files[0];
-        const maxSize = 5 * 1024 * 1024; // 5MB
+        const formData = new FormData(this);
+        formData.append('ajax', '1');
 
-        if (file.size > maxSize) {
-            e.preventDefault();
-            Swal.fire({
-                icon: 'error',
-                title: 'File Terlalu Besar',
-                text: 'Ukuran file maksimal 5MB'
-            });
-            return false;
-        }
+        processUpload(formData);
+    });
 
-        // Show loading
+    function processUpload(formData) {
         Swal.fire({
             title: 'Memproses...',
             text: 'Mohon tunggu, file sedang diproses',
             allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        $.ajax({
+            url: 'actions/process_pemakaian_bhp_upload.php',
+            method: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            dataType: 'json',
+            success: function(res) {
+                if (res.status === 'success') {
+                    Swal.fire('Berhasil', res.message, 'success').then(() => { location.reload(); });
+                } else if (res.status === 'error' && res.errors) {
+                    const uomErrors = res.errors.filter(e => e.type === 'uom_mismatch');
+                    if (uomErrors.length > 0) {
+                        Swal.close();
+                        showFixUomModal(uomErrors);
+                    } else {
+                        let msg = res.message + '<br><ul class="text-start mt-2 small">';
+                        res.errors.slice(0, 10).forEach(e => { msg += '<li>' + e.message + '</li>'; });
+                        if (res.errors.length > 10) msg += '<li>...dan ' + (res.errors.length - 10) + ' error lainnya</li>';
+                        msg += '</ul>';
+                        Swal.fire({ icon: 'error', title: 'Upload Ditolak', html: msg });
+                    }
+                } else {
+                    Swal.fire('Gagal', res.message, 'error');
+                }
+            },
+            error: function() {
+                Swal.fire('Error', 'Terjadi kesalahan sistem saat upload', 'error');
+            }
+        });
+    }
+
+    function showFixUomModal(errors) {
+        const $tbody = $('#fixUomTableBody');
+        $tbody.empty();
+        
+        // Unique items to fix
+        const uniqueItems = {};
+        errors.forEach(e => {
+            const key = e.data.kode_barang + '|' + e.data.invalid_uom;
+            if (!uniqueItems[key]) {
+                uniqueItems[key] = e.data;
+            }
+        });
+
+        Object.values(uniqueItems).forEach(item => {
+            let opts = '';
+            // Ensure allowed_uoms is treated as an array even if PHP sent it as associative object
+            const allowedUoms = Array.isArray(item.allowed_uoms) ? item.allowed_uoms : Object.values(item.allowed_uoms || {});
+            
+            allowedUoms.forEach(u => {
+                opts += `<option value="${u}">${u}</option>`;
+            });
+
+            const row = `
+                <tr>
+                    <td>
+                        <div class="fw-bold">${item.nama_item}</div>
+                        <div class="text-muted small">Kode: ${item.kode_barang}</div>
+                    </td>
+                    <td><span class="badge bg-danger">${item.invalid_uom}</span></td>
+                    <td>
+                        <select class="form-select uom-fix-select" data-kode="${item.kode_barang}" data-from="${item.invalid_uom}">
+                            ${opts}
+                        </select>
+                    </td>
+                </tr>
+            `;
+            $tbody.append(row);
+        });
+
+        $('#modalUpload').modal('hide');
+        $('#modalFixUom').modal('show');
+    }
+
+    $('#btnSaveUomFix').on('click', function() {
+        const mappings = [];
+        $('.uom-fix-select').each(function() {
+            mappings.push({
+                kode_barang: $(this).data('kode'),
+                from_uom: $(this).data('from'),
+                to_uom: $(this).val()
+            });
+        });
+
+        Swal.fire({
+            title: 'Menyimpan Mapping...',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        $.ajax({
+            url: 'actions/process_pemakaian_bhp_upload.php',
+            method: 'POST',
+            data: {
+                ajax: '1',
+                action: 'fix_uom_mappings',
+                mappings: mappings,
+                _csrf: PEMAKAIAN_CSRF
+            },
+            dataType: 'json',
+            success: function(res) {
+                if (res.status === 'success') {
+                    // Success! Now re-trigger the original upload
+                    $('#modalFixUom').modal('hide');
+                    // We need to re-submit the form. 
+                    // Since we can't easily re-use the FormData with the file without user interaction,
+                    // the easiest way is to ask user to click "Upload & Proses" again or just show success and let them re-select file.
+                    // BUT, actually we can just re-submit the form object if it's still in memory.
+                    
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Mapping Tersimpan',
+                        text: 'Silakan klik tombol "Proses Ulang" untuk melanjutkan upload.',
+                        confirmButtonText: 'Proses Ulang'
+                    }).then(() => {
+                        $('#formUploadExcel').submit();
+                    });
+                } else {
+                    Swal.fire('Gagal', res.message, 'error');
+                }
+            },
+            error: function() {
+                Swal.fire('Error', 'Gagal menyimpan mapping UOM', 'error');
             }
         });
     });

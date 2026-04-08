@@ -30,7 +30,12 @@ $conn->begin_transaction();
 try {
     // Get form data
     $edit_id = isset($_POST['id']) ? intval($_POST['id']) : null;
-    $tanggal = $_POST['tanggal'];
+    $tanggal = $_POST['tanggal'] ?? date('Y-m-d');
+
+    // If today, use full current timestamp to show time in UI
+    if (date('Y-m-d', strtotime($tanggal)) === date('Y-m-d')) {
+        $tanggal = date('Y-m-d H:i:s');
+    }
     $jenis_pemakaian = $_POST['jenis_pemakaian'];
     $klinik_id = $_POST['klinik_id'] ?? $_SESSION['klinik_id'];
     $user_hc_id = isset($_POST['user_hc_id']) ? (int)$_POST['user_hc_id'] : null;

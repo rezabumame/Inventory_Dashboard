@@ -72,7 +72,7 @@ $details = $stmt->get_result();
                     </div>
                     <div class="info-item">
                         <span class="info-label">Tanggal</span>
-                        <span class="info-value"><?= date('d F Y', strtotime($header['tanggal'])) ?></span>
+                        <span class="info-value"><?= date('d F Y H:i', strtotime($header['tanggal'])) ?></span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Jenis Pemakaian</span>

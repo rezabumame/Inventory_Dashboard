@@ -52,10 +52,47 @@ require_csrf();
 $user_id = $_SESSION['user_id'];
 $user_klinik_id = $_SESSION['klinik_id'] ?? null;
 $filename = $_FILES['excel_file']['name'] ?? 'unknown';
+$is_ajax = (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest') || isset($_POST['ajax']);
 
 // Validation helper
-function add_error(&$errors, $row, $col, $msg) {
-    $errors[] = "Baris $row, Kolom '$col': $msg";
+function add_error(&$errors, $row, $col, $msg, $type = 'general', $data = []) {
+    $errors[] = [
+        'message' => "Baris $row, Kolom '$col': $msg",
+        'type' => $type,
+        'data' => array_merge(['row' => $row, 'col' => $col], $data)
+    ];
+}
+
+// Handle UOM Mapping Fixes via AJAX
+if ($is_ajax && isset($_POST['action']) && $_POST['action'] === 'fix_uom_mappings') {
+    try {
+        $mappings = $_POST['mappings'] ?? [];
+        if (!empty($mappings)) {
+            $conn->begin_transaction();
+            foreach ($mappings as $m) {
+                $kb = $conn->real_escape_string($m['kode_barang']);
+                $from = $conn->real_escape_string($m['from_uom']);
+                $to = $conn->real_escape_string($m['to_uom']);
+                $mult = 1.0; // Default to 1 if fixing via popup
+                
+                // Check if already exists
+                $res_check = $conn->query("SELECT id FROM inventory_barang_uom_conversion WHERE kode_barang = '$kb'");
+                if ($res_check && $res_check->num_rows > 0) {
+                    $conn->query("UPDATE inventory_barang_uom_conversion SET from_uom = '$from', to_uom = '$to', multiplier = $mult WHERE kode_barang = '$kb'");
+                } else {
+                    $conn->query("INSERT INTO inventory_barang_uom_conversion (kode_barang, from_uom, to_uom, multiplier) VALUES ('$kb', '$from', '$to', $mult)");
+                }
+            }
+            $conn->commit();
+            echo json_encode(['status' => 'success', 'message' => 'Mapping UOM berhasil diperbarui.']);
+        } else {
+            echo json_encode(['status' => 'error', 'message' => 'Tidak ada mapping untuk disimpan.']);
+        }
+    } catch (Exception $e) {
+        if (isset($conn) && $conn->connect_errno == 0) $conn->rollback();
+        echo json_encode(['status' => 'error', 'message' => 'Gagal menyimpan mapping: ' . $e->getMessage()]);
+    }
+    exit;
 }
 
 function parse_custom_date($date_str) {
@@ -248,17 +285,29 @@ try {
 
         // g. UoM Validation
         if ($item_id > 0) {
-            $allowed_uoms = [strtolower($master_items[$kode_barang]['satuan'])];
+            $op_uoms = [];
+            $odoo_uoms = [];
             if (isset($master_uom[$item_id])) {
                 foreach ($master_uom[$item_id] as $conv) {
-                    $allowed_uoms[] = strtolower($conv['from_uom']);
-                    $allowed_uoms[] = strtolower($conv['to_uom']);
+                    // PRIORITIZE 'to_uom' as it's the operational unit (btl, box, vial, etc)
+                    $op_uoms[] = strtolower($conv['to_uom']);
+                    $odoo_uoms[] = strtolower($conv['from_uom']);
                 }
             }
-            $allowed_uoms = array_unique(array_filter($allowed_uoms));
-            if (!in_array(strtolower($uom), $allowed_uoms)) {
+            $base_uom = strtolower($master_items[$kode_barang]['satuan']);
+            
+            // Merge with priority: Operational > Odoo Conversion > Base Master
+            $allowed_uoms = array_merge($op_uoms, $odoo_uoms, [$base_uom]);
+            $allowed_uoms = array_values(array_unique(array_filter($allowed_uoms)));
+            
+            if (!in_array(strtolower($uom), array_map('strtolower', $allowed_uoms))) {
                 $item_display_name = $master_items[$kode_barang]['nama_barang'] ?? $nama_item;
-                add_error($errors, $row_num, 'Satuan (UoM)', "Satuan '$uom' tidak valid untuk item '$item_display_name'. Pilihan: " . implode(', ', $allowed_uoms));
+                add_error($errors, $row_num, 'Satuan (UoM)', "Satuan '$uom' tidak valid untuk item '$item_display_name'. Pilihan: " . implode(', ', $allowed_uoms), 'uom_mismatch', [
+                    'kode_barang' => $kode_barang,
+                    'nama_item' => $item_display_name,
+                    'invalid_uom' => $uom,
+                    'allowed_uoms' => $allowed_uoms
+                ]);
             }
         }
 
@@ -319,6 +368,11 @@ try {
         $stmt_log->bind_param("iiis", $user_id, $filename, $row_count, $err_json);
         $stmt_log->execute();
 
+        if ($is_ajax) {
+            echo json_encode(['status' => 'error', 'message' => "Upload ditolak. Terdapat " . count($errors) . " kesalahan data.", 'errors' => $errors]);
+            exit;
+        }
+
         $_SESSION['error'] = "Upload ditolak. Terdapat " . count($errors) . " kesalahan data.";
         $_SESSION['warnings'] = array_slice($errors, 0, 100); // Limit display
         redirect('index.php?page=pemakaian_bhp_list');
@@ -342,19 +396,19 @@ try {
 
     foreach ($transactions as $tx) {
         $m = $tx['meta'];
-        $tanggal = $m['tanggal_only'];
+        $tanggal_val = $m['tanggal_full'];
         $created_at = $m['tanggal_full'];
         $jenis_pemakaian = !empty($m['nama_nakes']) ? 'hc' : 'klinik';
         $catatan_transaksi = $m['nama_pasien'] . ' (' . $m['patient_id'] . ') - ' . $m['layanan'];
         
         // Generate number
-        $dateKey = date('Ymd', strtotime($tanggal));
+        $dateKey = date('Ymd', strtotime($m['tanggal_only']));
         $seq = next_sequence($conn, 'PBH', $dateKey);
         $prefix = 'PBH-' . $dateKey . '-';
         $nomor_pemakaian = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
         $stmt = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssiisis", $nomor_pemakaian, $tanggal, $jenis_pemakaian, $m['klinik_id'], $m['user_hc_id'], $catatan_transaksi, $user_id, $created_at);
+        $stmt->bind_param("sssiisis", $nomor_pemakaian, $tanggal_val, $jenis_pemakaian, $m['klinik_id'], $m['user_hc_id'], $catatan_transaksi, $user_id, $created_at);
         $stmt->execute();
         $pemakaian_id = $conn->insert_id;
 
@@ -430,6 +484,11 @@ try {
     $stmt_log->bind_param("isi", $user_id, $filename, $row_count);
     $stmt_log->execute();
 
+    if ($is_ajax) {
+        echo json_encode(['status' => 'success', 'message' => "Berhasil mengupload $row_count baris data BHP."]);
+        exit;
+    }
+
     $_SESSION['success'] = "Berhasil mengupload $row_count baris data BHP.";
     redirect('index.php?page=pemakaian_bhp_list');
 
@@ -448,6 +507,11 @@ try {
     $msg = $e->getMessage();
     $stmt_log->bind_param("isis", $user_id, $filename, $row_count, $msg);
     $stmt_log->execute();
+
+    if ($is_ajax) {
+        echo json_encode(['status' => 'error', 'message' => "Gagal memproses file: " . $msg]);
+        exit;
+    }
 
     $_SESSION['error'] = "Gagal memproses file: " . $msg;
     redirect('index.php?page=pemakaian_bhp_list');

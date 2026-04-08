@@ -271,8 +271,8 @@ if ($active_tab == 'stok') {
                 if ($is_history_date) {
                     $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_date) . "' AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'";
                     $filter_bp_hc = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_date) . "' AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'";
-                    $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "' AND pb.tanggal <= '" . $conn->real_escape_string($filter_date) . "'";
-                    $filter_pb_hc = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "' AND pb.tanggal <= '" . $conn->real_escape_string($filter_date) . "'";
+                    $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.tanggal <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
+                    $filter_pb_hc = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.tanggal <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
                     $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at <= '" . $conn->real_escape_string($filter_end_ts) . "'";
                     $filter_ts_hc = $filter_ts_klinik;
                 } else {

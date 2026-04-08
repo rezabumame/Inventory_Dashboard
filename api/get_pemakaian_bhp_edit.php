@@ -41,6 +41,11 @@ if (!$is_today || !$is_creator) {
     exit;
 }
 
+// Format tanggal for HTML5 date input (YYYY-MM-DD)
+if (isset($header['tanggal'])) {
+    $header['tanggal'] = date('Y-m-d', strtotime($header['tanggal']));
+}
+
 // Get details
 $stmt_d = $conn->prepare("
     SELECT pbd.*, b.nama_barang, b.kode_barang
@@ -62,5 +67,3 @@ echo json_encode([
     'details' => $details
 ]);
 ?>
-
-

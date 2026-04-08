@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS `inventory_odoo_support_data` (
 CREATE TABLE IF NOT EXISTS `inventory_pemakaian_bhp` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nomor_pemakaian` varchar(50) NOT NULL,
-  `tanggal` date NOT NULL,
+  `tanggal` datetime NOT NULL,
   `jenis_pemakaian` enum('klinik','hc') NOT NULL COMMENT 'Pemakaian Klinik atau HC',
   `klinik_id` int(11) DEFAULT NULL COMMENT 'Klinik yang melakukan pemakaian',
   `user_hc_id` int(11) DEFAULT NULL,

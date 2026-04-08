@@ -37,12 +37,12 @@ if ($user_role === 'admin_klinik' && $user_klinik_id) {
 
 if (!empty($start_date)) {
     $where_clause .= " AND pb.tanggal >= ?";
-    $params[] = $start_date;
+    $params[] = $start_date . ' 00:00:00';
     $types .= "s";
 }
 if (!empty($end_date)) {
     $where_clause .= " AND pb.tanggal <= ?";
-    $params[] = $end_date;
+    $params[] = $end_date . ' 23:59:59';
     $types .= "s";
 }
 
@@ -98,19 +98,28 @@ $ket_periode = $format_date_range($start_date, $end_date);
 // Header exactly as requested (without Adiional)
 $header = ['ID', 'NAMA BARANG', 'NAMA BAGIAN', 'PENYESUAIAN', 'KET PENYESUAIAN', 'SATUAN', 'NAMA AKUN', 'HRG BELI', 'TOTAL', 'USER', 'TANGGAL PENYESUAIAN', 'reason'];
 
-// Grouping to prevent duplicates for unique ID & TANGGAL PENYESUAIAN (including time) & USER
+// Grouping to prevent duplicates for unique ID & TANGGAL PENYESUAIAN (FULL DATETIME) & USER
 $grouped_data = [];
+$used_timestamps = []; // Track [user][timestamp] to ensure uniqueness
+
 while ($row = $res->fetch_assoc()) {
     $id = $row['ID'];
-    $tgl_pemakaian = $row['TANGGAL_PEMAKAIAN']; // format YYYY-MM-DD
-    $tgl_input_full = $row['TGL_INPUT_FULL'] ?? $row['TANGGAL_INPUT_FULL']; // fallback if alias differs
-    $time_part = date('H:i:s', strtotime($tgl_input_full));
-    $full_adjustment_date = $tgl_pemakaian . ' ' . $time_part;
-    
+    $tgl_orig = $row['TANGGAL_PEMAKAIAN']; // format YYYY-MM-DD HH:MM:SS
     $user = trim(explode('/', $row['USER_CODE'] ?? '')[0]);
     
-    // Unique key: ID + Full Timestamp + User
-    $key = $id . '|' . $full_adjustment_date . '|' . $user;
+    // Ensure unique timestamp per user/account
+    $tgl_adjusted = $tgl_orig;
+    $loop_count = 0;
+    while (isset($used_timestamps[$user][$tgl_adjusted]) && $loop_count < 100) {
+        $dt = new DateTime($tgl_adjusted);
+        $dt->modify('+1 second');
+        $tgl_adjusted = $dt->format('Y-m-d H:i:s');
+        $loop_count++;
+    }
+    $used_timestamps[$user][$tgl_adjusted] = true;
+    
+    // Unique key for grouping: ID + Adjusted Timestamp + User
+    $key = $id . '|' . $tgl_adjusted . '|' . $user;
     
     if (!isset($grouped_data[$key])) {
         $grouped_data[$key] = [
@@ -124,7 +133,7 @@ while ($row = $res->fetch_assoc()) {
             'HRG_BELI' => '',
             'TOTAL' => '',
             'USER' => $user,
-            'TANGGAL_PENYESUAIAN' => date('d-m-Y H:i:s', strtotime($full_adjustment_date)),
+            'TANGGAL_PENYESUAIAN' => date('d/m/Y H:i:s', strtotime($tgl_adjusted)),
             'reason' => $row['REASON'] ?? ''
         ];
     }

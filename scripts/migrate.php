@@ -145,6 +145,7 @@ try {
     ensure_column($conn, 'inventory_request_barang', 'processed_at', "TIMESTAMP NULL");
     ensure_column($conn, 'inventory_request_barang_detail', 'qty_received', "INT NOT NULL DEFAULT 0");
     ensure_column($conn, 'inventory_pemeriksaan_grup_detail', 'is_mandatory', "TINYINT(1) NOT NULL DEFAULT 1");
+    $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN tanggal DATETIME NOT NULL");
 
     ensure_unique_if_clean($conn, 'inventory_barang', 'odoo_product_id', 'uniq_odoo_product_id');
     ensure_unique_if_clean($conn, 'inventory_barang', 'kode_barang', 'uniq_kode_barang');

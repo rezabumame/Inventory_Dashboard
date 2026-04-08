@@ -292,7 +292,7 @@ $p_res = $conn->query("
     JOIN inventory_pemakaian_bhp_detail pbd ON pbd.pemakaian_bhp_id = pb.id
     WHERE pb.klinik_id = $klinik_id
       AND pbd.barang_id = $barang_id
-      AND pb.tanggal >= '$ms_q' AND pb.tanggal <= '$t_q'
+      AND pb.tanggal >= '$ms_q 00:00:00' AND pb.tanggal <= '$t_q 23:59:59'
     GROUP BY pb.id, pb.nomor_pemakaian, pb.tanggal, pb.created_at, pb.jenis_pemakaian
     ORDER BY pb.tanggal ASC, pb.id ASC
 ");

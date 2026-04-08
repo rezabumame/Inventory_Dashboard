@@ -114,7 +114,7 @@ while ($rs && ($row = $rs->fetch_assoc())) {
 }
 
 $sellout_map = [];
-$sellout_filter = "pb.tanggal >= '$month_start_esc' AND pb.tanggal <= '$month_end_esc'";
+$sellout_filter = "pb.tanggal >= '$month_start_esc 00:00:00' AND pb.tanggal <= '$month_end_esc 23:59:59'";
 if ($last_update_esc !== '') $sellout_filter .= " AND pb.created_at > '$last_update_esc'";
 $jenis_cond = $dest === 'hc' ? "pb.jenis_pemakaian = 'hc'" : "pb.jenis_pemakaian <> 'hc'";
 $r = $conn->query("
