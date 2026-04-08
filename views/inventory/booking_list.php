@@ -851,6 +851,11 @@ window.addPatientExamRow = function(patientIdx, selectedId = '') {
         </div>`;
     $list.append(row);
     var $select = $list.find('.exam-row').last().find('select');
+    if (typeof $select.select2 === 'function') {
+        var $modal = $('#modalBookingBaru');
+        if ($select.hasClass('select2-hidden-accessible')) $select.select2('destroy');
+        $select.select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: ($modal.length ? $modal : $(document.body)) });
+    }
     if (selectedId) {
         $select.val(selectedId);
     } else if (patientIdx > 0 && rowIdx === 0) {
@@ -897,6 +902,14 @@ window.updateAllExamSelects = function() {
         var currentVal = $(this).val();
         $(this).html(examOptionsModal);
         if (currentVal) $(this).val(currentVal);
+        if (typeof $(this).select2 === 'function') {
+            var $modal = $('#modalBookingBaru');
+            if ($(this).hasClass('select2-hidden-accessible')) {
+                $(this).trigger('change.select2');
+            } else {
+                $(this).select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: ($modal.length ? $modal : $(document.body)) });
+            }
+        }
     });
 };
 
