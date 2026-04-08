@@ -1,18 +1,16 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/settings.php';
 
-// Check if user is logged in
+// PUBLIC ACCESS CHECK
 if (!isset($_SESSION['user_id'])) {
-    echo '<div class="alert alert-danger">Unauthorized access</div>';
-    exit;
-}
-
-// Check role
-$allowed_roles = ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'cs', 'petugas_hc'];
-if (!in_array($_SESSION['role'], $allowed_roles)) {
-    echo '<div class="alert alert-danger">Access denied</div>';
-    exit;
+    $token = $_POST['token'] ?? '';
+    $saved_token = get_setting('public_stok_token');
+    if ($token === '' || $token !== $saved_token) {
+        die("Access Denied");
+    }
+} else {
+    check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'petugas_hc', 'cs']);
 }
 
 // Get parameters

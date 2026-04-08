@@ -34,6 +34,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         set_setting('webhook_lark_url', $lark);
         set_setting('gsheet_booking_webhook_url', $gsheet);
         $msg = '<div class="alert alert-success">Webhook tersimpan.</div>';
+    } else if ($form_type === 'public_access') {
+        $token = trim((string)($_POST['public_stok_token'] ?? ''));
+        set_setting('public_stok_token', $token);
+        $msg = '<div class="alert alert-success">Token akses publik tersimpan.</div>';
     } else {
         $enabled = isset($_POST['enabled']) ? '1' : '0';
         $scheduler_token = trim((string)($_POST['scheduler_token'] ?? ''));
@@ -68,6 +72,7 @@ $gudang_location_code = trim((string)get_setting('odoo_location_gudang_utama', '
 $integration_method = get_setting('odoo_integration_method', $rpc_url !== '' ? 'rpc' : 'api');
 $lark_webhook = trim((string)get_setting('webhook_lark_url', ''));
 $gsheet_webhook = trim((string)get_setting('gsheet_booking_webhook_url', ''));
+$public_stok_token = trim((string)get_setting('public_stok_token', ''));
 $scheduler_token_saved = trim((string)get_setting('odoo_sync_token', ''));
 $internal_token = getenv('ODOO_SYNC_SYSTEM_TOKEN') ?: '';
 $schedule_hint_url = '';
@@ -223,6 +228,39 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                             <button type="button" class="btn btn-outline-primary" onclick="runSyncNow(this)"><i class="fas fa-sync-alt"></i> Jalankan Sekarang</button>
                             <button type="button" class="btn btn-outline-secondary" onclick="testConn(this)"><i class="fas fa-plug"></i> Tes Koneksi</button>
                             <small class="text-muted ms-2 align-self-center" id="runStatus"></small>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Public Inventory Token Section -->
+            <div class="card border-0 shadow-sm mt-3">
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div class="fw-bold">Akses Publik Inventory</div>
+                        <span class="badge bg-info">Read-Only</span>
+                    </div>
+                    <form method="POST" class="row g-3">
+                        <input type="hidden" name="form_type" value="public_access">
+                        <div class="col-12">
+                            <label class="form-label">Token Akses Publik</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" name="public_stok_token" id="public_stok_token" value="<?= htmlspecialchars($public_stok_token) ?>" required>
+                                <button class="btn btn-outline-secondary" type="button" onclick="generateToken()"><i class="fas fa-random"></i></button>
+                            </div>
+                            <div class="form-text">Gunakan token ini untuk memberikan akses stok tanpa login ke tim lain.</div>
+                        </div>
+                        <?php if ($public_stok_token !== ''): ?>
+                        <div class="col-12">
+                            <label class="form-label">Link Publik (Copy-Paste)</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="public_link" value="<?= base_url('index.php?page=stok_klinik_publik&token=' . urlencode($public_stok_token)) ?>" readonly>
+                                <button class="btn btn-outline-primary" type="button" onclick="copyPublicLink()"><i class="fas fa-copy"></i></button>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan Token</button>
                         </div>
                     </form>
                 </div>
@@ -405,4 +443,20 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+function generateToken() {
+    const chars = '0123456789abcdef';
+    let token = '';
+    for (let i = 0; i < 32; i++) {
+        token += chars[Math.floor(Math.random() * chars.length)];
+    }
+    document.getElementById('public_stok_token').value = token;
+}
+
+function copyPublicLink() {
+    const link = document.getElementById('public_link');
+    link.select();
+    document.execCommand('copy');
+    alert('Link berhasil disalin ke clipboard!');
+}
 </script>

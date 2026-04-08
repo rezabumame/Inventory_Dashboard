@@ -1163,7 +1163,7 @@ $(document).ready(function() {
     }
     $('.datatable-stok').DataTable({
         "order": [[ 0, "asc" ]],
-        "pageLength": 50
+        "pageLength": 10
     });
     
     // Simple search functionality for monitoring tab

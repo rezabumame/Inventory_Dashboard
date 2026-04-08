@@ -12,7 +12,7 @@ if ($page === 'dashboard' && isset($_SESSION['role']) && $_SESSION['role'] === '
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 
 // Auth check for non-public pages
-$public_pages = ['login', 'logout', 'qr_verify_rab'];
+$public_pages = ['login', 'logout', 'qr_verify_rab', 'stok_klinik_publik'];
 if (!in_array($page, $public_pages) && !isset($_SESSION['user_id'])) {
     redirect('index.php?page=login');
 }
@@ -64,6 +64,9 @@ switch ($page) {
         break;
     case 'stok_petugas_hc':
         include 'views/inventory/stok_petugas_hc.php';
+        break;
+    case 'stok_klinik_publik':
+        include 'views/inventory/stok_klinik_publik.php';
         break;
     // case 'stock_opname':
     //     include 'views/inventory/stock_opname.php';
