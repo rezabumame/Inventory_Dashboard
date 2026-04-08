@@ -58,9 +58,9 @@
                         "lengthMenu": "Tampilkan _MENU_ entri",
                         "loadingRecords": "Sedang memuat...",
                         "processing": "Sedang memproses...",
-                         "search": "Cari:",
-                         "searchPlaceholder": "Cari...",
-                         "zeroRecords": "Tidak ditemukan data yang sesuai",
+                        "search": "Cari:",
+                        "searchPlaceholder": "Cari...",
+                        "zeroRecords": "Tidak ditemukan data yang sesuai",
                         "paginate": {
                             "first": "Pertama",
                             "last": "Terakhir",

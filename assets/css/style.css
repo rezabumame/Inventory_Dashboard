@@ -108,28 +108,68 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .sidebar-link:hover {
-    background: var(--bg-50);
-    color: var(--text-900);
+    background: var(--blue-50);
+    color: var(--blue-600);
 }
 
 .sidebar-link.active {
-    background: var(--blue-50);
-    color: var(--blue-700);
-    font-weight: 600;
-    position: relative;
+    background: var(--blue-600);
+    color: #ffffff;
 }
 
-.sidebar-link.active i { color: var(--blue-700); }
+/* DataTables Pagination Styling */
+.dataTables_wrapper .dataTables_paginate {
+    padding-top: 1.25rem !important;
+}
 
-.sidebar-link.active:before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 8px;
-    bottom: 8px;
-    width: 3px;
-    background: var(--blue-600);
-    border-radius: 999px;
+.dataTables_wrapper .pagination {
+    display: flex !important;
+    gap: 6px !important;
+    align-items: center !important;
+}
+
+.dataTables_wrapper .pagination .page-item .page-link {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    font-size: 13px !important;
+    border: 1px solid #e5e7eb !important;
+    color: #6b7280 !important;
+    background-color: transparent !important;
+    transition: all 0.2s ease !important;
+}
+
+.dataTables_wrapper .pagination .page-item.active .page-link {
+    background-color: #eff6ff !important;
+    border-color: #dbeafe !important;
+    color: #204EAB !important;
+    font-weight: 600 !important;
+}
+
+.dataTables_wrapper .pagination .page-item:not(.active):not(.disabled) .page-link:hover {
+    background-color: #f3f4f6 !important;
+    border-color: #d1d5db !important;
+    color: #374151 !important;
+}
+
+.dataTables_wrapper .pagination .page-item.disabled .page-link {
+    background-color: transparent !important;
+    border-color: #f3f4f6 !important;
+    color: #d1d5db !important;
+    opacity: 0.5 !important;
+}
+
+.dataTables_wrapper .pagination .page-item .page-link:focus {
+    box-shadow: none !important;
+}
+
+/* Adjust chevron icons size */
+.dataTables_wrapper .pagination .page-item .page-link i {
+    font-size: 10px !important;
 }
 
 .main-content {

@@ -415,6 +415,20 @@ if ($selected_klinik) {
         .summary-icon { opacity: 0.4; font-size: 1.25rem; }
         .table thead th { background-color: #204EAB; color: white; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; border: none; vertical-align: middle; white-space: nowrap; }
         .table td { vertical-align: middle; }
+
+        /* Pagination Circular Styling */
+        .dataTables_wrapper .dataTables_paginate { padding-top: 1.25rem !important; }
+        .dataTables_wrapper .pagination { display: flex !important; gap: 6px !important; align-items: center !important; }
+        .dataTables_wrapper .pagination .page-item .page-link { 
+            width: 32px !important; height: 32px !important; border-radius: 50% !important; 
+            display: flex !important; align-items: center !important; justify-content: center !important; 
+            padding: 0 !important; font-size: 13px !important; border: 1px solid #e5e7eb !important; 
+            color: #6b7280 !important; background-color: transparent !important; transition: all 0.2s ease !important; 
+        }
+        .dataTables_wrapper .pagination .page-item.active .page-link { background-color: #eff6ff !important; border-color: #dbeafe !important; color: #204EAB !important; font-weight: 600 !important; }
+        .dataTables_wrapper .pagination .page-item.disabled .page-link { background-color: transparent !important; border-color: #f3f4f6 !important; color: #d1d5db !important; opacity: 0.5 !important; }
+        .dataTables_wrapper .pagination .page-item .page-link:focus { box-shadow: none !important; }
+        .dataTables_wrapper .pagination .page-item .page-link i { font-size: 10px !important; }
     </style>
 </head>
 <body>
@@ -675,8 +689,8 @@ $(document).ready(function() {
             "paginate": {
                 "first": "Pertama",
                 "last": "Terakhir",
-                "next": "Selanjutnya",
-                "previous": "Sebelumnya"
+                "next": "<i class='fas fa-chevron-right'></i>",
+                "previous": "<i class='fas fa-chevron-left'></i>"
             }
         }
     });
