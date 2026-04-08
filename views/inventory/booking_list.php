@@ -566,7 +566,7 @@ $result = $conn->query($query);
                                             <label class="form-label fw-semibold">Jumlah Pax <span class="text-danger">*</span></label>
                                             <input type="number" name="jumlah_pax" id="jumlah_pax" class="form-control" min="1" value="1" required>
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-3" id="order_id_container_modal" style="display: none;">
                                             <label class="form-label fw-semibold">Order ID</label>
                                             <input type="text" name="order_id" class="form-control" placeholder="Opsional (Contoh: B12345)">
                                         </div>
@@ -694,6 +694,15 @@ $(document).ready(function() {
 
     $('#klinik_id_modal, #status_booking').on('change', function() {
         var klinikId = $('#klinik_id_modal').val();
+        var statusBooking = $('#status_booking').val();
+
+        if (statusBooking === 'Reserved - HC') {
+            $('#order_id_container_modal').show();
+        } else {
+            $('#order_id_container_modal').hide();
+            $('#order_id_container_modal input').val('');
+        }
+
         if (klinikId) {
             loadExamOptions(klinikId);
         } else {

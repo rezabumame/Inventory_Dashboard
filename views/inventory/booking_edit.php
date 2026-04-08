@@ -141,7 +141,7 @@ if ($can_cs_edit) {
                                             <label class="form-label fw-semibold">Jumlah Pax <span class="text-danger">*</span></label>
                                             <input type="number" name="jumlah_pax" id="edit_jumlah_pax" class="form-control" min="1" value="<?= (int)$booking['jumlah_pax'] ?>" required>
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-3" id="edit_order_id_container" style="<?= stripos($booking['status_booking'], 'HC') !== false ? '' : 'display: none;' ?>">
                                             <label class="form-label fw-semibold">Order ID</label>
                                             <input type="text" name="order_id" class="form-control" value="<?= htmlspecialchars($booking['order_id'] ?? '') ?>" placeholder="Opsional">
                                         </div>
@@ -365,6 +365,13 @@ if ($can_cs_edit) {
         });
 
         $modalEl.find('#edit_klinik_id, #edit_status_booking').on('change', function() {
+            var statusBooking = $('#edit_status_booking').val();
+            if (statusBooking === 'Reserved - HC') {
+                $('#edit_order_id_container').show();
+            } else {
+                $('#edit_order_id_container').hide();
+                $('#edit_order_id_container input').val('');
+            }
             loadExamOptionsEdit($('#edit_klinik_id').val());
         });
 
