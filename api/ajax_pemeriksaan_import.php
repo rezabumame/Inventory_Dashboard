@@ -36,6 +36,7 @@ $conn->begin_transaction();
 try {
     $inserted_count = 0;
     $mapping_count = 0;
+    $cleared_grups = [];
     
     // Skip header row
     for ($i = 1; $i < count($rows); $i++) {
@@ -55,12 +56,21 @@ try {
         
         if ($res->num_rows > 0) {
             $grup_id = $res->fetch_assoc()['id'];
+            
+            // NEW: Clear existing mapping for this grup ONCE per import session
+            if (!in_array($grup_id, $cleared_grups)) {
+                $stmt_del = $conn->prepare("DELETE FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ?");
+                $stmt_del->bind_param("i", $grup_id);
+                $stmt_del->execute();
+                $cleared_grups[] = $grup_id;
+            }
         } else {
             $stmt_ins = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup (nama_pemeriksaan, keterangan) VALUES (?, '')");
             $stmt_ins->bind_param("s", $nama_pemeriksaan);
             $stmt_ins->execute();
             $grup_id = $conn->insert_id;
             $inserted_count++;
+            $cleared_grups[] = $grup_id; // Also mark as "cleared" so we don't try to delete again (though it's empty)
         }
         
         // 2. Mapping Item if kode_barang is provided
