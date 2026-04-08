@@ -8,20 +8,31 @@ $message_type = '';
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     require_csrf();
     $nama_lengkap = $_POST['nama_lengkap'];
+    $username = $_POST['username'];
     $password = $_POST['password'];
     
+    // Check if username (email) already exists for another user
+    $check_stmt = $conn->prepare("SELECT id FROM inventory_users WHERE username = ? AND id != ?");
+    $check_stmt->bind_param("si", $username, $user_id);
+    $check_stmt->execute();
+    if ($check_stmt->get_result()->num_rows > 0) {
+        $message = 'Email/Username sudah digunakan oleh akun lain!';
+        $message_type = 'danger';
+    }
+
     if (empty($message)) {
         if (!empty($password)) {
             $hashed = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("UPDATE inventory_users SET nama_lengkap = ?, password = ? WHERE id = ?");
-            $stmt->bind_param("ssi", $nama_lengkap, $hashed, $user_id);
+            $stmt = $conn->prepare("UPDATE inventory_users SET nama_lengkap = ?, username = ?, password = ? WHERE id = ?");
+            $stmt->bind_param("sssi", $nama_lengkap, $username, $hashed, $user_id);
         } else {
-            $stmt = $conn->prepare("UPDATE inventory_users SET nama_lengkap = ? WHERE id = ?");
-            $stmt->bind_param("si", $nama_lengkap, $user_id);
+            $stmt = $conn->prepare("UPDATE inventory_users SET nama_lengkap = ?, username = ? WHERE id = ?");
+            $stmt->bind_param("ssi", $nama_lengkap, $username, $user_id);
         }
         
         if ($stmt->execute()) {
             $_SESSION['nama_lengkap'] = $nama_lengkap;
+            $_SESSION['username'] = $username;
             $message = 'Profil berhasil diperbarui!';
             $message_type = 'success';
         } else {
@@ -129,10 +140,10 @@ $user = $conn->query("SELECT u.*, k.nama_klinik FROM inventory_users u LEFT JOIN
 
                                 <div class="col-md-12">
                                     <label class="form-label fw-bold">
-                                        <i class="fas fa-envelope text-primary"></i> Email
+                                        <i class="fas fa-envelope text-primary"></i> Email / Username
                                     </label>
-                                    <input type="text" class="form-control form-control-lg" value="<?= htmlspecialchars($user['username']) ?>" readonly disabled style="background-color: #f8f9fa;">
-                                    <small class="text-muted">Email tidak dapat diubah</small>
+                                    <input type="text" name="username" class="form-control form-control-lg" value="<?= htmlspecialchars($user['username']) ?>" required>
+                                    <small class="text-muted">Gunakan email aktif Anda</small>
                                 </div>
 
                                 <div class="col-md-12">
