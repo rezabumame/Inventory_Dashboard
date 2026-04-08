@@ -285,7 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <label class="fw-bold">Tanggal Booking Tindakan <span class="text-danger">*</span></label>
                     <input type="date" name="tanggal" class="form-control" value="<?= date('Y-m-d') ?>" required>
                 </div>
-                <div class="col-md-3 mb-3">
+                <div class="col-md-3 mb-3" id="order_id_container" style="display: none;">
                     <label class="fw-bold">Order ID</label>
                     <input type="text" name="order_id" class="form-control" placeholder="Opsional">
                 </div>
@@ -396,6 +396,17 @@ document.addEventListener('DOMContentLoaded', function() {
     $('#klinik_id').on('change', function() {
         var kid = $(this).val();
         updateExamOptions(kid);
+    });
+
+    // Toggle Order ID based on Status Booking
+    $('#status_booking').on('change', function() {
+        var status = $(this).val();
+        if (status === 'Reserved - HC') {
+            $('#order_id_container').show();
+        } else {
+            $('#order_id_container').hide();
+            $('input[name="order_id"]').val(''); // Clear if hidden
+        }
     });
     
     addExam(); // Add initial row
