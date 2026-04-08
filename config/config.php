@@ -7,7 +7,13 @@ if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') $is_https = true;
 if (!$is_https && isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443) $is_https = true;
 if (!$is_https && !empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') $is_https = true;
 if (!$is_https && !empty($_SERVER['HTTP_X_FORWARDED_SSL']) && strtolower($_SERVER['HTTP_X_FORWARDED_SSL']) === 'on') $is_https = true;
+if (!$is_https && !empty($_SERVER['HTTP_X_FORWARDED_SCHEME']) && strtolower($_SERVER['HTTP_X_FORWARDED_SCHEME']) === 'https') $is_https = true;
+if (!$is_https && !empty($_SERVER['HTTP_X_FORWARDED_PORT']) && (int)$_SERVER['HTTP_X_FORWARDED_PORT'] === 443) $is_https = true;
 if (!$is_https && !empty($_SERVER['HTTP_CF_VISITOR']) && strpos(strtolower($_SERVER['HTTP_CF_VISITOR']), 'https') !== false) $is_https = true;
+if (!$is_https && !empty($_SERVER['HTTP_FORWARDED'])) {
+    $fwd = strtolower((string)$_SERVER['HTTP_FORWARDED']);
+    if (strpos($fwd, 'proto=https') !== false) $is_https = true;
+}
 $protocol = $is_https ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? (getenv('APP_HOST') ?: 'localhost');
 $base_dir = trim((string)(getenv('APP_BASE_DIR') ?: ''));
