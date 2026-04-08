@@ -418,7 +418,7 @@ try {
             $qty_after = $qty_before - $final_qty;
             $stmt_t = $conn->prepare("INSERT INTO inventory_transaksi_stok (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at) VALUES (?, ?, ?, 'out', ?, ?, ?, 'pemakaian_bhp', ?, ?, ?, ?)");
             $cat = "Upload BHP: $nomor_pemakaian - " . $catatan_transaksi;
-            $stmt_t->bind_param("isiddddisis", $item_id, $level, $level_id, $final_qty, $qty_before, $qty_after, $pemakaian_id, $cat, $user_id, $created_at);
+            $stmt_t->bind_param("isidddisis", $item_id, $level, $level_id, $final_qty, $qty_before, $qty_after, $pemakaian_id, $cat, $user_id, $created_at);
             $stmt_t->execute();
         }
     }
