@@ -113,8 +113,23 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .sidebar-link.active {
+    background: var(--blue-50);
+    color: var(--blue-700);
+    font-weight: 600;
+    position: relative;
+}
+
+.sidebar-link.active i { color: var(--blue-700); }
+
+.sidebar-link.active:before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
     background: var(--blue-600);
-    color: #ffffff;
+    border-radius: 999px;
 }
 
 /* DataTables Pagination Styling */
