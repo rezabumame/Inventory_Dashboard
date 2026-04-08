@@ -277,7 +277,13 @@ if ($active_tab == 'stok') {
                     $filter_ts_hc = $filter_ts_klinik;
                 } else {
                     if ($last_update_general !== '') {
-                        $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($month_start) . "' AND bp.created_at > '" . $conn->real_escape_string($last_update_general) . "'";
+                        $last_update_time = date('H:i:s', strtotime($last_update_general));
+                        $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($month_start) . "' 
+                            AND (
+                                bp.created_at > '" . $conn->real_escape_string($last_update_general) . "' 
+                                OR bp.tanggal_pemeriksaan > '" . $conn->real_escape_string($last_update_date) . "'
+                                OR (bp.tanggal_pemeriksaan = '" . $conn->real_escape_string($last_update_date) . "' AND bp.jam_layanan >= '$last_update_time')
+                            )";
                         $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "' AND pb.created_at > '" . $conn->real_escape_string($last_update_general) . "'";
                         $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at > '" . $conn->real_escape_string($last_update_general) . "'";
                         
