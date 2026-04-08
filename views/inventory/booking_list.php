@@ -962,8 +962,12 @@ window.openEditBooking = function(id) {
     });
 
     $.ajax({
-        url: 'index.php?page=booking_edit&id=' + id + '&layout=none',
-        success: function(html) {
+        url: 'index.php',
+        method: 'GET',
+        data: { page: 'booking_edit', id: id, layout: 'none' },
+        dataType: 'html',
+        cache: false,
+         success: function(html) {
             Swal.close();
             $container.html(html);
             
@@ -984,9 +988,16 @@ window.openEditBooking = function(id) {
                 }
             }, 100);
         },
-        error: function() {
+        error: function(xhr) {
             Swal.close();
-            showError('Gagal memuat form edit');
+            var msg = 'Gagal memuat form edit';
+            try {
+                var status = xhr && xhr.status ? (' [' + xhr.status + ']') : '';
+                var snippet = (xhr && xhr.responseText) ? String(xhr.responseText).substr(0, 200) : '';
+                if (snippet) msg += status + ' - ' + snippet.replace(/<[^>]+>/g,'').trim();
+                else msg += status;
+            } catch (e) {}
+            showError(msg);
         }
     });
 };
