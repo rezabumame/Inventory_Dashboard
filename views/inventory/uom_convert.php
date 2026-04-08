@@ -258,12 +258,27 @@ document.addEventListener('DOMContentLoaded', function() {
             var mm = this.getAttribute('data-multiplier') || '1';
             var nt = this.getAttribute('data-note') || '';
             var label = this.getAttribute('data-label') || '';
-            if (sel) sel.value = kb || '';
-            var fh = document.getElementById('fromUomHidden'); if (fh) fh.value = fu || '';
+            
+            // Set select value
+            if (sel) {
+                sel.value = kb || '';
+                // Trigger change manually to update labels and hidden fields
+                sel.dispatchEvent(new Event('change'));
+            }
+            
+            var fh = document.getElementById('fromUomHidden'); 
+            if (fh) fh.value = fu || '';
             if (to) to.value = tu || '';
-            if (mult) mult.value = mm || '1';
+            
+            // Format multiplier to avoid long decimal display in input
+            if (mult) {
+                var mNum = parseFloat(mm);
+                mult.value = isNaN(mNum) ? '1' : fmtPreviewNumber(mNum);
+            }
+            
             if (note) note.value = nt || '';
             if (editStatus) editStatus.textContent = label ? ('Mode edit: ' + label) : 'Mode edit';
+            
             updatePreview();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         });
