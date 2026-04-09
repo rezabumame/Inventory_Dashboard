@@ -1517,10 +1517,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (odoo && ratio && Math.abs(ratio - 1) > 0.0000001 && oper.toLowerCase() !== odoo.toLowerCase()) {
             html += '<option value="oper">' + escapeHtml(oper) + '</option>';
             html += '<option value="odoo">' + escapeHtml(odoo) + '</option>';
-            $uomSel.prop('disabled', false);
         } else {
             html += '<option value="oper">' + escapeHtml(oper) + '</option>';
-            $uomSel.prop('disabled', true);
         }
         $uomSel.html(html).val('oper');
     }
@@ -1567,6 +1565,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
     $(document).on('shown.bs.modal', '#modalUploadAlokasiMirrorHC', function() {
         updateTemplateDownloadLink();
+    });
+
+    $(document).on('submit', '#modalTransferHC form', function() {
+        var $btn = $(this).find('button[type="submit"]');
+        if ($btn.hasClass('disabled')) return false;
+        $btn.addClass('disabled').html('<i class="fas fa-spinner fa-spin me-1"></i> Memproses...');
+    });
+    $(document).on('submit', '#modalAllocateMirrorHC form', function() {
+        var $btn = $(this).find('button[type="submit"]');
+        if ($btn.hasClass('disabled')) return false;
+        $btn.addClass('disabled').html('<i class="fas fa-spinner fa-spin me-1"></i> Memproses...');
     });
 })();
 </script>

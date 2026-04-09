@@ -1150,6 +1150,20 @@ window.openMoveModal = function(id, currentStatus, nomorBooking) {
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalMove')).show();
 };
 
+window.submitMove = function() {
+    const id = $('#moveBookingId').val();
+    const target = $('#moveNewStatus').val();
+    if (!id || !target) return;
+
+    showConfirm(`Pindahkan booking ke ${target}?`, 'Konfirmasi Pindah', function() {
+        postBookingAction({ 
+            action: 'move', 
+            id: id, 
+            new_status: target 
+        });
+    });
+};
+
 window.openAdjustModal = function(id, nomorBooking, currentPax, klinikId, statusBooking) {
     $('#adjustBookingId').val(id);
     $('#adjustNomorBooking').text(nomorBooking);
