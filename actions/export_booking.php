@@ -109,23 +109,23 @@ if ($result && $result->num_rows > 0) {
         $fu = (int)($row['butuh_fu'] ?? 0) === 1 ? 'Ya' : 'Tidak';
         
         echo '<tr>';
-        echo '<td>' . htmlspecialchars($row['nomor_booking']) . '</td>';
-        echo '<td>' . htmlspecialchars($row['tanggal_pemeriksaan']) . '</td>';
+        echo '<td>' . htmlspecialchars($row['nomor_booking'] ?? '-') . '</td>';
+        echo '<td>' . htmlspecialchars($row['tanggal_pemeriksaan'] ?? '-') . '</td>';
         echo '<td>' . htmlspecialchars($row['jam_layanan'] ?? '-') . '</td>';
-        echo '<td>' . htmlspecialchars($row['nama_pemesan']) . '</td>';
-        echo '<td>="' . htmlspecialchars($row['nomor_tlp']) . '"</td>';
+        echo '<td>' . htmlspecialchars($row['nama_pemesan'] ?? '-') . '</td>';
+        echo '<td>="' . htmlspecialchars($row['nomor_tlp'] ?? '') . '"</td>';
         echo '<td>' . htmlspecialchars($row['tanggal_lahir'] ?? '-') . '</td>';
-        echo '<td>' . htmlspecialchars($row['jumlah_pax']) . '</td>';
-        echo '<td>' . htmlspecialchars($row['total_items']) . '</td>';
-        echo '<td>' . htmlspecialchars($row['jenis_pemeriksaan']) . '</td>';
-        echo '<td>' . htmlspecialchars($row['nama_klinik']) . '</td>';
-        echo '<td>' . htmlspecialchars($row['status_booking']) . '</td>';
+        echo '<td>' . htmlspecialchars($row['jumlah_pax'] ?? 0) . '</td>';
+        echo '<td>' . htmlspecialchars($row['total_items'] ?? 0) . '</td>';
+        echo '<td>' . htmlspecialchars($row['jenis_pemeriksaan'] ?? '-') . '</td>';
+        echo '<td>' . htmlspecialchars($row['nama_klinik'] ?? '-') . '</td>';
+        echo '<td>' . htmlspecialchars($row['status_booking'] ?? '-') . '</td>';
         echo '<td>' . htmlspecialchars($jf) . '</td>';
         echo '<td>' . htmlspecialchars($row['cs_name'] ?? '-') . '</td>';
-        echo '<td>' . htmlspecialchars(ucfirst($row['status'])) . '</td>';
+        echo '<td>' . htmlspecialchars(ucfirst($row['status'] ?? '')) . '</td>';
         echo '<td>' . htmlspecialchars(ucfirst(strtolower($row['booking_type'] ?? 'keep'))) . '</td>';
         echo '<td>' . htmlspecialchars($fu) . '</td>';
-        echo '<td>' . htmlspecialchars($row['created_at']) . '</td>';
+        echo '<td>' . htmlspecialchars($row['created_at'] ?? '-') . '</td>';
         echo '</tr>';
     }
 } else {
