@@ -557,11 +557,13 @@ $result = $conn->query($query);
                                     <div class="row g-3">
                                         <div class="col-md-3">
                                             <label class="form-label fw-semibold">Status Booking <span class="text-danger">*</span></label>
-                                            <select name="status_booking" id="status_booking" class="form-select" required>
-                                                <option value="">Pilih...</option>
-                                                <option value="Reserved - Clinic">Reserved - Clinic</option>
-                                                <option value="Reserved - HC">Reserved - HC</option>
-                                            </select>
+                                            <div class="segmented-control">
+                                                <input type="radio" class="btn-check" name="status_booking" id="status_clinic" value="Reserved - Clinic" checked>
+                                                <label class="btn-segmented" for="status_clinic">Clinic</label>
+                                                
+                                                <input type="radio" class="btn-check" name="status_booking" id="status_hc" value="Reserved - HC">
+                                                <label class="btn-segmented" for="status_hc">HC</label>
+                                            </div>
                                         </div>
                                         <div class="col-md-3">
                                             <label class="form-label fw-semibold">Klinik <span class="text-danger">*</span></label>
@@ -705,9 +707,9 @@ $(document).ready(function() {
         $('#btnSubmitBooking').prop('disabled', false).html('<i class="fas fa-save"></i> Simpan Booking');
     });
 
-    $('#klinik_id_modal, #status_booking').on('change', function() {
+    $('#klinik_id_modal').on('change', function() {
         var klinikId = $('#klinik_id_modal').val();
-        var statusBooking = $('#status_booking').val();
+        var statusBooking = $('input[name=\"status_booking\"]:checked').val();
 
         if (statusBooking === 'Reserved - HC') {
             $('#order_id_container_modal').show();
@@ -722,6 +724,17 @@ $(document).ready(function() {
             examOptionsModal = '<option value="">Pilih klinik dulu...</option>';
             updateAllExamSelects();
         }
+    });
+    $('input[name=\"status_booking\"]').on('change', function() {
+        var statusBooking = $('input[name=\"status_booking\"]:checked').val();
+        if (statusBooking === 'Reserved - HC') {
+            $('#order_id_container_modal').show();
+        } else {
+            $('#order_id_container_modal').hide();
+            $('#order_id_container_modal input').val('');
+        }
+        var klinikId = $('#klinik_id_modal').val();
+        if (klinikId) loadExamOptions(klinikId);
     });
 
     $(document).on('change', '.patient-exam-select[data-patient-idx="0"]', function() {
@@ -893,7 +906,7 @@ window.removePatientExamRow = function(btn) {
 };
 
 window.loadExamOptions = function(klinikId, callback) {
-    var statusBooking = $('#status_booking').val() || $('#modalAdjust').data('status-booking') || '';
+    var statusBooking = $('input[name=\"status_booking\"]:checked').val() || $('#modalAdjust').data('status-booking') || '';
     $.ajax({
         url: 'api/get_exam_availability.php',
         method: 'GET',
