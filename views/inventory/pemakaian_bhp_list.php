@@ -207,16 +207,31 @@ try {
     while ($res_av_h && ($r = $res_av_h->fetch_assoc())) {
         $kid = (int)$r['klinik_id'];
         $bid = (int)$r['barang_id'];
-        
-        // Simpan stok RAW
         $qty_mirror = (float)$r['total_qty_mirror'];
-
         if (!isset($available_hc_map[$kid])) $available_hc_map[$kid] = [];
         $available_hc_map[$kid][$bid] = $qty_mirror;
     }
-} catch (Exception $e) {
-    $available_hc_map = [];
-}
+} catch (Exception $e) {}
+
+$available_hc_user_map = [];
+try {
+    $res_av_hu = $conn->query("
+        SELECT st.user_id, st.barang_id, st.qty, COALESCE(c.multiplier, 1) as multiplier
+        FROM inventory_stok_tas_hc st
+        JOIN inventory_barang b ON st.barang_id = b.id
+        LEFT JOIN inventory_barang_uom_conversion c ON b.kode_barang = c.kode_barang
+        WHERE st.qty > 0
+    ");
+    while ($res_av_hu && ($r = $res_av_hu->fetch_assoc())) {
+        $uid = (int)$r['user_id'];
+        $bid = (int)$r['barang_id'];
+        $mult = (float)($r['multiplier'] ?? 1);
+        // Store in RAW (Odoo unit) for JS consistency
+        $qty_raw = (float)$r['qty'] * $mult;
+        if (!isset($available_hc_user_map[$uid])) $available_hc_user_map[$uid] = [];
+        $available_hc_user_map[$uid][$bid] = $qty_raw;
+    }
+} catch (Exception $e) {}
 
 $klinik_name = '';
 if ($default_modal_klinik_id) {
@@ -731,7 +746,7 @@ if ($default_modal_klinik_id) {
                                     </label>
                                     <?php if ($user_role === 'petugas_hc'): ?>
                                         <input type="text" class="form-control bg-light" value="<?= htmlspecialchars($_SESSION['nama_lengkap']) ?>" readonly>
-                                        <input type="hidden" name="user_hc_id" value="<?= (int)$_SESSION['user_id'] ?>">
+                                        <input type="hidden" name="user_hc_id" id="modalUserHcIdHidden" value="<?= (int)$_SESSION['user_id'] ?>">
                                     <?php else: ?>
                                         <select name="user_hc_id" id="modalUserHcId" class="form-select">
                                             <option value="">- Pilih Petugas -</option>
@@ -970,6 +985,7 @@ $(document).ready(function() {
     ?>;
     const availableKlinik = <?php echo json_encode($available_klinik_map, JSON_UNESCAPED_UNICODE); ?>;
     const availableHc = <?php echo json_encode($available_hc_map, JSON_UNESCAPED_UNICODE); ?>;
+    const availableHcUser = <?php echo json_encode($available_hc_user_map, JSON_UNESCAPED_UNICODE); ?>;
 
     function initBarangSelect2($select) {
         if (!$select || !$select.length) return;
@@ -994,18 +1010,25 @@ $(document).ready(function() {
         $select.select2(opts);
     }
 
-    function getAllowedIds(klinikId, jenis) {
-        if (!klinikId || !jenis) return null;
-        const kid = String(klinikId);
-        if (jenis === 'hc') return availableHc[kid] || {};
-        return availableKlinik[kid] || {};
+    function getAllowedIds(klinikId, jenis, userHcId = null) {
+        if (!jenis) return null;
+        if (jenis === 'hc') {
+            if (userHcId) {
+                return availableHcUser[String(userHcId)] || {};
+            }
+            // For HC, we MUST select a petugas to see their allocated stock
+            return {};
+        }
+        return availableKlinik[String(klinikId)] || {};
     }
 
-    function buildOptionsHtml(klinikId, jenis) {
+    function buildOptionsHtml(klinikId, jenis, userHcId = null) {
         if (!jenis) return '<option value="">-- Pilih Jenis Pemakaian dahulu --</option>';
-        if (!klinikId) return '<option value="">-- Pilih Klinik dahulu --</option>';
-        const map = getAllowedIds(klinikId, jenis);
-        const ids = Object.keys(map);
+        if (jenis === 'klinik' && !klinikId) return '<option value="">-- Pilih Klinik dahulu --</option>';
+        if (jenis === 'hc' && !userHcId) return '<option value="">-- Pilih Petugas dahulu --</option>';
+        
+        const map = getAllowedIds(klinikId, jenis, userHcId);
+        const ids = Object.keys(map || {});
         if (!ids || ids.length === 0) return '<option value="">-- Tidak ada barang tersedia --</option>';
         const items = ids
             .map(id => ({ 
@@ -1032,9 +1055,9 @@ $(document).ready(function() {
         return html;
     }
 
-    function fillSelectOptions($select, klinikId, jenis, keepValue = true) {
+    function fillSelectOptions($select, klinikId, jenis, userHcId = null, keepValue = true) {
         const prev = keepValue ? $select.val() : '';
-        $select.html(buildOptionsHtml(klinikId, jenis));
+        $select.html(buildOptionsHtml(klinikId, jenis, userHcId));
         if (keepValue && prev && $select.find(`option[value="${prev}"]`).length) {
             $select.val(prev);
         } else {
@@ -1043,7 +1066,6 @@ $(document).ready(function() {
         if ($select.hasClass('select2-hidden-accessible')) {
             $select.trigger('change.select2');
         } else {
-            // Trigger change to update UOM dropdown if needed
             $select.trigger('change');
         }
     }
@@ -1051,9 +1073,13 @@ $(document).ready(function() {
     function refreshModalBarangOptions(keepValue = true) {
         const klinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : '<?= (int)$default_modal_klinik_id ?>';
         const jenis = $('#modalJenisPemakaian').val();
+        let userHcId = $('#modalUserHcId').val();
+        if (!userHcId && $('#modalUserHcIdHidden').length) {
+            userHcId = $('#modalUserHcIdHidden').val();
+        }
         $('.modal-barang-select').each(function() {
             const $s = $(this);
-            fillSelectOptions($s, klinikId, jenis, keepValue);
+            fillSelectOptions($s, klinikId, jenis, userHcId, keepValue);
             initBarangSelect2($s);
         });
     }
@@ -1061,12 +1087,16 @@ $(document).ready(function() {
     function refreshEditBarangOptions(keepValue = true) {
         const klinikId = $('#editKlinikId').val();
         const jenis = $('#editJenisPemakaian').val();
+        let userHcId = $('#editUserHcId').val();
+        if (!userHcId && $('#editUserHcIdHidden').length) {
+            userHcId = $('#editUserHcIdHidden').val();
+        }
         $('.edit-barang-select').each(function() {
             const $s = $(this);
             const $row = $s.closest('tr');
             const prevUom = $row.find('.edit-uom-select').val();
             
-            fillSelectOptions($s, klinikId, jenis, keepValue);
+            fillSelectOptions($s, klinikId, jenis, userHcId, keepValue);
             initBarangSelect2($s);
             
             if (prevUom) {
@@ -1483,7 +1513,13 @@ $(document).ready(function() {
     $('#modalJenisPemakaian').on('change', function() {
         refreshModalBarangOptions(false);
     });
+    $('#modalUserHcId').on('change', function() {
+        refreshModalBarangOptions(false);
+    });
     $('#editJenisPemakaian').on('change', function() {
+        refreshEditBarangOptions(false);
+    });
+    $('#editUserHcId').on('change', function() {
         refreshEditBarangOptions(false);
     });
     if ($('#modalKlinikId').length) {
