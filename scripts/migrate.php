@@ -87,7 +87,7 @@ try {
         klinik_id INT NOT NULL,
         user_hc_id INT NOT NULL,
         barang_id INT NOT NULL,
-        qty INT NOT NULL,
+        qty DECIMAL(18,4) NOT NULL DEFAULT 0,
         catatan VARCHAR(255) NULL,
         created_by INT NOT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -101,7 +101,7 @@ try {
         klinik_id INT NOT NULL,
         user_hc_id INT NOT NULL,
         barang_id INT NOT NULL,
-        qty INT NOT NULL,
+        qty DECIMAL(18,4) NOT NULL DEFAULT 0,
         catatan VARCHAR(255) NULL,
         created_by INT NOT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -109,6 +109,9 @@ try {
         KEY idx_user (user_hc_id),
         KEY idx_barang (barang_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    $conn->query("ALTER TABLE inventory_hc_petugas_transfer MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0");
+    $conn->query("ALTER TABLE inventory_hc_tas_allocation MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0");
 
     ensure_table($conn, "CREATE TABLE IF NOT EXISTS inventory_booking_request_dedup (
         id INT AUTO_INCREMENT PRIMARY KEY,

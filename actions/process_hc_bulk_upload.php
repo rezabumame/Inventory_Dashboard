@@ -265,8 +265,11 @@ if (!empty($diffs) && !isset($_POST['confirm_over'])) {
 
 function apply_bulk_alloc(mysqli $conn, int $klinik_id, int $created_by, array $allocations): int {
     $count = 0;
+    $stmt_get = $conn->prepare("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ? LIMIT 1");
     $stmt_up = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
     $stmt_del = $conn->prepare("DELETE FROM inventory_stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ? LIMIT 1");
+    $stmt_hist = $conn->prepare("INSERT INTO inventory_hc_tas_allocation (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
+    
     foreach ($allocations as $uid => $items) {
         $uid = (int)$uid;
         if ($uid <= 0 || !is_array($items)) continue;
@@ -274,14 +277,28 @@ function apply_bulk_alloc(mysqli $conn, int $klinik_id, int $created_by, array $
             $bid = (int)$bid;
             $qty_new = (float)$qty_new;
             if ($bid <= 0) continue;
-            if ($qty_new <= 0.0000001) {
-                $stmt_del->bind_param("iii", $bid, $uid, $klinik_id);
-                $stmt_del->execute();
-                $count++;
-            } else {
-                $stmt_up->bind_param("iiidi", $bid, $uid, $klinik_id, $qty_new, $created_by);
-                $stmt_up->execute();
-                $count++;
+
+            // Get current stock to calculate delta for history
+            $stmt_get->bind_param("iii", $bid, $uid, $klinik_id);
+            $stmt_get->execute();
+            $res = $stmt_get->get_result();
+            $qty_before = (float)($res && $res->num_rows > 0 ? ($res->fetch_assoc()['qty'] ?? 0) : 0);
+            $delta = (float)round($qty_new - $qty_before, 4);
+
+            if (abs($delta) > 0.0000001) {
+                $cat = 'Upload Excel Alokasi';
+                $stmt_hist->bind_param("iiidsi", $klinik_id, $uid, $bid, $delta, $cat, $created_by);
+                $stmt_hist->execute();
+
+                if ($qty_new <= 0.0000001) {
+                    $stmt_del->bind_param("iii", $bid, $uid, $klinik_id);
+                    $stmt_del->execute();
+                    $count++;
+                } else {
+                    $stmt_up->bind_param("iiidi", $bid, $uid, $klinik_id, $qty_new, $created_by);
+                    $stmt_up->execute();
+                    $count++;
+                }
             }
         }
     }
