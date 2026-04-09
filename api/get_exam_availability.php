@@ -96,7 +96,7 @@ $stock_map = [];
 $q = "
 SELECT
     b.id AS barang_id,
-    COALESCE(sm.qty, 0) * COALESCE(uc.multiplier, 1) AS baseline_qty
+    COALESCE(sm.qty, 0) / COALESCE(uc.multiplier, 1) AS baseline_qty
 FROM inventory_barang b
 LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
 LEFT JOIN inventory_stock_mirror sm

@@ -79,7 +79,7 @@ try {
             $pid = intval($pid);
             if ($pid <= 0) continue;
             
-            $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+            $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid AND is_mandatory = 1");
             while($row = $res->fetch_assoc()) {
                 $bid = intval($row['barang_id']);
                 $qty = (float)$row['qty_per_pemeriksaan'];
