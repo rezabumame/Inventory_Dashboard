@@ -1439,13 +1439,22 @@ document.addEventListener('DOMContentLoaded', function() {
         var $modal = $('#modalTransferHC');
         var $tbody = $('#transferItemBody');
         if (!$modal.length || !$tbody.length) return;
+        
+        // Clone and cleanup BEFORE appending to avoid Select2 cloning artifacts
         var $tpl = $tbody.find('tr.transfer-item-row:first').clone();
+        
+        // Find and remove any Select2 specific elements inside the clone
+        $tpl.find('.select2-container').remove();
+        $tpl.find('select.transfer-barang-select').removeClass('select2-hidden-accessible').removeAttr('data-select2-id').attr('aria-hidden', 'false').show();
+        
         var $sel = $tpl.find('select.transfer-barang-select');
-        if ($sel.hasClass('select2-hidden-accessible')) $sel.select2('destroy');
         $sel.val('');
         $tpl.find('input[name="qty[]"]').val('');
         $tpl.find('select.transfer-uom-select').html('<option value="oper">-</option>').val('oper');
+        
         $tbody.append($tpl);
+        
+        // Initialize Select2 on the fresh select
         initSelect2($sel, $modal, { placeholder: '- Pilih Barang -', allowClear: true, minimumInputLength: 2 });
         refreshUom($tpl, 'transfer');
         updateTransferRemoveButtons();
@@ -1462,13 +1471,21 @@ document.addEventListener('DOMContentLoaded', function() {
         var $modal = $('#modalAllocateMirrorHC');
         var $tbody = $('#allocateItemBody');
         if (!$modal.length || !$tbody.length) return;
+        
+        // Clone and cleanup BEFORE appending
         var $tpl = $tbody.find('tr.allocate-item-row:first').clone();
+        
+        // Find and remove any Select2 specific elements inside the clone
+        $tpl.find('.select2-container').remove();
+        $tpl.find('select.allocate-barang-select').removeClass('select2-hidden-accessible').removeAttr('data-select2-id').attr('aria-hidden', 'false').show();
+        
         var $sel = $tpl.find('select.allocate-barang-select');
-        if ($sel.hasClass('select2-hidden-accessible')) $sel.select2('destroy');
         $sel.val('');
         $tpl.find('input[name="qty[]"]').val('');
         $tpl.find('select.allocate-uom-select').html('<option value="oper">-</option>').val('oper');
+        
         $tbody.append($tpl);
+        
         initSelect2($sel, $modal, { placeholder: '- Pilih Barang -', allowClear: true, minimumInputLength: 2 });
         refreshUom($tpl, 'allocate');
         updateAllocateRemoveButtons();
