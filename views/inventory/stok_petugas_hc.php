@@ -434,23 +434,19 @@ if ($bulk_cancel) {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                <?php if (empty($rows)): ?>
-                                                    <tr><td colspan="4" class="text-center text-muted py-4">Belum ada stok tas untuk petugas ini.</td></tr>
-                                                <?php else: ?>
-                                                    <?php foreach ($rows as $r): ?>
-                                                        <tr>
-                                                            <td><?= htmlspecialchars($r['kode_barang'] ?? '-') ?></td>
-                                                            <td><?= htmlspecialchars($r['nama_barang'] ?? '-') ?></td>
-                                                            <td class="small">
-                                                                <div><?= htmlspecialchars($r['satuan'] ?? '-') ?></div>
-                                                                <?php if (!empty($r['uom_odoo']) && (float)($r['uom_multiplier'] ?? 1) != 1.0): ?>
-                                                                    <div class="text-muted small">1 <?= htmlspecialchars($r['satuan'] ?? '-') ?> = <?= htmlspecialchars(fmt_qty($r['uom_multiplier'])) ?> <?= htmlspecialchars($r['uom_odoo']) ?></div>
-                                                                <?php endif; ?>
-                                                            </td>
-                                                            <td class="text-end fw-semibold"><?= fmt_qty($r['qty'] ?? 0) ?></td>
-                                                        </tr>
-                                                    <?php endforeach; ?>
-                                                <?php endif; ?>
+                                                <?php foreach ($rows as $r): ?>
+                                                    <tr>
+                                                        <td><?= htmlspecialchars($r['kode_barang'] ?? '-') ?></td>
+                                                        <td><?= htmlspecialchars($r['nama_barang'] ?? '-') ?></td>
+                                                        <td class="small">
+                                                            <div><?= htmlspecialchars($r['satuan'] ?? '-') ?></div>
+                                                            <?php if (!empty($r['uom_odoo']) && (float)($r['uom_multiplier'] ?? 1) != 1.0): ?>
+                                                                <div class="text-muted small">1 <?= htmlspecialchars($r['satuan'] ?? '-') ?> = <?= htmlspecialchars(fmt_qty($r['uom_multiplier'])) ?> <?= htmlspecialchars($r['uom_odoo']) ?></div>
+                                                            <?php endif; ?>
+                                                        </td>
+                                                        <td class="text-end fw-semibold"><?= fmt_qty($r['qty'] ?? 0) ?></td>
+                                                    </tr>
+                                                <?php endforeach; ?>
                                             </tbody>
                                         </table>
                                     </div>

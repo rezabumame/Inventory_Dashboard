@@ -948,18 +948,14 @@ function openStokBreakdown(barangId, namaBarang) {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php if (empty($exams)): ?>
-                                <tr><td colspan="4" class="text-center">Tidak ada pemeriksaan yang available saat ini.</td></tr>
-                            <?php else: ?>
-                                 <?php foreach ($exams as $ex): ?>
-                                 <tr>
-                                     <td><?= htmlspecialchars((string)($ex['nama_pemeriksaan'] ?? '')) ?></td>
-                                     <td><?= htmlspecialchars((string)($ex['keterangan'] ?? '')) ?></td>
-                                     <td><span class="badge bg-success">Available</span></td>
-                                     <td class="fw-bold fs-5"><?= (string)($ex['max_qty'] ?? 0) ?></td>
-                                 </tr>
-                                 <?php endforeach; ?>
-                            <?php endif; ?>
+                            <?php foreach ($exams as $ex): ?>
+                            <tr>
+                                <td><?= htmlspecialchars((string)($ex['nama_pemeriksaan'] ?? '')) ?></td>
+                                <td><?= htmlspecialchars((string)($ex['keterangan'] ?? '')) ?></td>
+                                <td><span class="badge bg-success">Available</span></td>
+                                <td class="fw-bold fs-5"><?= (string)($ex['max_qty'] ?? 0) ?></td>
+                            </tr>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>

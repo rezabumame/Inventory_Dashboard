@@ -191,51 +191,47 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if (empty($petugas)): ?>
-                            <tr><td colspan="5" class="text-center text-muted py-4">Belum ada petugas.</td></tr>
-                        <?php else: ?>
-                            <?php foreach ($petugas as $p): ?>
-                                <tr>
-                                    <td>
-                                        <div class="fw-semibold"><?= htmlspecialchars($p['nama_klinik']) ?></div>
-                                        <div class="small text-muted">HC Base: <?= htmlspecialchars($p['kode_homecare'] ?? '-') ?></div>
-                                    </td>
-                                    <td class="fw-semibold"><?= htmlspecialchars($p['nama_lengkap']) ?></td>
-                                    <td><span class="badge bg-light text-dark border"><?= htmlspecialchars($p['username']) ?></span></td>
-                                    <td><span class="badge bg-light text-dark border"><?= htmlspecialchars($p['kode_homecare'] ?? '-') ?></span></td>
-                                    <td>
-                                        <?php if (($p['status'] ?? 'active') === 'active'): ?>
-                                            <span class="badge bg-success">Active</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-secondary">Inactive</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td class="text-end">
-                                        <?php 
-                                            $data_json = htmlspecialchars(json_encode([
-                                                'id' => (int)$p['id'],
-                                                'klinik_id' => (int)$p['klinik_id'],
-                                                'nama_lengkap' => (string)$p['nama_lengkap'],
-                                                'username' => (string)$p['username'],
-                                                'status' => (string)$p['status']
-                                            ], JSON_UNESCAPED_UNICODE), ENT_QUOTES);
-                                        ?>
-                                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalPetugasHC"
-                                            onclick="openPetugasModal(<?= $data_json ?>)">
-                                            <i class="fas fa-edit"></i>
+                        <?php foreach ($petugas as $p): ?>
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold"><?= htmlspecialchars($p['nama_klinik']) ?></div>
+                                    <div class="small text-muted">HC Base: <?= htmlspecialchars($p['kode_homecare'] ?? '-') ?></div>
+                                </td>
+                                <td class="fw-semibold"><?= htmlspecialchars($p['nama_lengkap']) ?></td>
+                                <td><span class="badge bg-light text-dark border"><?= htmlspecialchars($p['username']) ?></span></td>
+                                <td><span class="badge bg-light text-dark border"><?= htmlspecialchars($p['kode_homecare'] ?? '-') ?></span></td>
+                                <td>
+                                    <?php if (($p['status'] ?? 'active') === 'active'): ?>
+                                        <span class="badge bg-success">Active</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-secondary">Inactive</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="text-end">
+                                    <?php 
+                                        $data_json = htmlspecialchars(json_encode([
+                                            'id' => (int)$p['id'],
+                                            'klinik_id' => (int)$p['klinik_id'],
+                                            'nama_lengkap' => (string)$p['nama_lengkap'],
+                                            'username' => (string)$p['username'],
+                                            'status' => (string)$p['status']
+                                        ], JSON_UNESCAPED_UNICODE), ENT_QUOTES);
+                                    ?>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalPetugasHC"
+                                        onclick="openPetugasModal(<?= $data_json ?>)">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <form method="POST" class="d-inline">
+                                        <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Hapus petugas ini?')">
+                                            <i class="fas fa-trash"></i>
                                         </button>
-                                        <form method="POST" class="d-inline">
-                                            <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
-                                            <input type="hidden" name="action" value="delete">
-                                            <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Hapus petugas ini?')">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
                     </tbody>
                 </table>
             </div>

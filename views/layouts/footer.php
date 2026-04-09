@@ -3,9 +3,23 @@
 
 <script>
     $(document).ready(function() {
-        // Init DataTable - Newest first (index 1 is Tanggal/Created At)
-        $('.datatable').DataTable({
-            "order": [[ 1, "desc" ]]
+        // Init DataTable
+        $('.datatable').each(function() {
+            const $t = $(this);
+            // Count columns in header
+            const colCount = $t.find('thead th').length;
+            
+            // Only init if table has columns
+            if (colCount > 0) {
+                // Determine default sort
+                // If table has >= 2 columns, sort by index 1 (usually date/created_at)
+                // Else sort by index 0
+                const sortIdx = colCount >= 2 ? 1 : 0;
+                
+                $t.DataTable({
+                    "order": [[ sortIdx, "desc" ]]
+                });
+            }
         });
         
         // Init Select2 globally for static selects
