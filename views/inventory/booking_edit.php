@@ -91,12 +91,12 @@ if ($can_cs_edit) {
 <div class="modal fade" id="modalEditBookingReal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
+            <div class="modal-header" style="background-color:#204EAB;">
                 <div>
-                    <h5 class="modal-title fw-bold mb-0">
-                        <i class="fas fa-edit me-2 text-primary-custom"></i>Edit Booking: <?= htmlspecialchars($booking['nomor_booking']) ?>
+                    <h5 class="modal-title fw-bold mb-0 text-white">
+                        <i class="fas fa-edit me-2"></i>Edit Booking: <?= htmlspecialchars($booking['nomor_booking']) ?>
                     </h5>
-                    <div class="small text-muted">Ubah data booking, pasien, dan pemeriksaan.</div>
+                    <div class="small text-white">Ubah data booking, pasien, dan pemeriksaan.</div>
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -118,11 +118,14 @@ if ($can_cs_edit) {
                                     <div class="row g-3">
                                         <div class="col-md-3">
                                             <label class="form-label fw-semibold">Status Booking <span class="text-danger">*</span></label>
-                                            <select name="new_status_booking" id="edit_status_booking" class="form-select" required>
+                                            <div class="segmented-control">
                                                 <?php $sb = $booking['status_booking']; ?>
-                                                <option value="Reserved - Clinic" <?= stripos($sb, 'Clinic') !== false ? 'selected' : '' ?>>Reserved - Clinic</option>
-                                                <option value="Reserved - HC" <?= stripos($sb, 'HC') !== false ? 'selected' : '' ?>>Reserved - HC</option>
-                                            </select>
+                                                <input type="radio" class="btn-check" name="new_status_booking" id="edit_status_clinic" value="Reserved - Clinic" <?= stripos($sb, 'Clinic') !== false ? 'checked' : '' ?>>
+                                                <label class="btn-segmented" for="edit_status_clinic">Clinic</label>
+                                                
+                                                <input type="radio" class="btn-check" name="new_status_booking" id="edit_status_hc" value="Reserved - HC" <?= stripos($sb, 'HC') !== false ? 'checked' : '' ?>>
+                                                <label class="btn-segmented" for="edit_status_hc">HC</label>
+                                            </div>
                                         </div>
                                         <div class="col-md-3">
                                             <label class="form-label fw-semibold">Klinik <span class="text-danger">*</span></label>
@@ -309,7 +312,7 @@ if ($can_cs_edit) {
     }
 
     function loadExamOptionsEdit(klinikId, callback) {
-        var statusBooking = $('#edit_status_booking').val() || '';
+        var statusBooking = $('input[name=\"new_status_booking\"]:checked').val() || '';
         $.ajax({
             url: 'api/get_exam_availability.php',
             method: 'GET',
@@ -364,8 +367,18 @@ if ($can_cs_edit) {
             renderPaxSectionsEdit(parseInt($(this).val()) || 1);
         });
 
-        $modalEl.find('#edit_klinik_id, #edit_status_booking').on('change', function() {
-            var statusBooking = $('#edit_status_booking').val();
+        $modalEl.find('#edit_klinik_id').on('change', function() {
+            var statusBooking = $('input[name=\"new_status_booking\"]:checked').val();
+            if (statusBooking === 'Reserved - HC') {
+                $('#edit_order_id_container').show();
+            } else {
+                $('#edit_order_id_container').hide();
+                $('#edit_order_id_container input').val('');
+            }
+            loadExamOptionsEdit($('#edit_klinik_id').val());
+        });
+        $modalEl.find('input[name=\"new_status_booking\"]').on('change', function() {
+            var statusBooking = $('input[name=\"new_status_booking\"]:checked').val();
             if (statusBooking === 'Reserved - HC') {
                 $('#edit_order_id_container').show();
             } else {
