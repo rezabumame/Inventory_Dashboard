@@ -12,6 +12,7 @@ if (!in_array($role, ['super_admin', 'cs', 'admin_klinik', 'admin_gudang'], true
     die("Access denied");
 }
 
+$show_all = isset($_GET['show_all']) && $_GET['show_all'] == '1';
 $filter_today = isset($_GET['filter_today']) ? ($_GET['filter_today'] == '1') : false;
 $filter_tujuan = (string)($_GET['tujuan'] ?? '');
 $filter_status = (string)($_GET['status'] ?? '');
@@ -19,8 +20,17 @@ $filter_tipe = (string)($_GET['tipe'] ?? '');
 $filter_fu = (string)($_GET['fu'] ?? '');
 $filter_start = (string)($_GET['start_date'] ?? '');
 $filter_end = (string)($_GET['end_date'] ?? '');
-$has_filters = (isset($_GET['filter_today']) || $filter_tujuan !== '' || $filter_status !== '' || $filter_tipe !== '' || $filter_fu !== '' || $filter_start !== '' || $filter_end !== '');
-if (!$has_filters) $filter_today = true;
+$has_filters = ($show_all || isset($_GET['filter_today']) || $filter_tujuan !== '' || $filter_status !== '' || $filter_tipe !== '' || $filter_fu !== '' || $filter_start !== '' || $filter_end !== '');
+
+if (!$has_filters) {
+    if ($role === 'admin_klinik') {
+        $filter_today = true;
+    } else {
+        $show_all = true;
+        $filter_today = false;
+    }
+}
+if ($show_all) $filter_today = false;
 
 $where = "1=1";
 if ($role === 'admin_klinik') {
@@ -28,7 +38,7 @@ if ($role === 'admin_klinik') {
     $where .= " AND b.status = 'booked' AND LOWER(COALESCE(b.booking_type, 'keep')) IN ('keep','fixed')";
 }
 if ($filter_today) {
-    $where .= " AND DATE(b.created_at) = CURDATE()";
+    $where .= " AND b.tanggal_pemeriksaan = CURDATE()";
 }
 if ($filter_start !== '') {
     $where .= " AND b.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_start) . "'";

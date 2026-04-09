@@ -347,17 +347,30 @@ $result = $conn->query($query);
         
         <script>
         function exportExcel() {
-            const form = document.querySelector('form');
+            const form = document.querySelector('form[method="GET"]');
             const url = new URL('actions/export_booking.php', window.location.href);
-            url.searchParams.append('start_date', form.start_date.value);
-            url.searchParams.append('end_date', form.end_date.value);
-            url.searchParams.append('tujuan', form.tujuan.value);
-            url.searchParams.append('status', form.status.value);
-            url.searchParams.append('tipe', form.tipe.value);
-            url.searchParams.append('fu', form.fu.value);
+            
+            // Get values safely from radio buttons and other inputs
+            const getVal = (name) => {
+                const el = form.elements[name];
+                if (el instanceof RadioNodeList) return el.value;
+                return el ? el.value : '';
+            };
+
+            url.searchParams.append('start_date', getVal('start_date'));
+            url.searchParams.append('end_date', getVal('end_date'));
+            url.searchParams.append('tujuan', getVal('tujuan'));
+            url.searchParams.append('status', getVal('status'));
+            url.searchParams.append('tipe', getVal('tipe'));
+            url.searchParams.append('fu', getVal('fu'));
+            
             <?php if ($filter_today): ?>
             url.searchParams.append('filter_today', '1');
             <?php endif; ?>
+            <?php if ($show_all): ?>
+            url.searchParams.append('show_all', '1');
+            <?php endif; ?>
+            
             window.open(url.toString(), '_blank');
         }
         </script>
