@@ -40,6 +40,30 @@ try {
 
     $jenis_pemakaian = $header['jenis_pemakaian'];
     $klinik_id = $header['klinik_id'];
+    $user_hc_id = $header['user_hc_id'];
+
+    // 2. Reverse stock before deleting details
+    $stmt = $conn->prepare("SELECT barang_id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $details = $stmt->get_result();
+
+    while ($item = $details->fetch_assoc()) {
+        $bid = (int)$item['barang_id'];
+        $qty = (float)$item['qty'];
+
+        if ($jenis_pemakaian === 'hc' && !empty($user_hc_id)) {
+            // Return to HC Bag
+            $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+            $stmt_upd->bind_param("diiii", $qty, $created_by, $bid, $user_hc_id, $klinik_id);
+            $stmt_upd->execute();
+        } elseif ($jenis_pemakaian === 'klinik') {
+            // Return to Clinic Stock
+            $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
+            $stmt_upd->bind_param("diii", $qty, $created_by, $bid, $klinik_id);
+            $stmt_upd->execute();
+        }
+    }
 
     // 3. Delete details
     $stmt = $conn->prepare("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");

@@ -84,47 +84,31 @@ try {
             throw new Exception("Anda tidak memiliki akses untuk mengubah data ini");
         }
 
-        /* 
-        // 2. Reverse stock for old items (DISABLED: Sellout is now handled at view level)
-        $stmt = $conn->prepare("SELECT * FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+        // 2. Reverse stock for old items
+        $stmt = $conn->prepare("SELECT barang_id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
         $stmt->bind_param("i", $edit_id);
         $stmt->execute();
         $old_details = $stmt->get_result();
 
         while ($old_item = $old_details->fetch_assoc()) {
-            $obid = $old_item['barang_id'];
-            $oqty = $old_item['qty'];
+            $obid = (int)$old_item['barang_id'];
+            $oqty = (float)$old_item['qty'];
 
-            if ($old_header['jenis_pemakaian'] === 'klinik') {
-                $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ? WHERE barang_id = ? AND klinik_id = ?");
-                $stmt_upd->bind_param("iii", $oqty, $obid, $old_header['klinik_id']);
+            if ($old_header['jenis_pemakaian'] === 'hc' && !empty($old_header['user_hc_id'])) {
+                // Return to HC Bag
+                $old_uid = (int)$old_header['user_hc_id'];
+                $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+                $stmt_upd->bind_param("diiii", $oqty, $created_by, $obid, $old_uid, $old_header['klinik_id']);
                 $stmt_upd->execute();
-            } else {
-                $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ? WHERE barang_id = ? AND user_id = ?");
-                $stmt_upd->bind_param("iii", $oqty, $obid, $old_header['user_hc_id']);
+            } elseif ($old_header['jenis_pemakaian'] === 'klinik') {
+                // Return to Clinic Stock
+                $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
+                $stmt_upd->bind_param("diii", $oqty, $created_by, $obid, $old_header['klinik_id']);
                 $stmt_upd->execute();
             }
         }
-        */
 
         // 3. Delete old details
-        if ($old_header['jenis_pemakaian'] === 'hc' && !empty($old_header['user_hc_id'])) {
-            $old_uid = (int)$old_header['user_hc_id'];
-            $stmt = $conn->prepare("SELECT barang_id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
-            $stmt->bind_param("i", $edit_id);
-            $stmt->execute();
-            $old_details = $stmt->get_result();
-            while ($od = $old_details->fetch_assoc()) {
-                $obid = (int)($od['barang_id'] ?? 0);
-                $oqty = (float)($od['qty'] ?? 0);
-                if ($obid > 0 && $oqty > 0) {
-                    $stmt_up = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-                    $stmt_up->bind_param("diiii", $oqty, $created_by, $obid, $old_uid, $old_header['klinik_id']);
-                    $stmt_up->execute();
-                }
-            }
-        }
-
         $stmt = $conn->prepare("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
         $stmt->bind_param("i", $edit_id);
         $stmt->execute();
