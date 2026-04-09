@@ -77,12 +77,27 @@ $barang_list = $conn->query("SELECT * FROM inventory_barang ORDER BY nama_barang
                     <option value="out" <?= $tipe == 'out' ? 'selected' : '' ?>>Keluar (Out)</option>
                 </select>
             </div>
-            <div class="col-md-1">
-                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-search"></i></button>
+            <div class="col-md-2">
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-grow-1"><i class="fas fa-search me-1"></i> Filter</button>
+                    <button type="button" class="btn btn-success" onclick="exportExcel()" title="Download Excel"><i class="fas fa-file-excel"></i></button>
+                </div>
             </div>
         </form>
     </div>
 </div>
+
+<script>
+function exportExcel() {
+    const form = document.querySelector('form[method="GET"]');
+    const url = new URL('actions/export_transaksi_stok.php', window.location.href);
+    url.searchParams.append('start_date', form.start_date.value);
+    url.searchParams.append('end_date', form.end_date.value);
+    url.searchParams.append('barang_id', form.barang_id.value);
+    url.searchParams.append('tipe', form.tipe.value);
+    window.open(url.toString(), '_blank');
+}
+</script>
 
 <!-- Data Table -->
 <div class="card shadow-sm">
