@@ -1152,15 +1152,16 @@ window.openMoveModal = function(id, currentStatus, nomorBooking) {
 
 window.submitMove = function() {
     const id = $('#moveBookingId').val();
-    const target = $('#moveNewStatus').val();
-    if (!id || !target) return;
+    const newStatus = $('#moveNewStatus').val();
+    const targetLabel = $('#moveTargetLabel').text();
 
-    showConfirm(`Pindahkan booking ke ${target}?`, 'Konfirmasi Pindah', function() {
+    showConfirm(`Pindahkan booking ini ke ${targetLabel}?`, 'Konfirmasi Perpindahan', function() {
         postBookingAction({ 
             action: 'move', 
             id: id, 
-            new_status: target 
+            new_status: newStatus 
         });
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('modalMove')).hide();
     });
 };
 
