@@ -1440,15 +1440,20 @@ document.addEventListener('DOMContentLoaded', function() {
         var $tbody = $('#transferItemBody');
         if (!$modal.length || !$tbody.length) return;
         
-        // Clone and cleanup BEFORE appending to avoid Select2 cloning artifacts
+        // Clone and cleanup BEFORE appending
         var $tpl = $tbody.find('tr.transfer-item-row:first').clone();
         
-        // Find and remove any Select2 specific elements inside the clone
+        // Deep cleanup of Select2 artifacts
         $tpl.find('.select2-container').remove();
-        $tpl.find('select.transfer-barang-select').removeClass('select2-hidden-accessible').removeAttr('data-select2-id').attr('aria-hidden', 'false').show();
+        $tpl.find('*').removeAttr('data-select2-id'); // Remove from all children
+        $tpl.removeAttr('data-select2-id'); // Remove from row itself
         
         var $sel = $tpl.find('select.transfer-barang-select');
-        $sel.val('');
+        $sel.removeClass('select2-hidden-accessible')
+            .removeAttr('aria-hidden')
+            .show()
+            .val(''); // Reset value
+            
         $tpl.find('input[name="qty[]"]').val('');
         $tpl.find('select.transfer-uom-select').html('<option value="oper">-</option>').val('oper');
         
@@ -1475,12 +1480,17 @@ document.addEventListener('DOMContentLoaded', function() {
         // Clone and cleanup BEFORE appending
         var $tpl = $tbody.find('tr.allocate-item-row:first').clone();
         
-        // Find and remove any Select2 specific elements inside the clone
+        // Deep cleanup
         $tpl.find('.select2-container').remove();
-        $tpl.find('select.allocate-barang-select').removeClass('select2-hidden-accessible').removeAttr('data-select2-id').attr('aria-hidden', 'false').show();
+        $tpl.find('*').removeAttr('data-select2-id');
+        $tpl.removeAttr('data-select2-id');
         
         var $sel = $tpl.find('select.allocate-barang-select');
-        $sel.val('');
+        $sel.removeClass('select2-hidden-accessible')
+            .removeAttr('aria-hidden')
+            .show()
+            .val('');
+            
         $tpl.find('input[name="qty[]"]').val('');
         $tpl.find('select.allocate-uom-select').html('<option value="oper">-</option>').val('oper');
         
