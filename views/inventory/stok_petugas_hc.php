@@ -1439,21 +1439,24 @@ document.addEventListener('DOMContentLoaded', function() {
         var $modal = $('#modalTransferHC');
         var $tbody = $('#transferItemBody');
         if (!$modal.length || !$tbody.length) return;
-        var $tpl = $tbody.find('tr.transfer-item-row:first').clone();
         
-        // Reset select2 and values to avoid duplication
+        // Cari baris pertama untuk dijadikan template
+        var $firstRow = $tbody.find('tr.transfer-item-row:first');
+        var $tpl = $firstRow.clone();
+        
+        // Bersihkan Select2 dari elemen clone (penting agar tidak terjadi error destroy)
+        $tpl.find('.select2-container').remove();
         var $sel = $tpl.find('select.transfer-barang-select');
-        if ($sel.hasClass('select2-hidden-accessible')) {
-            $sel.select2('destroy');
-        }
-        $sel.val('').find('option').removeAttr('selected');
+        $sel.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').find('option').removeAttr('data-select2-id');
         
+        // Reset values
+        $sel.val('');
         $tpl.find('input[name="qty[]"]').val('');
         $tpl.find('select.transfer-uom-select').html('<option value="oper">-</option>').val('oper').prop('disabled', true);
         
         $tbody.append($tpl);
         
-        // Re-init select2 for the new row
+        // Inisialisasi Select2 hanya untuk baris baru
         initSelect2($sel, $modal, { placeholder: '- Pilih Barang -', allowClear: true, minimumInputLength: 2 });
         updateTransferRemoveButtons();
     }
@@ -1462,21 +1465,23 @@ document.addEventListener('DOMContentLoaded', function() {
         var $modal = $('#modalAllocateMirrorHC');
         var $tbody = $('#allocateItemBody');
         if (!$modal.length || !$tbody.length) return;
-        var $tpl = $tbody.find('tr.allocate-item-row:first').clone();
         
-        // Reset select2 and values to avoid duplication
+        var $firstRow = $tbody.find('tr.allocate-item-row:first');
+        var $tpl = $firstRow.clone();
+        
+        // Bersihkan Select2 dari elemen clone
+        $tpl.find('.select2-container').remove();
         var $sel = $tpl.find('select.allocate-barang-select');
-        if ($sel.hasClass('select2-hidden-accessible')) {
-            $sel.select2('destroy');
-        }
-        $sel.val('').find('option').removeAttr('selected');
+        $sel.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').find('option').removeAttr('data-select2-id');
         
+        // Reset values
+        $sel.val('');
         $tpl.find('input[name="qty[]"]').val('');
         $tpl.find('select.allocate-uom-select').html('<option value="oper">-</option>').val('oper').prop('disabled', true);
         
         $tbody.append($tpl);
         
-        // Re-init select2 for the new row
+        // Inisialisasi Select2 hanya untuk baris baru
         initSelect2($sel, $modal, { placeholder: '- Pilih Barang -', allowClear: true, minimumInputLength: 2 });
         updateAllocateRemoveButtons();
     }
