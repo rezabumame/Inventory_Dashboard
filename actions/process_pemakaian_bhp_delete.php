@@ -9,12 +9,6 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-// Check if user is super_admin
-if ($_SESSION['role'] !== 'super_admin') {
-    echo json_encode(['success' => false, 'message' => 'Hanya Super Admin yang dapat menghapus data']);
-    exit;
-}
-
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['id'])) {
     echo json_encode(['success' => false, 'message' => 'Invalid request']);
     exit;
@@ -23,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['id'])) {
 require_csrf();
 
 $id = intval($_POST['id']);
-$created_by = $_SESSION['user_id'];
+$user_id = $_SESSION['user_id'];
 
 $conn->begin_transaction();
 
@@ -36,6 +30,17 @@ try {
 
     if (!$header) {
         throw new Exception("Data pemakaian tidak ditemukan");
+    }
+
+    // Permission check: super_admin can delete anything
+    // Others can only delete their own data on the same day (H+0)
+    if ($_SESSION['role'] !== 'super_admin') {
+        $is_today = date('Y-m-d', strtotime($header['created_at'])) === date('Y-m-d');
+        $is_creator = $header['created_by'] == $user_id;
+        
+        if (!$is_today || !$is_creator) {
+            throw new Exception("Anda tidak memiliki akses untuk menghapus data ini (Hanya dapat menghapus data buatan sendiri di hari yang sama)");
+        }
     }
 
     $jenis_pemakaian = $header['jenis_pemakaian'];
@@ -55,12 +60,12 @@ try {
         if ($jenis_pemakaian === 'hc' && !empty($user_hc_id)) {
             // Return to HC Bag
             $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-            $stmt_upd->bind_param("diiii", $qty, $created_by, $bid, $user_hc_id, $klinik_id);
+            $stmt_upd->bind_param("diiii", $qty, $user_id, $bid, $user_hc_id, $klinik_id);
             $stmt_upd->execute();
         } elseif ($jenis_pemakaian === 'klinik') {
             // Return to Clinic Stock
             $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
-            $stmt_upd->bind_param("diii", $qty, $created_by, $bid, $klinik_id);
+            $stmt_upd->bind_param("diii", $qty, $user_id, $bid, $klinik_id);
             $stmt_upd->execute();
         }
     }
@@ -90,4 +95,3 @@ try {
 if (isset($conn)) {
     $conn->close();
 }
-

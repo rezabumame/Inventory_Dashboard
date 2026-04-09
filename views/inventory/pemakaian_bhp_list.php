@@ -370,10 +370,17 @@ if ($default_modal_klinik_id) {
                                             data-bs-toggle="modal" data-bs-target="#modalEdit">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <?php endif; ?>
-
-                                    <?php if ($user_role === 'super_admin'): ?>
-                                    <button class="btn btn-sm btn-danger delete-pemakaian" data-id="<?= $row['id'] ?>" data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>" title="Hapus">
+                                    <button class="btn btn-sm btn-danger delete-pemakaian" 
+                                            data-id="<?= $row['id'] ?>" 
+                                            data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>" 
+                                            title="Hapus">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                    <?php elseif ($user_role === 'super_admin'): ?>
+                                    <button class="btn btn-sm btn-danger delete-pemakaian" 
+                                            data-id="<?= $row['id'] ?>" 
+                                            data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>" 
+                                            title="Hapus">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                     <?php endif; ?>
