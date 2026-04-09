@@ -1445,30 +1445,43 @@ document.addEventListener('DOMContentLoaded', function() {
         var $tbody = $('#transferItemBody');
         if (!$modal.length || !$tbody.length) return;
         
-        // Clone and cleanup BEFORE appending
-        var $tpl = $tbody.find('tr.transfer-item-row:first').clone();
+        // Clone from the very first row
+        var $firstRow = $tbody.find('tr.transfer-item-row:first');
+        var $tpl = $firstRow.clone();
         
-        // Deep cleanup of Select2 artifacts
+        // DEEP CLEANUP: Select2 elements are messy when cloned
         $tpl.find('.select2-container').remove();
         $tpl.find('*').removeAttr('data-select2-id');
         $tpl.removeAttr('data-select2-id');
         
+        // Restore the original select element state
         var $sel = $tpl.find('select.transfer-barang-select');
         $sel.removeClass('select2-hidden-accessible')
             .removeAttr('aria-hidden')
+            .removeAttr('tabindex')
             .show()
-            .val('');
+            .val(''); // Reset selected item
             
+        // Reset Qty to default 1
         $tpl.find('input[name="qty[]"]').val('1');
-        $tpl.find('select.transfer-uom-select').html('<option value="oper">-</option>').val('oper');
         
-        // Reset availability badge
+        // Reset UOM dropdown to placeholder
+        var $uomSel = $tpl.find('select.transfer-uom-select');
+        $uomSel.html('<option value="oper">-</option>').val('oper');
+        
+        // Reset availability badge to default "-"
         $tpl.find('.avail-badge-container').html('<span class="badge bg-secondary opacity-75 rounded-pill px-3">-</span>');
         
+        // Append the clean row to the table
         $tbody.append($tpl);
         
-        initSelect2($sel, $modal, { placeholder: '- Pilih Barang -', allowClear: true, minimumInputLength: 2 });
-        refreshUom($tpl, 'transfer');
+        // Re-initialize Select2 on the NEW select element
+        initSelect2($sel, $modal, { 
+            placeholder: '- Pilih Barang -', 
+            allowClear: true, 
+            minimumInputLength: 2 
+        });
+        
         updateTransferRemoveButtons();
     }
 
