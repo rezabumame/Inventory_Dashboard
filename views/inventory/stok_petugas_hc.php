@@ -1302,27 +1302,22 @@ document.addEventListener('DOMContentLoaded', function() {
                         </select>
                     </div>
                     <div class="col-12">
-                        <div class="card border-0 shadow-sm">
-                            <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-                                <div class="fw-semibold">Daftar Item</div>
-                                <button type="button" class="btn btn-success btn-sm" id="transferAddRowBtn">
-                                    <i class="fas fa-plus-circle me-1"></i>Tambah Item
-                                </button>
-                            </div>
+                        <div class="card border shadow-sm">
                             <div class="card-body p-0">
                                 <div class="table-responsive">
-                                    <table class="table table-hover align-middle mb-0">
-                                        <thead class="bg-light">
+                                    <table class="table align-middle mb-0">
+                                        <thead class="text-white" style="background-color: #204EAB;">
                                             <tr>
-                                                <th>Barang</th>
-                                                <th class="text-end" style="width:140px;">Qty</th>
-                                                <th class="text-center" style="width:140px;">UOM</th>
-                                                <th class="text-center" style="width:60px;">Aksi</th>
+                                                <th class="py-2 px-3 small text-uppercase fw-bold" style="letter-spacing: 0.05em;">Barang</th>
+                                                <th class="py-2 px-3 small text-uppercase fw-bold text-center" style="width:160px; letter-spacing: 0.05em;">Ketersediaan</th>
+                                                <th class="py-2 px-3 small text-uppercase fw-bold text-center" style="width:100px; letter-spacing: 0.05em;">Qty</th>
+                                                <th class="py-2 px-3 small text-uppercase fw-bold text-center" style="width:120px; letter-spacing: 0.05em;">UOM</th>
+                                                <th class="py-2 px-3 small text-uppercase fw-bold text-center" style="width:50px;"></th>
                                             </tr>
                                         </thead>
                                         <tbody id="transferItemBody">
                                             <tr class="transfer-item-row">
-                                                <td class="p-2">
+                                                <td class="p-2 border-bottom-0">
                                                     <select name="barang_id[]" class="form-select transfer-barang-select" required>
                                                         <option value="">- Pilih Barang -</option>
                                                         <?php
@@ -1349,22 +1344,32 @@ document.addEventListener('DOMContentLoaded', function() {
                                                         <?php endwhile; ?>
                                                     </select>
                                                 </td>
-                                                <td class="p-2">
-                                                    <input type="number" name="qty[]" class="form-control" min="0.0001" step="0.0001" required>
+                                                <td class="p-2 text-center border-bottom-0">
+                                                    <div class="avail-badge-container">
+                                                        <span class="badge bg-secondary opacity-75 rounded-pill px-3">-</span>
+                                                    </div>
                                                 </td>
-                                                <td class="p-2">
+                                                <td class="p-2 border-bottom-0">
+                                                    <input type="number" name="qty[]" class="form-control text-center" min="0.0001" step="0.0001" value="1" required>
+                                                </td>
+                                                <td class="p-2 border-bottom-0">
                                                     <select name="uom_mode[]" class="form-select form-select-sm transfer-uom-select" required>
                                                         <option value="oper">-</option>
                                                     </select>
                                                 </td>
-                                                <td class="text-center border-start">
-                                                    <button type="button" class="btn btn-sm btn-link text-danger transfer-remove-row">
-                                                        <i class="fas fa-trash-alt"></i>
+                                                <td class="text-center p-2 border-bottom-0">
+                                                    <button type="button" class="btn btn-danger btn-sm p-0 d-flex align-items-center justify-content-center transfer-remove-row" style="width: 32px; height: 32px; border-radius: 6px;">
+                                                        <i class="fas fa-times"></i>
                                                     </button>
                                                 </td>
                                             </tr>
                                         </tbody>
                                     </table>
+                                </div>
+                                <div class="p-0">
+                                    <button type="button" class="btn btn-success w-100 fw-bold py-2 border-0 rounded-0" id="transferAddRowBtn" style="background-color: #198754;">
+                                        <i class="fas fa-plus me-1"></i> Tambah Baris
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -1445,21 +1450,23 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Deep cleanup of Select2 artifacts
         $tpl.find('.select2-container').remove();
-        $tpl.find('*').removeAttr('data-select2-id'); // Remove from all children
-        $tpl.removeAttr('data-select2-id'); // Remove from row itself
+        $tpl.find('*').removeAttr('data-select2-id');
+        $tpl.removeAttr('data-select2-id');
         
         var $sel = $tpl.find('select.transfer-barang-select');
         $sel.removeClass('select2-hidden-accessible')
             .removeAttr('aria-hidden')
             .show()
-            .val(''); // Reset value
+            .val('');
             
-        $tpl.find('input[name="qty[]"]').val('');
+        $tpl.find('input[name="qty[]"]').val('1');
         $tpl.find('select.transfer-uom-select').html('<option value="oper">-</option>').val('oper');
+        
+        // Reset availability badge
+        $tpl.find('.avail-badge-container').html('<span class="badge bg-secondary opacity-75 rounded-pill px-3">-</span>');
         
         $tbody.append($tpl);
         
-        // Initialize Select2 on the fresh select
         initSelect2($sel, $modal, { placeholder: '- Pilih Barang -', allowClear: true, minimumInputLength: 2 });
         refreshUom($tpl, 'transfer');
         updateTransferRemoveButtons();
@@ -1491,7 +1498,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .show()
             .val('');
             
-        $tpl.find('input[name="qty[]"]').val('');
+        $tpl.find('input[name="qty[]"]').val('1');
         $tpl.find('select.allocate-uom-select').html('<option value="oper">-</option>').val('oper');
         
         $tbody.append($tpl);
@@ -1531,6 +1538,38 @@ document.addEventListener('DOMContentLoaded', function() {
         updateTransferRemoveButtons();
     });
 
+    function refreshAvailability($row, kind) {
+        var $barangSel = (kind === 'allocate') ? $row.find('select.allocate-barang-select') : $row.find('select.transfer-barang-select');
+        var $container = $row.find('.avail-badge-container');
+        if (!$barangSel.length || !$container.length) return;
+        
+        var barangId = $barangSel.val();
+        if (!barangId) {
+            $container.html('<span class="badge bg-secondary opacity-75 rounded-pill px-3">-</span>');
+            return;
+        }
+
+        var klinikId = <?= (int)$selected_klinik ?>;
+        var $opt = $barangSel.find('option:selected');
+        var uom = String($opt.attr('data-uom-oper') || '-').trim();
+
+        $container.html('<i class="fas fa-spinner fa-spin text-muted"></i>');
+
+        $.post('api/ajax_request_stock_qty.php', {
+            ke_level: 'klinik',
+            ke_id: klinikId,
+            barang_id: barangId
+        }, function(res) {
+            if (res && res.success) {
+                var qty = parseFloat(res.qty) || 0;
+                var colorClass = qty > 0 ? 'bg-success' : 'bg-danger';
+                $container.html('<span class="badge ' + colorClass + ' rounded-pill px-3">' + qty + ' ' + escapeHtml(uom) + ' Ready</span>');
+            } else {
+                $container.html('<span class="badge bg-warning text-dark rounded-pill px-3">?</span>');
+            }
+        });
+    }
+
     function refreshUom($row, kind) {
         var $barangSel = (kind === 'allocate') ? $row.find('select.allocate-barang-select') : $row.find('select.transfer-barang-select');
         var $uomSel = (kind === 'allocate') ? $row.find('select.allocate-uom-select') : $row.find('select.transfer-uom-select');
@@ -1548,6 +1587,10 @@ document.addEventListener('DOMContentLoaded', function() {
             html += '<option value="oper">' + escapeHtml(oper) + '</option>';
         }
         $uomSel.html(html).val('oper');
+        
+        if (kind === 'transfer') {
+            refreshAvailability($row, 'transfer');
+        }
     }
 
     $(document).on('change', '.transfer-barang-select', function() { refreshUom($(this).closest('tr'), 'transfer'); });
