@@ -117,14 +117,18 @@ $result = $conn->query($query);
         </div>
         <?php endif; ?>
         <div class="col-auto">
+            <?php 
+                $all_url = 'index.php?page=booking&show_all=1';
+                $today_url = 'index.php?page=booking&filter_today=1';
+            ?>
             <?php if ($filter_today): ?>
-            <a href="index.php?page=booking&show_all=1" class="btn btn-outline-secondary px-4">
-                <i class="fas fa-list me-2"></i>Tampilkan Semua
-            </a>
-            <?php elseif ($role === 'admin_klinik'): ?>
-            <a href="<?= $reset_url ?>" class="btn shadow-sm px-4" style="background-color: #20AB5C; color: white;">
-                <i class="fas fa-calendar-day me-2"></i>Hari Ini Saja
-            </a>
+                <a href="<?= $all_url ?>" class="btn btn-outline-secondary px-4">
+                    <i class="fas fa-list me-2"></i>Tampilkan Semua
+                </a>
+            <?php else: ?>
+                <a href="<?= $today_url ?>" class="btn shadow-sm px-4" style="background-color: #20AB5C; color: white;">
+                    <i class="fas fa-calendar-day me-2"></i>Hari Ini Saja
+                </a>
             <?php endif; ?>
         </div>
     </div>
