@@ -134,9 +134,9 @@ if (!empty($booking_ids)) {
 
         foreach ($needs_by_booking[$bid] as $item) {
             $ef = stock_effective($conn, $klinik_id, $is_hc, $item['barang_id']);
-            if ($ef['ok'] && $ef['available'] < $item['qty']) {
+            if ($ef['ok'] && $ef['on_hand'] < $item['qty']) { // Menggunakan on_hand untuk cek pemenuhan booking
                 $is_still_short = true;
-                $short_items[] = $ef['barang_name'] . " (Butuh: " . fmt_qty($item['qty']) . ", Sisa: " . fmt_qty($ef['available']) . ")";
+                $short_items[] = $ef['barang_name'] . " (Butuh: " . fmt_qty($item['qty']) . ", Sisa: " . fmt_qty($ef['on_hand']) . ")";
             }
         }
         $fulfillment_map[$bid] = [

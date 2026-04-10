@@ -73,7 +73,7 @@ if ($jenis === 'hc' && $user_hc_id > 0) {
         while ($row = $res->fetch_assoc()) {
             $bid = (int)$row['barang_id'];
             $ef = stock_effective($conn, $klinik_id, ($jenis === 'hc'), $bid);
-            if ($ef['ok'] && $ef['available'] > 0) {
+            if ($ef['ok'] && $ef['on_hand'] > 0) { // Menggunakan on_hand untuk ketersediaan pemakaian BHP
                 $mult = (float)($row['uom_ratio'] ?? 1);
                 $items[] = [
                     'barang_id' => $bid,
@@ -82,7 +82,7 @@ if ($jenis === 'hc' && $user_hc_id > 0) {
                     'satuan' => (string)$row['satuan'],
                     'uom_odoo' => (string)$row['uom_odoo'],
                     'uom_ratio' => $mult,
-                    'qty' => (float)$ef['available'] * $mult
+                    'qty' => (float)$ef['on_hand'] * $mult // Menggunakan on_hand
                 ];
             }
         }

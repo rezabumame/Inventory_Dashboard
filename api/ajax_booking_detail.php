@@ -75,11 +75,23 @@ $res = $stmt->get_result();
 $is_hc = (stripos($header['status_booking'] ?? '', 'HC') !== false);
 $klinik_id = (int)$header['klinik_id'];
 
+$re_evaluated_is_out_of_stock = 0;
+$re_evaluated_out_of_stock_items = [];
+
 while ($row = $res->fetch_assoc()) {
     $ef = stock_effective($conn, $klinik_id, $is_hc, (int)$row['barang_id']);
-    $row['current_available'] = $ef['ok'] ? (float)$ef['available'] : 0;
+    $row['current_available'] = $ef['ok'] ? (float)$ef['on_hand'] : 0; // Menggunakan on_hand untuk cek pemenuhan booking
+    
+    if ($row['current_available'] < (float)$row['qty']) {
+        $re_evaluated_is_out_of_stock = 1;
+        $re_evaluated_out_of_stock_items[] = htmlspecialchars($row['nama_barang']) . " (Sisa: " . fmt_qty($row['current_available']) . ", Butuh: " . fmt_qty($row['qty']) . ")";
+    }
     $items[] = $row;
 }
+
+// Update header with re-evaluated OOS status
+$header['is_out_of_stock'] = $re_evaluated_is_out_of_stock;
+$header['out_of_stock_items'] = !empty($re_evaluated_out_of_stock_items) ? implode(', ', $re_evaluated_out_of_stock_items) : null;
 
 // Fetch all pasien (utama + tambahan) with their exams
 $stmt = $conn->prepare("
