@@ -32,14 +32,36 @@ try {
         throw new Exception("Data pemakaian tidak ditemukan");
     }
 
-    // Permission check: super_admin can delete anything
-    // Others can only delete their own data on the same day (H+0)
-    if ($_SESSION['role'] !== 'super_admin') {
-        $is_today = date('Y-m-d', strtotime($header['created_at'])) === date('Y-m-d');
-        $is_creator = $header['created_by'] == $user_id;
-        
-        if (!$is_today || !$is_creator) {
-            throw new Exception("Anda tidak memiliki akses untuk menghapus data ini (Hanya dapat menghapus data buatan sendiri di hari yang sama)");
+    // Permission check
+    $is_today = date('Y-m-d', strtotime($header['created_at'])) === date('Y-m-d');
+    $is_creator = $header['created_by'] == $user_id;
+    $is_admin_klinik = $_SESSION['role'] === 'admin_klinik';
+    $is_super_admin = $_SESSION['role'] === 'super_admin';
+    $reason = $_POST['reason'] ?? '';
+
+    if (!$is_super_admin) {
+        if ($is_today) {
+            // Same day: Creator or Admin Klinik of the same clinic can delete
+            if (!$is_creator && !($is_admin_klinik && (int)$header['klinik_id'] === (int)$_SESSION['klinik_id'])) {
+                throw new Exception("Anda tidak memiliki akses untuk menghapus data ini");
+            }
+        } else {
+            // Past day: Admin Klinik can request delete
+            if ($is_admin_klinik && (int)$header['klinik_id'] === (int)$_SESSION['klinik_id']) {
+                if (empty($reason)) {
+                    throw new Exception("Alasan wajib diisi untuk penghapusan lewat hari");
+                }
+                // Update status to pending_delete and record reason
+                $stmt = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'pending_delete', approval_reason = ? WHERE id = ?");
+                $stmt->bind_param("si", $reason, $id);
+                $stmt->execute();
+                
+                $conn->commit();
+                echo json_encode(['success' => true, 'message' => 'Permintaan penghapusan telah dikirim ke SPV Klinik']);
+                exit;
+            } else {
+                throw new Exception("Penghapusan lewat hari memerlukan approval SPV dan hanya dapat diajukan oleh Admin Klinik");
+            }
         }
     }
 

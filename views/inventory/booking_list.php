@@ -1,5 +1,6 @@
 <?php
 check_role(['cs', 'super_admin', 'admin_klinik']);
+require_once __DIR__ . '/../../lib/stock.php';
 
 function ensure_booking_col($column, $definition) {
     global $conn;
@@ -94,6 +95,56 @@ $query = "SELECT b.*, k.nama_klinik,
           ORDER BY b.tanggal_pemeriksaan DESC, COALESCE(b.jam_layanan, '') DESC, b.id DESC
           LIMIT 500";
 $result = $conn->query($query);
+
+// Pre-calculate current fulfillment status for displayed bookings
+$bookings_data = [];
+$booking_ids = [];
+while ($row = $result->fetch_assoc()) {
+    $bookings_data[] = $row;
+    if ($row['status'] === 'booked') $booking_ids[] = (int)$row['id'];
+}
+
+$fulfillment_map = [];
+if (!empty($booking_ids)) {
+    $ids_str = implode(',', $booking_ids);
+    // Get mandatory items needed for these bookings
+    $res_need = $conn->query("
+        SELECT bd.booking_id, bd.barang_id, SUM(bd.qty_gantung) as total_qty
+        FROM inventory_booking_detail bd
+        WHERE bd.booking_id IN ($ids_str)
+        GROUP BY bd.booking_id, bd.barang_id
+    ");
+    
+    $needs_by_booking = [];
+    while ($rn = $res_need->fetch_assoc()) {
+        $needs_by_booking[(int)$rn['booking_id']][] = [
+            'barang_id' => (int)$rn['barang_id'],
+            'qty' => (float)$rn['total_qty']
+        ];
+    }
+
+    foreach ($bookings_data as $b) {
+        $bid = (int)$b['id'];
+        if ($b['status'] !== 'booked' || !isset($needs_by_booking[$bid])) continue;
+        
+        $is_hc = (stripos($b['status_booking'], 'HC') !== false);
+        $klinik_id = (int)$b['klinik_id'];
+        $is_still_short = false;
+        $short_items = [];
+
+        foreach ($needs_by_booking[$bid] as $item) {
+            $ef = stock_effective($conn, $klinik_id, $is_hc, $item['barang_id']);
+            if ($ef['ok'] && $ef['available'] < $item['qty']) {
+                $is_still_short = true;
+                $short_items[] = $ef['barang_name'] . " (Butuh: " . fmt_qty($item['qty']) . ", Sisa: " . fmt_qty($ef['available']) . ")";
+            }
+        }
+        $fulfillment_map[$bid] = [
+            'is_short' => $is_still_short,
+            'short_items' => implode(', ', $short_items)
+        ];
+    }
+}
 ?>
 
 <div class="container-fluid">
@@ -408,7 +459,7 @@ $result = $conn->query($query);
                     </tr>
                 </thead>
                 <tbody>
-                    <?php while ($row = $result->fetch_assoc()): ?>
+                    <?php foreach ($bookings_data as $row): ?>
                     <tr>
                         <td>
                             <?php
@@ -428,11 +479,24 @@ $result = $conn->query($query);
                         <td>
                             <div class="fw-semibold">
                                 <?= htmlspecialchars($row['nama_pemesan'] ?? 'N/A') ?>
-                                <?php if ((int)($row['is_out_of_stock'] ?? 0) === 1): ?>
-                                    <span class="ms-1 text-danger" title="Stok Kosong: <?= htmlspecialchars($row['out_of_stock_items'] ?? '') ?>">
-                                        <i class="fas fa-exclamation-triangle"></i>
-                                    </span>
-                                <?php endif; ?>
+                                <?php 
+                                    $bid = (int)$row['id'];
+                                    $f = $fulfillment_map[$bid] ?? null;
+                                    if ($row['status'] === 'booked' && $f):
+                                        if ($f['is_short']):
+                                ?>
+                                            <span class="ms-1 text-danger" title="STOK KURANG: <?= htmlspecialchars($f['short_items']) ?>">
+                                                <i class="fas fa-exclamation-triangle"></i>
+                                            </span>
+<?php   else: // If not currently short
+?>
+                                            <span class="ms-1 text-success" title="Stok sudah terpenuhi (Siap Layanan)">
+                                                <i class="fas fa-check-circle"></i>
+                                            </span>
+                                <?php 
+                                        endif;
+                                    endif; 
+                                ?>
                             </div>
                             <?php if (!empty($row['nomor_tlp'])): ?>
                                 <div class="booking-muted"><i class="fas fa-phone me-1"></i><?= htmlspecialchars($row['nomor_tlp']) ?></div>
@@ -473,15 +537,32 @@ $result = $conn->query($query);
                         <td>
                             <?php
                             $badge = 'bg-secondary';
-                            if ($row['status'] == 'booked' && (int)($row['butuh_fu'] ?? 0) === 1) $badge = 'bg-danger';
-                            elseif ($row['status'] == 'booked') $badge = 'bg-warning';
-                            if ($row['status'] == 'completed') $badge = 'bg-success';
-                            if ($row['status'] == 'cancelled') $badge = 'bg-danger';
+                            $status_label = ucfirst($row['status']);
+                            if ($row['status'] == 'booked' && (int)($row['butuh_fu'] ?? 0) === 1) {
+                                $badge = 'bg-danger';
+                                $status_label = 'FU Jadwal Kedatangan';
+                            } elseif ($row['status'] == 'booked') {
+                                $badge = 'bg-warning';
+                            } elseif ($row['status'] == 'completed') {
+                                $badge = 'bg-success';
+                            } elseif ($row['status'] == 'cancelled') {
+                                $badge = 'bg-danger';
+                            } elseif ($row['status'] == 'pending_edit') {
+                                $badge = 'bg-info text-dark';
+                                $status_label = 'Pending Edit (SPV)';
+                            } elseif ($row['status'] == 'pending_delete') {
+                                $badge = 'bg-danger';
+                                $status_label = 'Pending Hapus (SPV)';
+                            } elseif ($row['status'] == 'rejected') {
+                                $badge = 'bg-dark';
+                                $status_label = 'Ditolak SPV';
+                            }
                             ?>
-                            <?php if ($row['status'] == 'booked' && (int)($row['butuh_fu'] ?? 0) === 1): ?>
-                                <span class="badge <?= $badge ?>">FU Jadwal Kedatangan</span>
-                            <?php else: ?>
-                                <span class="badge <?= $badge ?>"><?= ucfirst($row['status']) ?></span>
+                            <span class="badge <?= $badge ?>"><?= $status_label ?></span>
+                            <?php if (!empty($row['approval_reason'])): ?>
+                                <div class="x-small text-muted mt-1" title="<?= htmlspecialchars($row['approval_reason']) ?>">
+                                    <i class="fas fa-info-circle"></i> <?= substr(htmlspecialchars($row['approval_reason']), 0, 20) ?><?= strlen($row['approval_reason']) > 20 ? '...' : '' ?>
+                                </div>
                             <?php endif; ?>
                         </td>
                         <td class="text-end" style="vertical-align: top; width: 120px;">
@@ -490,48 +571,76 @@ $result = $conn->query($query);
                                 <i class="fas fa-eye me-1"></i>Detail
                             </button>
 
-                            <?php if ($row['status'] == 'booked'): ?>
+                            <?php 
+                            $is_today = date('Y-m-d', strtotime($row['tanggal_pemeriksaan'])) === date('Y-m-d');
+                            $is_past = date('Y-m-d', strtotime($row['tanggal_pemeriksaan'])) < date('Y-m-d');
+                            $is_admin_klinik = ($_SESSION['role'] ?? '') === 'admin_klinik';
+                            $is_spv_klinik = ($_SESSION['role'] ?? '') === 'spv_klinik';
+                            $is_super_admin = ($_SESSION['role'] ?? '') === 'super_admin';
+                            $is_cs = ($_SESSION['role'] ?? '') === 'cs';
+                            ?>
+
+                            <?php if (in_array($row['status'], ['booked', 'pending_edit', 'pending_delete', 'rejected'])): ?>
                                 <button type="button" class="btn btn-sm btn-primary px-3 rounded-pill btn-aksi-toggle" onclick="toggleActionDrawer(this)">
                                     <i class="fas fa-chevron-down me-1"></i>Aksi
                                 </button>
                                 
                                 <div class="action-drawer">
-                                    <?php if (in_array($_SESSION['role'] ?? '', ['super_admin', 'admin_klinik'], true)): ?>
-                                        <button type="button" class="btn-drawer-icon text-info" title="Move" onclick="openMoveModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>', '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>');">
-                                            <i class="fas fa-exchange-alt"></i>
-                                        </button>
-                                        <button type="button" class="btn-drawer-icon text-info" title="Adjust Pax" onclick="openAdjustModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>', <?= $row['jumlah_pax'] ?? 1 ?>, <?= (int)$row['klinik_id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>');">
-                                            <i class="fas fa-user-plus"></i>
-                                        </button>
-                                    <?php endif; ?>
-
-                                    <?php if (in_array($_SESSION['role'] ?? '', ['cs', 'super_admin'], true)): ?>
-                                        <button type="button" class="btn-drawer-icon text-warning" title="Edit" onclick="openEditBooking(<?= (int)$row['id'] ?>)">
-                                            <i class="fas fa-edit"></i>
-                                        </button>
-                                    <?php endif; ?>
-
-                                    <?php if (in_array($_SESSION['role'] ?? '', ['admin_klinik', 'super_admin'], true)): ?>
-                                        <?php if ((int)($row['butuh_fu'] ?? 0) === 0): ?>
-                                            <button type="button" class="btn-drawer-icon text-danger" title="FU" onclick="return confirmButuhFU(<?= (int)$row['id'] ?>);">
-                                                <i class="fas fa-phone"></i>
+                                    <?php if ($row['status'] === 'booked'): ?>
+                                        <?php if ($is_super_admin || $is_admin_klinik): ?>
+                                            <button type="button" class="btn-drawer-icon text-info" title="Move" onclick="openMoveModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>', '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>');">
+                                                <i class="fas fa-exchange-alt"></i>
+                                            </button>
+                                            <button type="button" class="btn-drawer-icon text-info" title="Adjust Pax" onclick="openAdjustModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>', <?= $row['jumlah_pax'] ?? 1 ?>, <?= (int)$row['klinik_id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>');">
+                                                <i class="fas fa-user-plus"></i>
                                             </button>
                                         <?php endif; ?>
-                                        <button type="button" class="btn-drawer-icon text-success" title="Done" onclick="return confirmComplete(<?= (int)$row['id'] ?>);">
-                                            <i class="fas fa-check"></i>
-                                        </button>
-                                    <?php endif; ?>
 
-                                    <?php if (in_array($_SESSION['role'] ?? '', ['cs', 'super_admin'], true)): ?>
-                                        <button type="button" class="btn-drawer-icon text-danger" title="Cancel" onclick="return confirmCancel(<?= (int)$row['id'] ?>);">
-                                            <i class="fas fa-times"></i>
-                                        </button>
+                                        <?php if ($is_super_admin || $is_cs || ($is_admin_klinik && $is_today)): ?>
+                                            <button type="button" class="btn-drawer-icon text-warning" title="Edit" onclick="openEditBooking(<?= (int)$row['id'] ?>)">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        <?php elseif ($is_admin_klinik && $is_past): ?>
+                                            <button type="button" class="btn-drawer-icon text-warning" title="Request Edit (Lewat Hari)" onclick="requestEditBooking(<?= (int)$row['id'] ?>)">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        <?php endif; ?>
+
+                                        <?php if ($is_admin_klinik || $is_super_admin): ?>
+                                            <?php if ((int)($row['butuh_fu'] ?? 0) === 0): ?>
+                                                <button type="button" class="btn-drawer-icon text-danger" title="FU" onclick="return confirmButuhFU(<?= (int)$row['id'] ?>);">
+                                                    <i class="fas fa-phone"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                            <button type="button" class="btn-drawer-icon text-success" title="Done" onclick="return confirmComplete(<?= (int)$row['id'] ?>);">
+                                                <i class="fas fa-check"></i>
+                                            </button>
+                                        <?php endif; ?>
+
+                                        <?php if ($is_super_admin || $is_cs || ($is_admin_klinik && $is_today)): ?>
+                                            <button type="button" class="btn-drawer-icon text-danger" title="Cancel" onclick="return confirmCancel(<?= (int)$row['id'] ?>);">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        <?php elseif ($is_admin_klinik && $is_past): ?>
+                                            <button type="button" class="btn-drawer-icon text-danger" title="Request Hapus (Lewat Hari)" onclick="requestDeleteBooking(<?= (int)$row['id'] ?>, '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>')">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                    <?php elseif (strpos($row['status'], 'pending') !== false): ?>
+                                        <?php if ($is_spv_klinik || $is_super_admin): ?>
+                                            <button type="button" class="btn-drawer-icon text-success" title="Approve" onclick="approveBookingRequest(<?= (int)$row['id'] ?>, '<?= $row['status'] ?>')">
+                                                <i class="fas fa-check"></i>
+                                            </button>
+                                            <button type="button" class="btn-drawer-icon text-danger" title="Reject" onclick="rejectBookingRequest(<?= (int)$row['id'] ?>)">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                 </div>
                             <?php endif; ?>
                         </td>
                     </tr>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
@@ -1035,7 +1144,7 @@ window.postBookingAction = function(params) {
     });
 };
 
-window.openEditBooking = function(id) {
+window.openEditBooking = function(id, requestReason = '') {
     const containerId = 'modalEditBookingContainer';
     let $container = $('#' + containerId);
     if (!$container.length) {
@@ -1054,7 +1163,7 @@ window.openEditBooking = function(id) {
     $.ajax({
         url: 'index.php',
         method: 'GET',
-        data: { page: 'booking_edit', id: id, layout: 'none' },
+        data: { page: 'booking_edit', id: id, layout: 'none', request_reason: requestReason },
         dataType: 'html',
         cache: false,
          success: function(html) {
@@ -1088,6 +1197,131 @@ window.openEditBooking = function(id) {
                 else msg += status;
             } catch (e) {}
             showError(msg);
+        }
+    });
+};
+
+window.requestEditBooking = function(id) {
+    Swal.fire({
+        title: 'Request Edit Booking',
+        text: 'Masukkan alasan perubahan data booking (lewat hari):',
+        input: 'textarea',
+        inputPlaceholder: 'Contoh: Koreksi data pasien atau pemeriksaan...',
+        showCancelButton: true,
+        confirmButtonText: 'Lanjut Edit',
+        cancelButtonText: 'Batal',
+        inputValidator: (value) => {
+            if (!value) return 'Alasan wajib diisi!';
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // We open edit modal, but we pass the reason
+            window.openEditBooking(id, result.value);
+        }
+    });
+};
+
+window.requestDeleteBooking = function(id, nomor) {
+    Swal.fire({
+        title: 'Request Hapus Booking',
+        html: `Yakin ingin menghapus booking <strong>${nomor}</strong>?<br><br>Masukkan alasan penghapusan (lewat hari):`,
+        input: 'textarea',
+        inputPlaceholder: 'Contoh: Pasien batal atau double input...',
+        showCancelButton: true,
+        confirmButtonText: 'Kirim Request',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#d33',
+        inputValidator: (value) => {
+            if (!value) return 'Alasan wajib diisi!';
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $.ajax({
+                url: 'actions/process_booking_action.php',
+                method: 'POST',
+                data: {
+                    action: 'request_delete',
+                    id: id,
+                    reason: result.value,
+                    _csrf: $('input[name="_csrf"]').val()
+                },
+                dataType: 'json',
+                success: function(res) {
+                    if (res.success) {
+                        Swal.fire('Berhasil', res.message, 'success').then(() => { location.reload(); });
+                    } else {
+                        Swal.fire('Gagal', res.message, 'error');
+                    }
+                }
+            });
+        }
+    });
+};
+
+window.approveBookingRequest = function(id, status) {
+    const actionText = status === 'pending_edit' ? 'menyetujui perubahan' : 'menyetujui penghapusan';
+    Swal.fire({
+        title: 'Approve Request',
+        text: `Apakah Anda yakin ingin ${actionText} data ini?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $.ajax({
+                url: 'actions/process_booking_action.php',
+                method: 'POST',
+                data: {
+                    action: 'approve_request',
+                    id: id,
+                    _csrf: $('input[name="_csrf"]').val()
+                },
+                dataType: 'json',
+                success: function(res) {
+                    if (res.success) {
+                        Swal.fire('Berhasil', res.message, 'success').then(() => { location.reload(); });
+                    } else {
+                        Swal.fire('Gagal', res.message, 'error');
+                    }
+                }
+            });
+        }
+    });
+};
+
+window.rejectBookingRequest = function(id) {
+    Swal.fire({
+        title: 'Tolak Request',
+        text: 'Masukkan alasan penolakan:',
+        input: 'textarea',
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#d33',
+        inputValidator: (value) => {
+            if (!value) return 'Alasan wajib diisi!';
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $.ajax({
+                url: 'actions/process_booking_action.php',
+                method: 'POST',
+                data: {
+                    action: 'reject_request',
+                    id: id,
+                    reason: result.value,
+                    _csrf: $('input[name="_csrf"]').val()
+                },
+                dataType: 'json',
+                success: function(res) {
+                    if (res.success) {
+                        Swal.fire('Berhasil', res.message, 'success').then(() => { location.reload(); });
+                    } else {
+                        Swal.fire('Gagal', res.message, 'error');
+                    }
+                }
+            });
         }
     });
 };
@@ -1140,7 +1374,15 @@ window.openBookingDetail = function(id) {
             };
             
             var rows = items.length ? items.map(function(it) {
-                return '<tr><td>' + esc(it.kode_barang + ' - ' + it.nama_barang) + '</td><td class="text-end fw-semibold">' + fmtQtyJs(it.qty) + '</td></tr>';
+                var needed = parseFloat(it.qty || 0);
+                var current = parseFloat(it.current_available || 0);
+                var isShort = current < needed;
+                var stockInfo = `<span class="badge ${isShort ? 'bg-danger' : 'bg-success'} ms-2">Stok: ${fmtQtyJs(current)}</span>`;
+                
+                return `<tr>
+                    <td>${esc(it.kode_barang + ' - ' + it.nama_barang)} ${stockInfo}</td>
+                    <td class="text-end fw-semibold">${fmtQtyJs(it.qty)}</td>
+                </tr>`;
             }).join('') : '<tr><td colspan="2" class="text-center text-muted py-2">Tidak ada item</td></tr>';
 
             var pasienHtml = pasienList.length ? pasienList.map(function(p, i) {

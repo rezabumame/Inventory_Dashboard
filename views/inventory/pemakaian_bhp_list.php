@@ -34,6 +34,10 @@ if ($user_role === 'admin_klinik' && $user_klinik_id) {
     $where_clause .= " AND pb.klinik_id = ?";
     $params[] = $user_klinik_id;
     $types .= "i";
+} elseif ($user_role === 'spv_klinik' && $user_klinik_id) {
+    $where_clause .= " AND pb.klinik_id = ?";
+    $params[] = $user_klinik_id;
+    $types .= "i";
 }
 
 if ($user_role === 'petugas_hc') {
@@ -298,7 +302,16 @@ if ($default_modal_klinik_id) {
                     <tbody>
                         <?php while ($row = $result->fetch_assoc()): ?>
                         <tr>
-                            <td><?= htmlspecialchars($row['nomor_pemakaian']) ?></td>
+                            <td>
+                                <div class="fw-bold"><?= htmlspecialchars($row['nomor_pemakaian']) ?></div>
+                                <?php if (!empty($row['approval_reason'])): ?>
+                                    <div class="mt-1">
+                                        <span class="badge bg-light text-muted border py-1" title="<?= htmlspecialchars($row['approval_reason']) ?>" style="font-size: 0.65rem; cursor: help;">
+                                            <i class="fas fa-info-circle me-1 text-info"></i> Ada Perubahan
+                                        </span>
+                                    </div>
+                                <?php endif; ?>
+                            </td>
                             <td><?= date('d/m/Y H:i', strtotime($row['tanggal'])) ?></td>
                             <td>
                                 <?php if ($row['jenis_pemakaian'] === 'klinik'): ?>
@@ -319,27 +332,76 @@ if ($default_modal_klinik_id) {
                                     <?php 
                                     $is_today = date('Y-m-d', strtotime($row['created_at'])) === date('Y-m-d');
                                     $is_creator = $row['created_by'] == $_SESSION['user_id'];
+                                    $is_admin_klinik = $user_role === 'admin_klinik';
+                                    $is_spv_klinik = $user_role === 'spv_klinik';
+                                    $is_super_admin = $user_role === 'super_admin';
+                                    $status = $row['status'] ?? 'active';
+                                    
+                                    // Unified Access Logic
+                                    $can_edit_direct = false;
+                                    $can_request_edit = false;
+
+                                    if ($is_super_admin) {
+                                        $can_edit_direct = true;
+                                    } elseif ($is_admin_klinik) {
+                                        if ($is_today) {
+                                            $can_edit_direct = true;
+                                        } else {
+                                            $can_request_edit = true;
+                                        }
+                                    } elseif ($is_today && $is_creator) {
+                                        $can_edit_direct = true;
+                                    }
                                     ?>
-                                    <?php if ($is_today && $is_creator): ?>
-                                    <button class="btn btn-sm btn-warning edit-pemakaian" 
-                                            data-id="<?= $row['id'] ?>" 
-                                            title="Edit"
-                                            data-bs-toggle="modal" data-bs-target="#modalEdit">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-danger delete-pemakaian" 
-                                            data-id="<?= $row['id'] ?>" 
-                                            data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>" 
-                                            title="Hapus">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                    <?php elseif ($user_role === 'super_admin'): ?>
-                                    <button class="btn btn-sm btn-danger delete-pemakaian" 
-                                            data-id="<?= $row['id'] ?>" 
-                                            data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>" 
-                                            title="Hapus">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
+                                    
+                                    <?php if ($status === 'active'): ?>
+                                        <?php if ($can_edit_direct): ?>
+                                            <button class="btn btn-sm btn-warning edit-pemakaian" 
+                                                    data-id="<?= $row['id'] ?>" 
+                                                    data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
+                                                    title="Edit"
+                                                    data-bs-toggle="modal" data-bs-target="#modalEdit">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-danger delete-pemakaian" 
+                                                    data-id="<?= $row['id'] ?>" 
+                                                    data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>" 
+                                                    data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
+                                                    title="Hapus">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        <?php elseif ($can_request_edit): ?>
+                                            <button class="btn btn-sm btn-outline-warning edit-pemakaian" 
+                                                    data-id="<?= $row['id'] ?>" 
+                                                    data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
+                                                    title="Edit (Lewat Hari)"
+                                                    data-bs-toggle="modal" data-bs-target="#modalEdit">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger request-delete" 
+                                                    data-id="<?= $row['id'] ?>" 
+                                                    data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>" 
+                                                    data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
+                                                    title="Request Hapus (Lewat Hari)">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                    <?php elseif (strpos($status, 'pending') !== false): ?>
+                                        <div class="d-flex align-items-center">
+                                            <span class="badge rounded-pill bg-warning-subtle text-warning border border-warning-subtle px-3 py-1 me-2 text-center" style="font-size: 0.65rem; line-height: 1.2;">
+                                                <i class="fas fa-clock me-1"></i> Menunggu<br>Approval
+                                            </span>
+                                            <?php if ($is_spv_klinik || $is_super_admin): ?>
+                                                <div class="btn-group">
+                                                    <button class="btn btn-sm btn-success approve-request" data-id="<?= $row['id'] ?>" title="Approve">
+                                                        <i class="fas fa-check"></i>
+                                                    </button>
+                                                    <button class="btn btn-sm btn-danger reject-request" data-id="<?= $row['id'] ?>" title="Reject">
+                                                        <i class="fas fa-times"></i>
+                                                    </button>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
                                     <?php endif; ?>
                                 </div>
                             </td>
@@ -460,6 +522,16 @@ if ($default_modal_klinik_id) {
 
     .table-spreadsheet tbody tr:nth-child(even) td {
         background-color: #f8fbfa;
+    }
+
+    .bg-warning-subtle {
+        background-color: #fff3cd !important;
+    }
+    .text-warning {
+        color: #856404 !important;
+    }
+    .border-warning-subtle {
+        border-color: #ffeeba !important;
     }
 
     /* UI Pills */
@@ -935,6 +1007,13 @@ $(document).on('shown.bs.modal', '#modalTambah', function() {
 
 <script>
 $(document).ready(function() {
+    // Fix for focus issue when Swal is opened over Bootstrap modal
+    window.addEventListener('focusin', (e) => {
+        if (e.target.closest(".swal2-container") || e.target.closest(".select2-container")) {
+            e.stopImmediatePropagation();
+        }
+    });
+
     const barangMaster = <?php
         $m = [];
         foreach ($barang_list as $b) {
@@ -1348,6 +1427,7 @@ $(document).ready(function() {
     let editRowIndex = 0;
 
     function makeEditRow(idx, barangId, qty, satuan, catatan, uomMode) {
+        const formattedQty = qty ? fmtQty(qty) : '';
         return `
             <tr class="edit-item-row">
                 <td class="p-2">
@@ -1356,7 +1436,7 @@ $(document).ready(function() {
                     </select>
                 </td>
                 <td class="p-2">
-                    <input type="number" name="items[${idx}][qty]" class="form-control form-control-sm" min="1" value="${qty || ''}" placeholder="0" required>
+                    <input type="text" name="items[${idx}][qty]" class="form-control form-control-sm" value="${formattedQty}" placeholder="0" required>
                 </td>
                 <td class="p-2">
                     <select name="items[${idx}][uom_mode]" class="form-select form-select-sm edit-uom-select" required>
@@ -1405,38 +1485,96 @@ $(document).ready(function() {
                 $('#editTanggal').val(h.tanggal);
                 $('#editKlinikId').val(h.klinik_id);
                 $('#editKlinikName').val(h.nama_klinik || '');
-                $('#editJenisPemakaian').val(h.jenis_pemakaian).trigger('change');
-                togglePetugasHc('edit');
-                if (h.user_hc_id) {
-                    $('#editUserHcId').val(String(h.user_hc_id));
+                $('#editJenisPemakaian').val(h.jenis_pemakaian);
+                
+                // Hide/show petugas HC and load available items
+                const userHcId = h.user_hc_id ? String(h.user_hc_id) : null;
+                const $petugasWrap = $('#editPetugasHcWrap');
+                const $petugasSelect = $('#editUserHcId');
+                
+                if (h.jenis_pemakaian === 'hc') {
+                    $petugasWrap.show();
+                    renderPetugasOptions($petugasSelect, h.klinik_id);
+                    $petugasSelect.val(userHcId);
+                } else {
+                    $petugasWrap.hide();
+                    $petugasSelect.val('');
                 }
+                
                 $('#editCatatan').val(h.catatan_transaksi || '');
 
-                editRowIndex = 0;
-                res.details.forEach(function(d) {
-                    const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, d.catatan_item, d.uom_mode);
-                    $('#editItemTableBody').append(rowHtml);
-                    const $row = $('#editItemTableBody tr:last');
-                    const $barangSelect = $row.find('.edit-barang-select');
-                    
-                    fillSelectOptions($barangSelect, h.klinik_id, h.jenis_pemakaian, false);
-                    $barangSelect.val(String(d.barang_id)).trigger('change');
-                    
-                    // Initialize Select2 for this row
-                    initBarangSelect2($barangSelect);
-                    
-                    // Set UOM Mode after barang change (since barang change resets UOM options)
-                    if (d.uom_mode) {
-                        $row.find('.edit-uom-select').val(d.uom_mode).trigger('change');
-                    }
-                    
-                    editRowIndex++;
-                });
+                // Load available items for this context first
+                $.ajax({
+                    url: 'api/ajax_pemakaian_items.php',
+                    method: 'POST',
+                    data: { klinik_id: h.klinik_id, jenis: h.jenis_pemakaian, user_hc_id: userHcId, _csrf: PEMAKAIAN_CSRF },
+                    dataType: 'json',
+                    success: function(stockRes) {
+                        availableItemsMap = {};
+                        if (stockRes.success && Array.isArray(stockRes.items)) {
+                            stockRes.items.forEach(it => {
+                                availableItemsMap[it.barang_id] = {
+                                    id: it.barang_id,
+                                    name: it.nama_barang,
+                                    satuan: it.satuan,
+                                    uom_ratio: it.uom_ratio,
+                                    rawQty: it.qty
+                                };
+                            });
+                        }
+                        
+                        // Ensure edited items are in the list (even if out of stock now)
+                        res.details.forEach(function(d) {
+                            if (!availableItemsMap[d.barang_id]) {
+                                availableItemsMap[d.barang_id] = {
+                                    id: d.barang_id,
+                                    name: d.nama_barang,
+                                    satuan: d.satuan,
+                                    uom_ratio: 1, // Will be updated by barangMaster if available
+                                    rawQty: 0
+                                };
+                            }
+                        });
 
-                updateEditRemoveButtons();
-                $('#editLoadingSpinner').hide();
-                $('#editFormContent').show();
-                $('#editSubmitBtn').show();
+                        editRowIndex = 0;
+                        res.details.forEach(function(d) {
+                            const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, d.catatan_item, d.uom_mode);
+                            $('#editItemTableBody').append(rowHtml);
+                            const $row = $('#editItemTableBody tr:last');
+                            const $barangSelect = $row.find('.edit-barang-select');
+                            
+                            // Re-build options with the current availableItemsMap
+                            $barangSelect.html(buildOptionsHtml(h.klinik_id, h.jenis_pemakaian, userHcId));
+                            $barangSelect.val(String(d.barang_id));
+                            
+                            initBarangSelect2($barangSelect);
+                            
+                            // Trigger manual change to populate UOM options
+                            const master = barangMaster[d.barang_id] || {};
+                            const uomOdoo = master.uom_odoo || '';
+                            const ratio = Number(master.uom_ratio) || 1;
+                            const $uomSelect = $row.find('.edit-uom-select');
+                            
+                            let uomOpts = '';
+                            if (uomOdoo && ratio && ratio !== 1 && String(uomOdoo).toLowerCase() !== String(d.satuan).toLowerCase()) {
+                                uomOpts += `<option value="oper">${d.satuan}</option>`;
+                                uomOpts += `<option value="odoo">${uomOdoo}</option>`;
+                                $uomSelect.prop('disabled', false);
+                            } else {
+                                uomOpts += `<option value="oper">${d.satuan || '-'}</option>`;
+                                $uomSelect.prop('disabled', true);
+                            }
+                            $uomSelect.html(uomOpts).val(d.uom_mode || 'oper');
+
+                            editRowIndex++;
+                        });
+
+                        updateEditRemoveButtons();
+                        $('#editLoadingSpinner').hide();
+                        $('#editFormContent').show();
+                        $('#editSubmitBtn').show();
+                    }
+                });
             },
             error: function() {
                 $('#editLoadingSpinner').hide();
@@ -1487,22 +1625,197 @@ $(document).ready(function() {
         updateEditRemoveButtons();
     });
 
-    // Validate edit form on submit
+    $(document).on('click', '.approve-request', function() {
+        const id = $(this).data('id');
+        Swal.fire({
+            title: 'Approve Request',
+            text: 'Apakah Anda yakin ingin menyetujui request ini? Stok akan disesuaikan otomatis.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, Approve',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#204EAB',
+            showLoaderOnConfirm: true,
+            preConfirm: () => {
+                return $.ajax({
+                    url: 'actions/process_pemakaian_bhp_action.php',
+                    method: 'POST',
+                    data: { action: 'approve', id: id, _csrf: PEMAKAIAN_CSRF },
+                    dataType: 'json'
+                }).then(res => {
+                    if (!res.success) {
+                        throw new Error(res.message || 'Gagal menyetujui request');
+                    }
+                    return res;
+                }).catch(error => {
+                    Swal.showValidationMessage(`Request failed: ${error}`);
+                });
+            },
+            allowOutsideClick: () => !Swal.isLoading()
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire('Berhasil', result.value.message, 'success').then(() => {
+                    location.reload();
+                });
+            }
+        });
+    });
+
+    $(document).on('click', '.reject-request', function() {
+        const id = $(this).data('id');
+        Swal.fire({
+            title: 'Tolak Request',
+            text: 'Pilih alasan penolakan:',
+            input: 'select',
+            inputOptions: {
+                'Data tidak sesuai': 'Data tidak sesuai',
+                'Stok tidak mencukupi': 'Stok tidak mencukupi',
+                'Alasan tidak valid': 'Alasan tidak valid',
+                'Lainnya': 'Lainnya'
+            },
+            inputPlaceholder: '-- Pilih Alasan --',
+            showCancelButton: true,
+            confirmButtonText: 'Tolak',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#d33',
+            inputValidator: (value) => {
+                if (!value) return 'Alasan wajib dipilih!';
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                $.ajax({
+                    url: 'actions/process_pemakaian_bhp_action.php',
+                    method: 'POST',
+                    data: { action: 'reject', id: id, reason: result.value, _csrf: PEMAKAIAN_CSRF },
+                    dataType: 'json',
+                    success: function(res) {
+                        if (res.success) {
+                            Swal.fire('Berhasil', res.message, 'success').then(() => { location.reload(); });
+                        } else {
+                            Swal.fire('Gagal', res.message, 'error');
+                        }
+                    }
+                });
+            }
+        });
+    });
+
+    $(document).on('click', '.request-delete', function() {
+        const id = $(this).data('id');
+        const nomor = $(this).data('nomor') || '';
+        Swal.fire({
+            title: 'Request Hapus (Lewat Hari)',
+            text: `Data ${nomor} sudah lewat hari. Pilih alasan penghapusan:`,
+            input: 'select',
+            inputOptions: {
+                'Salah input / Data tidak valid': 'Salah input / Data tidak valid',
+                'Data pemakaian ganda (Double Input)': 'Data pemakaian ganda (Double Input)',
+                'Pembatalan transaksi oleh user': 'Pembatalan transaksi oleh user',
+                'Koreksi stok sistem': 'Koreksi stok sistem'
+            },
+            inputPlaceholder: '-- Pilih Alasan --',
+            showCancelButton: true,
+            confirmButtonText: 'Kirim Request',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#d33',
+            inputValidator: (value) => {
+                if (!value) return 'Alasan wajib dipilih!';
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                $.ajax({
+                    url: 'actions/process_pemakaian_bhp_delete.php',
+                    method: 'POST',
+                    data: { id: id, reason: result.value, _csrf: PEMAKAIAN_CSRF },
+                    dataType: 'json',
+                    success: function(res) {
+                        if (res.success) {
+                            Swal.fire('Berhasil', res.message, 'success').then(() => { location.reload(); });
+                        } else {
+                            Swal.fire('Gagal', res.message, 'error');
+                        }
+                    }
+                });
+            }
+        });
+    });
+
+    // Modify form submit to include reason if flagged
     $('#formEditPemakaianBHP').on('submit', function(e) {
         e.preventDefault();
+        const form = $(this);
+        const formData = new FormData(this);
+        const editId = $('#modalEdit').find('input[name="id"]').val();
+        const createdAtStr = $('.edit-pemakaian[data-id="'+editId+'"]').data('created-at'); // Format: YYYY-MM-DD
+        
+        let isPastDay = false;
+        if (createdAtStr) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const createdDate = new Date(createdAtStr);
+            createdDate.setHours(0, 0, 0, 0);
+            isPastDay = createdDate < today;
+        }
+        
+        const userRole = '<?= $_SESSION['role'] ?>';
+
+        // Check if admin_klinik and past day edit
+        if (userRole === 'admin_klinik' && isPastDay) {
+            Swal.fire({
+                title: 'Request Perubahan (Lewat Hari)',
+                text: 'Pilih alasan perubahan data pemakaian:',
+                input: 'select',
+                inputOptions: {
+                    'Salah input jumlah/kuantitas item': 'Salah input jumlah/kuantitas item',
+                    'Salah memilih jenis barang/BHP': 'Salah memilih jenis barang/BHP',
+                    'Koreksi tanggal transaksi pemakaian': 'Koreksi tanggal transaksi pemakaian',
+                    'Koreksi data petugas HC/Nakes': 'Koreksi data petugas HC/Nakes',
+                    'Koreksi data klinik/lokasi': 'Koreksi data klinik/lokasi',
+                    'Lainnya (Koreksi Administrasi)': 'Lainnya (Koreksi Administrasi)'
+                },
+                inputPlaceholder: '-- Pilih Alasan --',
+                showCancelButton: true,
+                confirmButtonText: 'Kirim Request',
+                cancelButtonText: 'Batal',
+                confirmButtonColor: '#204EAB',
+                inputValidator: (value) => {
+                    if (!value) return 'Alasan wajib dipilih!';
+                },
+                didOpen: () => {
+                    // Fix focus issue when Swal is over Bootstrap modal
+                    const swalContainer = document.querySelector('.swal2-container');
+                    if (swalContainer) {
+                        swalContainer.setAttribute('tabindex', '-1');
+                    }
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    formData.append('reason', result.value);
+                    submitFormWithReason(form, formData);
+                }
+            });
+        } else {
+            // For super_admin or today's edit, submit directly
+            submitFormWithReason(form, formData);
+        }
+    });
+
+    function submitFormWithReason(form, formData) {
         if ($('.edit-item-row').length === 0) {
             Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'Minimal harus ada 1 item barang' });
             return false;
         }
         
-        const $btn = $(this).find('button[type="submit"]');
+        const $btn = form.find('button[type="submit"]');
         const oldHtml = $btn.html();
         $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...');
 
         $.ajax({
-            url: $(this).attr('action'),
+            url: form.attr('action'),
             method: 'POST',
-            data: $(this).serialize(),
+            data: formData,
+            processData: false,
+            contentType: false,
             dataType: 'json',
             success: function(res) {
                 if (res.success) {
@@ -1519,8 +1832,7 @@ $(document).ready(function() {
                 $btn.prop('disabled', false).html(oldHtml);
             }
         });
-        return false;
-    });
+    }
 
     $('#modalJenisPemakaian').on('change', function() {
         refreshModalBarangOptions(false);

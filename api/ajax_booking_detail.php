@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../lib/stock.php';
 
 header('Content-Type: application/json');
 
@@ -56,6 +57,7 @@ $jenis = (string)($stmt->get_result()->fetch_assoc()['jenis_pemeriksaan'] ?? '')
 
 $stmt = $conn->prepare("
     SELECT 
+        b.id AS barang_id,
         b.kode_barang,
         b.nama_barang,
         b.satuan,
@@ -63,14 +65,21 @@ $stmt = $conn->prepare("
     FROM inventory_booking_detail bd
     JOIN inventory_barang b ON bd.barang_id = b.id
     WHERE bd.booking_id = ?
-    GROUP BY b.kode_barang, b.nama_barang, b.satuan
+    GROUP BY b.id, b.kode_barang, b.nama_barang, b.satuan
     ORDER BY b.nama_barang ASC
 ");
 $stmt->bind_param("i", $id);
 $stmt->execute();
 $items = [];
 $res = $stmt->get_result();
-while ($row = $res->fetch_assoc()) $items[] = $row;
+$is_hc = (stripos($header['status_booking'] ?? '', 'HC') !== false);
+$klinik_id = (int)$header['klinik_id'];
+
+while ($row = $res->fetch_assoc()) {
+    $ef = stock_effective($conn, $klinik_id, $is_hc, (int)$row['barang_id']);
+    $row['current_available'] = $ef['ok'] ? (float)$ef['available'] : 0;
+    $items[] = $row;
+}
 
 // Fetch all pasien (utama + tambahan) with their exams
 $stmt = $conn->prepare("

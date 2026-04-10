@@ -156,6 +156,13 @@ try {
     ensure_column($conn, 'inventory_booking_pemeriksaan', 'is_out_of_stock', "TINYINT(1) NOT NULL DEFAULT 0");
     ensure_column($conn, 'inventory_booking_pemeriksaan', 'out_of_stock_items', "TEXT NULL");
 
+    // Approval Pemakaian BHP
+    ensure_column($conn, 'inventory_pemakaian_bhp', 'status', "ENUM('active','pending_edit','pending_delete','rejected') DEFAULT 'active'");
+    ensure_column($conn, 'inventory_pemakaian_bhp', 'approval_reason', "TEXT NULL");
+    ensure_column($conn, 'inventory_pemakaian_bhp', 'spv_approved_by', "INT NULL");
+    ensure_column($conn, 'inventory_pemakaian_bhp', 'spv_approved_at', "DATETIME NULL");
+    ensure_column($conn, 'inventory_pemakaian_bhp', 'pending_data', "LONGTEXT NULL");
+
     ensure_column($conn, 'inventory_booking_pasien', 'nomor_tlp', "VARCHAR(30) NULL");
     ensure_column($conn, 'inventory_booking_pasien', 'tanggal_lahir', "DATE NULL");
 

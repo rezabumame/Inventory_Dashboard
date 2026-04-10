@@ -36,28 +36,112 @@ if ($result->num_rows === 0) {
 
 $header = $result->fetch_assoc();
 
-// Get detail items
-$stmt = $conn->prepare("
+// Check if we have pending data (Proposed Edit)
+$is_pending_edit = ($header['status'] === 'pending_edit' && !empty($header['pending_data']));
+$pending_payload = $is_pending_edit ? json_decode($header['pending_data'], true) : null;
+
+// Get detail items (Original)
+$original_details_data = [];
+$stmt_original = $conn->prepare("
     SELECT 
         pbd.*,
-        COALESCE(b.kode_barang, sm.kode_barang, '') AS kode_barang,
-        COALESCE(b.nama_barang, sm.kode_barang) AS nama_barang,
+        COALESCE(b.kode_barang, '') AS kode_barang,
+        COALESCE(b.nama_barang, '') AS nama_barang,
         COALESCE(NULLIF(pbd.satuan, ''), uc.to_uom, b.satuan, '') AS satuan_display
     FROM inventory_pemakaian_bhp_detail pbd
-    JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
     LEFT JOIN inventory_barang b ON pbd.barang_id = b.id
-    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-    LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
-    LEFT JOIN inventory_stock_mirror sm ON sm.odoo_product_id = b.odoo_product_id AND sm.location_code = k.kode_klinik
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang AND uc.from_uom = b.satuan
     WHERE pbd.pemakaian_bhp_id = ?
     ORDER BY pbd.id
 ");
-$stmt->bind_param("i", $id);
-$stmt->execute();
-$details = $stmt->get_result();
+$stmt_original->bind_param("i", $id);
+$stmt_original->execute();
+$original_details_result = $stmt_original->get_result();
+while ($row = $original_details_result->fetch_assoc()) {
+    $original_details_data[$row['barang_id']] = $row;
+}
+
+// If pending edit, overwrite header values with proposed ones and prepare proposed items
+$display_details = [];
+if ($is_pending_edit && $pending_payload) {
+    $header['tanggal'] = $pending_payload['tanggal'] ?? $header['tanggal'];
+    $header['jenis_pemakaian'] = $pending_payload['jenis_pemakaian'] ?? $header['jenis_pemakaian'];
+    $header['catatan_transaksi'] = $pending_payload['catatan_transaksi'] ?? $header['catatan_transaksi'];
+    
+    $proposed_items_map = [];
+    if (isset($pending_payload['items']) && is_array($pending_payload['items'])) {
+        foreach ($pending_payload['items'] as $it) {
+            $bid = (int)$it['barang_id'];
+            $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = $bid")->fetch_assoc();
+            $proposed_items_map[$bid] = [
+                'barang_id' => $bid,
+                'kode_barang' => $b_res['kode_barang'] ?? '-',
+                'nama_barang' => $b_res['nama_barang'] ?? 'Unknown Item',
+                'qty' => (float)$it['qty'],
+                'satuan_display' => $it['satuan'] ?? ($b_res['satuan'] ?? '-'),
+                'catatan_item' => $it['catatan'] ?? '-'
+            ];
+        }
+    }
+
+    // Compare original and proposed items
+    foreach ($proposed_items_map as $bid => $proposed_item) {
+        if (isset($original_details_data[$bid])) {
+            $original_item = $original_details_data[$bid];
+            
+            $is_qty_changed = (float)$original_item['qty'] !== (float)$proposed_item['qty'];
+            $is_satuan_changed = trim((string)$original_item['satuan_display']) !== trim((string)$proposed_item['satuan_display']);
+            $is_catatan_changed = trim((string)($original_item['catatan_item'] ?? '')) !== trim((string)($proposed_item['catatan_item'] ?? ''));
+
+            if ($is_qty_changed || $is_satuan_changed || $is_catatan_changed) {
+                $proposed_item['change_type'] = 'changed';
+                $proposed_item['original_qty'] = $original_item['qty'];
+                $proposed_item['original_satuan'] = $original_item['satuan_display'];
+                $proposed_item['original_catatan'] = $original_item['catatan_item'];
+            } else {
+                $proposed_item['change_type'] = 'unchanged';
+            }
+            $display_details[] = $proposed_item;
+            unset($original_details_data[$bid]); // Mark as processed
+        } else {
+            $proposed_item['change_type'] = 'added';
+            $display_details[] = $proposed_item;
+        }
+    }
+
+    // Any remaining items in original_details_data were removed
+    foreach ($original_details_data as $bid => $original_item) {
+        $original_item['change_type'] = 'removed';
+        $display_details[] = $original_item;
+    }
+    // Sort display_details for consistent output (e.g., by barang_id)
+    usort($display_details, fn($a, $b) => $a['barang_id'] <=> $b['barang_id']);
+
+} else {
+    // If not pending edit, use original details from the map
+    foreach ($original_details_data as $bid => $original_item) {
+        $display_details[] = $original_item;
+    }
+    // Sort for consistent output
+    usort($display_details, fn($a, $b) => $a['barang_id'] <=> $b['barang_id']);
+}
 ?>
 
 <div class="pemakaian-detail-wrapper">
+    <?php if ($is_pending_edit): ?>
+        <div class="alert alert-warning border-0 shadow-sm rounded-3 mb-4 d-flex align-items-center">
+            <i class="fas fa-exclamation-triangle me-3 fs-4 text-warning"></i>
+            <div>
+                <h6 class="mb-1 fw-bold">Menunggu Persetujuan SPV</h6>
+                <p class="mb-0 small opacity-75">Detail di bawah adalah perubahan yang diusulkan oleh Admin Klinik. <br>
+                <span class="badge bg-success-subtle text-success border border-success-subtle">Ditambahkan</span> 
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Dihapus</span> 
+                <span class="badge bg-info-subtle text-info border border-info-subtle">Diubah</span>
+                </p>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <!-- Header Infographic -->
     <div class="row g-3 mb-4">
         <div class="col-md-6">
@@ -125,12 +209,23 @@ $details = $stmt->get_result();
     </div>
 
     <?php if (!empty($header['catatan_transaksi'])): ?>
-    <div class="note-box mb-4">
+    <div class="note-box mb-3">
         <div class="note-box-title">
             <i class="fas fa-sticky-note me-1"></i> Catatan Transaksi
         </div>
         <div class="note-box-content">
             <?= nl2br(htmlspecialchars($header['catatan_transaksi'])) ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if (!empty($header['approval_reason'])): ?>
+    <div class="note-box mb-4 border-warning bg-warning-subtle">
+        <div class="note-box-title text-warning">
+            <i class="fas fa-history me-1"></i> Alasan Perubahan / History
+        </div>
+        <div class="note-box-content text-dark fw-medium">
+            <?= nl2br(htmlspecialchars($header['approval_reason'])) ?>
         </div>
     </div>
     <?php endif; ?>
@@ -155,21 +250,59 @@ $details = $stmt->get_result();
                 <tbody>
                     <?php 
                     $no = 1;
-                    while ($detail = $details->fetch_assoc()): 
+                    if (!empty($display_details)):
+                        foreach ($display_details as $detail):
+                            $row_class = '';
+                            $qty_display = fmt_qty($detail['qty']);
+                            $satuan_display = htmlspecialchars($detail['satuan_display']);
+                            $catatan_display = htmlspecialchars($detail['catatan_item'] ?: '-');
+                            $change_indicator = '';
+
+                            if (isset($detail['change_type'])) {
+                                switch ($detail['change_type']) {
+                                    case 'added':
+                                        $row_class = 'table-success';
+                                        $change_indicator = '<i class="fas fa-plus-circle text-success me-1"></i>';
+                                        break;
+                                    case 'removed':
+                                        $row_class = 'table-danger';
+                                        $change_indicator = '<i class="fas fa-minus-circle text-danger me-1"></i>';
+                                        $qty_display = '<del>' . $qty_display . '</del>';
+                                        $satuan_display = '<del>' . $satuan_display . '</del>';
+                                        $catatan_display = '<del>' . $catatan_display . '</del>';
+                                        break;
+                                    case 'changed':
+                                        $row_class = 'table-info';
+                                        $change_indicator = '<i class="fas fa-edit text-info me-1"></i>';
+                                        $qty_display = fmt_qty($detail['original_qty']) . ' <i class="fas fa-arrow-right mx-1"></i> ' . fmt_qty($detail['qty']);
+                                        $satuan_display = htmlspecialchars($detail['original_satuan']) . ' <i class="fas fa-arrow-right mx-1"></i> ' . htmlspecialchars($detail['satuan_display']);
+                                        $catatan_display = htmlspecialchars($detail['original_catatan'] ?: '-') . ' <i class="fas fa-arrow-right mx-1"></i> ' . htmlspecialchars($detail['catatan_item'] ?: '-');
+                                        break;
+                                }
+                            }
                     ?>
-                    <tr>
+                    <tr class="<?= $row_class ?>">
                         <td class="text-center text-muted"><?= $no++ ?></td>
                         <td><span class="badge bg-light text-dark border"><?= htmlspecialchars(!empty($detail['kode_barang']) ? $detail['kode_barang'] : '-') ?></span></td>
-                        <td class="fw-medium text-dark"><?= htmlspecialchars($detail['nama_barang']) ?></td>
-                        <td class="text-center"><span class="qty-pill"><?= fmt_qty($detail['qty']) ?></span></td>
-                        <td><span class="text-muted small"><?= htmlspecialchars($detail['satuan_display']) ?></span></td>
+                        <td class="fw-medium text-dark"><?= $change_indicator ?><?= htmlspecialchars($detail['nama_barang']) ?></td>
+                        <td class="text-center"><span class="qty-pill"><?= $qty_display ?></span></td>
+                        <td><span class="text-muted small"><?= $satuan_display ?></span></td>
                         <td>
                             <span class="text-muted small italic">
-                                <?= htmlspecialchars($detail['catatan_item'] ?: '-') ?>
+                                <?= $catatan_display ?>
                             </span>
                         </td>
                     </tr>
-                    <?php endwhile; ?>
+                    <?php 
+                        endforeach;
+                    else:
+                    ?>
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">Tidak ada item ditemukan.</td>
+                    </tr>
+                    <?php
+                    endif;
+                    ?>
                 </tbody>
             </table>
         </div>

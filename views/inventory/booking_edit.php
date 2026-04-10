@@ -10,10 +10,12 @@ $id = intval($_GET['id']);
 // Fetch booking
 $booking = $conn->query("SELECT b.*, k.nama_klinik FROM inventory_booking_pemeriksaan b JOIN inventory_klinik k ON b.klinik_id = k.id WHERE b.id = $id")->fetch_assoc();
 
-if (!$booking || $booking['status'] != 'booked') {
+if (!$booking || !in_array($booking['status'], ['booked', 'pending_edit', 'rejected'])) {
     $_SESSION['error'] = 'Booking tidak ditemukan atau sudah diproses';
     redirect('index.php?page=booking');
 }
+
+$request_reason = $_GET['request_reason'] ?? '';
 
 // Fetch all patients and their exams for editing
 $patients_data = [];
@@ -103,6 +105,7 @@ if ($can_cs_edit) {
             <form id="formEditBookingReal" method="POST">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <input type="hidden" name="booking_id" value="<?= $id ?>">
+                <input type="hidden" name="request_reason" value="<?= htmlspecialchars($request_reason) ?>">
                 
                 <div class="modal-body" style="max-height: 75vh; overflow-y: auto;">
                     <div id="bookingEditStockWarning" class="alert alert-warning py-2 small mb-3 d-none">

@@ -80,8 +80,46 @@ try {
 
         // Permission check
         $is_today_edit = date('Y-m-d', strtotime($old_header['created_at'])) === date('Y-m-d');
-        if ($old_header['created_by'] != $created_by || !$is_today_edit) {
-            throw new Exception("Anda tidak memiliki akses untuk mengubah data ini");
+        $is_admin_klinik = $_SESSION['role'] === 'admin_klinik';
+        $is_super_admin = $_SESSION['role'] === 'super_admin';
+        $reason = $_POST['reason'] ?? '';
+
+        // Super Admin can always edit directly
+        if ($is_super_admin) {
+            // No special handling, proceed to direct edit
+        } else {
+            if ($is_today_edit) {
+                // Same day: Creator or Admin Klinik of the same clinic
+                if ($old_header['created_by'] != $created_by && !($is_admin_klinik && (int)$old_header['klinik_id'] === (int)$_SESSION['klinik_id'])) {
+                    throw new Exception("Anda tidak memiliki akses untuk mengubah data ini");
+                }
+            } else {
+                // Past day: Admin Klinik can request edit
+                if ($is_admin_klinik && (int)$old_header['klinik_id'] === (int)$_SESSION['klinik_id']) {
+                    if (empty($reason)) {
+                        throw new Exception("Alasan wajib diisi untuk perubahan lewat hari");
+                    }
+                    // Capture new data into pending_data JSON
+                    $pending_data = json_encode([
+                        'tanggal' => $tanggal,
+                        'jenis_pemakaian' => $jenis_pemakaian,
+                        'klinik_id' => $klinik_id,
+                        'user_hc_id' => $user_hc_id,
+                        'catatan_transaksi' => $catatan_transaksi,
+                        'items' => $items
+                    ]);
+                    
+                    $stmt = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'pending_edit', approval_reason = ?, pending_data = ? WHERE id = ?");
+                    $stmt->bind_param("ssi", $reason, $pending_data, $edit_id);
+                    $stmt->execute();
+                    
+                    $conn->commit();
+                    echo json_encode(['success' => true, 'message' => 'Permintaan perubahan telah dikirim ke SPV Klinik']);
+                    exit;
+                } else {
+                    throw new Exception("Perubahan lewat hari memerlukan approval SPV dan hanya dapat diajukan oleh Admin Klinik");
+                }
+            }
         }
 
         // 2. Reverse stock for old items

@@ -32,11 +32,32 @@ if (!$header) {
     exit;
 }
 
-// Permission check: only creator of today can edit
+// Permission check: 
+// 1. Super Admin: Always
+// 2. Admin Klinik: Always (for their own clinic)
+// 3. Others (HC): Only creator on the same day
 $is_today = date('Y-m-d', strtotime($header['created_at'])) === date('Y-m-d');
 $is_creator = $header['created_by'] == $_SESSION['user_id'];
+$is_super_admin = $_SESSION['role'] === 'super_admin';
+$is_admin_klinik = $_SESSION['role'] === 'admin_klinik';
+$user_klinik_id = $_SESSION['klinik_id'] ?? null;
 
-if (!$is_today || !$is_creator) {
+$has_access = false;
+if ($is_super_admin) {
+    $has_access = true;
+} elseif ($is_admin_klinik) {
+    // Admin klinik can edit any record in their clinic
+    if ((int)$header['klinik_id'] === (int)$user_klinik_id) {
+        $has_access = true;
+    }
+} else {
+    // Other roles (HC) only their own data on the same day
+    if ($is_today && $is_creator) {
+        $has_access = true;
+    }
+}
+
+if (!$has_access) {
     echo json_encode(['success' => false, 'message' => 'Anda tidak memiliki akses untuk mengedit data ini']);
     exit;
 }

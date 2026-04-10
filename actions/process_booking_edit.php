@@ -36,6 +36,7 @@ $jotform_submitted = isset($_POST['jotform_submitted']) ? (int)$_POST['jotform_s
 $new_klinik_id = (int)($_POST['new_klinik_id'] ?? 0);
 $new_status_booking = trim((string)($_POST['new_status_booking'] ?? ''));
 $jumlah_pax = (int)($_POST['jumlah_pax'] ?? 0);
+$request_reason = trim((string)($_POST['request_reason'] ?? ''));
 
 if (empty($patients)) {
     echo json_encode(['success' => false, 'message' => 'Data pasien tidak boleh kosong']);
@@ -54,16 +55,12 @@ if ($nama_pemesan === '' || $tanggal === '') {
 
 // Validate Backdate & Backtime
 $today = date('Y-m-d');
-if ($tanggal < $today) {
-    echo json_encode(['success' => false, 'message' => 'Tanggal booking tidak boleh backdate!']);
+$is_backdate = ($tanggal < $today);
+$is_backtime = ($tanggal === $today && !empty($jam_layanan) && $jam_layanan < date('H:i'));
+
+if (($is_backdate || $is_backtime) && !in_array($role, ['super_admin', 'cs'], true) && empty($request_reason)) {
+    echo json_encode(['success' => false, 'message' => 'Perubahan lewat hari/waktu wajib menyertakan alasan untuk approval SPV!']);
     exit;
-}
-if ($tanggal === $today && !empty($jam_layanan)) {
-    $currentTime = date('H:i');
-    if ($jam_layanan < $currentTime) {
-        echo json_encode(['success' => false, 'message' => 'Jam layanan tidak boleh mundur dari jam sekarang!']);
-        exit;
-    }
 }
 if (!in_array($booking_type, ['keep', 'fixed', 'cancel'], true)) {
     echo json_encode(['success' => false, 'message' => 'Tipe booking tidak valid']);
@@ -78,12 +75,42 @@ $conn->begin_transaction();
 
 try {
     // Get booking info
-    $booking = $conn->query("SELECT * FROM inventory_booking_pemeriksaan WHERE id = $booking_id AND status = 'booked'")->fetch_assoc();
+    $booking = $conn->query("SELECT * FROM inventory_booking_pemeriksaan WHERE id = $booking_id")->fetch_assoc();
     
-    if (!$booking) {
-        throw new Exception('Booking tidak ditemukan atau sudah diproses');
+    if (!$booking || !in_array($booking['status'], ['booked', 'pending_edit', 'rejected'])) {
+        throw new Exception('Booking tidak ditemukan atau status tidak valid');
     }
     
+    $is_past_day = date('Y-m-d', strtotime($booking['tanggal_pemeriksaan'])) < $today;
+    $is_admin_klinik = ($role === 'admin_klinik');
+    $is_request = ($is_admin_klinik && ($is_past_day || !empty($request_reason)));
+
+    if ($is_request) {
+        // Just save to pending_data and update status
+        $pending_payload = [
+            'nama_pemesan' => $nama_pemesan,
+            'nomor_tlp' => $nomor_tlp,
+            'tanggal_lahir' => $tanggal_lahir,
+            'tanggal' => $tanggal,
+            'booking_type' => $booking_type,
+            'jam_layanan' => $jam_layanan,
+            'jotform_submitted' => $jotform_submitted,
+            'klinik_id' => $new_klinik_id ?: $booking['klinik_id'],
+            'status_booking' => $new_status_booking ?: $booking['status_booking'],
+            'jumlah_pax' => $jumlah_pax,
+            'patients' => $patients
+        ];
+
+        $stmt_req = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET status = 'pending_edit', approval_reason = ?, pending_data = ? WHERE id = ?");
+        $json_data = json_encode($pending_payload);
+        $stmt_req->bind_param("ssi", $request_reason, $json_data, $booking_id);
+        $stmt_req->execute();
+        
+        $conn->commit();
+        echo json_encode(['success' => true, 'message' => 'Permintaan perubahan telah dikirim ke SPV Klinik']);
+        exit;
+    }
+
     $klinik_id = (int)($booking['klinik_id'] ?? 0);
     $status_booking = (string)($booking['status_booking'] ?? '');
     $target_klinik_id = $klinik_id;
