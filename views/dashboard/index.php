@@ -144,10 +144,10 @@ if ($res_book) while ($r = $res_book->fetch_assoc()) $upcoming_bookings[] = $r;
         </div>
     </div>
     <div class="col-6 col-lg-3">
-        <div class="card h-100">
+        <div class="card h-100" role="button" onclick="showLowStockDetails()" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
             <div class="card-body">
                 <div class="text-muted small text-uppercase fw-semibold mb-1">Low Stock (Gudang)</div>
-                <div class="h4 mb-0 fw-bold <?= $low_stock > 0 ? 'text-danger' : 'text-success' ?>"><?= (int)$low_stock ?></div>
+                <div class="h4 mb-0 fw-bold <?= $low_stock > 0 ? 'text-danger' : 'text-success' ?>"><?= (int)$low_stock ?> <i class="fas fa-info-circle ms-1 small opacity-50"></i></div>
             </div>
         </div>
     </div>
@@ -241,3 +241,82 @@ if ($res_book) while ($r = $res_book->fetch_assoc()) $upcoming_bookings[] = $r;
 </div>
 
 <?php include 'chart_script.php'; ?>
+
+<!-- Modal Low Stock Details -->
+<div class="modal fade" id="modalLowStock" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 16px;">
+            <div class="modal-header border-bottom-0 pb-0">
+                <h5 class="modal-title fw-bold text-primary-custom">
+                    <i class="fas fa-exclamation-triangle text-danger me-2"></i>Detail Item Low Stock
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-4">Berikut adalah daftar item yang stoknya berada di bawah atau sama dengan batas minimum.</p>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle" id="lowStockTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Kode Barang</th>
+                                <th>Nama Barang</th>
+                                <th class="text-end">Stok Sekarang</th>
+                                <th class="text-end">Stok Minimum</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lowStockBody">
+                            <tr>
+                                <td colspan="4" class="text-center py-4">
+                                    <div class="spinner-border spinner-border-sm text-primary me-2"></div> Memuat data...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer border-top-0">
+                <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showLowStockDetails() {
+    const modal = new bootstrap.Modal(document.getElementById('modalLowStock'));
+    modal.show();
+    
+    const body = document.getElementById('lowStockBody');
+    body.innerHTML = '<tr><td colspan="4" class="text-center py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div> Memuat data...</td></tr>';
+
+    fetch('api/ajax_low_stock_details.php')
+        .then(response => response.json())
+        .then(res => {
+            if (res.success) {
+                if (res.data.length === 0) {
+                    body.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-muted">Tidak ada item low stock. Aman!</td></tr>';
+                    return;
+                }
+                
+                let html = '';
+                res.data.forEach(item => {
+                    html += `
+                        <tr>
+                            <td class="fw-semibold">${item.kode_barang}</td>
+                            <td>${item.nama_barang}</td>
+                            <td class="text-end fw-bold text-danger">${parseFloat(item.stok_saat_ini).toLocaleString()}</td>
+                            <td class="text-end text-muted">${parseFloat(item.stok_minimum).toLocaleString()}</td>
+                        </tr>
+                    `;
+                });
+                body.innerHTML = html;
+            } else {
+                body.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-danger">Error: ${res.message}</td></tr>`;
+            }
+        })
+        .catch(err => {
+            body.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-danger">Gagal mengambil data.</td></tr>`;
+            console.error(err);
+        });
+}
+</script>

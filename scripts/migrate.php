@@ -218,9 +218,10 @@ function m_ensure_unique_if_clean(mysqli $conn, string $table, string $column, s
 
 // Start Migrations
 try {
-    run_migration_task("Table: inventory_app_settings", fn() => m_ensure_table($conn, "inventory_app_settings", "CREATE TABLE IF NOT EXISTS inventory_app_settings (k VARCHAR(100) PRIMARY KEY, v TEXT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"));
-    run_migration_task("Table: inventory_app_counters", fn() => m_ensure_table($conn, "inventory_app_counters", "CREATE TABLE IF NOT EXISTS inventory_app_counters (k VARCHAR(50) NOT NULL, d CHAR(8) NOT NULL, seq INT NOT NULL DEFAULT 0, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (k, d)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"));
-    run_migration_task("Table: inventory_barang_uom_conversion", fn() => m_ensure_table($conn, "inventory_barang_uom_conversion", "CREATE TABLE IF NOT EXISTS inventory_barang_uom_conversion (
+    global $conn;
+    run_migration_task("Table: inventory_app_settings", function() use ($conn) { return m_ensure_table($conn, "inventory_app_settings", "CREATE TABLE IF NOT EXISTS inventory_app_settings (k VARCHAR(100) PRIMARY KEY, v TEXT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
+    run_migration_task("Table: inventory_app_counters", function() use ($conn) { return m_ensure_table($conn, "inventory_app_counters", "CREATE TABLE IF NOT EXISTS inventory_app_counters (k VARCHAR(50) NOT NULL, d CHAR(8) NOT NULL, seq INT NOT NULL DEFAULT 0, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (k, d)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
+    run_migration_task("Table: inventory_barang_uom_conversion", function() use ($conn) { return m_ensure_table($conn, "inventory_barang_uom_conversion", "CREATE TABLE IF NOT EXISTS inventory_barang_uom_conversion (
         id INT AUTO_INCREMENT PRIMARY KEY,
         kode_barang VARCHAR(100) NOT NULL,
         from_uom VARCHAR(50) NULL,
@@ -229,9 +230,9 @@ try {
         note VARCHAR(255) NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY uniq_kode_barang (kode_barang)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"));
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
 
-    run_migration_task("Table: inventory_stock_mirror", fn() => m_ensure_table($conn, "inventory_stock_mirror", "CREATE TABLE IF NOT EXISTS inventory_stock_mirror (
+    run_migration_task("Table: inventory_stock_mirror", function() use ($conn) { return m_ensure_table($conn, "inventory_stock_mirror", "CREATE TABLE IF NOT EXISTS inventory_stock_mirror (
         id INT AUTO_INCREMENT PRIMARY KEY,
         odoo_product_id VARCHAR(64) NOT NULL,
         kode_barang VARCHAR(64) NOT NULL,
@@ -239,9 +240,9 @@ try {
         qty DECIMAL(18,4) NOT NULL DEFAULT 0,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY uniq_loc_prod (odoo_product_id, location_code)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"));
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
 
-    run_migration_task("Table: inventory_stok_tas_hc", fn() => m_ensure_table($conn, "inventory_stok_tas_hc", "CREATE TABLE IF NOT EXISTS inventory_stok_tas_hc (
+    run_migration_task("Table: inventory_stok_tas_hc", function() use ($conn) { return m_ensure_table($conn, "inventory_stok_tas_hc", "CREATE TABLE IF NOT EXISTS inventory_stok_tas_hc (
         id INT AUTO_INCREMENT PRIMARY KEY,
         barang_id INT NOT NULL,
         user_id INT NOT NULL,
@@ -250,9 +251,9 @@ try {
         updated_by INT NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY barang_user (barang_id, user_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"));
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
 
-    run_migration_task("Table: inventory_hc_petugas_transfer", fn() => m_ensure_table($conn, "inventory_hc_petugas_transfer", "CREATE TABLE IF NOT EXISTS inventory_hc_petugas_transfer (
+    run_migration_task("Table: inventory_hc_petugas_transfer", function() use ($conn) { return m_ensure_table($conn, "inventory_hc_petugas_transfer", "CREATE TABLE IF NOT EXISTS inventory_hc_petugas_transfer (
         id INT AUTO_INCREMENT PRIMARY KEY,
         klinik_id INT NOT NULL,
         user_hc_id INT NOT NULL,
@@ -264,9 +265,9 @@ try {
         KEY idx_klinik (klinik_id),
         KEY idx_user (user_hc_id),
         KEY idx_barang (barang_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"));
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
 
-    run_migration_task("Table: inventory_hc_tas_allocation", fn() => m_ensure_table($conn, "inventory_hc_tas_allocation", "CREATE TABLE IF NOT EXISTS inventory_hc_tas_allocation (
+    run_migration_task("Table: inventory_hc_tas_allocation", function() use ($conn) { return m_ensure_table($conn, "inventory_hc_tas_allocation", "CREATE TABLE IF NOT EXISTS inventory_hc_tas_allocation (
         id INT AUTO_INCREMENT PRIMARY KEY,
         klinik_id INT NOT NULL,
         user_hc_id INT NOT NULL,
@@ -278,14 +279,14 @@ try {
         KEY idx_klinik (klinik_id),
         KEY idx_user (user_hc_id),
         KEY idx_barang (barang_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"));
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
 
-    run_migration_task("Update: inventory_hc_petugas_transfer qty", fn() => $conn->query("ALTER TABLE inventory_hc_petugas_transfer MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0") ? "Updated" : "Failed");
-    run_migration_task("Update: inventory_hc_tas_allocation qty", fn() => $conn->query("ALTER TABLE inventory_hc_tas_allocation MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0") ? "Updated" : "Failed");
-    run_migration_task("Update: inventory_stok_tas_hc qty", fn() => $conn->query("ALTER TABLE inventory_stok_tas_hc MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed");
-    run_migration_task("Update: inventory_transaksi_stok qty", fn() => $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed");
-    run_migration_task("Update: inventory_transaksi_stok qty_sebelum", fn() => $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty_sebelum DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed");
-    run_migration_task("Update: inventory_transaksi_stok qty_sesudah", fn() => $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty_sesudah DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed");
+    run_migration_task("Update: inventory_hc_petugas_transfer qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_hc_petugas_transfer MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0") ? "Updated" : "Failed"; });
+    run_migration_task("Update: inventory_hc_tas_allocation qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_hc_tas_allocation MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0") ? "Updated" : "Failed"; });
+    run_migration_task("Update: inventory_stok_tas_hc qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_stok_tas_hc MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
+    run_migration_task("Update: inventory_transaksi_stok qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
+    run_migration_task("Update: inventory_transaksi_stok qty_sebelum", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty_sebelum DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
+    run_migration_task("Update: inventory_transaksi_stok qty_sesudah", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty_sesudah DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
     
     run_migration_task("Update: inventory_booking_detail qty_fields", function() use ($conn) {
         $conn->query("ALTER TABLE inventory_booking_detail MODIFY COLUMN qty_gantung DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
@@ -310,16 +311,16 @@ try {
         return "Updated 2 columns";
     });
     
-    run_migration_task("Update: inventory_transfer_barang_detail qty", fn() => $conn->query("ALTER TABLE inventory_transfer_barang_detail MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed");
+    run_migration_task("Update: inventory_transfer_barang_detail qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transfer_barang_detail MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
 
-    run_migration_task("Table: inventory_booking_request_dedup", fn() => m_ensure_table($conn, "inventory_booking_request_dedup", "CREATE TABLE IF NOT EXISTS inventory_booking_request_dedup (
+    run_migration_task("Table: inventory_booking_request_dedup", function() use ($conn) { return m_ensure_table($conn, "inventory_booking_request_dedup", "CREATE TABLE IF NOT EXISTS inventory_booking_request_dedup (
         id INT AUTO_INCREMENT PRIMARY KEY,
         client_request_id VARCHAR(64) NOT NULL,
         created_by INT NOT NULL,
         booking_id INT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uniq_client (client_request_id, created_by)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"));
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
 
     // Columns
     $cols = [
@@ -356,14 +357,16 @@ try {
     ];
 
     foreach ($cols as $c) {
-        run_migration_task("Column: {$c[0]}.{$c[1]}", fn() => m_ensure_column($conn, $c[0], $c[1], $c[2]));
+        run_migration_task("Column: {$c[0]}.{$c[1]}", function() use ($conn, $c) {
+            return m_ensure_column($conn, $c[0], $c[1], $c[2]);
+        });
     }
 
-    run_migration_task("Update: inventory_pemakaian_bhp tanggal type", fn() => $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN tanggal DATETIME NOT NULL") ? "Updated" : "Failed");
+    run_migration_task("Update: inventory_pemakaian_bhp tanggal type", function() use ($conn) { return $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN tanggal DATETIME NOT NULL") ? "Updated" : "Failed"; });
 
     // Indexes
-    run_migration_task("Index: inventory_barang uniq_odoo", fn() => m_ensure_unique_if_clean($conn, 'inventory_barang', 'odoo_product_id', 'uniq_odoo_product_id'));
-    run_migration_task("Index: inventory_barang uniq_kode", fn() => m_ensure_unique_if_clean($conn, 'inventory_barang', 'kode_barang', 'uniq_kode_barang'));
+    run_migration_task("Index: inventory_barang uniq_odoo", function() use ($conn) { return m_ensure_unique_if_clean($conn, 'inventory_barang', 'odoo_product_id', 'uniq_odoo_product_id'); });
+    run_migration_task("Index: inventory_barang uniq_kode", function() use ($conn) { return m_ensure_unique_if_clean($conn, 'inventory_barang', 'kode_barang', 'uniq_kode_barang'); });
     
     $indices = [
         ['inventory_booking_pemeriksaan', 'idx_bp_klinik_status_tgl', "CREATE INDEX idx_bp_klinik_status_tgl ON inventory_booking_pemeriksaan (klinik_id, status, tanggal_pemeriksaan)"],
@@ -381,7 +384,9 @@ try {
     ];
 
     foreach ($indices as $idx) {
-        run_migration_task("Index: {$idx[0]}.{$idx[1]}", fn() => m_ensure_index($conn, $idx[0], $idx[1], $idx[2]));
+        run_migration_task("Index: {$idx[0]}.{$idx[1]}", function() use ($conn, $idx) {
+            return m_ensure_index($conn, $idx[0], $idx[1], $idx[2]);
+        });
     }
 
 } catch (Throwable $e) {

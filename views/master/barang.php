@@ -41,6 +41,16 @@ $without_min = $total - $with_min;
                 </ol>
             </nav>
         </div>
+        <div class="col-auto">
+            <div class="d-flex gap-2">
+                <a href="api/export_template_min_stok.php" class="btn btn-outline-secondary">
+                    <i class="fas fa-download me-2"></i>Export Template
+                </a>
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalImportMinStok">
+                    <i class="fas fa-file-import me-2"></i>Import Excel
+                </button>
+            </div>
+        </div>
     </div>
 
     <div class="row g-3 mb-3">
@@ -162,6 +172,48 @@ $without_min = $total - $with_min;
     </div>
 </div>
 
+<!-- Modal Import Min Stok -->
+<div class="modal fade" id="modalImportMinStok" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">
+                    <i class="fas fa-file-excel me-2"></i>Import Min Stok (Bulk)
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="formImportMinStok">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
+                <div class="modal-body">
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle me-1"></i> 
+                        Gunakan tombol <strong>Export Template</strong> untuk mendapatkan file Excel terbaru. 
+                        Isi kolom <strong>Stok Minimum</strong> dan upload kembali di sini.
+                        <br><br>
+                        <strong>Aturan:</strong> 
+                        <ul>
+                            <li>Nilai kosong akan diabaikan.</li>
+                            <li>Nilai yang sama dengan database akan diabaikan.</li>
+                            <li>Hanya nilai yang berubah yang akan diperbarui.</li>
+                        </ul>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Pilih File Excel (.xlsx)</label>
+                        <input type="file" class="form-control" name="excel_file" accept=".xlsx" required>
+                    </div>
+                    <div id="importResult" class="mt-3 d-none"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Tutup</button>
+                    <button type="submit" class="btn btn-primary" id="btnDoImport">
+                        <i class="fas fa-upload me-1"></i> Mulai Import
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('click', function(e) {
     const btn = e.target.closest('.btnEditMin');
@@ -177,5 +229,42 @@ document.addEventListener('click', function(e) {
     document.getElementById('minStokValue').value = min;
     const modal = new bootstrap.Modal(document.getElementById('modalEditMin'));
     modal.show();
+});
+
+document.getElementById('formImportMinStok').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btnDoImport');
+    const resultDiv = document.getElementById('importResult');
+    const formData = new FormData(this);
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing...';
+    resultDiv.classList.add('d-none');
+
+    fetch('api/ajax_import_min_stok.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(res => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-upload me-1"></i> Mulai Import';
+        
+        resultDiv.classList.remove('d-none');
+        if (res.success) {
+            resultDiv.innerHTML = `<div class="alert alert-success"><i class="fas fa-check-circle me-1"></i> ${res.message}</div>`;
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-circle me-1"></i> ${res.message}</div>`;
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-upload me-1"></i> Mulai Import';
+        resultDiv.classList.remove('d-none');
+        resultDiv.innerHTML = `<div class="alert alert-danger">Terjadi kesalahan sistem.</div>`;
+    });
 });
 </script>
