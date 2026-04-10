@@ -110,12 +110,32 @@ if (!empty($petugas)) {
     $res_u = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE TRIM(location_code) $loc_filter");
     $last_update = (string)($res_u && $res_u->num_rows > 0 ? ($res_u->fetch_assoc()['last_update'] ?? '') : '');
 
+    // Hitung total transfer in dari onsite untuk barang ini di klinik ini
+    $total_transfer_in = 0;
+    if ($barang_id > 0) {
+        $sql_total_tr = "SELECT COALESCE(SUM(qty), 0) AS total_in FROM inventory_hc_petugas_transfer WHERE barang_id = $barang_id";
+        if ($klinik_id > 0) $sql_total_tr .= " AND klinik_id = $klinik_id";
+        if ($last_update !== '') {
+            $sql_total_tr .= " AND created_at > '" . $conn->real_escape_string($last_update) . "'";
+        }
+        $res_total_tr = $conn->query($sql_total_tr);
+        if ($res_total_tr && ($r_total_tr = $res_total_tr->fetch_assoc())) {
+            $total_transfer_in = (float)$r_total_tr['total_in'];
+        }
+    }
+
     echo '<div class="mb-2">';
     echo '<div class="text-muted small">Stok HC (Mirror Odoo)</div>';
     echo '<div class="d-flex justify-content-between align-items-center">';
     echo '<div class="fw-semibold">' . htmlspecialchars($kode_homecare_label) . '</div>';
     echo '<div class="fw-bold">' . htmlspecialchars(fmt_qty($q)) . ' <small class="text-muted">' . htmlspecialchars((string)$b['satuan']) . '</small></div>';
     echo '</div>';
+    if ($total_transfer_in > 0) {
+        echo '<div class="d-flex justify-content-between align-items-center mt-1">';
+        echo '<div class="fw-semibold">Transfer Onsite</div>';
+        echo '<div class="fw-bold">' . htmlspecialchars(fmt_qty($total_transfer_in)) . ' <small class="text-muted">' . htmlspecialchars((string)$b['satuan']) . '</small></div>';
+        echo '</div>';
+    }
     if ($last_update !== '') {
         echo '<div class="text-muted small">Terakhir update mirror: <span class="fw-semibold">' . htmlspecialchars(date('d M Y H:i', strtotime($last_update))) . '</span></div>';
     }
@@ -139,9 +159,28 @@ if (!empty($petugas)) {
         $r_t = $conn->query("SELECT COALESCE(qty,0) AS qty FROM inventory_stok_tas_hc WHERE barang_id = $barang_id AND user_id = $uid $tas_klinik_filter LIMIT 1");
         $qt = (float)($r_t && $r_t->num_rows > 0 ? ($r_t->fetch_assoc()['qty'] ?? 0) : 0);
         $total_tas += $qt;
+
+        $transfer_in_qty = 0;
+        if ($barang_id > 0 && $uid > 0) {
+            $sql_tr = "SELECT COALESCE(SUM(qty), 0) AS total_in FROM inventory_hc_petugas_transfer WHERE barang_id = $barang_id AND user_hc_id = $uid";
+            if ($klinik_id > 0) $sql_tr .= " AND klinik_id = $klinik_id";
+            if ($last_update !== '') {
+                $sql_tr .= " AND created_at > '" . $conn->real_escape_string($last_update) . "'";
+            }
+            $res_tr = $conn->query($sql_tr);
+            if ($res_tr && ($r_tr = $res_tr->fetch_assoc())) {
+                $transfer_in_qty = (float)$r_tr['total_in'];
+            }
+        }
+
         echo '<tr>';
         echo '<td class="fw-semibold">' . htmlspecialchars($p['nama_lengkap']) . ($klinik_id === 0 && !empty($p['nama_klinik']) ? " <small class='text-muted'>(" . htmlspecialchars($p['nama_klinik']) . ")</small>" : "") . '</td>';
-        echo '<td class="text-end fw-bold">' . htmlspecialchars(fmt_qty($qt)) . ' <small class="text-muted">' . htmlspecialchars((string)$b['satuan']) . '</small></td>';
+        echo '<td class="text-end">';
+        echo '<div class="fw-bold">' . htmlspecialchars(fmt_qty($qt)) . ' <small class="text-muted">' . htmlspecialchars((string)$b['satuan']) . '</small></div>';
+        if ($transfer_in_qty > 0) {
+              echo '<div class="text-success small" style="font-size: 0.75rem; font-weight: bold;"><i class="fas fa-arrow-down me-1"></i>' . htmlspecialchars(fmt_qty($transfer_in_qty)) . ' dari transfer onsite</div>';
+          }
+        echo '</td>';
         echo '</tr>';
     }
     echo '<tr class="table-light">';

@@ -47,19 +47,94 @@ $conn->query("
 // 1. Get all Stock Data: stok[klinik_id][barang_id] = available
 $stok_data = [];
 try {
-    $res_stok = $conn->query("
-        SELECT k.id AS klinik_id, b.id AS barang_id, COALESCE(MAX(sm.qty), 0) * COALESCE(uc.multiplier, 1) AS qty
-        FROM inventory_klinik k
-        JOIN inventory_stock_mirror sm ON sm.location_code = k.kode_klinik
-        JOIN inventory_barang b ON b.odoo_product_id = sm.odoo_product_id
-        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-        WHERE k.status = 'active' AND k.kode_klinik IS NOT NULL AND k.kode_klinik <> ''
-        GROUP BY k.id, b.id
+    require_once __DIR__ . '/../../lib/stock.php';
+    
+    // a. Mirror massal
+    $mirror_data = [];
+    $res_m = $conn->query("SELECT location_code, odoo_product_id, kode_barang, qty FROM inventory_stock_mirror");
+    while($rm = $res_m->fetch_assoc()){
+        $loc = trim($rm['location_code']);
+        $key = trim($rm['odoo_product_id'] ?: $rm['kode_barang']);
+        if(!isset($mirror_data[$loc])) $mirror_data[$loc] = [];
+        $mirror_data[$loc][$key] = (float)$rm['qty'];
+    }
+
+    // b. Pending massal
+    $pending_data = [];
+    $res_p = $conn->query("
+        SELECT level, level_id, barang_id, 
+               SUM(CASE WHEN tipe_transaksi='in' THEN qty ELSE 0 END) as qin,
+               SUM(CASE WHEN tipe_transaksi='out' THEN qty ELSE 0 END) as qout
+        FROM inventory_transaksi_stok
+        WHERE referensi_tipe IN ('transfer','hc_petugas_transfer')
+        GROUP BY level, level_id, barang_id
     ");
-    while ($res_stok && ($row = $res_stok->fetch_assoc())) {
-        $kid = (int)$row['klinik_id'];
-        $bid = (int)$row['barang_id'];
-        $stok_data[$kid][$bid] = (float)($row['qty'] ?? 0);
+    while($rp = $res_p->fetch_assoc()){
+        $k = $rp['level'] . '_' . $rp['level_id'] . '_' . $rp['barang_id'];
+        $pending_data[$k] = ['in' => (float)$rp['qin'], 'out' => (float)$rp['qout']];
+    }
+
+    // c. Sellout massal
+    $sellout_data = [];
+    $res_s = $conn->query("
+        SELECT pb.klinik_id, pb.jenis_pemakaian, pbd.barang_id, SUM(pbd.qty) as qty
+        FROM inventory_pemakaian_bhp_detail pbd
+        JOIN inventory_pemakaian_bhp pb ON pb.id = pbd.pemakaian_bhp_id
+        GROUP BY pb.klinik_id, pb.jenis_pemakaian, pbd.barang_id
+    ");
+    while($rs = $res_s->fetch_assoc()){
+        $type = ($rs['jenis_pemakaian'] == 'hc' ? 'hc' : 'klinik');
+        $k = $rs['klinik_id'] . '_' . $type . '_' . $rs['barang_id'];
+        $sellout_data[$k] = (float)$rs['qty'];
+    }
+
+    // d. Reserve massal
+    $reserve_data = [];
+    $res_r = $conn->query("
+        SELECT bp.klinik_id, bp.status_booking, bd.barang_id,
+               SUM(CASE WHEN bp.status_booking LIKE '%HC%' THEN (CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END)
+                        ELSE (CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END) END) as qty
+        FROM inventory_booking_detail bd
+        JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
+        WHERE bp.status = 'booked'
+        GROUP BY bp.klinik_id, bp.status_booking, bd.barang_id
+    ");
+    while($rr = $res_r->fetch_assoc()){
+        $type = (stripos($rr['status_booking'], 'HC') !== false ? 'hc' : 'klinik');
+        $k = $rr['klinik_id'] . '_' . $type . '_' . $rr['barang_id'];
+        if(!isset($reserve_data[$k])) $reserve_data[$k] = 0;
+        $reserve_data[$k] += (float)$rr['qty'];
+    }
+
+    // e. Build final map
+    $res_k = $conn->query("SELECT id, kode_klinik, kode_homecare FROM inventory_klinik WHERE status='active'");
+    $res_b = $conn->query("
+        SELECT b.id, b.odoo_product_id, b.kode_barang, COALESCE(uc.multiplier, 1) as uom_ratio 
+        FROM inventory_barang b 
+        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+        WHERE b.odoo_product_id IS NOT NULL AND b.odoo_product_id <> ''
+    ");
+    $all_b = [];
+    while($rb = $res_b->fetch_assoc()) $all_b[] = $rb;
+
+    while($rk = $res_k->fetch_assoc()){
+        $kid = (int)$rk['id'];
+        $loc_on = trim($rk['kode_klinik']);
+        $stok_data[$kid] = [];
+        
+        foreach($all_b as $bl){
+            $bid = (int)$bl['id'];
+            $mult = (float)($bl['uom_ratio'] ?: 1);
+            $key = trim($bl['odoo_product_id'] ?: $bl['kode_barang']);
+
+            $base_on = (isset($mirror_data[$loc_on][$key]) ? $mirror_data[$loc_on][$key] : 0) / $mult;
+            $pend_on = isset($pending_data['klinik_'.$kid.'_'.$bid]) ? $pending_data['klinik_'.$kid.'_'.$bid] : ['in'=>0,'out'=>0];
+            $sell_on = isset($sellout_data[$kid.'_klinik_'.$bid]) ? $sellout_data[$kid.'_klinik_'.$bid] : 0;
+            $resv_on = isset($reserve_data[$kid.'_klinik_'.$bid]) ? $reserve_data[$kid.'_klinik_'.$bid] : 0;
+            $avail_on = $base_on + $pend_on['in'] - $pend_on['out'] - $sell_on - $resv_on;
+            
+            $stok_data[$kid][$bid] = max(0, $avail_on) * $mult;
+        }
     }
 } catch (Exception $e) {
     $stok_data = [];
@@ -180,15 +255,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             foreach ($total_needed as $bid => $qty_need) {
                 $bname_row = $conn->query("SELECT nama_barang, odoo_product_id FROM inventory_barang WHERE id = " . (int)$bid . " LIMIT 1")->fetch_assoc();
                 $bname = (string)($bname_row['nama_barang'] ?? ("ID:$bid"));
-                $odoo_pid = (string)($bname_row['odoo_product_id'] ?? '');
-                if ($odoo_pid === '') throw new Exception("Produk $bname belum punya odoo_product_id.");
+                
+                require_once __DIR__ . '/../../lib/stock.php';
+                $is_hc = (stripos((string)$status_booking, 'HC') !== false);
+                $ef = stock_effective($conn, (int)$klinik_id, $is_hc, (int)$bid);
+                
+                if (!$ef['ok']) throw new Exception("Gagal menghitung stok untuk $bname: " . $ef['message']);
+                
+                $available = (float)$ef['available'];
+                $mult = stock_multiplier($conn, (int)$bid);
+                $qty_need_oper = (float)$qty_need / $mult; // total_needed is in RAW units
 
-                $odoo_pid_esc = $conn->real_escape_string($odoo_pid);
-                $rqty = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE odoo_product_id = '$odoo_pid_esc' AND location_code = '$loc_esc' LIMIT 1");
-                $rowq = $rqty ? $rqty->fetch_assoc() : null;
-                $available = (int)floor((float)($rowq['qty'] ?? 0));
-                if ($available < (int)$qty_need) {
-                    throw new Exception("Stok tidak cukup untuk $bname. Tersedia: $available, Butuh Total: $qty_need");
+                if ($available < $qty_need_oper - 0.00005) {
+                    throw new Exception("Stok tidak cukup untuk $bname. Tersedia: " . fmt_qty($available) . ", Butuh Total: " . fmt_qty($qty_need_oper));
                 }
             }
 

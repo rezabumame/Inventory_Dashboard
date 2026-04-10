@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/settings.php';
+require_once __DIR__ . '/../../lib/stock.php';
 check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'cs', 'petugas_hc']);
 
 $can_filter_klinik = in_array($_SESSION['role'], ['super_admin', 'admin_gudang', 'cs']);
@@ -980,14 +981,14 @@ function openStokBreakdown(barangId, namaBarang) {
                             <th>Kode Barang</th>
                             <th>Nama Barang</th>
                             <th>Satuan</th>
-                            <th>Stock On Site</th>
-                            <?php if ($show_hc): ?><th>Stok HC</th><?php endif; ?>
-                            <th>Sellout Onsite</th>
-                            <?php if ($show_hc): ?><th>Sellout HC</th><?php endif; ?>
-                            <th>Reserve Onsite</th>
-                            <?php if ($show_hc): ?><th>Reserve HC</th><?php endif; ?>
-                            <th>On Hand Stok</th>
-                            <th>Available Stok</th>
+                            <th class="text-center">Stock On Site</th>
+                            <?php if ($show_hc): ?><th class="text-center">Stok HC</th><?php endif; ?>
+                            <th class="text-center">Sellout Onsite</th>
+                            <?php if ($show_hc): ?><th class="text-center">Sellout HC</th><?php endif; ?>
+                            <th class="text-center">Reserve Onsite</th>
+                            <?php if ($show_hc): ?><th class="text-center">Reserve HC</th><?php endif; ?>
+                            <th class="text-center">On Hand Stok</th>
+                            <th class="text-center">Available Stok</th>
                             <?php if ($is_history_date): ?><th>Detail</th><?php endif; ?>
                         </tr>
                     </thead>
@@ -1029,10 +1030,15 @@ function openStokBreakdown(barangId, namaBarang) {
                                     <div class="text-muted small">1 <?= htmlspecialchars($row['satuan']) ?> = <?= htmlspecialchars(fmt_qty($row['uom_multiplier'])) ?> <?= htmlspecialchars($row['uom_odoo']) ?></div>
                                 <?php endif; ?>
                             </td>
-                            <td>
-                                <div class="fw-bold"><?= fmt_qty($stok_onsite) ?></div>
+                            <td class="text-center">
+                                <div class="fw-bold">
+                                    <?php 
+                                        $avail_on = max(0, $stok_onsite - (!$is_history_date ? $sellout : 0) - $reserve);
+                                        echo fmt_qty($avail_on);
+                                    ?>
+                                </div>
                                 <?php if (!$is_history_date && (((float)$in_transfer) > 0 || ((float)$out_transfer) > 0)): ?>
-                                    <div class="d-flex align-items-center gap-2 small mt-1">
+                                    <div class="d-flex align-items-center justify-content-center gap-2 small mt-1">
                                         <div class="d-flex align-items-center gap-1">
                                             <i class="fas fa-arrow-down text-success" style="font-size: 0.7rem;"></i>
                                             <?php if ((float)$in_transfer > 0): ?>
@@ -1058,37 +1064,47 @@ function openStokBreakdown(barangId, namaBarang) {
                                 <?php endif; ?>
                             </td>
                             <?php if ($show_hc): ?>
-                            <td>
+                            <td class="text-center">
                                 <?php if ($stok_hc > 0): ?>
-                                    <a href="javascript:void(0)" class="text-primary fw-bold text-decoration-none"
-                                       onclick="loadHCDetail(<?= $row['barang_id'] ?>, <?= $row['klinik_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>'); return false;">
-                                        <?= fmt_qty($stok_hc) ?> <i class="fas fa-user-nurse"></i>
-                                    </a>
+                                    <div class="d-flex flex-column align-items-center">
+                                        <a href="javascript:void(0)" class="text-primary fw-bold text-decoration-none"
+                                           onclick="loadHCDetail(<?= $row['barang_id'] ?>, <?= $row['klinik_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>'); return false;">
+                                            <?php 
+                                                $avail_hc = max(0, $stok_hc - (!$is_history_date ? $sellout_hc : 0) - $reserve_hc);
+                                                echo fmt_qty($avail_hc);
+                                            ?> <i class="fas fa-user-nurse"></i>
+                                        </a>
+                                        <?php if ((float)($row['in_transfer_hc'] ?? 0) > 0): ?>
+                                              <div class="text-success small" style="font-size: 0.7rem; font-weight: bold;">
+                                                  <i class="fas fa-arrow-down me-1"></i><?= fmt_qty($row['in_transfer_hc']) ?>
+                                              </div>
+                                          <?php endif; ?>
+                                    </div>
                                 <?php else: ?>
                                     <span class="text-muted small">0</span>
                                 <?php endif; ?>
                             </td>
                             <?php endif; ?>
-                            <td class="<?= $sellout > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>">
+                            <td class="text-center <?= $sellout > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>">
                                 <?= fmt_qty($sellout) ?>
                             </td>
                             <?php if ($show_hc): ?>
-                            <td class="<?= $sellout_hc > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>">
+                            <td class="text-center <?= $sellout_hc > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>">
                                 <?= fmt_qty($sellout_hc) ?>
                             </td>
                             <?php endif; ?>
-                            <td class="<?= $reserve > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>">
+                            <td class="text-center <?= $reserve > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>">
                                 <?= fmt_qty($reserve) ?>
                             </td>
                             <?php if ($show_hc): ?>
-                            <td class="<?= $reserve_hc > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>">
+                            <td class="text-center <?= $reserve_hc > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>">
                                 <?= fmt_qty($reserve_hc) ?>
                             </td>
                             <?php endif; ?>
-                            <td class="<?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>">
+                            <td class="text-center <?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>">
                                 <?= fmt_qty($on_hand) ?>
                             </td>
-                            <td class="<?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>">
+                            <td class="text-center <?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>">
                                 <?= fmt_qty($available) ?>
                             </td>
                             <?php if ($is_history_date): ?>

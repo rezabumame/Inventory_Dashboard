@@ -158,7 +158,7 @@ try {
                 if (stripos((string)$status_booking, 'Clinic') !== false) $qty_onsite = $qty_unit;
                 elseif (stripos((string)$status_booking, 'HC') !== false) $qty_hc = $qty_unit;
 
-                $stmt_detail->bind_param("iiiiii", $book_id, $pasien_row_id, $barang_id, $qty_unit, $qty_onsite, $qty_hc);
+                $stmt_detail->bind_param("iiiddd", $book_id, $pasien_row_id, $barang_id, $qty_unit, $qty_onsite, $qty_hc);
                 if (!$stmt_detail->execute()) throw new Exception("Error saving detail: " . $stmt_detail->error);
             }
         }

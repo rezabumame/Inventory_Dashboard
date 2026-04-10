@@ -146,6 +146,8 @@ while ($row_barang = $stmt_barang->fetch_assoc()) {
     $barang_list[] = $row_barang;
 }
 
+require_once __DIR__ . '/../../lib/stock.php';
+
 $hc_list = [];
 
 $klinik_options = [];
@@ -164,54 +166,9 @@ while ($res_p && ($rp = $res_p->fetch_assoc())) {
     $petugas_by_klinik[$kid][] = ['id' => (int)$rp['id'], 'nama' => (string)($rp['nama_lengkap'] ?? '')];
 }
 
+// Mass stock calculation optimized for performance
 $available_klinik_map = [];
-try {
-    $res_av_k = $conn->query("
-        SELECT k.id as klinik_id, b.id as barang_id, SUM(sm.qty) as total_qty_odoo,
-               COALESCE(uc.multiplier, 1) as multiplier
-        FROM inventory_klinik k
-        JOIN inventory_stock_mirror sm ON sm.location_code = k.kode_klinik
-        JOIN inventory_barang b ON b.odoo_product_id = sm.odoo_product_id
-        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-        WHERE k.status='active'
-          AND k.kode_klinik IS NOT NULL AND k.kode_klinik <> ''
-          AND sm.qty > 0
-        GROUP BY k.id, b.id
-    ");
-    while ($res_av_k && ($r = $res_av_k->fetch_assoc())) {
-        $kid = (int)$r['klinik_id'];
-        $bid = (int)$r['barang_id'];
-        
-        // Simpan stok RAW (satuan terkecil dari Mirror)
-        $qty_mirror = (float)$r['total_qty_odoo'];
-        
-        if (!isset($available_klinik_map[$kid])) $available_klinik_map[$kid] = [];
-        $available_klinik_map[$kid][$bid] = $qty_mirror;
-    }
-} catch (Exception $e) {
-    $available_klinik_map = [];
-}
-
 $available_hc_map = [];
-try {
-    $res_av_h = $conn->query("
-        SELECT k.id as klinik_id, b.id as barang_id, SUM(sm.qty) as total_qty_mirror
-        FROM inventory_klinik k
-        JOIN inventory_stock_mirror sm ON sm.location_code = k.kode_homecare
-        JOIN inventory_barang b ON b.odoo_product_id = sm.odoo_product_id
-        WHERE k.status='active'
-          AND k.kode_homecare IS NOT NULL AND k.kode_homecare <> ''
-          AND sm.qty > 0
-        GROUP BY k.id, b.id
-    ");
-    while ($res_av_h && ($r = $res_av_h->fetch_assoc())) {
-        $kid = (int)$r['klinik_id'];
-        $bid = (int)$r['barang_id'];
-        $qty_mirror = (float)$r['total_qty_mirror'];
-        if (!isset($available_hc_map[$kid])) $available_hc_map[$kid] = [];
-        $available_hc_map[$kid][$bid] = $qty_mirror;
-    }
-} catch (Exception $e) {}
 
 $available_hc_user_map = [];
 try {
@@ -990,9 +947,7 @@ $(document).ready(function() {
         }
         echo json_encode($m, JSON_UNESCAPED_UNICODE);
     ?>;
-    const availableKlinik = <?php echo json_encode($available_klinik_map, JSON_UNESCAPED_UNICODE); ?>;
-    const availableHc = <?php echo json_encode($available_hc_map, JSON_UNESCAPED_UNICODE); ?>;
-    const availableHcUser = <?php echo json_encode($available_hc_user_map, JSON_UNESCAPED_UNICODE); ?>;
+    let availableItemsMap = {}; // Will be filled by AJAX
 
     function initBarangSelect2($select) {
         if (!$select || !$select.length) return;
@@ -1007,7 +962,6 @@ $(document).ready(function() {
             width: '100%',
             placeholder: '-- Pilih Barang --',
             allowClear: true
-            // Removed minimumInputLength to show items immediately
         };
         
         if ($modal.length) {
@@ -1017,38 +971,19 @@ $(document).ready(function() {
         $select.select2(opts);
     }
 
-    function getAllowedIds(klinikId, jenis, userHcId = null) {
-        if (!jenis) return null;
-        if (jenis === 'hc') {
-            if (userHcId) {
-                return availableHcUser[String(userHcId)] || {};
-            }
-            // For HC, we MUST select a petugas to see their allocated stock
-            return {};
-        }
-        return availableKlinik[String(klinikId)] || {};
-    }
-
     function buildOptionsHtml(klinikId, jenis, userHcId = null) {
         if (!jenis) return '<option value="">-- Pilih Jenis Pemakaian dahulu --</option>';
         if (jenis === 'klinik' && !klinikId) return '<option value="">-- Pilih Klinik dahulu --</option>';
         if (jenis === 'hc' && !userHcId) return '<option value="">-- Pilih Petugas dahulu --</option>';
         
-        const map = getAllowedIds(klinikId, jenis, userHcId);
-        const ids = Object.keys(map || {});
-        if (!ids || ids.length === 0) return '<option value="">-- Tidak ada barang tersedia --</option>';
-        const items = ids
-            .map(id => ({ 
-                id: String(id), 
-                name: (barangMaster[String(id)] && barangMaster[String(id)].name) ? barangMaster[String(id)].name : String(id),
-                rawQty: map[id] || 0
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name));
+        const items = Object.values(availableItemsMap || {}).sort((a, b) => a.name.localeCompare(b.name));
+        if (!items || items.length === 0) return '<option value="">-- Tidak ada barang tersedia --</option>';
+        
         let html = '<option value="">-- Pilih Barang --</option>';
         items.forEach(it => {
             const master = barangMaster[it.id] || {};
-            const satuan = master.satuan || '';
-            const ratio = Number(master.uom_ratio) || 1;
+            const satuan = master.satuan || it.satuan || '';
+            const ratio = Number(master.uom_ratio) || Number(it.uom_ratio) || 1;
             
             // Default: Satuan Operasional
             const displayQty = it.rawQty / ratio;
@@ -1077,37 +1012,100 @@ $(document).ready(function() {
         }
     }
 
-    function refreshModalBarangOptions(keepValue = true) {
+    function loadAvailableItems(callback) {
         const klinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : '<?= (int)$default_modal_klinik_id ?>';
         const jenis = $('#modalJenisPemakaian').val();
         let userHcId = $('#modalUserHcId').val();
         if (!userHcId && $('#modalUserHcIdHidden').length) {
             userHcId = $('#modalUserHcIdHidden').val();
         }
-        $('.modal-barang-select').each(function() {
-            const $s = $(this);
-            fillSelectOptions($s, klinikId, jenis, userHcId, keepValue);
-            initBarangSelect2($s);
+
+        if (!jenis || (jenis === 'klinik' && !klinikId) || (jenis === 'hc' && !userHcId)) {
+            availableItemsMap = {};
+            if (callback) callback();
+            return;
+        }
+
+        $.ajax({
+            url: 'api/ajax_pemakaian_items.php',
+            method: 'POST',
+            data: { klinik_id: klinikId, jenis: jenis, user_hc_id: userHcId, _csrf: PEMAKAIAN_CSRF },
+            dataType: 'json',
+            success: function(res) {
+                availableItemsMap = {};
+                if (res.success && Array.isArray(res.items)) {
+                    res.items.forEach(it => {
+                        availableItemsMap[it.barang_id] = {
+                            id: it.barang_id,
+                            name: it.nama_barang,
+                            satuan: it.satuan,
+                            uom_ratio: it.uom_ratio,
+                            rawQty: it.qty
+                        };
+                    });
+                }
+                if (callback) callback();
+            },
+            error: function() {
+                availableItemsMap = {};
+                if (callback) callback();
+            }
+        });
+    }
+
+    function refreshModalBarangOptions(keepValue = true) {
+        loadAvailableItems(function() {
+            const klinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : '<?= (int)$default_modal_klinik_id ?>';
+            const jenis = $('#modalJenisPemakaian').val();
+            let userHcId = $('#modalUserHcId').val();
+            $('.modal-barang-select').each(function() {
+                const $s = $(this);
+                fillSelectOptions($s, klinikId, jenis, userHcId, keepValue);
+                initBarangSelect2($s);
+            });
         });
     }
 
     function refreshEditBarangOptions(keepValue = true) {
+        // Edit modal uses a different logic for now, but we'll try to sync it if needed.
+        // For now, let's just make sure the Add Modal is fast.
+        const id = $('#editId').val();
+        if (!id) return;
+        
         const klinikId = $('#editKlinikId').val();
         const jenis = $('#editJenisPemakaian').val();
         let userHcId = $('#editUserHcId').val();
-        if (!userHcId && $('#editUserHcIdHidden').length) {
-            userHcId = $('#editUserHcIdHidden').val();
-        }
-        $('.edit-barang-select').each(function() {
-            const $s = $(this);
-            const $row = $s.closest('tr');
-            const prevUom = $row.find('.edit-uom-select').val();
-            
-            fillSelectOptions($s, klinikId, jenis, userHcId, keepValue);
-            initBarangSelect2($s);
-            
-            if (prevUom) {
-                $row.find('.edit-uom-select').val(prevUom).trigger('change');
+
+        $.ajax({
+            url: 'api/ajax_pemakaian_items.php',
+            method: 'POST',
+            data: { klinik_id: klinikId, jenis: jenis, user_hc_id: userHcId, _csrf: PEMAKAIAN_CSRF },
+            dataType: 'json',
+            success: function(res) {
+                availableItemsMap = {};
+                if (res.success && Array.isArray(res.items)) {
+                    res.items.forEach(it => {
+                        availableItemsMap[it.barang_id] = {
+                            id: it.barang_id,
+                            name: it.nama_barang,
+                            satuan: it.satuan,
+                            uom_ratio: it.uom_ratio,
+                            rawQty: it.qty
+                        };
+                    });
+                }
+                $('.edit-barang-select').each(function() {
+                    const $s = $(this);
+                    const $row = $s.closest('tr');
+                    const prevUom = $row.find('.edit-uom-select').val();
+                    
+                    fillSelectOptions($s, klinikId, jenis, userHcId, keepValue);
+                    initBarangSelect2($s);
+                    
+                    if (prevUom) {
+                        $row.find('.edit-uom-select').val(prevUom).trigger('change');
+                    }
+                });
             }
         });
     }

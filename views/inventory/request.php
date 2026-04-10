@@ -15,47 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 try {
-    if (function_exists('ensure_enum_value')) {
-        ensure_enum_value($conn, 'inventory_request_barang', 'status', 'pending_spv');
-        ensure_enum_value($conn, 'inventory_request_barang', 'status', 'rejected_spv');
-    }
-    $cols = [
-        'spv_approved_by' => "INT NULL",
-        'spv_approved_at' => "DATETIME NULL",
-        'spv_qr_token' => "VARCHAR(80) NULL",
-        'spv_rejected_by' => "INT NULL",
-        'spv_rejected_at' => "DATETIME NULL",
-        'request_qr_token' => "VARCHAR(80) NULL",
-        'request_qr_at' => "DATETIME NULL",
-    ];
-    foreach ($cols as $c => $def) {
-        $cc = $conn->real_escape_string($c);
-        $res = $conn->query("SHOW COLUMNS FROM `inventory_request_barang` LIKE '$cc'");
-        if ($res && $res->num_rows === 0) {
-            $conn->query("ALTER TABLE `inventory_request_barang` ADD COLUMN `$c` $def");
-        }
-    }
-    $res = $conn->query("SHOW INDEX FROM `inventory_request_barang` WHERE Key_name = 'idx_spv_token'");
-    if ($res && $res->num_rows === 0) {
-        $conn->query("ALTER TABLE `inventory_request_barang` ADD UNIQUE KEY `idx_spv_token` (`spv_qr_token`)");
-    }
-    $res = $conn->query("SHOW INDEX FROM `inventory_request_barang` WHERE Key_name = 'idx_request_token'");
-    if ($res && $res->num_rows === 0) {
-        $conn->query("ALTER TABLE `inventory_request_barang` ADD UNIQUE KEY `idx_request_token` (`request_qr_token`)");
-    }
-    $res = $conn->query("SHOW TABLES LIKE 'inventory_request_barang_dokumen'");
-    if ($res && $res->num_rows === 0) {
-        $conn->query("CREATE TABLE `inventory_request_barang_dokumen` (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            request_barang_id INT NOT NULL,
-            dokumen_path VARCHAR(255) NOT NULL,
-            dokumen_name VARCHAR(255) NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            created_by INT NULL
-        )");
-        $conn->query("INSERT INTO inventory_request_barang_dokumen (request_barang_id, dokumen_path, dokumen_name, created_by)
-            SELECT id, dokumen_path, dokumen_name, processed_by FROM inventory_request_barang WHERE dokumen_path IS NOT NULL AND dokumen_path != ''");
-    }
+    // Schema updates removed for performance. Ensure database_schema.sql is applied.
 } catch (Exception $e) {
 }
 
@@ -691,7 +651,13 @@ $res_barang = $conn->query("
     ORDER BY b.nama_barang ASC
 ");
 $barang_list = [];
-while ($b = $res_barang->fetch_assoc()) $barang_list[] = $b;
+require_once __DIR__ . '/../../lib/stock.php';
+while ($b = $res_barang->fetch_assoc()) {
+    $barang_list[] = $b;
+}
+
+// Stock Availability calculation moved to AJAX for better performance.
+$available_klinik_map = [];
 
 $target_kliniks = [];
 if (in_array($user_role, ['admin_klinik', 'spv_klinik', 'super_admin'], true)) {

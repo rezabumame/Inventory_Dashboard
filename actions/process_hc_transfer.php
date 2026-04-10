@@ -22,6 +22,8 @@ $catatan = trim((string)($_POST['catatan'] ?? ''));
 
 if ($role === 'admin_klinik') $klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
 
+$is_ajax = (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') || (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1');
+
 $barang_ids_raw = $_POST['barang_id'] ?? [];
 $qtys_raw = $_POST['qty'] ?? [];
 $uom_modes_raw = $_POST['uom_mode'] ?? [];
@@ -53,6 +55,11 @@ for ($i = 0; $i < $max; $i++) {
 }
 
 if ($klinik_id <= 0 || $user_hc_id <= 0 || empty($items)) {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Data transfer tidak valid.']);
+        exit;
+    }
     $_SESSION['error'] = 'Data transfer tidak valid.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
@@ -74,18 +81,33 @@ function resolve_location(mysqli $conn, string $code): string {
 
 $kl = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$kl) {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Klinik tidak ditemukan.']);
+        exit;
+    }
     $_SESSION['error'] = 'Klinik tidak ditemukan.';
     redirect('index.php?page=stok_petugas_hc');
 }
 
 $u = $conn->query("SELECT id, nama_lengkap, klinik_id FROM inventory_users WHERE id = $user_hc_id AND role = 'petugas_hc' LIMIT 1")->fetch_assoc();
 if (!$u || (int)$u['klinik_id'] !== $klinik_id) {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Petugas HC tidak valid untuk klinik ini.']);
+        exit;
+    }
     $_SESSION['error'] = 'Petugas HC tidak valid untuk klinik ini.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
 
 $loc_onsite = resolve_location($conn, (string)($kl['kode_klinik'] ?? ''));
 if ($loc_onsite === '') {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Klinik belum memiliki kode_klinik.']);
+        exit;
+    }
     $_SESSION['error'] = 'Klinik belum memiliki kode_klinik.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
@@ -93,6 +115,11 @@ $loc_onsite_esc = $conn->real_escape_string($loc_onsite);
 
 $loc_hc = resolve_location($conn, (string)($kl['kode_homecare'] ?? ''));
 if ($loc_hc === '') {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Klinik belum memiliki kode_homecare.']);
+        exit;
+    }
     $_SESSION['error'] = 'Klinik belum memiliki kode_homecare.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
@@ -152,9 +179,19 @@ try {
     }
 
     $conn->commit();
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'message' => 'Transfer berhasil disimpan.', 'redirect' => 'index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . ($role !== 'petugas_hc' ? ('&petugas_user_id=' . (int)$user_hc_id) : '')]);
+        exit;
+    }
     $_SESSION['success'] = 'Transfer berhasil disimpan.';
 } catch (Exception $e) {
     $conn->rollback();
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Gagal menyimpan transfer: ' . $e->getMessage()]);
+        exit;
+    }
     $_SESSION['error'] = 'Gagal menyimpan transfer: ' . $e->getMessage();
 }
 

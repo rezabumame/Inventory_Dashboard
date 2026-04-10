@@ -112,6 +112,21 @@ try {
 
     $conn->query("ALTER TABLE inventory_hc_petugas_transfer MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0");
     $conn->query("ALTER TABLE inventory_hc_tas_allocation MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0");
+    $conn->query("ALTER TABLE inventory_stok_tas_hc MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty_sebelum DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty_sesudah DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_booking_detail MODIFY COLUMN qty_gantung DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_booking_detail MODIFY COLUMN qty_reserved_onsite DECIMAL(18,4) DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_booking_detail MODIFY COLUMN qty_reserved_hc DECIMAL(18,4) DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_booking_detail MODIFY COLUMN qty_done_onsite DECIMAL(18,4) DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_booking_detail MODIFY COLUMN qty_adjust DECIMAL(18,4) DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_pemakaian_bhp_detail MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_stok_gudang_klinik MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_stok_gudang_klinik MODIFY COLUMN qty_gantung DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_stok_gudang_utama MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_stok_gudang_utama MODIFY COLUMN reserved_qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
+    $conn->query("ALTER TABLE inventory_transfer_barang_detail MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000");
 
     ensure_table($conn, "CREATE TABLE IF NOT EXISTS inventory_booking_request_dedup (
         id INT AUTO_INCREMENT PRIMARY KEY,

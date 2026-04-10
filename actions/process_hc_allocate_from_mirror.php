@@ -19,6 +19,8 @@ $klinik_id = (int)($_POST['klinik_id'] ?? 0);
 $user_hc_id = (int)($_POST['user_hc_id'] ?? 0);
 $catatan = trim((string)($_POST['catatan'] ?? ''));
 
+$is_ajax = (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') || (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1');
+
 $barang_ids_raw = $_POST['barang_id'] ?? [];
 $qtys_raw = $_POST['qty'] ?? [];
 $uom_modes_raw = $_POST['uom_mode'] ?? [];
@@ -50,18 +52,33 @@ for ($i = 0; $i < $max; $i++) {
 }
 
 if ($klinik_id <= 0 || $user_hc_id <= 0 || empty($items)) {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Data allocasi tidak valid.']);
+        exit;
+    }
     $_SESSION['error'] = 'Data allocasi tidak valid.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
 
 $kl = $conn->query("SELECT id, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$kl || trim((string)($kl['kode_homecare'] ?? '')) === '') {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Klinik belum memiliki kode_homecare.']);
+        exit;
+    }
     $_SESSION['error'] = 'Klinik belum memiliki kode_homecare.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
 
 $u = $conn->query("SELECT id, klinik_id FROM inventory_users WHERE id = $user_hc_id AND role = 'petugas_hc' AND status = 'active' LIMIT 1")->fetch_assoc();
 if (!$u || (int)($u['klinik_id'] ?? 0) !== $klinik_id) {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Petugas HC tidak valid untuk klinik ini.']);
+        exit;
+    }
     $_SESSION['error'] = 'Petugas HC tidak valid untuk klinik ini.';
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
@@ -125,9 +142,19 @@ try {
     }
 
     $conn->commit();
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'message' => 'Allocasi berhasil disimpan (' . $count . ' item).', 'redirect' => 'index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . '&petugas_user_id=' . (int)$user_hc_id]);
+        exit;
+    }
     $_SESSION['success'] = 'Allocasi berhasil disimpan (' . $count . ' item).';
 } catch (Exception $e) {
     $conn->rollback();
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Gagal menyimpan allocasi: ' . $e->getMessage()]);
+        exit;
+    }
     $_SESSION['error'] = 'Gagal menyimpan allocasi: ' . $e->getMessage();
 }
 

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../../lib/stock.php';
 check_role(['petugas_hc', 'super_admin', 'admin_gudang', 'admin_klinik']);
 
 $role = (string)($_SESSION['role'] ?? '');
@@ -106,34 +107,82 @@ if ($selected_klinik > 0) {
     $res_sum = $conn->query("SELECT COALESCE(SUM(qty),0) AS total FROM inventory_stok_tas_hc WHERE klinik_id = $selected_klinik");
     if ($res_sum && $res_sum->num_rows > 0) $allocated_total = (float)($res_sum->fetch_assoc()['total'] ?? 0);
     
-    // Perbaikan perhitungan unallocated: jumlahkan sisa per item
+    // Perbaikan perhitungan unallocated: jumlahkan sisa per item dengan mempertimbangkan transaksi tertunda (effective stock)
     $unallocated_total = 0;
     if ($klinik_row && !empty($klinik_row['kode_homecare'])) {
-        $loc_esc = $conn->real_escape_string((string)$klinik_row['kode_homecare']);
+        $loc_hc = trim((string)$klinik_row['kode_homecare']);
+        $loc_esc = $conn->real_escape_string($loc_hc);
+        $last_update = stock_last_update($conn, $loc_hc);
+        
+        // 1. Get allocated map
+        $allocated_map = [];
+        $res_st = $conn->query("SELECT barang_id, SUM(qty) AS total_allocated FROM inventory_stok_tas_hc WHERE klinik_id = $selected_klinik GROUP BY barang_id");
+        while($rst = $res_st->fetch_assoc()) $allocated_map[(int)$rst['barang_id']] = (float)$rst['total_allocated'];
+
+        // 2. Get sellout map
+        $sellout_map = [];
+        if ($last_update !== '') {
+            $res_s = $conn->query("
+                SELECT pbd.barang_id, SUM(pbd.qty) AS qty
+                FROM inventory_pemakaian_bhp_detail pbd
+                JOIN inventory_pemakaian_bhp pb ON pb.id = pbd.pemakaian_bhp_id
+                WHERE pb.klinik_id = $selected_klinik AND pb.jenis_pemakaian = 'hc' AND pb.created_at > '$last_update'
+                GROUP BY pbd.barang_id
+            ");
+            while($rs = $res_s->fetch_assoc()) $sellout_map[(int)$rs['barang_id']] = (float)$rs['qty'];
+        }
+
+        // 3. Get pending map
+        $pending_map = [];
+        if ($last_update !== '') {
+            $res_p = $conn->query("
+                SELECT barang_id, 
+                       SUM(CASE WHEN tipe_transaksi='in' THEN qty ELSE 0 END) as qin,
+                       SUM(CASE WHEN tipe_transaksi='out' THEN qty ELSE 0 END) as qout
+                FROM inventory_transaksi_stok
+                WHERE level = 'hc' AND level_id = $selected_klinik AND created_at > '$last_update'
+                  AND referensi_tipe IN ('hc_petugas_transfer')
+                GROUP BY barang_id
+            ");
+            while($rp = $res_p->fetch_assoc()) $pending_map[(int)$rp['barang_id']] = ['in' => (float)$rp['qin'], 'out' => (float)$rp['qout']];
+        }
+
+        // 4. Get reserve map
+        $reserve_map = [];
+        $today_esc = $conn->real_escape_string(date('Y-m-d'));
+        $res_r = $conn->query("
+            SELECT bd.barang_id, SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END) AS qty
+            FROM inventory_booking_detail bd
+            JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
+            WHERE bp.klinik_id = $selected_klinik AND bp.status = 'booked' AND bp.status_booking LIKE '%HC%' AND bp.tanggal_pemeriksaan >= '$today_esc'
+            GROUP BY bd.barang_id
+        ");
+        while($rr = $res_r->fetch_assoc()) $reserve_map[(int)$rr['barang_id']] = (float)$rr['qty'];
+
+        // 5. Calculate Unallocated
         $res_un = $conn->query("
             SELECT 
+                b.id AS barang_id,
                 sm.qty AS mirror_qty,
-                COALESCE(uc.multiplier, 1) AS ratio,
-                COALESCE(st.total_allocated, 0) AS total_allocated
+                COALESCE(uc.multiplier, 1) AS ratio
             FROM inventory_stock_mirror sm
-            LEFT JOIN inventory_barang b ON (b.odoo_product_id = sm.odoo_product_id OR b.kode_barang = sm.kode_barang)
+            JOIN inventory_barang b ON (b.odoo_product_id = sm.odoo_product_id OR b.kode_barang = sm.kode_barang)
             LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-            LEFT JOIN (
-                SELECT barang_id, SUM(qty) AS total_allocated 
-                FROM inventory_stok_tas_hc 
-                WHERE klinik_id = $selected_klinik 
-                GROUP BY barang_id
-            ) st ON st.barang_id = b.id
             WHERE sm.location_code = '$loc_esc'
         ");
         while ($res_un && ($un = $res_un->fetch_assoc())) {
-            $m_qty = (float)$un['mirror_qty'];
-            $ratio = (float)$un['ratio'];
-            if ($ratio <= 0) $ratio = 1;
-            $m_oper = $m_qty / $ratio;
-            $a_qty = (float)$un['total_allocated'];
-            $diff = $m_oper - $a_qty;
-            if ($diff > 0) $unallocated_total += $diff;
+            $bid = (int)$un['barang_id'];
+            $ratio = (float)$un['ratio']; if($ratio <= 0) $ratio = 1;
+            $m_oper = (float)$un['mirror_qty'] / $ratio;
+            
+            $p = $pending_map[$bid] ?? ['in'=>0,'out'=>0];
+            $s = $sellout_map[$bid] ?? 0;
+            $r = $reserve_map[$bid] ?? 0;
+            
+            $avail_hc = $m_oper + $p['in'] - $p['out'] - $s - $r;
+            $a_qty = $allocated_map[$bid] ?? 0;
+            $diff = $avail_hc - $a_qty;
+            if ($diff > 0.00005) $unallocated_total += $diff;
         }
     }
 }
@@ -434,7 +483,24 @@ if ($bulk_cancel) {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                <?php foreach ($rows as $r): ?>
+                                                <?php foreach ($rows as $r): 
+                                                    $bid = (int)($r['barang_id'] ?? 0);
+                                                    $transfer_in_qty = 0;
+                                                    if ($bid > 0 && $selected_klinik > 0 && $petugas_user_id > 0) {
+                                                        $sql_tr = "SELECT COALESCE(SUM(qty), 0) AS total_in 
+                                                            FROM inventory_hc_petugas_transfer 
+                                                            WHERE klinik_id = $selected_klinik 
+                                                            AND user_hc_id = $petugas_user_id 
+                                                            AND barang_id = $bid";
+                                                        if ($u !== '') {
+                                                            $sql_tr .= " AND created_at > '" . $conn->real_escape_string($u) . "'";
+                                                        }
+                                                        $res_tr = $conn->query($sql_tr);
+                                                        if ($res_tr && ($r_tr = $res_tr->fetch_assoc())) {
+                                                            $transfer_in_qty = (float)$r_tr['total_in'];
+                                                        }
+                                                    }
+                                                ?>
                                                     <tr>
                                                         <td><?= htmlspecialchars($r['kode_barang'] ?? '-') ?></td>
                                                         <td><?= htmlspecialchars($r['nama_barang'] ?? '-') ?></td>
@@ -444,7 +510,14 @@ if ($bulk_cancel) {
                                                                 <div class="text-muted small">1 <?= htmlspecialchars($r['satuan'] ?? '-') ?> = <?= htmlspecialchars(fmt_qty($r['uom_multiplier'])) ?> <?= htmlspecialchars($r['uom_odoo']) ?></div>
                                                             <?php endif; ?>
                                                         </td>
-                                                        <td class="text-end fw-semibold"><?= fmt_qty($r['qty'] ?? 0) ?></td>
+                                                        <td class="text-end">
+                                                            <div class="fw-semibold"><?= fmt_qty($r['qty'] ?? 0) ?></div>
+                                                            <?php if ($transfer_in_qty > 0): ?>
+                                                                <div class="text-muted small" style="font-size: 0.75rem;">
+                                                                    <i class="fas fa-arrow-down text-success me-1"></i><?= fmt_qty($transfer_in_qty) ?> dari transfer onsite
+                                                                </div>
+                                                            <?php endif; ?>
+                                                        </td>
                                                     </tr>
                                                 <?php endforeach; ?>
                                             </tbody>
@@ -1046,9 +1119,13 @@ function fmtQty(v){ var n=parseFloat(v||0); return (Math.abs(n-Math.round(n))<0.
                 <h5 class="modal-title fw-bold text-white"><i class="fas fa-sitemap me-2"></i>Allocasi dari Mirror HC (Initial Mapping)</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="actions/process_hc_allocate_from_mirror.php" class="modal-body bg-light">
+            <form method="POST" action="actions/process_hc_allocate_from_mirror.php" class="modal-body bg-light" id="formAllocateHC">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <input type="hidden" name="klinik_id" value="<?= (int)$selected_klinik ?>">
+                <input type="hidden" name="is_ajax" value="1">
+                
+                <div id="allocateErrorContainer" class="alert alert-danger d-none mb-3"></div>
+                
                 <div class="alert alert-info mb-3">
                     <div class="fw-semibold">Catatan</div>
                     <div class="small">Fitur ini hanya membagi stok HC mirror klinik ke “stok tas” petugas (lokal) dan tidak mengurangi stok Onsite/HC. Gunakan untuk mapping awal setelah refresh Odoo.</div>
@@ -1088,6 +1165,7 @@ function fmtQty(v){ var n=parseFloat(v||0); return (Math.abs(n-Math.round(n))<0.
                                                     <select name="barang_id[]" class="form-select allocate-barang-select" required>
                                                         <option value="">- Pilih Barang -</option>
                                                         <?php
+                                                            require_once __DIR__ . '/../../lib/stock.php';
                                                             $res_b2 = $conn->query("
                                                                 SELECT
                                                                     b.id,
@@ -1101,12 +1179,13 @@ function fmtQty(v){ var n=parseFloat(v||0); return (Math.abs(n-Math.round(n))<0.
                                                                 ORDER BY b.nama_barang ASC
                                                             ");
                                                             while ($res_b2 && ($bb2 = $res_b2->fetch_assoc())):
+                                                                // Optimized: removed heavy stock_effective loop
                                                         ?>
                                                             <option value="<?= (int)$bb2['id'] ?>"
                                                                     data-uom-oper="<?= htmlspecialchars((string)($bb2['uom_oper'] ?? ''), ENT_QUOTES) ?>"
                                                                     data-uom-odoo="<?= htmlspecialchars((string)($bb2['uom_odoo'] ?? ''), ENT_QUOTES) ?>"
                                                                     data-uom-ratio="<?= htmlspecialchars((string)($bb2['uom_ratio'] ?? '1'), ENT_QUOTES) ?>">
-                                                                    <?= htmlspecialchars(($bb2['kode_barang'] ?? '-') . ' - ' . ($bb2['nama_barang'] ?? '-') . ' (' . ($bb2['uom_oper'] ?? '-') . ')') ?>
+                                                                    <?= htmlspecialchars(($bb2['kode_barang'] ?? '-') . ' - ' . ($bb2['nama_barang'] ?? '-')) ?>
                                                             </option>
                                                         <?php endwhile; ?>
                                                     </select>
@@ -1288,9 +1367,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 <h5 class="modal-title fw-bold text-white"><i class="fas fa-exchange-alt me-2"></i>Transfer Onsite → Petugas HC</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="actions/process_hc_transfer.php" class="modal-body bg-light">
+            <form method="POST" action="actions/process_hc_transfer.php" class="modal-body bg-light" id="formTransferHC">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <input type="hidden" name="klinik_id" value="<?= (int)$selected_klinik ?>">
+                <input type="hidden" name="is_ajax" value="1">
+                
+                <div id="transferErrorContainer" class="alert alert-danger d-none mb-3"></div>
+                
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label class="form-label fw-bold small">Petugas HC</label>
@@ -1326,6 +1409,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                                     <select name="barang_id[]" class="form-select transfer-barang-select" required>
                                                         <option value="">- Pilih Barang -</option>
                                                         <?php
+                                                            require_once __DIR__ . '/../../lib/stock.php';
                                                             $res_b = $conn->query("
                                                                 SELECT
                                                                     b.id,
@@ -1339,12 +1423,13 @@ document.addEventListener('DOMContentLoaded', function() {
                                                                 ORDER BY b.nama_barang ASC
                                                             ");
                                                             while ($res_b && ($bb = $res_b->fetch_assoc())):
+                                                                // Optimized: removed heavy stock_effective loop
                                                         ?>
                                                             <option value="<?= (int)$bb['id'] ?>"
                                                                     data-uom-oper="<?= htmlspecialchars((string)($bb['uom_oper'] ?? ''), ENT_QUOTES) ?>"
                                                                     data-uom-odoo="<?= htmlspecialchars((string)($bb['uom_odoo'] ?? ''), ENT_QUOTES) ?>"
                                                                     data-uom-ratio="<?= htmlspecialchars((string)($bb['uom_ratio'] ?? '1'), ENT_QUOTES) ?>">
-                                                                    <?= htmlspecialchars(($bb['kode_barang'] ?? '-') . ' - ' . ($bb['nama_barang'] ?? '-') . ' (' . ($bb['uom_oper'] ?? '-') . ')') ?>
+                                                                    <?= htmlspecialchars(($bb['kode_barang'] ?? '-') . ' - ' . ($bb['nama_barang'] ?? '-')) ?>
                                                             </option>
                                                         <?php endwhile; ?>
                                                     </select>
@@ -1446,8 +1531,10 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Bersihkan Select2 dari elemen clone (penting agar tidak terjadi error destroy)
         $tpl.find('.select2-container').remove();
+        $tpl.find('.select2-hidden-accessible').removeClass('select2-hidden-accessible').removeAttr('data-select2-id');
+        $tpl.find('option').removeAttr('data-select2-id');
+        
         var $sel = $tpl.find('select.transfer-barang-select');
-        $sel.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').find('option').removeAttr('data-select2-id');
         
         // Reset values
         $sel.val('');
@@ -1471,8 +1558,10 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Bersihkan Select2 dari elemen clone
         $tpl.find('.select2-container').remove();
+        $tpl.find('.select2-hidden-accessible').removeClass('select2-hidden-accessible').removeAttr('data-select2-id');
+        $tpl.find('option').removeAttr('data-select2-id');
+        
         var $sel = $tpl.find('select.allocate-barang-select');
-        $sel.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').find('option').removeAttr('data-select2-id');
         
         // Reset values
         $sel.val('');
@@ -1586,6 +1675,72 @@ document.addEventListener('DOMContentLoaded', function() {
 
     $(document).on('shown.bs.modal', '#modalUploadAlokasiMirrorHC', function() {
         updateTemplateDownloadLink();
+    });
+
+    $(document).on('submit', '#formTransferHC', function(e) {
+        e.preventDefault();
+        var $form = $(this);
+        var $btn = $form.find('button[type="submit"]');
+        var $err = $('#transferErrorContainer');
+        
+        $err.addClass('d-none').text('');
+        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...');
+
+        $.ajax({
+            url: $form.attr('action'),
+            method: 'POST',
+            data: $form.serialize(),
+            dataType: 'json',
+            success: function(res) {
+                if (res.success) {
+                    if (res.redirect) {
+                        window.location.href = res.redirect;
+                    } else {
+                        window.location.reload();
+                    }
+                } else {
+                    $err.removeClass('d-none').text(res.message || 'Gagal menyimpan transfer.');
+                    $btn.prop('disabled', false).html('Simpan Transfer');
+                }
+            },
+            error: function() {
+                $err.removeClass('d-none').text('Terjadi kesalahan sistem. Silakan coba lagi.');
+                $btn.prop('disabled', false).html('Simpan Transfer');
+            }
+        });
+    });
+
+    $(document).on('submit', '#formAllocateHC', function(e) {
+        e.preventDefault();
+        var $form = $(this);
+        var $btn = $form.find('button[type="submit"]');
+        var $err = $('#allocateErrorContainer');
+        
+        $err.addClass('d-none').text('');
+        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...');
+
+        $.ajax({
+            url: $form.attr('action'),
+            method: 'POST',
+            data: $form.serialize(),
+            dataType: 'json',
+            success: function(res) {
+                if (res.success) {
+                    if (res.redirect) {
+                        window.location.href = res.redirect;
+                    } else {
+                        window.location.reload();
+                    }
+                } else {
+                    $err.removeClass('d-none').text(res.message || 'Gagal menyimpan alokasi.');
+                    $btn.prop('disabled', false).html('Simpan Allocasi');
+                }
+            },
+            error: function() {
+                $err.removeClass('d-none').text('Terjadi kesalahan sistem. Silakan coba lagi.');
+                $btn.prop('disabled', false).html('Simpan Allocasi');
+            }
+        });
     });
 })();
 </script>
