@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/settings.php';
+require_once __DIR__ . '/../../lib/stock.php';
 
 // PUBLIC ACCESS CHECK
 $token = $_GET['token'] ?? '';
@@ -60,13 +61,6 @@ if ($selected_klinik === 'all') {
             break;
         }
     }
-}
-
-function fmt_qty($v) {
-    $n = (float)($v ?? 0);
-    if (abs($n - round($n)) < 0.00005) return (string)(int)round($n);
-    $s = rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
-    return $s === '' ? '0' : $s;
 }
 
 // Normal View for others (Item List)

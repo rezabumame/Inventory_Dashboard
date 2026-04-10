@@ -105,6 +105,9 @@ if ($can_cs_edit) {
                 <input type="hidden" name="booking_id" value="<?= $id ?>">
                 
                 <div class="modal-body" style="max-height: 75vh; overflow-y: auto;">
+                    <div id="bookingEditStockWarning" class="alert alert-warning py-2 small mb-3 d-none">
+                        <i class="fas fa-exclamation-triangle me-1"></i> <strong>Peringatan:</strong> Beberapa pemeriksaan yang dipilih memiliki stok mandatory yang kosong. Perubahan tetap dapat disimpan.
+                    </div>
                     <div class="row g-3">
                         <div class="col-12">
                             <div class="card border-0 shadow-sm mb-3">
@@ -307,9 +310,38 @@ if ($can_cs_edit) {
         if (typeof $select.select2 === 'function') {
             var $modal = $('#modalEditBookingReal');
             if ($select.hasClass('select2-hidden-accessible')) $select.select2('destroy');
-            $select.select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: ($modal.length ? $modal : $(document.body)) });
+            $select.select2({ 
+                theme: 'bootstrap-5', 
+                width: '100%', 
+                dropdownParent: ($modal.length ? $modal : $(document.body)),
+                templateResult: formatExamOptionEdit,
+                templateSelection: formatExamOptionEdit
+            });
         }
+        checkEditSelectedStock();
     }
+
+    function formatExamOptionEdit(state) {
+        if (!state.id) return state.text;
+        var isAvailable = $(state.element).data('available');
+        var $state = $('<span>' + state.text + '</span>');
+        if (isAvailable == 0) $state.addClass('text-danger fw-bold');
+        return $state;
+    }
+
+    function checkEditSelectedStock() {
+        var hasOutOfStock = false;
+        $('.patient-exam-select').each(function() {
+            var $opt = $(this).find('option:selected');
+            if ($opt.data('available') == 0) hasOutOfStock = true;
+        });
+        if (hasOutOfStock) $('#bookingEditStockWarning').removeClass('d-none');
+        else $('#bookingEditStockWarning').addClass('d-none');
+    }
+
+    $(document).on('change', '.patient-exam-select', function() {
+        checkEditSelectedStock();
+    });
 
     function loadExamOptionsEdit(klinikId, callback) {
         var statusBooking = $('input[name=\"new_status_booking\"]:checked').val() || '';
@@ -322,10 +354,12 @@ if ($can_cs_edit) {
                 examOptionsEdit = '<option value="">Pilih pemeriksaan...</option>';
                 if (data && data.length > 0) {
                     data.forEach(function(exam) {
-                        examOptionsEdit += `<option value="${exam.id}">${exam.name} (Ready: ${exam.qty})</option>`;
+                        var readyText = exam.is_available ? `(Ready: ${exam.qty})` : '(STOK KOSONG)';
+                        var textClass = exam.is_available ? '' : 'text-danger';
+                        examOptionsEdit += `<option value="${exam.id}" data-available="${exam.is_available ? 1 : 0}" class="${textClass}">${exam.name} ${readyText}</option>`;
                     });
                 } else {
-                    examOptionsEdit = '<option value="">Tidak ada pemeriksaan available</option>';
+                    examOptionsEdit = '<option value="">Tidak ada pemeriksaan tersedia</option>';
                 }
                 $('.patient-exam-select').each(function() {
                     var val = $(this).val();
@@ -335,10 +369,17 @@ if ($can_cs_edit) {
                         if ($(this).hasClass('select2-hidden-accessible')) {
                             $(this).trigger('change.select2');
                         } else {
-                            $(this).select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: ($modal.length ? $modal : $(document.body)) });
+                            $(this).select2({ 
+                                theme: 'bootstrap-5', 
+                                width: '100%', 
+                                dropdownParent: ($modal.length ? $modal : $(document.body)),
+                                templateResult: formatExamOptionEdit,
+                                templateSelection: formatExamOptionEdit
+                            });
                         }
                     }
                 });
+                checkEditSelectedStock();
                 if (callback) callback();
             }
         });

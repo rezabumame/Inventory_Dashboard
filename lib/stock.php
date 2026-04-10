@@ -114,6 +114,13 @@ function stock_reserve_qty(mysqli $conn, int $klinik_id, int $barang_id, string 
     return (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
 }
 
+function fmt_qty($v) {
+    $n = (float)($v ?? 0);
+    if (abs($n - round($n)) < 0.00005) return (string)(int)round($n);
+    $s = rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
+    return $s === '' ? '0' : $s;
+}
+
 function stock_effective(mysqli $conn, int $klinik_id, bool $is_hc, int $barang_id): array {
     $klinik_id = (int)$klinik_id;
     $barang_id = (int)$barang_id;

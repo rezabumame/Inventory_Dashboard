@@ -153,6 +153,8 @@ try {
     ensure_column($conn, 'inventory_booking_pemeriksaan', 'nomor_tlp', "VARCHAR(30) NULL");
     ensure_column($conn, 'inventory_booking_pemeriksaan', 'tanggal_lahir', "DATE NULL");
     ensure_column($conn, 'inventory_booking_pemeriksaan', 'butuh_fu', "TINYINT(1) NOT NULL DEFAULT 0");
+    ensure_column($conn, 'inventory_booking_pemeriksaan', 'is_out_of_stock', "TINYINT(1) NOT NULL DEFAULT 0");
+    ensure_column($conn, 'inventory_booking_pemeriksaan', 'out_of_stock_items', "TEXT NULL");
 
     ensure_column($conn, 'inventory_booking_pasien', 'nomor_tlp', "VARCHAR(30) NULL");
     ensure_column($conn, 'inventory_booking_pasien', 'tanggal_lahir', "DATE NULL");

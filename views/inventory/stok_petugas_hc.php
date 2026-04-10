@@ -8,13 +8,7 @@ $user_id = (int)($_SESSION['user_id'] ?? 0);
 $active_tab = (string)($_GET['tab'] ?? 'stok');
 if (!in_array($active_tab, ['stok', 'history'], true)) $active_tab = 'stok';
 
-function fmt_qty($v) {
-    $n = (float)($v ?? 0);
-    if (abs($n - round($n)) < 0.00005) return (string)(int)round($n);
-    $s = rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
-    return $s === '' ? '0' : $s;
-}
-
+// Fetch data
 $selected_klinik = 0;
 if (in_array($role, ['petugas_hc', 'admin_klinik', 'spv_klinik'], true)) {
     $selected_klinik = $user_klinik_id;
@@ -1108,7 +1102,12 @@ document.addEventListener('change', function(e) {
 
 function escapeHtml(s){ var d=document.createElement('div'); d.textContent=(s==null?'':String(s)); return d.innerHTML; }
 function escapeAttr(s){ return String(s||'').replace(/"/g,'&quot;'); }
-function fmtQty(v){ var n=parseFloat(v||0); return (Math.abs(n-Math.round(n))<0.00005)? String(Math.round(n)): (n.toFixed(4).replace(/\.?0+$/,'')); }
+function fmtQty(v) {
+    var n = parseFloat(v || 0);
+    if (Math.abs(n - Math.round(n)) < 0.00005) return Math.round(n).toString();
+    var s = n.toFixed(4).replace(/\.?0+$/, "");
+    return s === "" ? "0" : s;
+}
 </script>
 
 <?php if (in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik'], true) && $role !== 'petugas_hc' && $selected_klinik > 0): ?>

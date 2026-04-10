@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../lib/stock.php';
 
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
@@ -160,7 +161,7 @@ $details = $stmt->get_result();
                         <td class="text-center text-muted"><?= $no++ ?></td>
                         <td><span class="badge bg-light text-dark border"><?= htmlspecialchars(!empty($detail['kode_barang']) ? $detail['kode_barang'] : '-') ?></span></td>
                         <td class="fw-medium text-dark"><?= htmlspecialchars($detail['nama_barang']) ?></td>
-                        <td class="text-center"><span class="qty-pill"><?= $detail['qty'] ?></span></td>
+                        <td class="text-center"><span class="qty-pill"><?= fmt_qty($detail['qty']) ?></span></td>
                         <td><span class="text-muted small"><?= htmlspecialchars($detail['satuan_display']) ?></span></td>
                         <td>
                             <span class="text-muted small italic">

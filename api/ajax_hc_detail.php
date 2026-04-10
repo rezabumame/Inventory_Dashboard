@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../lib/stock.php';
 
 // PUBLIC ACCESS CHECK
 if (!isset($_SESSION['user_id'])) {
@@ -55,13 +56,6 @@ if ($klinik_id === 0) {
     $res_p = $conn->query("SELECT id, nama_lengkap FROM inventory_users WHERE role = 'petugas_hc' AND status = 'active' AND klinik_id = $klinik_id ORDER BY nama_lengkap ASC");
 }
 while ($res_p && ($row = $res_p->fetch_assoc())) $petugas[] = $row;
-
-function fmt_qty($v) {
-    $n = (float)($v ?? 0);
-    if (abs($n - round($n)) < 0.00005) return (string)(int)round($n);
-    $s = rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
-    return $s === '' ? '0' : $s;
-}
 
 $mult = (float)($b['multiplier'] ?? 1);
 if ($mult <= 0) $mult = 1;

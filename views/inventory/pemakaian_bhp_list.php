@@ -371,7 +371,7 @@ if ($default_modal_klinik_id) {
                         <tr>
                             <th width="120"><i class="far fa-calendar-alt me-1"></i> Tanggal</th>
                             <th><i class="fas fa-box me-1"></i> Item</th>
-                            <th width="80" class="text-center">Qty (Btl)</th>
+                            <th width="80" class="text-center">Qty (Unit)</th>
                             <th width="100">UoM</th>
                             <th width="100" class="text-center bg-light">Qty Odoo</th>
                             <th width="80" class="bg-light">UoM Odoo</th>
@@ -400,13 +400,13 @@ if ($default_modal_klinik_id) {
                                         <?= htmlspecialchars($row['nama_barang']) ?>
                                     </div>
                                 </td>
-                                <td class="text-center fw-bold text-primary"><?= $row['qty'] ?></td>
+                                <td class="text-center fw-bold text-primary"><?= fmt_qty($row['qty']) ?></td>
                                 <td>
                                     <span class="uom-text">
                                           <?= htmlspecialchars($row['satuan']) ?>
                                     </span>
                                 </td>
-                                <td class="text-center fw-bold text-success bg-light"><?= number_format($qty_odoo, 0, ',', '.') ?></td>
+                                <td class="text-center fw-bold text-success bg-light"><?= fmt_qty($qty_odoo) ?></td>
                                 <td class="text-muted small bg-light"><?= htmlspecialchars($uom_odoo) ?></td>
                                 <td>
                                     <span class="status-pill <?= $badge_class ?>">
@@ -971,6 +971,13 @@ $(document).ready(function() {
         $select.select2(opts);
     }
 
+    function fmtQty(v) {
+        var n = parseFloat(v || 0);
+        if (Math.abs(n - Math.round(n)) < 0.00005) return Math.round(n).toString();
+        var s = n.toFixed(4).replace(/\.?0+$/, "");
+        return s === "" ? "0" : s;
+    }
+
     function buildOptionsHtml(klinikId, jenis, userHcId = null) {
         if (!jenis) return '<option value="">-- Pilih Jenis Pemakaian dahulu --</option>';
         if (jenis === 'klinik' && !klinikId) return '<option value="">-- Pilih Klinik dahulu --</option>';
@@ -990,7 +997,7 @@ $(document).ready(function() {
             
             const safeName = String(it.name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             const safeSatuan = String(satuan).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const qtyText = Number(displayQty).toLocaleString('id-ID');
+            const qtyText = fmtQty(displayQty);
             
             html += `<option value="${it.id}" data-satuan="${safeSatuan}" data-raw-qty="${it.rawQty}">${safeName} (Stok: ${qtyText})</option>`;
         });

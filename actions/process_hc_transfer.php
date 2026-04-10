@@ -64,21 +64,6 @@ if ($klinik_id <= 0 || $user_hc_id <= 0 || empty($items)) {
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
 
-function resolve_location(mysqli $conn, string $code): string {
-    $code = trim($code);
-    if ($code === '') return '';
-    $esc = $conn->real_escape_string($code);
-    $r = $conn->query("SELECT 1 FROM inventory_stock_mirror WHERE TRIM(location_code) = '$esc' LIMIT 1");
-    if ($r && $r->num_rows > 0) return $code;
-    $cand = [$code . '/Stock', $code . '-Stock', $code . ' Stock'];
-    foreach ($cand as $c) {
-        $e = $conn->real_escape_string($c);
-        $r = $conn->query("SELECT 1 FROM inventory_stock_mirror WHERE TRIM(location_code) = '$e' LIMIT 1");
-        if ($r && $r->num_rows > 0) return $c;
-    }
-    return $code;
-}
-
 $kl = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 if (!$kl) {
     if ($is_ajax) {
@@ -101,7 +86,7 @@ if (!$u || (int)$u['klinik_id'] !== $klinik_id) {
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
 
-$loc_onsite = resolve_location($conn, (string)($kl['kode_klinik'] ?? ''));
+$loc_onsite = stock_resolve_location($conn, (string)($kl['kode_klinik'] ?? ''));
 if ($loc_onsite === '') {
     if ($is_ajax) {
         header('Content-Type: application/json');
@@ -113,7 +98,7 @@ if ($loc_onsite === '') {
 }
 $loc_onsite_esc = $conn->real_escape_string($loc_onsite);
 
-$loc_hc = resolve_location($conn, (string)($kl['kode_homecare'] ?? ''));
+$loc_hc = stock_resolve_location($conn, (string)($kl['kode_homecare'] ?? ''));
 if ($loc_hc === '') {
     if ($is_ajax) {
         header('Content-Type: application/json');

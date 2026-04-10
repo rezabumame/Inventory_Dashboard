@@ -92,16 +92,17 @@ try {
         throw new Exception("Tidak ada item yang perlu dibooking");
     }
 
-    // 2. Check Effective Availability
+    // 2. Check Effective Availability (Identify out-of-stock items but allow booking)
+    $out_of_stock_items = [];
     foreach ($total_needed as $bid => $qty_need) {
         $bid = (int)$bid;
         $qty_need = (float)$qty_need;
         $ef = stock_effective($conn, (int)$klinik_id, $is_hc, $bid);
-        if (!$ef['ok']) throw new Exception((string)$ef['message']);
+        if (!$ef['ok']) continue;
         $available = (float)($ef['available'] ?? 0);
         if ($available < $qty_need) {
             $bname = (string)($ef['barang_name'] ?? ("ID:$bid"));
-            throw new Exception("Stok $bname tidak cukup. Tersedia: $available, Butuh: $qty_need");
+            $out_of_stock_items[] = "$bname (Sisa: $available, Butuh: $qty_need)";
         }
     }
 
@@ -109,13 +110,15 @@ try {
 
     // 3. Create Booking Header
     $nomor = "BK-TMP-" . time();
+    $is_out_of_stock = !empty($out_of_stock_items) ? 1 : 0;
+    $out_of_stock_str = !empty($out_of_stock_items) ? implode(", ", $out_of_stock_items) : null;
     
     $sql = "INSERT INTO inventory_booking_pemeriksaan 
-            (nomor_booking, order_id, klinik_id, status_booking, booking_type, jam_layanan, jotform_submitted, cs_name, nama_pemesan, nomor_tlp, tanggal_lahir, jumlah_pax, catatan, tanggal_pemeriksaan, status, created_by, created_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, NOW())";
+            (nomor_booking, order_id, klinik_id, status_booking, booking_type, jam_layanan, jotform_submitted, cs_name, nama_pemesan, nomor_tlp, tanggal_lahir, jumlah_pax, catatan, tanggal_pemeriksaan, status, is_out_of_stock, out_of_stock_items, created_by, created_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, ?, ?, NOW())";
     
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ssisssissssissi", $nomor, $order_id, $klinik_id, $status_booking, $booking_type, $jam_layanan, $jotform_submitted, $cs_name, $nama_pemesan, $nomor_tlp, $tanggal_lahir, $jumlah_pax, $catatan, $tanggal, $created_by);
+    $stmt->bind_param("ssisssissssissisi", $nomor, $order_id, $klinik_id, $status_booking, $booking_type, $jam_layanan, $jotform_submitted, $cs_name, $nama_pemesan, $nomor_tlp, $tanggal_lahir, $jumlah_pax, $catatan, $tanggal, $is_out_of_stock, $out_of_stock_str, $created_by);
     
     if (!$stmt->execute()) {
         throw new Exception("Error insert booking: " . $stmt->error);

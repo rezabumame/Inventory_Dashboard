@@ -217,9 +217,15 @@ foreach ($exams as $ex) {
         $possible = (int)floor($avail / $req);
         if ($possible < $max_possible) $max_possible = $possible;
     }
-    if ($max_possible > 0 && $max_possible < 999999) {
-        $out[] = ['id' => $ex['id'], 'name' => $ex['name'], 'qty' => $max_possible];
-    }
+    if ($max_possible < 0) $max_possible = 0;
+    if ($max_possible >= 999999) $max_possible = 0; // If no ingredients or invalid
+    
+    $out[] = [
+        'id' => $ex['id'], 
+        'name' => $ex['name'], 
+        'qty' => $max_possible,
+        'is_available' => ($max_possible > 0)
+    ];
 }
 
 echo json_encode($out, JSON_UNESCAPED_UNICODE);

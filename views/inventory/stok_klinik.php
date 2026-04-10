@@ -65,13 +65,6 @@ if ($selected_klinik === 'all') {
     }
 }
 
-function fmt_qty($v) {
-    $n = (float)($v ?? 0);
-    if (abs($n - round($n)) < 0.00005) return (string)(int)round($n);
-    $s = rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
-    return $s === '' ? '0' : $s;
-}
-
 // Fetch Pemeriksaan List (For Filter)
 $pemeriksaan_list = [];
 $res_pem = $conn->query("SELECT * FROM inventory_pemeriksaan_grup ORDER BY nama_pemeriksaan");
@@ -721,11 +714,10 @@ window.__stokKlinikContext = {
 };
 
 function fmtNum(v) {
-    var n = Number(v || 0);
-    if (Number.isInteger(n)) return String(n);
-    var s = n.toFixed(4);
-    s = s.replace(/0+$/,'').replace(/\.$/,'');
-    return s === '' ? '0' : s;
+    var n = parseFloat(v || 0);
+    if (Math.abs(n - Math.round(n)) < 0.00005) return Math.round(n).toString();
+    var s = n.toFixed(4).replace(/\.?0+$/, "");
+    return s === "" ? "0" : s;
 }
 
 function openStokBreakdown(barangId, namaBarang) {

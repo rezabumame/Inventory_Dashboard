@@ -122,15 +122,15 @@ try {
 
     $new_status = ($booking_type === 'cancel') ? 'cancelled' : 'booked';
     $butuh_fu = ($new_status === 'cancelled') ? 0 : (int)($booking['butuh_fu'] ?? 0);
-    $stmt_u = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET nama_pemesan = ?, nomor_tlp = ?, tanggal_lahir = ?, tanggal_pemeriksaan = ?, booking_type = ?, jam_layanan = ?, jotform_submitted = ?, status = ?, butuh_fu = ?, klinik_id = ?, status_booking = ?, jumlah_pax = ? WHERE id = ?");
-    $stmt_u->bind_param("ssssssisiisii", $nama_pemesan, $nomor_tlp, $tanggal_lahir, $tanggal, $booking_type, $jam_layanan, $jotform_submitted, $new_status, $butuh_fu, $target_klinik_id, $target_status_booking, $jumlah_pax, $booking_id);
-    $stmt_u->execute();
-
-    // Clear existing details
-    $conn->query("DELETE FROM inventory_booking_detail WHERE booking_id = $booking_id");
-    $conn->query("DELETE FROM inventory_booking_pasien WHERE booking_id = $booking_id");
 
     if ($new_status === 'cancelled') {
+        $stmt_u = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET nama_pemesan = ?, nomor_tlp = ?, tanggal_lahir = ?, tanggal_pemeriksaan = ?, booking_type = ?, jam_layanan = ?, jotform_submitted = ?, status = ?, butuh_fu = ?, klinik_id = ?, status_booking = ?, jumlah_pax = ? WHERE id = ?");
+        $stmt_u->bind_param("ssssssisiisii", $nama_pemesan, $nomor_tlp, $tanggal_lahir, $tanggal, $booking_type, $jam_layanan, $jotform_submitted, $new_status, $butuh_fu, $target_klinik_id, $target_status_booking, $jumlah_pax, $booking_id);
+        $stmt_u->execute();
+
+        $conn->query("DELETE FROM inventory_booking_detail WHERE booking_id = $booking_id");
+        $conn->query("DELETE FROM inventory_booking_pasien WHERE booking_id = $booking_id");
+
         $conn->commit();
         $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
         notify_gsheet_booking($conn, $booking_id, 'booking_updated');
@@ -159,17 +159,30 @@ try {
     }
     if (empty($total_needed)) throw new Exception("Tidak ada item yang perlu dibooking (cek master pemeriksaan).");
 
+    // Identify out-of-stock items but allow booking
+    $out_of_stock_items = [];
     foreach ($total_needed as $bid => $qty_need) {
         $bid = (int)$bid;
         $qty_need = (float)$qty_need;
         $ef = stock_effective($conn, (int)$target_klinik_id, $is_hc, $bid);
-        if (!$ef['ok']) throw new Exception((string)$ef['message']);
+        if (!$ef['ok']) continue;
         $available = (float)($ef['available'] ?? 0);
         if ($available < $qty_need) {
             $bname = (string)($ef['barang_name'] ?? ("ID:$bid"));
-            throw new Exception("Stok tidak cukup untuk $bname. Tersedia: $available, Butuh Total: $qty_need");
+            $out_of_stock_items[] = "$bname (Sisa: $available, Butuh: $qty_need)";
         }
     }
+
+    $is_out_of_stock = !empty($out_of_stock_items) ? 1 : 0;
+    $out_of_stock_str = !empty($out_of_stock_items) ? implode(", ", $out_of_stock_items) : null;
+
+    $stmt_u = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET nama_pemesan = ?, nomor_tlp = ?, tanggal_lahir = ?, tanggal_pemeriksaan = ?, booking_type = ?, jam_layanan = ?, jotform_submitted = ?, status = ?, butuh_fu = ?, klinik_id = ?, status_booking = ?, jumlah_pax = ?, is_out_of_stock = ?, out_of_stock_items = ? WHERE id = ?");
+    $stmt_u->bind_param("ssssssisiisiisi", $nama_pemesan, $nomor_tlp, $tanggal_lahir, $tanggal, $booking_type, $jam_layanan, $jotform_submitted, $new_status, $butuh_fu, $target_klinik_id, $target_status_booking, $jumlah_pax, $is_out_of_stock, $out_of_stock_str, $booking_id);
+    $stmt_u->execute();
+
+    // Clear existing details
+    $conn->query("DELETE FROM inventory_booking_detail WHERE booking_id = $booking_id");
+    $conn->query("DELETE FROM inventory_booking_pasien WHERE booking_id = $booking_id");
 
     // Insert again
     $conn->query("ALTER TABLE inventory_booking_pasien ADD COLUMN IF NOT EXISTS nomor_tlp VARCHAR(30) NULL");

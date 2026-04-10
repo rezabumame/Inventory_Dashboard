@@ -426,7 +426,14 @@ $result = $conn->query($query);
                             <span class="badge <?= $bt_badge ?>"><?= $bt_label ?></span>
                         </td>
                         <td>
-                            <div class="fw-semibold"><?= htmlspecialchars($row['nama_pemesan'] ?? 'N/A') ?></div>
+                            <div class="fw-semibold">
+                                <?= htmlspecialchars($row['nama_pemesan'] ?? 'N/A') ?>
+                                <?php if ((int)($row['is_out_of_stock'] ?? 0) === 1): ?>
+                                    <span class="ms-1 text-danger" title="Stok Kosong: <?= htmlspecialchars($row['out_of_stock_items'] ?? '') ?>">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
                             <?php if (!empty($row['nomor_tlp'])): ?>
                                 <div class="booking-muted"><i class="fas fa-phone me-1"></i><?= htmlspecialchars($row['nomor_tlp']) ?></div>
                             <?php endif; ?>
@@ -545,6 +552,9 @@ $result = $conn->query($query);
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <input type="hidden" name="client_request_id" id="client_request_id" value="">
                 <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                    <div id="bookingStockWarning" class="alert alert-warning py-2 small mb-3 d-none">
+                        <i class="fas fa-exclamation-triangle me-1"></i> <strong>Peringatan:</strong> Beberapa pemeriksaan yang dipilih memiliki stok mandatory yang kosong. Booking tetap dapat dilanjutkan.
+                    </div>
                     <div class="alert alert-info py-2 small mb-3">
                         <i class="fas fa-info-circle me-1"></i> Isi data utama, lalu pilih pemeriksaan. Qty pemeriksaan otomatis mengikuti Pax.
                     </div>
@@ -920,10 +930,12 @@ window.loadExamOptions = function(klinikId, callback) {
             examOptionsModal = '<option value="">Pilih pemeriksaan...</option>';
             if (data && data.length > 0) {
                 data.forEach(function(exam) {
-                    examOptionsModal += `<option value="${exam.id}">${exam.name} (Ready: ${exam.qty})</option>`;
+                    var readyText = exam.is_available ? `(Ready: ${exam.qty})` : '(STOK KOSONG)';
+                    var textClass = exam.is_available ? '' : 'text-danger';
+                    examOptionsModal += `<option value="${exam.id}" data-available="${exam.is_available ? 1 : 0}" class="${textClass}">${exam.name} ${readyText}</option>`;
                 });
             } else {
-                examOptionsModal = '<option value="">Tidak ada pemeriksaan available</option>';
+                examOptionsModal = '<option value="">Tidak ada pemeriksaan tersedia</option>';
             }
             updateAllExamSelects();
             if (typeof callback === 'function') callback();
@@ -946,11 +958,50 @@ window.updateAllExamSelects = function() {
             if ($(this).hasClass('select2-hidden-accessible')) {
                 $(this).trigger('change.select2');
             } else {
-                $(this).select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: ($modal.length ? $modal : $(document.body)) });
+                $(this).select2({ 
+                    theme: 'bootstrap-5', 
+                    width: '100%', 
+                    dropdownParent: ($modal.length ? $modal : $(document.body)),
+                    templateResult: formatExamOption,
+                    templateSelection: formatExamOption
+                });
             }
         }
     });
+    checkSelectedStock();
 };
+
+function formatExamOption(state) {
+    if (!state.id) return state.text;
+    var isAvailable = $(state.element).data('available');
+    var $state = $(
+        '<span>' + state.text + '</span>'
+    );
+    if (isAvailable == 0) {
+        $state.addClass('text-danger fw-bold');
+    }
+    return $state;
+}
+
+function checkSelectedStock() {
+    var hasOutOfStock = false;
+    $('.patient-exam-select').each(function() {
+        var $opt = $(this).find('option:selected');
+        if ($opt.data('available') == 0) {
+            hasOutOfStock = true;
+        }
+    });
+    
+    if (hasOutOfStock) {
+        $('#bookingStockWarning').removeClass('d-none');
+    } else {
+        $('#bookingStockWarning').addClass('d-none');
+    }
+}
+
+$(document).on('change', '.patient-exam-select', function() {
+    checkSelectedStock();
+});
 
 window.postBookingAction = function(params) {
     const payload = Object.assign({ _csrf: BOOKING_CSRF }, params || {});
@@ -1081,9 +1132,15 @@ window.openBookingDetail = function(id) {
             const items = Array.isArray(res.items) ? res.items : [];
             const pasienList = Array.isArray(res.pasien_list) ? res.pasien_list : [];
             const esc = function(v) { return $('<div>').text(v == null ? '' : String(v)).html(); };
+            const fmtQtyJs = function(v) {
+                let n = parseFloat(v || 0);
+                if (Math.abs(n - Math.round(n)) < 0.00005) return Math.round(n).toString();
+                let s = n.toFixed(4).replace(/\.?0+$/, "");
+                return s === "" ? "0" : s;
+            };
             
             var rows = items.length ? items.map(function(it) {
-                return '<tr><td>' + esc(it.kode_barang + ' - ' + it.nama_barang) + '</td><td class="text-end fw-semibold">' + esc(it.qty) + '</td></tr>';
+                return '<tr><td>' + esc(it.kode_barang + ' - ' + it.nama_barang) + '</td><td class="text-end fw-semibold">' + fmtQtyJs(it.qty) + '</td></tr>';
             }).join('') : '<tr><td colspan="2" class="text-center text-muted py-2">Tidak ada item</td></tr>';
 
             var pasienHtml = pasienList.length ? pasienList.map(function(p, i) {
@@ -1095,8 +1152,20 @@ window.openBookingDetail = function(id) {
             }).join('') : `<div class="fw-semibold">${esc(h.nama_pemesan || '-')}</div><div class="small text-muted">Tlp: ${esc(h.nomor_tlp || '-')} · Lahir: ${esc(h.tanggal_lahir || '-')}</div>`;
 
             $('#bookingDetailTitle').text('Detail: ' + (h.nomor_booking || ''));
+            var stockWarningHtml = '';
+            if (parseInt(h.is_out_of_stock) === 1) {
+                stockWarningHtml = `
+                    <div class="col-12">
+                        <div class="alert alert-danger mb-0 py-2">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <strong>Stok Kosong:</strong> ${esc(h.out_of_stock_items || 'Beberapa item tidak tersedia saat booking')}
+                        </div>
+                    </div>`;
+            }
+
             $('#bookingDetailBody').html(`
                 <div class="row g-3">
+                    ${stockWarningHtml}
                     <div class="col-12"><div class="d-flex flex-wrap gap-2">
                         <span class="badge bg-light text-dark border">Booking: ${esc(h.booking_type || 'keep')}</span>
                         <span class="badge bg-light text-dark border">Jotform: ${parseInt(h.jotform_submitted) === 1 ? 'Sudah' : 'Belum'}</span>

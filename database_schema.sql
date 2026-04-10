@@ -118,6 +118,8 @@ CREATE TABLE IF NOT EXISTS `inventory_booking_pemeriksaan` (
   `nomor_tlp` varchar(30) DEFAULT NULL,
   `tanggal_lahir` date DEFAULT NULL,
   `butuh_fu` tinyint(1) NOT NULL DEFAULT 0,
+  `is_out_of_stock` tinyint(1) NOT NULL DEFAULT 0,
+  `out_of_stock_items` text DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `nomor_booking` (`nomor_booking`),
   KEY `idx_bp_klinik_status_tgl` (`klinik_id`,`status`,`tanggal_pemeriksaan`)
