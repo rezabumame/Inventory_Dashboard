@@ -40,19 +40,23 @@ if ($klinik_id_input === 'all') {
 $month_start = date('Y-m-01', strtotime($tanggal)) . ' 00:00:00';
 $month_end = date('Y-m-t', strtotime($tanggal)) . ' 23:59:59';
 
-$tipe_esc = $conn->real_escape_string($tipe);
+$tipe = trim($tipe);
+if (!in_array($tipe, ['in', 'out'], true)) $tipe = 'in';
 $sql = "SELECT ts.*, u.nama_lengkap as creator_name, k.nama_klinik
         FROM inventory_transaksi_stok ts
         LEFT JOIN inventory_users u ON ts.created_by = u.id
         LEFT JOIN inventory_klinik k ON ts.level_id = k.id AND ts.level = 'klinik'
         WHERE ts.barang_id = $barang_id 
           AND $level_filter 
-          AND ts.tipe_transaksi = '$tipe_esc'
-          AND ts.created_at >= '$month_start' 
-          AND ts.created_at <= '$month_end'
+          AND ts.tipe_transaksi = ?
+          AND ts.created_at >= ? 
+          AND ts.created_at <= ?
         ORDER BY ts.created_at DESC";
 
-$res = $conn->query($sql);
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("sss", $tipe, $month_start, $month_end);
+$stmt->execute();
+$res = $stmt->get_result();
 $data = [];
 
 while ($row = $res->fetch_assoc()) {

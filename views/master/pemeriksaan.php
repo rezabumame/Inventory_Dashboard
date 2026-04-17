@@ -131,7 +131,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                 </div>
                 <div class="modal-body">
                     <div class="alert alert-info py-2 small mb-3">
-                        <i class="fas fa-info-circle me-1"></i> Gunakan template Excel untuk mengimport data secara massal. Pastikan kolom <strong>Kategori</strong> diisi dengan "Mandatory" atau "Optional".
+                        <i class="fas fa-info-circle me-1"></i> Gunakan template Excel untuk mengimport data secara massal. Pastikan kolom <strong>Kategori</strong> diisi dengan "Core" atau "Support" (tetap menerima "Mandatory"/"Optional").
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Download Template</label>
@@ -171,7 +171,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                         <thead class="table-light">
                             <tr>
                                 <th>Item</th>
-                                <th width="100" class="text-center">Tipe</th>
+                                        <th width="120" class="text-center">Tipe</th>
                                 <th width="80" class="text-center">Qty</th>
                             </tr>
                         </thead>
@@ -203,7 +203,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                 <thead class="table-light">
                                     <tr>
                                         <th>Item</th>
-                                        <th width="120" class="text-center">Kategori</th>
+                                        <th width="120" class="text-center">Tipe</th>
                                         <th width="80" class="text-center">Qty</th>
                                         <th width="44"></th>
                                     </tr>
@@ -239,8 +239,8 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                     <div class="segmented-control">
                                         <input type="hidden" name="is_mandatory" id="detailIsMandatory" value="1">
                                         <div class="btn-group btn-group-sm w-100">
-                                            <button type="button" class="btn btn-outline-danger active-mandatory btn-seg-main" data-val="1">Mandatory</button>
-                                            <button type="button" class="btn btn-outline-info btn-seg-main" data-val="0">Optional</button>
+                                            <button type="button" class="btn btn-outline-danger active-mandatory btn-seg-main" data-val="1">Core</button>
+                                            <button type="button" class="btn btn-outline-info btn-seg-main" data-val="0">Support</button>
                                         </div>
                                     </div>
                                 </div>
@@ -287,7 +287,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                 <thead class="table-light">
                                     <tr>
                                         <th>Item Barang</th>
-                                        <th width="150" class="text-center">Kategori</th>
+                                        <th width="150" class="text-center">Tipe</th>
                                         <th width="120" class="text-center">Jumlah (Qty)</th>
                                         <th width="50"></th>
                                     </tr>
@@ -306,8 +306,8 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                             <div class="segmented-control">
                                                 <input type="hidden" name="is_mandatory_list[]" class="hid-mandatory" value="1">
                                                 <div class="btn-group btn-group-sm w-100">
-                                                    <button type="button" class="btn btn-outline-danger active-mandatory btn-seg-row" data-val="1">Mandatory</button>
-                                                    <button type="button" class="btn btn-outline-info btn-seg-row" data-val="0">Optional</button>
+                                                    <button type="button" class="btn btn-outline-danger active-mandatory btn-seg-row" data-val="1">Core</button>
+                                                    <button type="button" class="btn btn-outline-info btn-seg-row" data-val="0">Support</button>
                                                 </div>
                                             </div>
                                         </td>
@@ -366,8 +366,8 @@ function loadDetail(grupId) {
                     const code = (d.kode_barang ? d.kode_barang : (d.barang_id ? d.barang_id : '-'));
                     const itemText = code + ' - ' + (d.nama_barang ? d.nama_barang : '') + (d.satuan ? ' (' + d.satuan + ')' : '');
                     const badge = parseInt(d.is_mandatory) === 1 ? 
-                        '<span class="badge bg-danger px-2"><i class="fas fa-exclamation-circle me-1"></i>Mandatory</span>' : 
-                        '<span class="badge bg-info px-2"><i class="fas fa-info-circle me-1"></i>Optional</span>';
+                        '<span class="badge bg-danger px-2"><i class="fas fa-exclamation-circle me-1"></i>Core</span>' : 
+                        '<span class="badge bg-info px-2"><i class="fas fa-info-circle me-1"></i>Support</span>';
                     rows.push(
                         '<tr>' +
                             '<td class="fw-semibold">' + $('<div>').text(itemText).html() + '</td>' +
@@ -410,8 +410,8 @@ function loadView(grupId) {
                     const code = (d.kode_barang ? d.kode_barang : (d.barang_id ? d.barang_id : '-'));
                     const itemText = code + ' - ' + (d.nama_barang ? d.nama_barang : '') + (d.satuan ? ' (' + d.satuan + ')' : '');
                     const badge = parseInt(d.is_mandatory) === 1 ? 
-                        '<span class="badge bg-danger px-2">Mandatory</span>' : 
-                        '<span class="badge bg-info px-2">Optional</span>';
+                        '<span class="badge bg-danger px-2">Core</span>' : 
+                        '<span class="badge bg-info px-2">Support</span>';
                     rows.push(
                         '<tr>' +
                             '<td class="fw-semibold">' + $('<div>').text(itemText).html() + '</td>' +
@@ -481,7 +481,7 @@ $(document).ready(function() {
                 return $carry . '<option value="'.(int)$item['id'].'">'.htmlspecialchars($item['kode_barang']).' - '.htmlspecialchars($item['nama_barang']).'</option>';
             }, '')) ?> + 
             '</select></td>' +
-            '<td><div class="segmented-control"><input type="hidden" name="is_mandatory_list[]" class="hid-mandatory" value="1"><div class="btn-group btn-group-sm w-100"><button type="button" class="btn btn-outline-danger active-mandatory btn-seg-row" data-val="1">Mandatory</button><button type="button" class="btn btn-outline-info btn-seg-row" data-val="0">Optional</button></div></div></td>' +
+            '<td><div class="segmented-control"><input type="hidden" name="is_mandatory_list[]" class="hid-mandatory" value="1"><div class="btn-group btn-group-sm w-100"><button type="button" class="btn btn-outline-danger active-mandatory btn-seg-row" data-val="1">Core</button><button type="button" class="btn btn-outline-info btn-seg-row" data-val="0">Support</button></div></div></td>' +
             '<td><input type="number" name="qtys[]" class="form-control form-control-sm text-center" value="1" min="1" required></td>' +
             '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btnRemoveRow"><i class="fas fa-times"></i></button></td>' +
             '</tr>');
@@ -496,7 +496,7 @@ $(document).ready(function() {
                 return $carry . '<option value="'.(int)$item['id'].'">'.htmlspecialchars($item['kode_barang']).' - '.htmlspecialchars($item['nama_barang']).'</option>';
             }, '')) ?> + 
             '</select></td>' +
-            '<td><div class="segmented-control"><input type="hidden" name="is_mandatory_list[]" class="hid-mandatory" value="1"><div class="btn-group btn-group-sm w-100"><button type="button" class="btn btn-outline-danger active-mandatory btn-seg-row" data-val="1">Mandatory</button><button type="button" class="btn btn-outline-info btn-seg-row" data-val="0">Optional</button></div></div></td>' +
+            '<td><div class="segmented-control"><input type="hidden" name="is_mandatory_list[]" class="hid-mandatory" value="1"><div class="btn-group btn-group-sm w-100"><button type="button" class="btn btn-outline-danger active-mandatory btn-seg-row" data-val="1">Core</button><button type="button" class="btn btn-outline-info btn-seg-row" data-val="0">Support</button></div></div></td>' +
             '<td><input type="number" name="qtys[]" class="form-control form-control-sm text-center" value="1" min="1" required></td>' +
             '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btnRemoveRow"><i class="fas fa-times"></i></button></td>' +
             '</tr>');

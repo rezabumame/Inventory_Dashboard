@@ -24,6 +24,20 @@ if ($role === 'admin_klinik') $klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
 
 $is_ajax = (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') || (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1');
 
+$dedup_key = sha1('process_hc_transfer|' . (int)($_SESSION['user_id'] ?? 0) . '|' . json_encode(array_diff_key($_POST, ['_csrf' => true])));
+if (!isset($_SESSION['_dedup'])) $_SESSION['_dedup'] = [];
+$now = time();
+if (!empty($_SESSION['_dedup'][$dedup_key]) && ($now - (int)$_SESSION['_dedup'][$dedup_key]) < 8) {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Request duplikat terdeteksi. Silakan tunggu beberapa detik dan coba lagi.']);
+        exit;
+    }
+    $_SESSION['error'] = 'Request duplikat terdeteksi. Silakan tunggu beberapa detik dan coba lagi.';
+    redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)($_POST['klinik_id'] ?? 0));
+}
+$_SESSION['_dedup'][$dedup_key] = $now;
+
 $barang_ids_raw = $_POST['barang_id'] ?? [];
 $qtys_raw = $_POST['qty'] ?? [];
 $uom_modes_raw = $_POST['uom_mode'] ?? [];
@@ -110,6 +124,20 @@ if ($loc_hc === '') {
 }
 $loc_hc_esc = $conn->real_escape_string($loc_hc);
 
+$lock_name = 'stock_hc_transfer_' . (int)$klinik_id;
+$lock_esc = $conn->real_escape_string($lock_name);
+$rl = $conn->query("SELECT GET_LOCK('$lock_esc', 10) AS got");
+$got_lock = (int)($rl && $rl->num_rows > 0 ? ($rl->fetch_assoc()['got'] ?? 0) : 0);
+if ($got_lock !== 1) {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Sistem sedang memproses stok klinik ini. Coba lagi sebentar.']);
+        exit;
+    }
+    $_SESSION['error'] = 'Sistem sedang memproses stok klinik ini. Coba lagi sebentar.';
+    redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . ($role !== 'petugas_hc' ? ('&petugas_user_id=' . (int)$user_hc_id) : ''));
+}
+
 $conn->begin_transaction();
 try {
     foreach ($items as $barang_id => $qty_int) {
@@ -164,6 +192,7 @@ try {
     }
 
     $conn->commit();
+    $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
     if ($is_ajax) {
         header('Content-Type: application/json');
         echo json_encode(['success' => true, 'message' => 'Transfer berhasil disimpan.', 'redirect' => 'index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . ($role !== 'petugas_hc' ? ('&petugas_user_id=' . (int)$user_hc_id) : '')]);
@@ -172,6 +201,7 @@ try {
     $_SESSION['success'] = 'Transfer berhasil disimpan.';
 } catch (Exception $e) {
     $conn->rollback();
+    $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
     if ($is_ajax) {
         header('Content-Type: application/json');
         echo json_encode(['success' => false, 'message' => 'Gagal menyimpan transfer: ' . $e->getMessage()]);

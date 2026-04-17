@@ -50,10 +50,13 @@ FROM inventory_stock_mirror sm
 LEFT JOIN inventory_barang b_odoo ON b_odoo.odoo_product_id = sm.odoo_product_id
 LEFT JOIN inventory_barang b_kode ON TRIM(b_kode.kode_barang) = TRIM(sm.kode_barang)
 LEFT JOIN inventory_barang b_id ON b_id.id = CAST(TRIM(sm.kode_barang) AS UNSIGNED)
-WHERE TRIM(sm.location_code) = '$loc_esc'
+WHERE TRIM(sm.location_code) = ?
 ";
 $rows = [];
-$r = $conn->query($sql);
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("s", $loc);
+$stmt->execute();
+$r = $stmt->get_result();
 while ($r && ($row = $r->fetch_assoc())) {
     $mapped_barang_id = (int)($row['mapped_barang_id'] ?? 0);
     $suggested_barang_id = (int)($row['suggested_barang_id'] ?? 0);
@@ -64,16 +67,19 @@ while ($r && ($row = $r->fetch_assoc())) {
     $uom_odoo = '';
     $ratio = 1.0;
     if ($barang_id > 0) {
-        $rc = $conn->query("
+        $stmt_u = $conn->prepare("
             SELECT
                 COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom_oper,
                 COALESCE(NULLIF(uc.from_uom,''), b.uom) AS uom_odoo,
                 COALESCE(uc.multiplier, 1) AS uom_ratio
             FROM inventory_barang b
             LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-            WHERE b.id = $barang_id
+            WHERE b.id = ?
             LIMIT 1
         ");
+        $stmt_u->bind_param("i", $barang_id);
+        $stmt_u->execute();
+        $rc = $stmt_u->get_result();
         if ($rc && $rc->num_rows > 0) {
             $c = $rc->fetch_assoc();
             $uom_oper = trim((string)($c['uom_oper'] ?? ''));
@@ -81,7 +87,10 @@ while ($r && ($row = $r->fetch_assoc())) {
             $ratio = (float)($c['uom_ratio'] ?? 1);
             if ($ratio <= 0) $ratio = 1.0;
         }
-        $res_a = $conn->query("SELECT COALESCE(SUM(qty),0) AS total FROM inventory_stok_tas_hc WHERE klinik_id = $klinik_id AND barang_id = $barang_id");
+        $stmt_a = $conn->prepare("SELECT COALESCE(SUM(qty),0) AS total FROM inventory_stok_tas_hc WHERE klinik_id = ? AND barang_id = ?");
+        $stmt_a->bind_param("ii", $klinik_id, $barang_id);
+        $stmt_a->execute();
+        $res_a = $stmt_a->get_result();
         if ($res_a && $res_a->num_rows > 0) $allocated = (float)($res_a->fetch_assoc()['total'] ?? 0);
     }
     $mirror_oper = $barang_id > 0 ? ($mirror_qty / $ratio) : $mirror_qty;

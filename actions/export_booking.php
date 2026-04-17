@@ -32,33 +32,51 @@ if (!$has_filters) {
 }
 if ($show_all) $filter_today = false;
 
-$where = "1=1";
+// Build WHERE with prepared params (avoid SQL injection)
+$whereParts = ["1=1"];
+$types = "";
+$params = [];
+
+// Strict date format (Y-m-d). If invalid, ignore to preserve behavior without throwing.
+if ($filter_start !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $filter_start)) $filter_start = '';
+if ($filter_end !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $filter_end)) $filter_end = '';
+
 if ($role === 'admin_klinik') {
-    $where .= " AND b.klinik_id = " . $_SESSION['klinik_id'];
-    $where .= " AND b.status = 'booked' AND LOWER(COALESCE(b.booking_type, 'keep')) IN ('keep','fixed')";
+    $whereParts[] = "b.klinik_id = ?";
+    $types .= "i";
+    $params[] = (int)($_SESSION['klinik_id'] ?? 0);
+    $whereParts[] = "b.status = 'booked' AND LOWER(COALESCE(b.booking_type, 'keep')) IN ('keep','fixed')";
 }
 if ($filter_today) {
-    $where .= " AND b.tanggal_pemeriksaan = CURDATE()";
+    $whereParts[] = "b.tanggal_pemeriksaan = CURDATE()";
 }
 if ($filter_start !== '') {
-    $where .= " AND b.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_start) . "'";
+    $whereParts[] = "b.tanggal_pemeriksaan >= ?";
+    $types .= "s";
+    $params[] = $filter_start;
 }
 if ($filter_end !== '') {
-    $where .= " AND b.tanggal_pemeriksaan <= '" . $conn->real_escape_string($filter_end) . "'";
+    $whereParts[] = "b.tanggal_pemeriksaan <= ?";
+    $types .= "s";
+    $params[] = $filter_end;
 }
 if ($filter_tujuan === 'clinic') {
-    $where .= " AND b.status_booking LIKE '%Clinic%'";
+    $whereParts[] = "b.status_booking LIKE '%Clinic%'";
 } elseif ($filter_tujuan === 'hc') {
-    $where .= " AND b.status_booking LIKE '%HC%'";
+    $whereParts[] = "b.status_booking LIKE '%HC%'";
 }
 if (in_array($filter_status, ['booked', 'completed', 'cancelled'], true)) {
-    $where .= " AND b.status = '" . $conn->real_escape_string($filter_status) . "'";
+    $whereParts[] = "b.status = ?";
+    $types .= "s";
+    $params[] = $filter_status;
 }
 if (in_array($filter_tipe, ['keep', 'fixed', 'cancel'], true)) {
-    $where .= " AND LOWER(COALESCE(b.booking_type, 'keep')) = '" . $conn->real_escape_string($filter_tipe) . "'";
+    $whereParts[] = "LOWER(COALESCE(b.booking_type, 'keep')) = ?";
+    $types .= "s";
+    $params[] = $filter_tipe;
 }
 if ($filter_fu === '1') {
-    $where .= " AND b.status = 'booked' AND b.butuh_fu = 1";
+    $whereParts[] = "b.status = 'booked' AND b.butuh_fu = 1";
 }
 
 $query = "SELECT b.*, k.nama_klinik,
@@ -69,9 +87,24 @@ $query = "SELECT b.*, k.nama_klinik,
            WHERE bp.booking_id = b.id) as jenis_pemeriksaan
           FROM inventory_booking_pemeriksaan b 
           JOIN inventory_klinik k ON b.klinik_id = k.id 
-          WHERE $where
+          WHERE " . implode(" AND ", $whereParts) . "
           ORDER BY b.tanggal_pemeriksaan ASC, b.id DESC";
-$result = $conn->query($query);
+
+$stmt = $conn->prepare($query);
+if ($stmt === false) {
+    die("Query prepare failed");
+}
+if ($types !== '') {
+    // mysqli bind_param requires references
+    $bind = [];
+    $bind[] = $types;
+    foreach ($params as $k => $v) {
+        $bind[] = &$params[$k];
+    }
+    call_user_func_array([$stmt, 'bind_param'], $bind);
+}
+$stmt->execute();
+$result = $stmt->get_result();
 
 $filename = "Export_Booking_" . date('YmdHis') . ".xls";
 header("Content-Type: application/vnd.ms-excel; charset=utf-8");

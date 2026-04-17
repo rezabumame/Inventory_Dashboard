@@ -236,11 +236,18 @@ CREATE TABLE IF NOT EXISTS `inventory_pemakaian_bhp` (
   `spv_approved_by` int(11) DEFAULT NULL,
   `spv_approved_at` datetime DEFAULT NULL,
   `pending_data` longtext DEFAULT NULL COMMENT 'JSON data for pending edit',
+  `change_source` enum('admin_logistik','nakes','sistem_integrasi') DEFAULT NULL,
+  `change_actor_user_id` int(11) DEFAULT NULL,
+  `change_reason_code` varchar(64) DEFAULT NULL,
+  `is_auto` tinyint(1) NOT NULL DEFAULT 0,
+  `booking_id` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `nomor_pemakaian` (`nomor_pemakaian`),
   KEY `klinik_id` (`klinik_id`),
   KEY `created_by` (`created_by`),
+  KEY `idx_pbh_change_actor` (`change_actor_user_id`),
   KEY `idx_pbh_klinik_jenis_created` (`klinik_id`,`jenis_pemakaian`,`created_at`),
+  CONSTRAINT `fk_pemakaian_change_actor` FOREIGN KEY (`change_actor_user_id`) REFERENCES `inventory_users` (`id`),
   CONSTRAINT `fk_pemakaian_created_by` FOREIGN KEY (`created_by`) REFERENCES `inventory_users` (`id`),
   CONSTRAINT `fk_pemakaian_klinik` FOREIGN KEY (`klinik_id`) REFERENCES `inventory_klinik` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

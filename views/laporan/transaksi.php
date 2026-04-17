@@ -2,28 +2,45 @@
 check_role(['super_admin', 'admin_gudang']);
 
 // Default Dates: First and Last day of current month
-$start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-m-01');
-$end_date = isset($_GET['end_date']) ? $_GET['end_date'] : date('Y-m-t');
-$barang_id = isset($_GET['barang_id']) ? $_GET['barang_id'] : '';
-$tipe = isset($_GET['tipe']) ? $_GET['tipe'] : '';
+$start_date = isset($_GET['start_date']) ? (string)$_GET['start_date'] : date('Y-m-01');
+$end_date = isset($_GET['end_date']) ? (string)$_GET['end_date'] : date('Y-m-t');
+$barang_id = isset($_GET['barang_id']) ? (int)$_GET['barang_id'] : 0;
+$tipe = isset($_GET['tipe']) ? trim((string)$_GET['tipe']) : '';
+
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) $start_date = date('Y-m-01');
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) $end_date = date('Y-m-t');
+if ($tipe !== '' && !in_array($tipe, ['in', 'out'], true)) $tipe = '';
 
 // Build Query
 $sql = "SELECT t.*, b.kode_barang, b.nama_barang, u.username as user_name
         FROM inventory_transaksi_stok t
         JOIN inventory_barang b ON t.barang_id = b.id
         LEFT JOIN inventory_users u ON t.created_by = u.id
-        WHERE DATE(t.created_at) BETWEEN '$start_date' AND '$end_date'";
+        WHERE DATE(t.created_at) BETWEEN ? AND ?";
 
-if (!empty($barang_id)) {
-    $sql .= " AND t.barang_id = $barang_id";
+$params = [$start_date, $end_date];
+$types = "ss";
+
+if ($barang_id > 0) {
+    $sql .= " AND t.barang_id = ?";
+    $params[] = $barang_id;
+    $types .= "i";
 }
 if (!empty($tipe)) {
-    $sql .= " AND t.tipe_transaksi = '$tipe'";
+    $sql .= " AND t.tipe_transaksi = ?";
+    $params[] = $tipe;
+    $types .= "s";
 }
 
 $sql .= " ORDER BY t.created_at DESC LIMIT 500";
 
-$result = $conn->query($sql);
+$stmt = $conn->prepare($sql);
+$bind = [];
+$bind[] = $types;
+foreach ($params as $k => $v) $bind[] = &$params[$k];
+call_user_func_array([$stmt, 'bind_param'], $bind);
+$stmt->execute();
+$result = $stmt->get_result();
 
 // Fetch Barang for Filter
 $barang_list = $conn->query("SELECT * FROM inventory_barang ORDER BY nama_barang ASC");

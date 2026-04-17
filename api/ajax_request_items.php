@@ -48,8 +48,10 @@ function resolve_location_code(mysqli $conn, string $input): string {
     foreach ($uniq as $c) if (!preg_match('/\/Stock$/i', $c)) $prefer[] = $c;
 
     foreach ($prefer as $c) {
-        $esc = $conn->real_escape_string($c);
-        $r = $conn->query("SELECT 1 FROM inventory_stock_mirror WHERE location_code = '$esc' LIMIT 1");
+        $stmt = $conn->prepare("SELECT 1 FROM inventory_stock_mirror WHERE location_code = ? LIMIT 1");
+        $stmt->bind_param("s", $c);
+        $stmt->execute();
+        $r = $stmt->get_result();
         if ($r && $r->num_rows > 0) return $c;
     }
 
@@ -59,8 +61,10 @@ function resolve_location_code(mysqli $conn, string $input): string {
 function find_or_create_barang_by_kode(mysqli $conn, string $kode_barang): array {
     $kode_barang = trim($kode_barang);
     if ($kode_barang === '') return ['id' => 0, 'nama_barang' => '-', 'satuan' => '', 'kode_barang' => null, 'odoo_product_id' => null];
-    $kb = $conn->real_escape_string($kode_barang);
-    $r = $conn->query("SELECT id, nama_barang, satuan, odoo_product_id, kode_barang FROM inventory_barang WHERE kode_barang = '$kb' ORDER BY id ASC LIMIT 1");
+    $stmt = $conn->prepare("SELECT id, nama_barang, satuan, odoo_product_id, kode_barang FROM inventory_barang WHERE kode_barang = ? ORDER BY id ASC LIMIT 1");
+    $stmt->bind_param("s", $kode_barang);
+    $stmt->execute();
+    $r = $stmt->get_result();
     if ($r && $r->num_rows > 0) return $r->fetch_assoc();
     $nama = $kode_barang;
     $satuan = 'Unit';
@@ -130,7 +134,10 @@ if ($ke_level === 'klinik') {
         echo json_encode(['success' => true, 'items' => [], 'location_code' => ''], JSON_UNESCAPED_UNICODE);
         exit;
     }
-    $r = $conn->query("SELECT kode_klinik FROM inventory_klinik WHERE id = $ke_id LIMIT 1");
+    $stmt = $conn->prepare("SELECT kode_klinik FROM inventory_klinik WHERE id = ? LIMIT 1");
+    $stmt->bind_param("i", $ke_id);
+    $stmt->execute();
+    $r = $stmt->get_result();
     $kode_klinik = '';
     if ($r && $r->num_rows > 0) $kode_klinik = (string)($r->fetch_assoc()['kode_klinik'] ?? '');
     if ($kode_klinik === '') {
@@ -138,8 +145,10 @@ if ($ke_level === 'klinik') {
         exit;
     }
     $resolved_loc = resolve_location_code($conn, $kode_klinik);
-    $loc = $conn->real_escape_string($resolved_loc);
-    $res = $conn->query("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = '$loc' AND qty > 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
+    $stmt = $conn->prepare("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = ? AND qty > 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
+    $stmt->bind_param("s", $resolved_loc);
+    $stmt->execute();
+    $res = $stmt->get_result();
     $items = [];
     while ($res && ($row = $res->fetch_assoc())) {
         $b = find_or_create_barang_by_kode($conn, (string)($row['kode_barang'] ?? ''));
@@ -169,8 +178,10 @@ if ($ke_level === 'gudang_utama') {
         exit;
     }
     $resolved_loc = resolve_location_code($conn, $gudang_loc);
-    $loc = $conn->real_escape_string($resolved_loc);
-    $res = $conn->query("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = '$loc' AND qty > 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
+    $stmt = $conn->prepare("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = ? AND qty > 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
+    $stmt->bind_param("s", $resolved_loc);
+    $stmt->execute();
+    $res = $stmt->get_result();
     $items = [];
     while ($res && ($row = $res->fetch_assoc())) {
         $b = find_or_create_barang_by_kode($conn, (string)($row['kode_barang'] ?? ''));

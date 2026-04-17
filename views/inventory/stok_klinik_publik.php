@@ -220,6 +220,7 @@ if ($selected_klinik) {
         $rb_out_transfer_hc_sql = "0";
         $rb_sellout_klinik_sql = "0";
         $rb_sellout_hc_sql = "0";
+        $hc_user_filter_sql = "EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id $klinik_filter_sql)";
         
         // Siapkan timestamp untuk subquery rollback (selalu siapkan jika mode history)
         $rb_ts_start = $conn->real_escape_string($filter_end_ts);
@@ -234,11 +235,11 @@ if ($selected_klinik) {
 
             $rb_in_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND $rb_level_filter AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
             $rb_out_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND $rb_level_filter AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-            $rb_sellout_klinik_sql = "(SELECT COALESCE(SUM(pbd.qty), 0) FROM inventory_pemakaian_bhp_detail pbd JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id WHERE pbd.barang_id = b.id AND $rb_pb_filter AND TRIM(pb.jenis_pemakaian) != 'hc' AND pb.created_at > '$rb_ts_start' AND pb.created_at <= '$rb_ts_end' AND pb.created_at >= '$rb_ts_min')";
+            $rb_sellout_klinik_sql = "(SELECT COALESCE(SUM(pbd.qty), 0) FROM inventory_pemakaian_bhp_detail pbd JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id WHERE pbd.barang_id = b.id AND $rb_pb_filter AND TRIM(pb.jenis_pemakaian) != 'hc' AND pb.tanggal > '$rb_ts_start' AND pb.tanggal <= '$rb_ts_end' AND pb.tanggal >= '$rb_ts_min')";
 
-            $rb_in_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND ts.level_id $klinik_filter_sql AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-            $rb_out_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND ts.level_id $klinik_filter_sql AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-            $rb_sellout_hc_sql = "(SELECT COALESCE(SUM(pbd.qty), 0) FROM inventory_pemakaian_bhp_detail pbd JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id WHERE pbd.barang_id = b.id AND pb.klinik_id $klinik_filter_sql AND TRIM(pb.jenis_pemakaian) = 'hc' AND pb.created_at > '$rb_ts_start' AND pb.created_at <= '$rb_ts_end' AND pb.created_at >= '$rb_ts_min')";
+            $rb_in_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
+            $rb_out_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
+            $rb_sellout_hc_sql = "(SELECT COALESCE(SUM(pbd.qty), 0) FROM inventory_pemakaian_bhp_detail pbd JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id WHERE pbd.barang_id = b.id AND pb.klinik_id $klinik_filter_sql AND TRIM(pb.jenis_pemakaian) = 'hc' AND pb.tanggal > '$rb_ts_start' AND pb.tanggal <= '$rb_ts_end' AND pb.tanggal >= '$rb_ts_min')";
         }
 
         $union_sql = "SELECT odoo_product_id, kode_barang FROM inventory_stock_mirror WHERE TRIM(location_code) $loc_filter_sql";
@@ -308,7 +309,7 @@ if ($selected_klinik) {
                          JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id
                          WHERE ts.barang_id = b.id
                          AND ts.level = 'hc'
-                         AND ts.level_id $klinik_filter_sql
+                         AND $hc_user_filter_sql
                          AND ts.tipe_transaksi = 'out'
                          AND ts.referensi_tipe = 'pemakaian_bhp'
                          AND pb2.klinik_id $klinik_filter_sql
@@ -331,14 +332,14 @@ if ($selected_klinik) {
                      FROM inventory_transaksi_stok ts
                      WHERE ts.barang_id = b.id
                      AND ts.level = 'hc'
-                     AND ts.level_id $klinik_filter_sql
+                     AND $hc_user_filter_sql
                      AND ts.tipe_transaksi = 'in'
                      AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc) as in_transfer_hc,
                     (SELECT COALESCE(SUM(ts.qty), 0)
                      FROM inventory_transaksi_stok ts
                      WHERE ts.barang_id = b.id
                      AND ts.level = 'hc'
-                     AND ts.level_id $klinik_filter_sql
+                     AND $hc_user_filter_sql
                      AND ts.tipe_transaksi = 'out'
                      AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc) as out_transfer_hc,
                     $rb_in_transfer_sql as rb_in_transfer,
@@ -348,8 +349,30 @@ if ($selected_klinik) {
                     $rb_sellout_klinik_sql as rb_sellout_klinik,
                     $rb_sellout_hc_sql as rb_sellout_hc
                   FROM ($union_sql) p
-                  LEFT JOIN (SELECT odoo_product_id, SUM(qty) as qty FROM inventory_stock_mirror WHERE TRIM(location_code) $loc_filter_sql GROUP BY odoo_product_id) sm_k ON sm_k.odoo_product_id = p.odoo_product_id
-                  LEFT JOIN (SELECT odoo_product_id, SUM(qty) as qty FROM inventory_stock_mirror WHERE TRIM(location_code) $hc_loc_filter_sql GROUP BY odoo_product_id) sm_h ON sm_h.odoo_product_id = p.odoo_product_id
+                  LEFT JOIN (
+                    SELECT sm1.odoo_product_id, SUM(sm1.qty) as qty
+                    FROM inventory_stock_mirror sm1
+                    JOIN (
+                        SELECT odoo_product_id, TRIM(location_code) AS loc, MAX(updated_at) AS max_updated
+                        FROM inventory_stock_mirror
+                        WHERE TRIM(location_code) $loc_filter_sql
+                        GROUP BY odoo_product_id, TRIM(location_code)
+                    ) last_sm ON last_sm.odoo_product_id = sm1.odoo_product_id AND last_sm.loc = TRIM(sm1.location_code) AND last_sm.max_updated = sm1.updated_at
+                    WHERE TRIM(sm1.location_code) $loc_filter_sql
+                    GROUP BY sm1.odoo_product_id
+                  ) sm_k ON sm_k.odoo_product_id = p.odoo_product_id
+                  LEFT JOIN (
+                    SELECT sm1.odoo_product_id, SUM(sm1.qty) as qty
+                    FROM inventory_stock_mirror sm1
+                    JOIN (
+                        SELECT odoo_product_id, TRIM(location_code) AS loc, MAX(updated_at) AS max_updated
+                        FROM inventory_stock_mirror
+                        WHERE TRIM(location_code) $hc_loc_filter_sql
+                        GROUP BY odoo_product_id, TRIM(location_code)
+                    ) last_sm ON last_sm.odoo_product_id = sm1.odoo_product_id AND last_sm.loc = TRIM(sm1.location_code) AND last_sm.max_updated = sm1.updated_at
+                    WHERE TRIM(sm1.location_code) $hc_loc_filter_sql
+                    GROUP BY sm1.odoo_product_id
+                  ) sm_h ON sm_h.odoo_product_id = p.odoo_product_id
                   LEFT JOIN inventory_barang b ON (b.odoo_product_id = p.odoo_product_id OR b.kode_barang = p.kode_barang)
                   LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
                   " . (($selected_klinik === 'all' || $selected_klinik === 'gudang_utama') ? "" : "JOIN inventory_klinik k ON k.id = $selected_klinik_id") . "
@@ -599,8 +622,9 @@ if ($selected_klinik) {
                                 $stok_hc = $stok_hc + $in_transfer_hc - $out_transfer_hc;
                             }
                             
-                            $on_hand = ($stok_onsite - (!$is_history_date ? $sellout : 0)) + ($show_hc ? ($stok_hc - (!$is_history_date ? $sellout_hc : 0)) : 0);
-                            $available = $on_hand - ($reserve + ($show_hc ? $reserve_hc : 0));
+                            // Sellout always reduces On Hand, including history date mode.
+                            $on_hand = ((float)$stok_onsite + ($show_hc ? (float)$stok_hc : 0.0)) - ((float)$sellout + ($show_hc ? (float)$sellout_hc : 0.0));
+                            $available = (float)$on_hand - ((float)$reserve + ($show_hc ? (float)$reserve_hc : 0.0));
                         ?>
                         <tr>
                             <td class="small text-muted"><?= htmlspecialchars(!empty($row['kode_barang_master']) ? $row['kode_barang_master'] : ($row['kode_barang'] ?? '-')) ?></td>
@@ -609,8 +633,9 @@ if ($selected_klinik) {
                             <td class="fw-bold"><?= fmt_qty($stok_onsite) ?></td>
                             <?php if ($show_hc): ?>
                             <td>
-                                <?php if ($stok_hc > 0): ?>
-                                    <a href="javascript:void(0)" class="text-primary fw-bold text-decoration-none"
+                                <?php if ($stok_hc != 0): ?>
+                                    <?php $hc_class = $stok_hc < 0 ? 'text-danger fw-bold' : 'text-primary fw-bold'; ?>
+                                    <a href="javascript:void(0)" class="<?= $hc_class ?> text-decoration-none"
                                        onclick="loadHCDetail(<?= $row['barang_id'] ?>, <?= $selected_klinik === 'all' ? 0 : $selected_klinik ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>'); return false;">
                                         <?= fmt_qty($stok_hc) ?> <i class="fas fa-user-nurse"></i>
                                     </a>

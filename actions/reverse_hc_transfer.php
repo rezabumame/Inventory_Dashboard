@@ -29,6 +29,15 @@ if ($transfer_id <= 0 || $klinik_id <= 0) {
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . '&tab=' . urlencode($tab));
 }
 
+$dedup_key = sha1('reverse_hc_transfer|' . (int)($_SESSION['user_id'] ?? 0) . '|' . json_encode(array_diff_key($_POST, ['_csrf' => true])));
+if (!isset($_SESSION['_dedup'])) $_SESSION['_dedup'] = [];
+$now = time();
+if (!empty($_SESSION['_dedup'][$dedup_key]) && ($now - (int)$_SESSION['_dedup'][$dedup_key]) < 8) {
+    $_SESSION['error'] = 'Request duplikat terdeteksi. Silakan tunggu beberapa detik dan coba lagi.';
+    redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . '&tab=' . urlencode($tab));
+}
+$_SESSION['_dedup'][$dedup_key] = $now;
+
 function resolve_location(mysqli $conn, string $code): string {
     $code = trim($code);
     if ($code === '') return '';
@@ -95,6 +104,15 @@ if (!$ef_hc['ok']) {
 }
 $effective_hc = (float)($ef_hc['available'] ?? 0);
 
+$lock_name = 'stock_hc_transfer_' . (int)$klinik_id;
+$lock_esc = $conn->real_escape_string($lock_name);
+$rl = $conn->query("SELECT GET_LOCK('$lock_esc', 10) AS got");
+$got_lock = (int)($rl && $rl->num_rows > 0 ? ($rl->fetch_assoc()['got'] ?? 0) : 0);
+if ($got_lock !== 1) {
+    $_SESSION['error'] = 'Sistem sedang memproses stok klinik ini. Coba lagi sebentar.';
+    redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . '&tab=' . urlencode($tab));
+}
+
 $conn->begin_transaction();
 try {
     $cat = 'Reversal Transfer HC Petugas #' . $transfer_id;
@@ -131,9 +149,11 @@ try {
     $stmt->execute();
 
     $conn->commit();
+    $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
     $_SESSION['success'] = 'Transfer berhasil dibatalkan.';
 } catch (Exception $e) {
     $conn->rollback();
+    $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
     $_SESSION['error'] = 'Gagal membatalkan transfer: ' . $e->getMessage();
 }
 

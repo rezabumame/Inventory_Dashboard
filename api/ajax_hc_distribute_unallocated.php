@@ -5,6 +5,20 @@ require_once __DIR__ . '/../config/database.php';
 
 header('Content-Type: application/json');
 
+function prevent_double_submit(string $scope, int $ttlSeconds = 8): void {
+    $uid = (int)($_SESSION['user_id'] ?? 0);
+    $payload = $_POST;
+    unset($payload['_csrf']);
+    $key = sha1($scope . '|' . $uid . '|' . json_encode($payload));
+    if (!isset($_SESSION['_dedup'])) $_SESSION['_dedup'] = [];
+    $now = time();
+    $last = (int)($_SESSION['_dedup'][$key] ?? 0);
+    if ($last > 0 && ($now - $last) < $ttlSeconds) {
+        throw new Exception('Request duplikat terdeteksi. Silakan tunggu beberapa detik dan coba lagi.');
+    }
+    $_SESSION['_dedup'][$key] = $now;
+}
+
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
@@ -16,6 +30,7 @@ if (!in_array($role, ['super_admin', 'admin_klinik'], true)) {
     exit;
 }
 require_csrf();
+try { prevent_double_submit('ajax_hc_distribute_unallocated', 8); } catch (Exception $e) { echo json_encode(['success'=>false,'message'=>$e->getMessage()]); exit; }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request']);
@@ -62,16 +77,20 @@ if ($total_req <= 0) {
     exit;
 }
 
-$kl = $conn->query("SELECT id, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$stmt_kl = $conn->prepare("SELECT id, kode_homecare FROM inventory_klinik WHERE id = ? LIMIT 1");
+$stmt_kl->bind_param("i", $klinik_id);
+$stmt_kl->execute();
+$kl = $stmt_kl->get_result()->fetch_assoc();
 $kode_homecare = trim((string)($kl['kode_homecare'] ?? ''));
 if ($kode_homecare === '') {
     echo json_encode(['success' => false, 'message' => 'Klinik belum memiliki kode_homecare']);
     exit;
 }
 
-$odoo_esc = $conn->real_escape_string($odoo_product_id);
-$loc_esc = $conn->real_escape_string($kode_homecare);
-$r = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE odoo_product_id = '$odoo_esc' AND TRIM(location_code) = '$loc_esc' LIMIT 1");
+$stmt_m = $conn->prepare("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE odoo_product_id = ? AND TRIM(location_code) = ? LIMIT 1");
+$stmt_m->bind_param("ss", $odoo_product_id, $kode_homecare);
+$stmt_m->execute();
+$r = $stmt_m->get_result();
 $mirror_qty = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
 
 $conv = $conn->query("
@@ -85,7 +104,10 @@ $ratio = (float)($conv['multiplier'] ?? 1);
 if ($ratio <= 0) $ratio = 1.0;
 $mirror_oper = $mirror_qty / $ratio;
 
-$r = $conn->query("SELECT COALESCE(SUM(qty), 0) AS total FROM inventory_stok_tas_hc WHERE klinik_id = $klinik_id AND barang_id = $barang_id");
+$stmt_a = $conn->prepare("SELECT COALESCE(SUM(qty), 0) AS total FROM inventory_stok_tas_hc WHERE klinik_id = ? AND barang_id = ?");
+$stmt_a->bind_param("ii", $klinik_id, $barang_id);
+$stmt_a->execute();
+$r = $stmt_a->get_result();
 $allocated_qty = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['total'] ?? 0) : 0);
 $unallocated = $mirror_oper - $allocated_qty;
 if ($unallocated < 0) $unallocated = 0;

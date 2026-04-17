@@ -15,15 +15,15 @@ $header = [
     'Kode Barang (Local)',
     'Nama Barang (Local)',
     'Qty Consumable',
-    'Kategori (Mandatory/Optional)'
+    'Kategori (Core/Support)'
 ];
 
 $data = [
     $header,
-    ['Paket Hemat A', '101', 'Spuit 3cc', '1', 'Mandatory'],
-    ['Paket Hemat A', '102', 'Alcohol Swab', '1', 'Optional'],
-    ['Paket Hemat B', '101', 'Spuit 3cc', '1', 'Mandatory'],
-    ['Paket Hemat B', '105', 'Nacl 100ml', '0.5', 'Mandatory']
+    ['Paket Hemat A', '101', 'Spuit 3cc', '1', 'Core'],
+    ['Paket Hemat A', '102', 'Alcohol Swab', '1', 'Support'],
+    ['Paket Hemat B', '101', 'Spuit 3cc', '1', 'Core'],
+    ['Paket Hemat B', '105', 'Nacl 100ml', '0.5', 'Core']
 ];
 
 SimpleXLSXGen::fromArray($data)->downloadAs('Template_Pemeriksaan.xlsx');

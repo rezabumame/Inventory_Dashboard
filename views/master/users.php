@@ -13,7 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
         $nama_lengkap = trim($_POST['nama_lengkap']);
         $role = $_POST['role'];
-        $klinik_id = ($_POST['klinik_id'] === '') ? null : (int)$_POST['klinik_id'];
+        $klinik_raw = trim((string)($_POST['klinik_id'] ?? ''));
+        $klinik_id = $klinik_raw === '' ? null : (int)$klinik_raw;
         
         $stmt = $conn->prepare("INSERT INTO inventory_users (username, password, nama_lengkap, role, klinik_id) VALUES (?, ?, ?, ?, ?)");
         $stmt->bind_param("ssssi", $username, $password, $nama_lengkap, $role, $klinik_id);
@@ -29,7 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $id = (int)$_POST['id'];
         $nama_lengkap = trim($_POST['nama_lengkap']);
         $role = $_POST['role'];
-        $klinik_id = ($_POST['klinik_id'] === '') ? null : (int)$_POST['klinik_id'];
+        $klinik_raw = trim((string)($_POST['klinik_id'] ?? ''));
+        $klinik_id = $klinik_raw === '' ? null : (int)$klinik_raw;
         
         $sql = "UPDATE inventory_users SET nama_lengkap = ?, role = ?, klinik_id = ? WHERE id = ?";
         $stmt = $conn->prepare($sql);

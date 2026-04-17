@@ -13,10 +13,17 @@ if (!in_array($role, ['super_admin', 'admin_gudang'], true)) {
 }
 
 // Default Dates: First and Last day of current month
-$start_date = isset($_GET['start_date']) && $_GET['start_date'] !== '' ? $_GET['start_date'] : date('Y-m-01');
-$end_date = isset($_GET['end_date']) && $_GET['end_date'] !== '' ? $_GET['end_date'] : date('Y-m-t');
-$barang_id = isset($_GET['barang_id']) ? $_GET['barang_id'] : '';
-$tipe = isset($_GET['tipe']) ? $_GET['tipe'] : '';
+$start_date = isset($_GET['start_date']) && $_GET['start_date'] !== '' ? (string)$_GET['start_date'] : date('Y-m-01');
+$end_date = isset($_GET['end_date']) && $_GET['end_date'] !== '' ? (string)$_GET['end_date'] : date('Y-m-t');
+$barang_id = isset($_GET['barang_id']) ? (string)$_GET['barang_id'] : '';
+$tipe = isset($_GET['tipe']) ? (string)$_GET['tipe'] : '';
+
+// Sanitize without changing intended behavior
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) $start_date = date('Y-m-01');
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) $end_date = date('Y-m-t');
+$barang_id_int = (int)$barang_id;
+$tipe = trim($tipe);
+if ($tipe !== '' && !in_array($tipe, ['in', 'out'], true)) $tipe = '';
 
 // Build Query
 $sql = "SELECT t.*, b.kode_barang, b.nama_barang, u.username as user_name
@@ -28,9 +35,9 @@ $sql = "SELECT t.*, b.kode_barang, b.nama_barang, u.username as user_name
 $params = [$start_date, $end_date];
 $types = "ss";
 
-if (!empty($barang_id)) {
+if ($barang_id !== '' && $barang_id_int > 0) {
     $sql .= " AND t.barang_id = ?";
-    $params[] = $barang_id;
+    $params[] = $barang_id_int;
     $types .= "i";
 }
 if (!empty($tipe)) {
@@ -42,7 +49,13 @@ if (!empty($tipe)) {
 $sql .= " ORDER BY t.created_at DESC";
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param($types, ...$params);
+// mysqli bind_param requires references; build bind array
+$bind = [];
+$bind[] = $types;
+foreach ($params as $k => $v) {
+    $bind[] = &$params[$k];
+}
+call_user_func_array([$stmt, 'bind_param'], $bind);
 $stmt->execute();
 $result = $stmt->get_result();
 

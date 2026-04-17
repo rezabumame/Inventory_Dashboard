@@ -15,6 +15,10 @@ try {
     if ($res && $res->num_rows === 0) {
         $conn->query("ALTER TABLE `$t` ADD COLUMN `user_hc_id` INT NULL AFTER `klinik_id`");
     }
+    
+    // Ensure status enum has all required values
+    require_once __DIR__ . '/../../config/database.php';
+    ensure_enum_value($conn, 'inventory_pemakaian_bhp', 'status', 'pending_add');
 } catch (Exception $e) {
 }
 
@@ -29,6 +33,7 @@ $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-m-d', s
 $where_clause = "1=1";
 $params = [];
 $types = "";
+$pending_verifikasi = [];
 
 if ($user_role === 'admin_klinik' && $user_klinik_id) {
     $where_clause .= " AND pb.klinik_id = ?";
@@ -72,8 +77,8 @@ if ($active_tab == 'list') {
         FROM inventory_pemakaian_bhp pb
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
-        WHERE $where_clause
-        ORDER BY pb.tanggal DESC, pb.created_at DESC
+        WHERE $where_clause AND pb.is_auto = 0
+        ORDER BY pb.nomor_pemakaian DESC
         LIMIT 500
     ";
 
@@ -83,10 +88,34 @@ if ($active_tab == 'list') {
     }
     $stmt->execute();
     $result = $stmt->get_result();
+
+    $q_pending = "
+        SELECT DATE(pb.tanggal) AS tgl, COUNT(*) AS cnt
+        FROM inventory_pemakaian_bhp pb
+        WHERE $where_clause
+          AND pb.status IN ('pending_edit', 'pending_delete')
+          AND pb.is_auto = 0
+        GROUP BY DATE(pb.tanggal)
+        ORDER BY tgl DESC
+        LIMIT 30
+    ";
+    $stmt_pending = $conn->prepare($q_pending);
+    if (!empty($params)) {
+        $stmt_pending->bind_param($types, ...$params);
+    }
+    $stmt_pending->execute();
+    $res_pending = $stmt_pending->get_result();
+    while ($rp = $res_pending->fetch_assoc()) {
+        $pending_verifikasi[] = [
+            'tgl' => (string)($rp['tgl'] ?? ''),
+            'cnt' => (int)($rp['cnt'] ?? 0)
+        ];
+    }
 } elseif ($active_tab == 'data_out') {
     $query_out = "
         SELECT 
             pb.tanggal, 
+            pb.created_at,
             pb.nomor_pemakaian,
             pb.jenis_pemakaian, 
             b.nama_barang, 
@@ -103,8 +132,8 @@ if ($active_tab == 'list') {
         LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
         JOIN inventory_klinik k ON pb.klinik_id = k.id
-        WHERE $where_clause
-        ORDER BY pb.tanggal DESC, pb.created_at DESC
+        WHERE $where_clause AND pb.is_auto = 0
+        ORDER BY pb.nomor_pemakaian DESC
         LIMIT 500
     ";
     
@@ -114,6 +143,32 @@ if ($active_tab == 'list') {
     }
     $stmt_out->execute();
     $result_out = $stmt_out->get_result();
+}
+
+// Get missed upload dates (Auto exist but Manual does not)
+$missed_uploads = [];
+$q_missed = "
+    SELECT 
+        DATE(pb.tanggal) as tgl,
+        pb.klinik_id,
+        pb.jenis_pemakaian,
+        k.nama_klinik
+    FROM inventory_pemakaian_bhp pb
+    LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
+    WHERE $where_clause
+    GROUP BY DATE(pb.tanggal), pb.klinik_id, pb.jenis_pemakaian
+    HAVING SUM(pb.is_auto = 1) > 0 AND SUM(pb.is_auto = 0) = 0
+    ORDER BY tgl DESC, k.nama_klinik ASC
+    LIMIT 100
+";
+$stmt_missed = $conn->prepare($q_missed);
+if (!empty($params)) {
+    $stmt_missed->bind_param($types, ...$params);
+}
+$stmt_missed->execute();
+$res_missed = $stmt_missed->get_result();
+while ($rm = $res_missed->fetch_assoc()) {
+    $missed_uploads[] = $rm;
 }
 
 // Data for Modal Tambah
@@ -219,7 +274,7 @@ if ($default_modal_klinik_id) {
             </nav>
         </div>
         <div class="col-auto">
-            <button type="button" class="btn shadow-sm text-white px-4 me-2" style="background-color: #204EAB;" data-bs-toggle="modal" data-bs-target="#modalTambah">
+            <button type="button" class="btn shadow-sm text-white px-4 me-2" style="background-color: #204EAB;" data-bs-toggle="modal" data-bs-target="#modalTambah" data-bs-focus="false">
                 <i class="fas fa-plus me-2"></i>Tambah Pemakaian
             </button>
             <?php if (in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)): ?>
@@ -245,6 +300,49 @@ if ($default_modal_klinik_id) {
             </a>
         </li>
     </ul>
+
+    <?php if ($active_tab === 'list' && !empty($pending_verifikasi)): ?>
+    <div class="alert alert-warning border-0 shadow-sm mb-3" role="alert">
+        <div class="d-flex align-items-start">
+            <i class="fas fa-exclamation-triangle me-2 mt-1"></i>
+            <div class="small">
+                <div class="fw-bold mb-1">Ada Pemakaian BHP yang belum diverifikasi/di-approve (Pending).</div>
+                <div class="text-muted">
+                    <?php
+                        $parts = [];
+                        foreach ($pending_verifikasi as $pv) {
+                            $tgl = $pv['tgl'] ? date('d/m/Y', strtotime($pv['tgl'])) : '-';
+                            $parts[] = $tgl . ' (' . (int)$pv['cnt'] . ')';
+                        }
+                        echo htmlspecialchars(implode(', ', $parts));
+                    ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if (!empty($missed_uploads)): ?>
+    <div class="alert alert-danger border-0 shadow-sm mb-3" role="alert">
+        <div class="d-flex align-items-start">
+            <i class="fas fa-exclamation-circle me-2 mt-1"></i>
+            <div class="small">
+                <div class="fw-bold mb-1">Peringatan: BHP pada tanggal berikut belum diupload/input manual:</div>
+                <div class="text-muted">
+                    <ul class="mb-0 ps-3 mt-1">
+                        <?php foreach ($missed_uploads as $mu): 
+                            $tgl = date('d/m/Y', strtotime($mu['tgl']));
+                            $klinik = htmlspecialchars($mu['nama_klinik'] ?? '-');
+                            $jenis = ($mu['jenis_pemakaian'] === 'hc') ? 'HC' : 'Klinik';
+                        ?>
+                            <li><?= $tgl ?> - <strong><?= $klinik ?></strong> (<?= $jenis ?>)</li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Filter Section -->
     <div class="card shadow-sm border-0 mb-4">
@@ -281,20 +379,48 @@ if ($default_modal_klinik_id) {
         }
         .breadcrumb-item.active { color: #6c757d; }
         .breadcrumb-item + .breadcrumb-item::before { content: "/"; }
+        .jenis-segmented {
+            background: #f1f3f5;
+            border-radius: 12px;
+            padding: 4px;
+            display: flex;
+            gap: 4px;
+            width: 100%;
+        }
+        .jenis-segmented .jenis-segment-btn {
+            flex: 1 1 0;
+            border: 0;
+            background: transparent;
+            border-radius: 10px;
+            padding: 6px 10px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+        .jenis-segmented .jenis-segment-btn.active {
+            background: #ffffff;
+            color: #204EAB;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .jenis-segmented .jenis-segment-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
     </style>
 
     <?php if ($active_tab == 'list'): ?>
     <div class="card shadow-sm">
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-hover datatable" id="tablePemakaianBHP">
+                <table class="table table-hover datatable" id="tablePemakaianBHP" data-order-col="0">
                     <thead class="table-light">
                         <tr>
                             <th>No. Pemakaian</th>
-                            <th>Tanggal</th>
-                            <th>Jenis</th>
                             <th>Klinik</th>
+                            <th>Jenis</th>
+                            <th>Tanggal Pemakaian BHP</th>
                             <th>Total Item</th>
+                            <th>Tanggal Input</th>
                             <th>Dibuat Oleh</th>
                             <th>Aksi</th>
                         </tr>
@@ -312,7 +438,7 @@ if ($default_modal_klinik_id) {
                                     </div>
                                 <?php endif; ?>
                             </td>
-                            <td><?= date('d/m/Y H:i', strtotime($row['tanggal'])) ?></td>
+                            <td><?= htmlspecialchars($row['nama_klinik'] ?? '-') ?></td>
                             <td>
                                 <?php if ($row['jenis_pemakaian'] === 'klinik'): ?>
                                     <span class="badge bg-info">Pemakaian Klinik</span>
@@ -320,8 +446,9 @@ if ($default_modal_klinik_id) {
                                     <span class="badge bg-warning">Pemakaian HC</span>
                                 <?php endif; ?>
                             </td>
-                            <td><?= htmlspecialchars($row['nama_klinik'] ?? '-') ?></td>
+                            <td><?= date('d/m/Y H:i', strtotime($row['tanggal'])) ?></td>
                             <td><?= $row['total_items'] ?> item</td>
+                            <td><?= date('d/m/Y H:i', strtotime($row['created_at'])) ?></td>
                             <td><?= htmlspecialchars($row['created_by_name']) ?></td>
                             <td>
                                 <div class="btn-group">
@@ -330,7 +457,13 @@ if ($default_modal_klinik_id) {
                                     </button>
                                     
                                     <?php 
-                                    $is_today = date('Y-m-d', strtotime($row['created_at'])) === date('Y-m-d');
+                                    $created_date = date('Y-m-d', strtotime($row['created_at']));
+                                    $today = date('Y-m-d');
+                                    $yesterday = date('Y-m-d', strtotime('-1 day'));
+                                    
+                                    // H-0 and H-1 are considered within grace period (no approval needed)
+                                    $is_today = ($created_date === $today || $created_date === $yesterday);
+                                    
                                     $is_creator = $row['created_by'] == $_SESSION['user_id'];
                                     $is_admin_klinik = $user_role === 'admin_klinik';
                                     $is_spv_klinik = $user_role === 'spv_klinik';
@@ -352,6 +485,8 @@ if ($default_modal_klinik_id) {
                                     } elseif ($is_today && $is_creator) {
                                         $can_edit_direct = true;
                                     }
+
+                                    $is_pending = (strpos((string)$status, 'pending') !== false || (strpos((string)$row['nomor_pemakaian'], 'REQ-ADD-') !== false && $status !== 'active'));
                                     ?>
                                     
                                     <?php if ($status === 'active'): ?>
@@ -360,7 +495,7 @@ if ($default_modal_klinik_id) {
                                                     data-id="<?= $row['id'] ?>" 
                                                     data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
                                                     title="Edit"
-                                                    data-bs-toggle="modal" data-bs-target="#modalEdit">
+                                                    data-bs-toggle="modal" data-bs-target="#modalEdit" data-bs-focus="false">
                                                 <i class="fas fa-edit"></i>
                                             </button>
                                             <button class="btn btn-sm btn-danger delete-pemakaian" 
@@ -386,7 +521,7 @@ if ($default_modal_klinik_id) {
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         <?php endif; ?>
-                                    <?php elseif (strpos($status, 'pending') !== false): ?>
+                                    <?php elseif ($is_pending): ?>
                                         <div class="d-flex align-items-center">
                                             <span class="badge rounded-pill bg-warning-subtle text-warning border border-warning-subtle px-3 py-1 me-2 text-center" style="font-size: 0.65rem; line-height: 1.2;">
                                                 <i class="fas fa-clock me-1"></i> Menunggu<br>Approval
@@ -428,61 +563,59 @@ if ($default_modal_klinik_id) {
                 </a>
             </div>
             <div class="table-responsive rounded-top scrollbar-custom">
-                <table class="table table-spreadsheet datatable align-middle mb-0" id="tableDataOut">
+                <table class="table table-spreadsheet align-middle mb-0" id="tableDataOut">
                     <thead>
                         <tr>
-                            <th width="120"><i class="far fa-calendar-alt me-1"></i> Tanggal</th>
+                            <th width="120"><i class="far fa-calendar-alt me-1"></i> Tgl Pemakaian BHP</th>
+                            <th><i class="fas fa-user-md me-1"></i> PIC / Nakes / Klinik</th>
                             <th><i class="fas fa-box me-1"></i> Item</th>
                             <th width="80" class="text-center">Qty (Unit)</th>
                             <th width="100">UoM</th>
                             <th width="100" class="text-center bg-light">Qty Odoo</th>
                             <th width="80" class="bg-light">UoM Odoo</th>
                             <th><i class="fas fa-info-circle me-1"></i> Status</th>
-                            <th><i class="fas fa-user-md me-1"></i> PIC / Nakes</th>
+                            <th width="120"><i class="far fa-clock me-1"></i> Tgl Input</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($result_out->num_rows == 0): ?>
-                            <tr><td colspan="8" class="text-center py-5 text-muted">Tidak ada data pemakaian ditemukan.</td></tr>
-                        <?php else: ?>
-                            <?php while ($row = $result_out->fetch_assoc()): 
-                                $status_text = ($row['jenis_pemakaian'] === 'hc') ? 'Additional Used - From Tas HC' : 'Direct Used - On Site Klinik';
-                                $pic_name = ($row['jenis_pemakaian'] === 'hc') ? $row['hc_name'] : $row['nama_klinik'];
-                                $badge_class = ($row['jenis_pemakaian'] === 'hc') ? 'badge-hc' : 'badge-klinik';
-                                
-                                // Calculate Odoo Qty
-                                $ratio = (float)($row['uom_ratio'] ?? 1);
-                                $qty_odoo = $row['qty'] * $ratio;
-                                $uom_odoo = $row['uom_odoo'] ?: $row['satuan'];
-                            ?>
-                            <tr>
-                                <td class="text-muted small"><?= date('d/m/Y H:i', strtotime($row['tanggal'])) ?></td>
-                                <td>
-                                    <div class="item-pill">
-                                        <?= htmlspecialchars($row['nama_barang']) ?>
-                                    </div>
-                                </td>
-                                <td class="text-center fw-bold text-primary"><?= fmt_qty($row['qty']) ?></td>
-                                <td>
-                                    <span class="uom-text">
-                                          <?= htmlspecialchars($row['satuan']) ?>
-                                    </span>
-                                </td>
-                                <td class="text-center fw-bold text-success bg-light"><?= fmt_qty($qty_odoo) ?></td>
-                                <td class="text-muted small bg-light"><?= htmlspecialchars($uom_odoo) ?></td>
-                                <td>
-                                    <span class="status-pill <?= $badge_class ?>">
-                                        <?= $status_text ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <div class="nakes-pill">
-                                        <?= htmlspecialchars($pic_name) ?>
-                                    </div>
-                                </td>
-                            </tr>
-                            <?php endwhile; ?>
-                        <?php endif; ?>
+                        <?php while ($row = $result_out->fetch_assoc()): 
+                            $status_text = ($row['jenis_pemakaian'] === 'hc') ? 'Additional Used - From Tas HC' : 'Direct Used - On Site Klinik';
+                            $pic_name = ($row['jenis_pemakaian'] === 'hc') ? $row['hc_name'] : $row['nama_klinik'];
+                            $badge_class = ($row['jenis_pemakaian'] === 'hc') ? 'badge-hc' : 'badge-klinik';
+                            
+                            // Calculate Odoo Qty
+                            $ratio = (float)($row['uom_ratio'] ?? 1);
+                            $qty_odoo = $row['qty'] * $ratio;
+                            $uom_odoo = $row['uom_odoo'] ?: $row['satuan'];
+                        ?>
+                        <tr>
+                            <td><?= date('d/m/Y H:i', strtotime($row['tanggal'])) ?></td>
+                            <td>
+                                <div class="nakes-pill">
+                                    <?= htmlspecialchars($pic_name) ?>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="item-pill">
+                                    <?= htmlspecialchars($row['nama_barang']) ?>
+                                </div>
+                            </td>
+                            <td class="text-center fw-bold text-primary"><?= fmt_qty($row['qty']) ?></td>
+                            <td>
+                                <span class="uom-text">
+                                      <?= htmlspecialchars($row['satuan']) ?>
+                                </span>
+                            </td>
+                            <td class="text-center fw-bold text-success bg-light"><?= fmt_qty($qty_odoo) ?></td>
+                            <td class="text-muted small bg-light"><?= htmlspecialchars($uom_odoo) ?></td>
+                            <td>
+                                <span class="status-pill <?= $badge_class ?>">
+                                    <?= $status_text ?>
+                                </span>
+                            </td>
+                            <td><?= date('d/m/Y H:i', strtotime($row['created_at'] ?? '')) ?></td>
+                        </tr>
+                        <?php endwhile; ?>
                     </tbody>
                 </table>
             </div>
@@ -614,7 +747,7 @@ if ($default_modal_klinik_id) {
 </div>
 
 <!-- Modal Edit Pemakaian -->
-<div class="modal fade" id="modalEdit" tabindex="-1" aria-labelledby="modalEditLabel" aria-hidden="true">
+<div class="modal fade" id="modalEdit" aria-labelledby="modalEditLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content border-0 shadow">
             <div class="modal-header border-0 py-3 text-white" style="background-color: #204EAB;">
@@ -636,7 +769,7 @@ if ($default_modal_klinik_id) {
                                 <div class="row g-3">
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold small mb-1">
-                                            <i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal <span class="text-danger">*</span>
+                                            <i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal Pemakaian BHP <span class="text-danger">*</span>
                                         </label>
                                         <input type="date" name="tanggal" id="editTanggal" class="form-control" required>
                                     </div>
@@ -644,7 +777,11 @@ if ($default_modal_klinik_id) {
                                         <label class="form-label fw-semibold small mb-1">
                                             <i class="fas fa-tags text-primary me-1"></i>Jenis Pemakaian <span class="text-danger">*</span>
                                         </label>
-                                        <select name="jenis_pemakaian" id="editJenisPemakaian" class="form-select" required <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>
+                                        <div class="jenis-segmented mt-1" id="editJenisSegmented">
+                                            <button type="button" class="jenis-segment-btn <?= ($user_role === 'petugas_hc') ? '' : 'active' ?>" data-value="klinik" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>Clinic</button>
+                                            <button type="button" class="jenis-segment-btn <?= ($user_role === 'petugas_hc') ? 'active' : '' ?>" data-value="hc" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>HC</button>
+                                        </div>
+                                        <select name="jenis_pemakaian" id="editJenisPemakaian" class="d-none" required <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>
                                             <option value="klinik">Pemakaian Klinik</option>
                                             <option value="hc">Pemakaian HC</option>
                                         </select>
@@ -698,10 +835,10 @@ if ($default_modal_klinik_id) {
                                     <table class="table table-hover align-middle mb-0" id="editItemTable">
                                         <thead class="bg-light">
                                             <tr>
-                                                <th width="40%" class="py-3 text-muted small fw-bold">Item Barang <span class="text-danger">*</span></th>
+                                                <th width="50%" class="py-3 text-muted small fw-bold">Item Barang <span class="text-danger">*</span></th>
                                                 <th width="15%" class="py-3 text-muted small fw-bold">Qty <span class="text-danger">*</span></th>
-                                                <th width="15%" class="py-3 text-muted small fw-bold">UoM</th>
-                                                <th width="20%" class="py-3 text-muted small fw-bold">Catatan Item</th>
+                                                <th width="20%" class="py-3 text-muted small fw-bold">UoM</th>
+                                                <th width="15%" class="py-3 text-muted small fw-bold">Perubahan</th>
                                                 <th width="10%" class="text-center py-3 text-muted small fw-bold border-start">Aksi</th>
                                             </tr>
                                         </thead>
@@ -726,7 +863,7 @@ if ($default_modal_klinik_id) {
 </div>
 
 <!-- Modal Tambah Pemakaian -->
-<div class="modal fade" id="modalTambah" tabindex="-1" aria-labelledby="modalTambahLabel" aria-hidden="true">
+<div class="modal fade" id="modalTambah" aria-labelledby="modalTambahLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content border-0 shadow">
             <div class="modal-header border-0 py-3 text-white" style="background-color: #204EAB;">
@@ -742,7 +879,7 @@ if ($default_modal_klinik_id) {
                             <div class="row g-3">
                                 <div class="col-md-3">
                                     <label class="form-label fw-semibold small mb-1">
-                                        <i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal <span class="text-danger">*</span>
+                                        <i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal Pemakaian BHP <span class="text-danger">*</span>
                                     </label>
                                     <input type="date" name="tanggal" class="form-control" value="<?= date('Y-m-d') ?>" required>
                                 </div>
@@ -750,9 +887,12 @@ if ($default_modal_klinik_id) {
                                     <label class="form-label fw-semibold small mb-1">
                                         <i class="fas fa-tags text-primary me-1"></i>Jenis Pemakaian <span class="text-danger">*</span>
                                     </label>
-                                    <select name="jenis_pemakaian" id="modalJenisPemakaian" class="form-select" required <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>
-                                        <option value="">-- Pilih --</option>
-                                        <option value="klinik" <?= ($user_role !== 'petugas_hc') ? '' : '' ?>>Pemakaian Klinik</option>
+                                    <div class="jenis-segmented mt-1" id="modalJenisSegmented">
+                                        <button type="button" class="jenis-segment-btn <?= ($user_role === 'petugas_hc') ? '' : 'active' ?>" data-value="klinik" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>Clinic</button>
+                                        <button type="button" class="jenis-segment-btn <?= ($user_role === 'petugas_hc') ? 'active' : '' ?>" data-value="hc" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>HC</button>
+                                    </div>
+                                    <select name="jenis_pemakaian" id="modalJenisPemakaian" class="d-none" required <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>
+                                        <option value="klinik" <?= ($user_role !== 'petugas_hc') ? 'selected' : '' ?>>Pemakaian Klinik</option>
                                         <option value="hc" <?= ($user_role === 'petugas_hc') ? 'selected' : '' ?>>Pemakaian HC</option>
                                     </select>
                                     <?php if ($user_role === 'petugas_hc'): ?>
@@ -814,11 +954,10 @@ if ($default_modal_klinik_id) {
                                 <table class="table table-hover align-middle mb-0" id="modalItemTable">
                                     <thead class="bg-light">
                                         <tr>
-                                            <th width="40%" class="py-3 text-muted small fw-bold">Item Barang <span class="text-danger">*</span></th>
+                                            <th width="50%" class="py-3 text-muted small fw-bold">Item Barang <span class="text-danger">*</span></th>
                                             <th width="15%" class="py-3 text-muted small fw-bold">Qty <span class="text-danger">*</span></th>
-                                            <th width="15%" class="py-3 text-muted small fw-bold">UoM</th>
-                                            <th width="20%" class="py-3 text-muted small fw-bold">Catatan Item</th>
-                                            <th width="10%" class="text-center py-3 text-muted small fw-bold border-start">Aksi</th>
+                                            <th width="20%" class="py-3 text-muted small fw-bold">UoM</th>
+                                            <th width="15%" class="text-center py-3 text-muted small fw-bold border-start">Aksi</th>
                                         </tr>
                                     </thead>
                                     <tbody id="modalItemTableBody">
@@ -836,9 +975,7 @@ if ($default_modal_klinik_id) {
                                                     <option value="oper">-</option>
                                                 </select>
                                                 <input type="hidden" name="items[0][satuan]" class="modal-satuan-hidden">
-                                            </td>
-                                            <td class="p-2">
-                                                <input type="text" name="items[0][catatan_item]" class="form-control form-control-sm" placeholder="Catatan">
+                                                <input type="hidden" name="items[0][catatan_item]" value="">
                                             </td>
                                             <td class="text-center border-start">
                                                 <button type="button" class="btn btn-sm btn-link text-danger modal-remove-row" disabled>
@@ -901,6 +1038,26 @@ function togglePetugasHc(modePrefix) {
     }
 }
 
+function syncJenisSegmented(prefix) {
+    const v = $('#' + prefix + 'JenisPemakaian').val() || 'klinik';
+    const $wrap = $('#' + prefix + 'JenisSegmented');
+    if (!$wrap.length) return;
+    $wrap.find('.jenis-segment-btn').removeClass('active');
+    $wrap.find('.jenis-segment-btn[data-value="' + v + '"]').addClass('active');
+}
+
+$(document).on('click', '#modalJenisSegmented .jenis-segment-btn', function() {
+    if ($(this).prop('disabled')) return;
+    const v = $(this).data('value');
+    $('#modalJenisPemakaian').val(v).trigger('change');
+});
+
+$(document).on('click', '#editJenisSegmented .jenis-segment-btn', function() {
+    if ($(this).prop('disabled')) return;
+    const v = $(this).data('value');
+    $('#editJenisPemakaian').val(v).trigger('change');
+});
+
 $(document).on('change', '#modalJenisPemakaian, #modalKlinikId', function() {
     togglePetugasHc('modal');
 });
@@ -939,22 +1096,26 @@ $(document).on('shown.bs.modal', '#modalTambah', function() {
                                 <h6 class="fw-bold mb-2"><i class="fas fa-info-circle me-1"></i>Petunjuk Format Baru (10 Kolom):</h6>
                                 <ul class="mb-0 ps-3">
                                     <li>Gunakan <b>Template Baru</b> (xlsx) agar urutan kolom tepat (10 kolom).</li>
-                                    <li><b>Format Tanggal:</b> dd Month yyyy, HH:mm (Contoh: 04 March 2026, 16:00).</li>
+                                    <li><b>Format Tanggal:</b> dd Month yyyy, HH:mm (Contoh: 04 March 2026, 16:00) atau Month dd, yyyy, h:mm AM/PM (Contoh: April 14, 2026, 4:35 PM).</li>
                                     <li><b>Atomic Transaction:</b> Jika ada 1 baris salah, seluruh file akan ditolak.</li>
                                     <li><b>Duplikasi:</b> Sistem mengecek kombinasi ID Pasien + Tanggal + Kode Barang.</li>
                                     <li>Validasi ketat terhadap Master Item, Satuan (UoM), Nakes, dan Cabang.</li>
+                                    <li><b>Onsite vs HC:</b> kolom <b>Nama Nakes</b> kosong = pemakaian <b>Klinik (onsite)</b>; diisi (sesuai master petugas HC) = pemakaian <b>HC</b>.</li>
                                 </ul>
                             </div>
                         </div>
                     </div>
 
-                    <div class="card border-0 shadow-sm">
+                            <div class="card border-0 shadow-sm">
                         <div class="card-body py-3 d-flex justify-content-between align-items-center bg-white border-start border-primary border-4 rounded">
                             <div>
                                 <h6 class="mb-1 fw-bold text-primary">Template Excel</h6>
-                                <p class="small text-muted mb-0">Pastikan format file Anda sesuai dengan template kami.</p>
+                                <p class="small text-muted mb-0">
+                                    Template mengikuti filter <strong>Dari / Sampai Tanggal</strong> di atas.
+                                    Jika ada peringatan gap (auto tanpa input manual), baris item dari pemakaian auto akan ikut diisi.
+                                </p>
                             </div>
-                            <a href="api/download_template_pemakaian.php" class="btn btn-outline-primary btn-sm rounded-pill px-3">
+                            <a href="api/download_template_pemakaian.php?start_date=<?= urlencode($start_date) ?>&amp;end_date=<?= urlencode($end_date) ?>" class="btn btn-outline-primary btn-sm rounded-pill px-3">
                                 <i class="fas fa-download me-1"></i> Download Template
                             </a>
                         </div>
@@ -1007,12 +1168,12 @@ $(document).on('shown.bs.modal', '#modalTambah', function() {
 
 <script>
 $(document).ready(function() {
-    // Fix for focus issue when Swal is opened over Bootstrap modal
-    window.addEventListener('focusin', (e) => {
-        if (e.target.closest(".swal2-container") || e.target.closest(".select2-container")) {
+    // More robust fix for Select2 focus in Bootstrap 5 modals
+    document.addEventListener('focusin', function(e) {
+        if (e.target.closest(".select2-container") || e.target.closest(".swal2-container")) {
             e.stopImmediatePropagation();
         }
-    });
+    }, true);
 
     const barangMaster = <?php
         $m = [];
@@ -1040,14 +1201,21 @@ $(document).ready(function() {
             theme: 'bootstrap-5',
             width: '100%',
             placeholder: '-- Pilih Barang --',
-            allowClear: true
+            allowClear: true,
+            minimumResultsForSearch: 0
         };
         
-        if ($modal.length) {
-            opts.dropdownParent = $modal;
-        }
-        
         $select.select2(opts);
+
+        // Standard fix for Select2 search focus in Bootstrap modals
+        $select.on('select2:open', function() {
+            setTimeout(function() {
+                const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                if (searchField) {
+                    searchField.focus();
+                }
+            }, 50);
+        });
     }
 
     function fmtQty(v) {
@@ -1161,6 +1329,9 @@ $(document).ready(function() {
         const klinikId = $('#editKlinikId').val();
         const jenis = $('#editJenisPemakaian').val();
         let userHcId = $('#editUserHcId').val();
+        if (!userHcId && $('#editUserHcIdHidden').length) {
+            userHcId = $('#editUserHcIdHidden').val();
+        }
 
         $.ajax({
             url: 'api/ajax_pemakaian_items.php',
@@ -1196,12 +1367,14 @@ $(document).ready(function() {
         });
     }
 
-    // Initialize DataOut if present
-    if ($('#tableDataOut').length && !$('#tableDataOut').hasClass('select2-hidden-accessible')) {
-        // No explicit init needed if it has .datatable class, 
-        // but we want to ensure it sorts by Tanggal (index 0)
-        // Actually, the global one in footer.php will handle it with index 1.
-        // Let's explicitly override if needed or just let it be.
+    // Initialize DataOut explicitly to avoid double-init and set correct sort + empty message
+    if ($('#tableDataOut').length && !$.fn.DataTable.isDataTable('#tableDataOut')) {
+        $('#tableDataOut').DataTable({
+            order: [[0, 'desc']],
+            language: {
+                emptyTable: 'Tidak ada data pemakaian ditemukan.'
+            }
+        });
     }
 
     // View detail
@@ -1271,6 +1444,56 @@ $(document).ready(function() {
     
     // --- MODAL TAMBAH LOGIC ---
     let modalRowIndex = 1;
+
+    function stripAutoDeductionNote(s) {
+        if (!s) return '';
+        // Updated regex to handle horizontal format as well
+        return s.replace(/(^|\n\s*\n)Auto Deduction(\s*\(.*?\))?:\s*[\s\S]*$/m, '').trim();
+    }
+
+    function clearModalAutoDeductionNote() {
+        const $catatan = $('#modalTambah').find('textarea[name="catatan_transaksi"]');
+        if (!$catatan.length) return;
+        const before = String($catatan.val() || '');
+        const after = stripAutoDeductionNote(before);
+        if (after !== before.trim()) {
+            $catatan.val(after);
+        }
+    }
+
+    function resetModalItemRows() {
+        const klinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : '<?= (int)$default_modal_klinik_id ?>';
+        const jenis = $('#modalJenisPemakaian').val() || 'klinik';
+        const optionsHtml = buildOptionsHtml(klinikId, jenis);
+        const rowHtml = `
+            <tr class="modal-item-row">
+                <td class="p-2">
+                    <select name="items[0][barang_id]" class="form-select form-select-sm modal-barang-select" required>
+                        ${optionsHtml}
+                    </select>
+                </td>
+                <td class="p-2">
+                    <input type="number" name="items[0][qty]" class="form-control form-control-sm" min="1" placeholder="0" required>
+                </td>
+                <td class="p-2">
+                    <select name="items[0][uom_mode]" class="form-select form-select-sm modal-uom-select" required>
+                        <option value="oper">-</option>
+                    </select>
+                    <input type="hidden" name="items[0][satuan]" class="modal-satuan-hidden">
+                    <input type="hidden" name="items[0][catatan_item]" value="">
+                </td>
+                <td class="text-center border-start">
+                    <button type="button" class="btn btn-sm btn-link text-danger modal-remove-row" disabled>
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+        $('#modalItemTableBody').html(rowHtml);
+        initBarangSelect2($('#modalItemTableBody tr:last').find('.modal-barang-select'));
+        modalRowIndex = 1;
+        updateModalRemoveButtons();
+    }
 
     // Handle UOM selection change
     $(document).on('change', '.modal-uom-select, .edit-uom-select', function() {
@@ -1355,9 +1578,7 @@ $(document).ready(function() {
                         <option value="oper">-</option>
                     </select>
                     <input type="hidden" name="items[${modalRowIndex}][satuan]" class="modal-satuan-hidden">
-                </td>
-                <td class="p-2">
-                    <input type="text" name="items[${modalRowIndex}][catatan_item]" class="form-control form-control-sm" placeholder="Catatan">
+                    <input type="hidden" name="items[${modalRowIndex}][catatan_item]" value="">
                 </td>
                 <td class="text-center border-start">
                     <button type="button" class="btn btn-sm btn-link text-danger modal-remove-row">
@@ -1386,6 +1607,7 @@ $(document).ready(function() {
     // Form validation in modal
     $('#formPemakaianBHP').on('submit', function(e) {
         e.preventDefault();
+        const form = $(this);
         const rowCount = $('.modal-item-row').length;
         if (rowCount === 0) {
             Swal.fire({
@@ -1395,15 +1617,205 @@ $(document).ready(function() {
             });
             return false;
         }
+
+        const tanggalStr = form.find('input[name="tanggal"]').val();
+        let isPastDay = false;
+        if (tanggalStr) {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            yesterday.setHours(0, 0, 0, 0);
+            
+            const selectedDate = new Date(tanggalStr);
+            selectedDate.setHours(0, 0, 0, 0);
+            
+            isPastDay = selectedDate < yesterday;
+        }
+
+        const userRole = '<?= $_SESSION['role'] ?>';
+        if (userRole === 'admin_klinik' && isPastDay) {
+            const reasonMap = {
+                wrong_qty: 'Salah input jumlah/kuantitas item',
+                wrong_item: 'Salah memilih jenis barang/BHP',
+                wrong_date: 'Koreksi tanggal transaksi pemakaian',
+                wrong_nakes: 'Koreksi data petugas HC/Nakes',
+                wrong_klinik: 'Koreksi data klinik/lokasi',
+                admin_libur: 'Admin sedang libur',
+                other_admin: 'Lainnya (Koreksi Administrasi)'
+            };
+            const sourceMap = {
+                admin_logistik: 'Admin Logistik',
+                nakes: 'Nakes',
+                sistem_integrasi: 'Sistem/Integrasi'
+            };
+
+            Swal.fire({
+                title: 'Request Approval (Tambah Data Backdate)',
+                html: `
+                    <div class="text-start p-2">
+                        <div class="alert alert-warning small py-2 mb-3">
+                            <i class="fas fa-exclamation-triangle me-2"></i>Tanggal pemakaian lebih dari H-2 memerlukan approval SPV.
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted mb-1">
+                                <i class="fas fa-info-circle me-1"></i> Alasan Penambahan <span class="text-danger">*</span>
+                            </label>
+                            <select id="swalReasonCodeAdd" class="form-select shadow-sm">
+                                <option value="">-- Pilih Alasan --</option>
+                                ${Object.entries(reasonMap).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted mb-1">
+                                <i class="fas fa-search me-1"></i> Sumber Informasi <span class="text-danger">*</span>
+                            </label>
+                            <select id="swalChangeSourceAdd" class="form-select shadow-sm">
+                                <option value="">-- Pilih Sumber --</option>
+                                ${Object.entries(sourceMap).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+                            </select>
+                        </div>
+                        
+                        <div class="mb-1">
+                            <label class="form-label fw-bold small text-muted mb-1">
+                                <i class="fas fa-user-check me-1"></i> Pelaku / Asal Permintaan <span class="text-danger">*</span>
+                            </label>
+                            <div id="swalActorContainerAdd">
+                                <select id="swalChangeActorAdd" class="form-select shadow-sm">
+                                    <option value="">-- Pilih Pelaku --</option>
+                                </select>
+                            </div>
+                            <div class="form-text small" style="font-size: 0.75rem;">Siapa yang meminta atau bertanggung jawab atas penambahan data terlambat ini?</div>
+                        </div>
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Kirim Request',
+                cancelButtonText: 'Batal',
+                confirmButtonColor: '#204EAB',
+                customClass: {
+                    popup: 'rounded-4 shadow-lg border-0',
+                    confirmButton: 'px-4 py-2 fw-bold rounded-pill',
+                    cancelButton: 'px-4 py-2 fw-bold rounded-pill'
+                },
+                didOpen: () => {
+                    const $source = $('#swalChangeSourceAdd');
+                    const $container = $('#swalActorContainerAdd');
+                    const currentKlinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : ($('#modalKlinikIdHidden').length ? $('#modalKlinikIdHidden').val() : '');
+
+                    $source.on('change', function() {
+                        const source = $(this).val();
+                        if (!source) {
+                            $container.html('<select id="swalChangeActorAdd" class="form-select shadow-sm"><option value="">-- Pilih Pelaku --</option></select>');
+                            return;
+                        }
+
+                        if (source === 'sistem_integrasi') {
+                            $container.html(`
+                                <div class="input-group">
+                                    <select id="swalChangeActorSelectAdd" class="form-select shadow-sm" style="width: 40%">
+                                        <option value="sistem">Sistem</option>
+                                        <option value="other">Lainnya...</option>
+                                    </select>
+                                    <input type="text" id="swalChangeActorTextAdd" class="form-control shadow-sm" placeholder="Nama..." style="display:none">
+                                </div>
+                            `);
+                            $('#swalChangeActorSelectAdd').on('change', function() {
+                                if ($(this).val() === 'other') {
+                                    $('#swalChangeActorTextAdd').show().focus();
+                                } else {
+                                    $('#swalChangeActorTextAdd').hide().val('');
+                                }
+                            });
+                        } else {
+                            $container.html('<select id="swalChangeActorAdd" class="form-select shadow-sm"><option value="">Memuat...</option></select>');
+                            const $actor = $('#swalChangeActorAdd');
+                            loadChangeActorUsers(source, currentKlinikId).then((res) => {
+                                let options = ['<option value="">-- Pilih Pelaku --</option>'];
+                                if (res && res.success && Array.isArray(res.items)) {
+                                    res.items.forEach(it => options.push(`<option value="${it.id}">${it.nama_lengkap} (${it.role})</option>`));
+                                }
+                                options.push('<option value="other">-- Lainnya (Isi Manual) --</option>');
+                                $actor.html(options.join(''));
+                                
+                                $actor.on('change', function() {
+                                    if ($(this).val() === 'other') {
+                                        $container.html('<input type="text" id="swalChangeActorTextAdd" class="form-control shadow-sm" placeholder="Masukkan nama pelaku asal...">');
+                                        $('#swalChangeActorTextAdd').focus();
+                                    }
+                                });
+                            });
+                        }
+                    });
+                },
+                preConfirm: () => {
+                    const reasonCode = String($('#swalReasonCodeAdd').val() || '');
+                    const changeSource = String($('#swalChangeSourceAdd').val() || '');
+                    let actorId = 0;
+                    let actorName = '';
+
+                    if ($('#swalChangeActorTextAdd').is(':visible')) {
+                        actorName = String($('#swalChangeActorTextAdd').val() || '').trim();
+                        if (!actorName) {
+                            Swal.showValidationMessage('Nama pelaku asal wajib diisi.');
+                            return false;
+                        }
+                    } else if ($('#swalChangeActorSelectAdd').length) {
+                         actorName = $('#swalChangeActorSelectAdd').val();
+                    } else {
+                        actorId = String($('#swalChangeActorAdd').val() || '');
+                        if (!actorId) {
+                            Swal.showValidationMessage('Pelaku asal wajib dipilih.');
+                            return false;
+                        }
+                    }
+
+                    if (!reasonCode) {
+                        Swal.showValidationMessage('Alasan penambahan wajib dipilih.');
+                        return false;
+                    }
+                    if (!changeSource) {
+                        Swal.showValidationMessage('Sumber informasi wajib dipilih.');
+                        return false;
+                    }
+
+                    return {
+                        reason_code: reasonCode,
+                        reason: reasonMap[reasonCode] || reasonCode,
+                        change_source: changeSource,
+                        change_actor_user_id: actorId,
+                        change_actor_name: actorName
+                    };
+                }
+            }).then((result) => {
+                if (!result.isConfirmed || !result.value) return;
+                const formData = new FormData(form[0]);
+                formData.append('is_request_approval', '1');
+                formData.append('reason_code', result.value.reason_code);
+                formData.append('reason', result.value.reason);
+                formData.append('change_source', result.value.change_source);
+                formData.append('change_actor_user_id', result.value.change_actor_user_id);
+                formData.append('change_actor_name', result.value.change_actor_name);
+                submitFormDirect(form, formData);
+            });
+            return false;
+        }
         
-        const $btn = $(this).find('button[type="submit"]');
+        const formData = new FormData(this);
+        submitFormDirect(form, formData);
+        return false;
+    });
+
+    function submitFormDirect(form, formData) {
+        const $btn = form.find('button[type="submit"]');
         const oldHtml = $btn.html();
         $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...');
 
         $.ajax({
-            url: $(this).attr('action'),
+            url: form.attr('action'),
             method: 'POST',
-            data: $(this).serialize(),
+            data: formData,
+            processData: false,
+            contentType: false,
             dataType: 'json',
             success: function(res) {
                 if (res.success) {
@@ -1420,40 +1832,64 @@ $(document).ready(function() {
                 $btn.prop('disabled', false).html(oldHtml);
             }
         });
-        return false;
-    });
+    }
 
     // --- MODAL EDIT LOGIC ---
     let editRowIndex = 0;
 
-    function makeEditRow(idx, barangId, qty, satuan, catatan, uomMode) {
+    function makeEditRow(idx, barangId, qty, satuan, catatan, uomMode, detailId, isExisting) {
         const formattedQty = qty ? fmtQty(qty) : '';
+        const existing = isExisting ? 1 : 0;
+        const lockExistingAttr = isExisting ? 'disabled' : '';
+        // Task 1: Sembunyikan tombol hapus untuk item yang sudah ada (existing) agar tidak ambigu dengan dropdown Perubahan
+        const removeBtn = isExisting ? '' : `
+            <button type="button" class="btn btn-sm btn-link text-danger edit-remove-row">
+                <i class="fas fa-trash-alt"></i>
+            </button>
+        `;
         return `
-            <tr class="edit-item-row">
+            <tr class="edit-item-row" data-existing="${existing}">
                 <td class="p-2">
-                    <select name="items[${idx}][barang_id]" class="form-select form-select-sm edit-barang-select" required>
+                    <select name="items[${idx}][barang_id]" class="form-select form-select-sm edit-barang-select" required ${lockExistingAttr}>
                         <option value="">-- Pilih Barang --</option>
                     </select>
                 </td>
                 <td class="p-2">
-                    <input type="text" name="items[${idx}][qty]" class="form-control form-control-sm" value="${formattedQty}" placeholder="0" required>
+                    <input type="text" name="items[${idx}][qty]" class="form-control form-control-sm" value="${formattedQty}" placeholder="0" required ${lockExistingAttr}>
                 </td>
                 <td class="p-2">
-                    <select name="items[${idx}][uom_mode]" class="form-select form-select-sm edit-uom-select" required>
+                    <select name="items[${idx}][uom_mode]" class="form-select form-select-sm edit-uom-select" required ${lockExistingAttr}>
                         <option value="oper">-</option>
                     </select>
                     <input type="hidden" name="items[${idx}][satuan]" class="edit-satuan-hidden" value="${satuan || ''}">
+                    <input type="hidden" name="items[${idx}][catatan_item]" value="${catatan || ''}">
+                    <input type="hidden" class="edit-detail-id" value="${detailId || ''}">
                 </td>
                 <td class="p-2">
-                    <input type="text" name="items[${idx}][catatan_item]" class="form-control form-control-sm" value="${catatan || ''}" placeholder="Catatan">
+                    <select class="form-select form-select-sm edit-op-select">
+                        <option value="">-- Pilih --</option>
+                        ${isExisting ? '<option value="update">Ubah</option><option value="remove">Hapus</option>' : '<option value="add" selected>Tambah</option>'}
+                    </select>
                 </td>
                 <td class="text-center border-start">
-                    <button type="button" class="btn btn-sm btn-link text-danger edit-remove-row">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
+                    ${removeBtn}
                 </td>
             </tr>
         `;
+    }
+
+    function resetEditItemRows() {
+        editRowIndex = 0;
+        $('#editItemTableBody').html(makeEditRow(0, null, '', '', '', 'oper', '', false));
+        const $sel = $('#editItemTableBody tr:last').find('.edit-barang-select');
+        let userHcId = $('#editUserHcId').val();
+        if (!userHcId && $('#editUserHcIdHidden').length) {
+            userHcId = $('#editUserHcIdHidden').val();
+        }
+        fillSelectOptions($sel, $('#editKlinikId').val(), $('#editJenisPemakaian').val(), userHcId, false);
+        initBarangSelect2($sel);
+        editRowIndex = 1;
+        updateEditRemoveButtons();
     }
 
     function updateEditRemoveButtons() {
@@ -1486,6 +1922,7 @@ $(document).ready(function() {
                 $('#editKlinikId').val(h.klinik_id);
                 $('#editKlinikName').val(h.nama_klinik || '');
                 $('#editJenisPemakaian').val(h.jenis_pemakaian);
+                syncJenisSegmented('edit');
                 
                 // Hide/show petugas HC and load available items
                 const userHcId = h.user_hc_id ? String(h.user_hc_id) : null;
@@ -1501,7 +1938,9 @@ $(document).ready(function() {
                     $petugasSelect.val('');
                 }
                 
-                $('#editCatatan').val(h.catatan_transaksi || '');
+                // Keep transaction note clean: do not inject per-item auto notes here.
+                // Per-item notes are already stored in each item row (`catatan_item`).
+                $('#editCatatan').val(stripAutoDeductionNote(h.catatan_transaksi || ''));
 
                 // Load available items for this context first
                 $.ajax({
@@ -1538,7 +1977,7 @@ $(document).ready(function() {
 
                         editRowIndex = 0;
                         res.details.forEach(function(d) {
-                            const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, d.catatan_item, d.uom_mode);
+                            const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, d.catatan_item, d.uom_mode, d.id, true);
                             $('#editItemTableBody').append(rowHtml);
                             const $row = $('#editItemTableBody tr:last');
                             const $barangSelect = $row.find('.edit-barang-select');
@@ -1610,7 +2049,7 @@ $(document).ready(function() {
 
     // Add row in edit modal
     $('#editAddRowBtn').on('click', function() {
-        const rowHtml = makeEditRow(editRowIndex, null, '', '', '', 'oper');
+        const rowHtml = makeEditRow(editRowIndex, null, '', '', '', 'oper', '', false);
         $('#editItemTableBody').append(rowHtml);
         const $sel = $('#editItemTableBody tr:last').find('.edit-barang-select');
         fillSelectOptions($sel, $('#editKlinikId').val(), $('#editJenisPemakaian').val(), false);
@@ -1627,36 +2066,67 @@ $(document).ready(function() {
 
     $(document).on('click', '.approve-request', function() {
         const id = $(this).data('id');
+        
+        // Task 6: Tampilkan loading selagi mengambil detail perubahan
         Swal.fire({
-            title: 'Approve Request',
-            text: 'Apakah Anda yakin ingin menyetujui request ini? Stok akan disesuaikan otomatis.',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Ya, Approve',
-            cancelButtonText: 'Batal',
-            confirmButtonColor: '#204EAB',
-            showLoaderOnConfirm: true,
-            preConfirm: () => {
-                return $.ajax({
-                    url: 'actions/process_pemakaian_bhp_action.php',
-                    method: 'POST',
-                    data: { action: 'approve', id: id, _csrf: PEMAKAIAN_CSRF },
-                    dataType: 'json'
-                }).then(res => {
-                    if (!res.success) {
-                        throw new Error(res.message || 'Gagal menyetujui request');
+            title: 'Memuat Detail...',
+            html: '<div class="py-3 text-center"><div class="spinner-border text-primary" role="status"></div></div>',
+            showConfirmButton: false,
+            allowOutsideClick: false
+        });
+
+        $.ajax({
+            url: 'api/get_pemakaian_bhp_detail.php',
+            method: 'GET',
+            data: { id: id },
+            success: function(html) {
+                Swal.fire({
+                    title: 'Review & Approve Request',
+                    html: `
+                        <div class="text-start mb-3 small alert alert-info py-2 border-0">
+                            <i class="fas fa-info-circle me-2"></i>Silakan tinjau detail perubahan di bawah ini sebelum memberikan persetujuan.
+                        </div>
+                        <div class="approval-detail-container" style="max-height: 50vh; overflow-y: auto; text-align: left; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+                            ${html}
+                        </div>
+                    `,
+                    width: '950px',
+                    showCancelButton: true,
+                    confirmButtonText: 'Ya, Approve',
+                    cancelButtonText: 'Batal',
+                    confirmButtonColor: '#204EAB',
+                    showLoaderOnConfirm: true,
+                    customClass: {
+                        popup: 'rounded-4 shadow-lg border-0',
+                        confirmButton: 'px-4 py-2 fw-bold rounded-pill',
+                        cancelButton: 'px-4 py-2 fw-bold rounded-pill'
+                    },
+                    preConfirm: () => {
+                        return $.ajax({
+                            url: 'actions/process_pemakaian_bhp_action.php',
+                            method: 'POST',
+                            data: { action: 'approve', id: id, _csrf: PEMAKAIAN_CSRF },
+                            dataType: 'json'
+                        }).then(res => {
+                            if (!res.success) {
+                                throw new Error(res.message || 'Gagal menyetujui request');
+                            }
+                            return res;
+                        }).catch(error => {
+                            Swal.showValidationMessage(`Request failed: ${error}`);
+                        });
+                    },
+                    allowOutsideClick: () => !Swal.isLoading()
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        Swal.fire('Berhasil', result.value.message, 'success').then(() => {
+                            location.reload();
+                        });
                     }
-                    return res;
-                }).catch(error => {
-                    Swal.showValidationMessage(`Request failed: ${error}`);
                 });
             },
-            allowOutsideClick: () => !Swal.isLoading()
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire('Berhasil', result.value.message, 'success').then(() => {
-                    location.reload();
-                });
+            error: function() {
+                Swal.fire('Error', 'Gagal memuat detail perubahan', 'error');
             }
         });
     });
@@ -1669,7 +2139,6 @@ $(document).ready(function() {
             input: 'select',
             inputOptions: {
                 'Data tidak sesuai': 'Data tidak sesuai',
-                'Stok tidak mencukupi': 'Stok tidak mencukupi',
                 'Alasan tidak valid': 'Alasan tidak valid',
                 'Lainnya': 'Lainnya'
             },
@@ -1740,64 +2209,292 @@ $(document).ready(function() {
         });
     });
 
-    // Modify form submit to include reason if flagged
+    function collectEditOperations() {
+        const ops = [];
+        let invalid = '';
+        $('#editItemTableBody .edit-item-row').each(function() {
+            const $row = $(this);
+            const op = String($row.find('.edit-op-select').val() || '');
+            const isExisting = String($row.data('existing') || '0') === '1';
+            const detailId = Number($row.find('.edit-detail-id').val() || 0);
+            const barangId = Number($row.find('.edit-barang-select').val() || 0);
+            const qty = Number(parseFloat(String($row.find('input[name*="[qty]"]').val() || '0').replace(',', '.')) || 0);
+            const satuan = String($row.find('.edit-satuan-hidden').val() || '');
+            const catatanItem = String($row.find('input[name*="[catatan_item]"]').val() || '');
+
+            // Existing item without selected operation means "tetap / tidak diubah".
+            if (isExisting && !op) {
+                // Task Fix: Include 'keep' to prevent deletion on backend
+                ops.push({ op: 'keep', detail_id: detailId, barang_id: barangId, qty: qty, satuan: satuan, catatan_item: catatanItem });
+                return true;
+            }
+            if (!isExisting && op !== 'add') {
+                invalid = 'Item baru hanya boleh bertipe Tambah.';
+                return false;
+            }
+            if (op === 'remove') {
+                if (detailId <= 0) {
+                    invalid = 'Detail item hapus tidak valid.';
+                    return false;
+                }
+                ops.push({ op: 'remove', detail_id: detailId });
+                return true;
+            }
+            if (barangId <= 0 || qty <= 0) {
+                invalid = 'Item dan qty wajib diisi pada perubahan tambah/ubah.';
+                return false;
+            }
+            if (op === 'update') {
+                if (detailId <= 0) {
+                    invalid = 'Detail item ubah tidak valid.';
+                    return false;
+                }
+                ops.push({ op: 'update', detail_id: detailId, barang_id: barangId, qty: qty, satuan: satuan, catatan_item: catatanItem });
+            } else if (op === 'add') {
+                ops.push({ op: 'add', barang_id: barangId, qty: qty, satuan: satuan, catatan_item: catatanItem });
+            } else {
+                invalid = 'Operasi item tidak valid.';
+                return false;
+            }
+            return true;
+        });
+
+        if (invalid) return { ok: false, message: invalid };
+        if (ops.length === 0) return { ok: false, message: 'Pilih minimal 1 perubahan item (Tambah/Ubah/Hapus).' };
+        return { ok: true, data: ops };
+    }
+
+    function loadChangeActorUsers(source, klinikId = null) {
+        return $.ajax({
+            url: 'api/ajax_change_actor_users.php',
+            method: 'GET',
+            dataType: 'json',
+            data: { source: source, klinik_id: klinikId }
+        });
+    }
+
+    $(document).on('change', '.edit-op-select', function() {
+        const $row = $(this).closest('tr');
+        const op = String($(this).val() || '');
+        const isExisting = String($row.data('existing') || '0') === '1';
+        // Existing rows: locked by default, only open if explicitly "Ubah".
+        // New rows: always open (op add).
+        let disabled = false;
+        if (isExisting) {
+            disabled = (op !== 'update');
+        } else {
+            disabled = false;
+        }
+        $row.find('.edit-barang-select, .edit-uom-select, input[name*="[qty]"]').prop('disabled', disabled);
+    });
+
+    // Modify form submit to include reason + actor metadata for past-day requests
     $('#formEditPemakaianBHP').on('submit', function(e) {
         e.preventDefault();
         const form = $(this);
-        const formData = new FormData(this);
-        const editId = $('#modalEdit').find('input[name="id"]').val();
-        const createdAtStr = $('.edit-pemakaian[data-id="'+editId+'"]').data('created-at'); // Format: YYYY-MM-DD
         
+        // Task 3: Pastikan semua item (termasuk yang disabled) ikut terkirim agar data lama tidak hilang saat edit
+        const disabledFields = form.find(':disabled').prop('disabled', false);
+        const formData = new FormData(this);
+        disabledFields.prop('disabled', true);
+
+        const editId = $('#modalEdit').find('input[name="id"]').val();
+        const createdAtStr = $('.edit-pemakaian[data-id="'+editId+'"]').data('created-at');
         let isPastDay = false;
         if (createdAtStr) {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
+            
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            yesterday.setHours(0, 0, 0, 0);
+            
             const createdDate = new Date(createdAtStr);
             createdDate.setHours(0, 0, 0, 0);
-            isPastDay = createdDate < today;
+            
+            // isPastDay is true only if createdDate is before yesterday (H-2 or older)
+            isPastDay = createdDate < yesterday;
         }
-        
-        const userRole = '<?= $_SESSION['role'] ?>';
 
-        // Check if admin_klinik and past day edit
+        const userRole = '<?= $_SESSION['role'] ?>';
+        // Task: Admin Klinik only requires reason/approval for past-day edits.
+        // Super Admin or same-day edits should bypass the reason popup and use collectEditOperations() to unify logic.
         if (userRole === 'admin_klinik' && isPastDay) {
+            const opsResult = collectEditOperations();
+            if (!opsResult.ok) {
+                Swal.fire('Perhatian', opsResult.message, 'warning');
+                return;
+            }
+            const reasonMap = {
+                wrong_qty: 'Salah input jumlah/kuantitas item',
+                wrong_item: 'Salah memilih jenis barang/BHP',
+                wrong_date: 'Koreksi tanggal transaksi pemakaian',
+                wrong_nakes: 'Koreksi data petugas HC/Nakes',
+                wrong_klinik: 'Koreksi data klinik/lokasi',
+                admin_libur: 'Admin sedang libur',
+                other_admin: 'Lainnya (Koreksi Administrasi)'
+            };
+            const sourceMap = {
+                admin_logistik: 'Admin Logistik',
+                nakes: 'Nakes',
+                sistem_integrasi: 'Sistem/Integrasi'
+            };
             Swal.fire({
                 title: 'Request Perubahan (Lewat Hari)',
-                text: 'Pilih alasan perubahan data pemakaian:',
-                input: 'select',
-                inputOptions: {
-                    'Salah input jumlah/kuantitas item': 'Salah input jumlah/kuantitas item',
-                    'Salah memilih jenis barang/BHP': 'Salah memilih jenis barang/BHP',
-                    'Koreksi tanggal transaksi pemakaian': 'Koreksi tanggal transaksi pemakaian',
-                    'Koreksi data petugas HC/Nakes': 'Koreksi data petugas HC/Nakes',
-                    'Koreksi data klinik/lokasi': 'Koreksi data klinik/lokasi',
-                    'Lainnya (Koreksi Administrasi)': 'Lainnya (Koreksi Administrasi)'
-                },
-                inputPlaceholder: '-- Pilih Alasan --',
+                html: `
+                    <div class="text-start p-2">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted mb-1">
+                                <i class="fas fa-info-circle me-1"></i> Alasan Perubahan <span class="text-danger">*</span>
+                            </label>
+                            <select id="swalReasonCode" class="form-select shadow-sm">
+                                <option value="">-- Pilih Alasan --</option>
+                                ${Object.entries(reasonMap).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted mb-1">
+                                <i class="fas fa-search me-1"></i> Sumber Perubahan <span class="text-danger">*</span>
+                            </label>
+                            <select id="swalChangeSource" class="form-select shadow-sm">
+                                <option value="">-- Pilih Sumber --</option>
+                                ${Object.entries(sourceMap).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+                            </select>
+                        </div>
+                        
+                        <div class="mb-1">
+                            <label class="form-label fw-bold small text-muted mb-1">
+                                <i class="fas fa-user-check me-1"></i> Pelaku Asal <span class="text-danger">*</span>
+                            </label>
+                            <div id="swalActorContainer">
+                                <select id="swalChangeActor" class="form-select shadow-sm">
+                                    <option value="">-- Pilih Pelaku --</option>
+                                </select>
+                            </div>
+                            <div class="form-text small" style="font-size: 0.75rem;">Siapa yang melakukan kesalahan input atau meminta perubahan ini?</div>
+                        </div>
+                    </div>
+                `,
                 showCancelButton: true,
                 confirmButtonText: 'Kirim Request',
                 cancelButtonText: 'Batal',
                 confirmButtonColor: '#204EAB',
-                inputValidator: (value) => {
-                    if (!value) return 'Alasan wajib dipilih!';
+                customClass: {
+                    popup: 'rounded-4 shadow-lg border-0',
+                    confirmButton: 'px-4 py-2 fw-bold rounded-pill',
+                    cancelButton: 'px-4 py-2 fw-bold rounded-pill'
                 },
                 didOpen: () => {
-                    // Fix focus issue when Swal is over Bootstrap modal
-                    const swalContainer = document.querySelector('.swal2-container');
-                    if (swalContainer) {
-                        swalContainer.setAttribute('tabindex', '-1');
+                    const $source = $('#swalChangeSource');
+                    const $container = $('#swalActorContainer');
+                    const currentKlinikId = $('#editKlinikId').val();
+
+                    $source.on('change', function() {
+                        const source = $(this).val();
+                        if (!source) {
+                            $container.html('<select id="swalChangeActor" class="form-select shadow-sm"><option value="">-- Pilih Pelaku --</option></select>');
+                            return;
+                        }
+
+                        if (source === 'sistem_integrasi') {
+                            $container.html(`
+                                <div class="input-group">
+                                    <select id="swalChangeActorSelect" class="form-select shadow-sm" style="width: 40%">
+                                        <option value="sistem">Sistem</option>
+                                        <option value="other">Lainnya...</option>
+                                    </select>
+                                    <input type="text" id="swalChangeActorText" class="form-control shadow-sm" placeholder="Nama..." style="display:none">
+                                </div>
+                            `);
+                            $('#swalChangeActorSelect').on('change', function() {
+                                if ($(this).val() === 'other') {
+                                    $('#swalChangeActorText').show().focus();
+                                } else {
+                                    $('#swalChangeActorText').hide().val('');
+                                }
+                            });
+                        } else {
+                            $container.html('<select id="swalChangeActor" class="form-select shadow-sm"><option value="">Memuat...</option></select>');
+                            const $actor = $('#swalChangeActor');
+                            loadChangeActorUsers(source, currentKlinikId).then((res) => {
+                                let options = ['<option value="">-- Pilih Pelaku --</option>'];
+                                if (res && res.success && Array.isArray(res.items)) {
+                                    res.items.forEach(it => options.push(`<option value="${it.id}">${it.nama_lengkap} (${it.role})</option>`));
+                                }
+                                options.push('<option value="other">-- Lainnya (Isi Manual) --</option>');
+                                $actor.html(options.join(''));
+                                
+                                $actor.on('change', function() {
+                                    if ($(this).val() === 'other') {
+                                        $container.html('<input type="text" id="swalChangeActorText" class="form-control shadow-sm" placeholder="Masukkan nama pelaku asal...">');
+                                        $('#swalChangeActorText').focus();
+                                    }
+                                });
+                            });
+                        }
+                    });
+                },
+                preConfirm: () => {
+                    const reasonCode = String($('#swalReasonCode').val() || '');
+                    const changeSource = String($('#swalChangeSource').val() || '');
+                    let actorId = 0;
+                    let actorName = '';
+
+                    if ($('#swalChangeActorText').is(':visible')) {
+                        actorName = String($('#swalChangeActorText').val() || '').trim();
+                        if (!actorName) {
+                            Swal.showValidationMessage('Nama pelaku asal wajib diisi.');
+                            return false;
+                        }
+                    } else if ($('#swalChangeActorSelect').length) {
+                         actorName = $('#swalChangeActorSelect').val();
+                    } else {
+                        actorId = String($('#swalChangeActor').val() || '');
+                        if (!actorId) {
+                            Swal.showValidationMessage('Pelaku asal wajib dipilih.');
+                            return false;
+                        }
                     }
+
+                    if (!reasonCode) {
+                        Swal.showValidationMessage('Alasan perubahan wajib dipilih.');
+                        return false;
+                    }
+                    if (!changeSource) {
+                        Swal.showValidationMessage('Sumber perubahan wajib dipilih.');
+                        return false;
+                    }
+
+                    return {
+                        reason_code: reasonCode,
+                        reason: reasonMap[reasonCode] || reasonCode,
+                        change_source: changeSource,
+                        change_actor_user_id: actorId,
+                        change_actor_name: actorName
+                    };
                 }
             }).then((result) => {
-                if (result.isConfirmed) {
-                    formData.append('reason', result.value);
-                    submitFormWithReason(form, formData);
-                }
+                if (!result.isConfirmed || !result.value) return;
+                formData.append('reason_code', result.value.reason_code);
+                formData.append('reason', result.value.reason);
+                formData.append('change_source', result.value.change_source);
+                formData.append('change_actor_user_id', result.value.change_actor_user_id);
+                formData.append('change_actor_name', result.value.change_actor_name); // Kirim nama pelaku (jika ada)
+                formData.append('request_items_json', JSON.stringify(opsResult.data));
+                submitFormWithReason(form, formData);
             });
-        } else {
-            // For super_admin or today's edit, submit directly
-            submitFormWithReason(form, formData);
+            return;
         }
+
+        // Use collectEditOperations for direct edits too (Same-day or Super Admin)
+        const opsResult = collectEditOperations();
+        if (!opsResult.ok) {
+            Swal.fire('Perhatian', opsResult.message, 'warning');
+            return;
+        }
+        formData.append('request_items_json', JSON.stringify(opsResult.data));
+        submitFormWithReason(form, formData);
     });
 
     function submitFormWithReason(form, formData) {
@@ -1835,23 +2532,162 @@ $(document).ready(function() {
     }
 
     $('#modalJenisPemakaian').on('change', function() {
+        syncJenisSegmented('modal');
+        clearModalAutoDeductionNote();
+        resetModalItemRows();
         refreshModalBarangOptions(false);
     });
     $('#modalUserHcId').on('change', function() {
+        clearModalAutoDeductionNote();
+        resetModalItemRows();
         refreshModalBarangOptions(false);
     });
     $('#editJenisPemakaian').on('change', function() {
+        syncJenisSegmented('edit');
+        resetEditItemRows();
         refreshEditBarangOptions(false);
     });
     $('#editUserHcId').on('change', function() {
+        resetEditItemRows();
         refreshEditBarangOptions(false);
     });
     if ($('#modalKlinikId').length) {
         $('#modalKlinikId').on('change', function() {
+            clearModalAutoDeductionNote();
+            resetModalItemRows();
             refreshModalBarangOptions(false);
         });
     }
     refreshModalBarangOptions(false);
+
+    function loadAutoDeductionIntoModal() {
+        const $modal = $('#modalTambah');
+        if (!$modal.length) return;
+
+        const jenis = $('#modalJenisPemakaian').val() || 'klinik';
+        const klinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : ($('#modalKlinikIdHidden').length ? $('#modalKlinikIdHidden').val() : '');
+        const tanggal = $modal.find('input[name="tanggal"]').val() || new Date().toISOString().slice(0, 10);
+        
+        // Selalu bersihkan alert dan catatan auto-deduction setiap kali fungsi ini dipanggil
+        // agar tidak "nyangkut" saat parameter berubah
+        $('#autoDeductionAlert').remove();
+        clearModalAutoDeductionNote();
+
+        if (!klinikId || !jenis) return;
+        if (jenis !== 'klinik') {
+            return;
+        }
+
+        // Ensure available items are loaded before building auto deduction rows
+        loadAvailableItems(function() {
+            $.ajax({
+                url: 'api/get_auto_deduction_items.php',
+                method: 'GET',
+                data: { klinik_id: klinikId, tanggal: tanggal, jenis: jenis },
+                dataType: 'json',
+                success: function(res) {
+                    if (!res || !res.success || !Array.isArray(res.data) || res.data.length === 0) {
+                        return;
+                    }
+
+                    if ($('#autoDeductionAlert').length === 0) {
+                        $('#modalItemTable').before('<div id="autoDeductionAlert" class="alert alert-info small py-2 mb-3"><i class="fas fa-info-circle me-2"></i>Ditemukan <b>' + res.data.length + '</b> usulan pemakaian otomatis dari Booking yang sudah Completed di tanggal ini. Silakan sesuaikan jumlah aktualnya.</div>');
+                    } else {
+                        $('#autoDeductionAlert').html('<i class="fas fa-info-circle me-2"></i>Ditemukan <b>' + res.data.length + '</b> usulan pemakaian otomatis dari Booking yang sudah Completed di tanggal ini. Silakan sesuaikan jumlah aktualnya.');
+                    }
+
+                    $('#modalItemTableBody').empty();
+                    modalRowIndex = 0;
+                    const noteLines = [];
+
+                    res.data.forEach(function(item) {
+                        const idx = modalRowIndex;
+
+                        const optionsHtmlBase = buildOptionsHtml(klinikId, jenis);
+                        const hasOpt = optionsHtmlBase.indexOf('value="' + String(item.barang_id) + '"') !== -1;
+                        const safeName = String(item.nama_barang || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        
+                        let optionsHtml = optionsHtmlBase;
+                        if (!hasOpt) {
+                            if (optionsHtmlBase.startsWith('<option value="">')) {
+                                const firstEnd = optionsHtmlBase.indexOf('</option>') + 9;
+                                optionsHtml = optionsHtmlBase.substring(0, firstEnd) + '<option value="' + String(item.barang_id) + '">' + safeName + '</option>' + optionsHtmlBase.substring(firstEnd);
+                            } else {
+                                optionsHtml = '<option value="' + String(item.barang_id) + '">' + safeName + '</option>' + optionsHtmlBase;
+                            }
+                        }
+
+                        const qtyVal = fmtQty(item.qty || 0);
+                        const cat = String(item.referensi || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        if (cat) noteLines.push(cat);
+
+                        const newRow = `
+                            <tr class="modal-item-row">
+                                <td class="p-2">
+                                    <select name="items[${idx}][barang_id]" class="form-select form-select-sm modal-barang-select" required>
+                                        ${optionsHtml}
+                                    </select>
+                                </td>
+                                <td class="p-2">
+                                    <input type="number" name="items[${idx}][qty]" class="form-control form-control-sm" min="0" step="0.0001" value="${qtyVal}" placeholder="0" required>
+                                </td>
+                                <td class="p-2">
+                                    <select name="items[${idx}][uom_mode]" class="form-select form-select-sm modal-uom-select" required>
+                                        <option value="oper">-</option>
+                                    </select>
+                                    <input type="hidden" name="items[${idx}][satuan]" class="modal-satuan-hidden">
+                                    <input type="hidden" name="items[${idx}][catatan_item]" value="${cat}">
+                                </td>
+                                <td class="text-center border-start">
+                                    <button type="button" class="btn btn-sm btn-link text-danger modal-remove-row">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                        $('#modalItemTableBody').append(newRow);
+                        const $row = $('#modalItemTableBody tr:last');
+                        const $select = $row.find('.modal-barang-select');
+                        
+                        // Set value BEFORE init select2 so it picks it up correctly
+                        $select.val(String(item.barang_id)).trigger('change');
+                        initBarangSelect2($select);
+
+                        modalRowIndex++;
+                    });
+
+                    const $catatan = $modal.find('textarea[name="catatan_transaksi"]');
+                    if ($catatan.length) {
+                            const uniq = Array.from(new Set(noteLines.map(s => String(s || '').trim()).filter(Boolean)));
+                            if (uniq.length > 0) {
+                                const currentNote = $modal.find('textarea[name="catatan_transaksi"]').val();
+                                const baseNote = stripAutoDeductionNote(currentNote);
+                                
+                                // Compact horizontal format
+                                const autoBlock = 'Auto Deduction (' + uniq.length + ' Bookings):\n' + uniq.join(', ');
+                                
+                                const finalNote = baseNote ? (baseNote + '\n\n' + autoBlock) : autoBlock;
+                                $modal.find('textarea[name="catatan_transaksi"]').val(finalNote);
+                            }
+                    }
+
+                    updateModalRemoveButtons();
+                }
+            });
+        });
+    }
+
+    $('#modalTambah').on('shown.bs.modal', function() {
+        loadAutoDeductionIntoModal();
+    });
+    $('#modalTambah').on('change', 'input[name="tanggal"]', function() {
+        clearModalAutoDeductionNote();
+        resetModalItemRows();
+        loadAutoDeductionIntoModal();
+    });
+    $('#modalTambah').on('change', '#modalJenisPemakaian, #modalKlinikId', function() {
+        loadAutoDeductionIntoModal();
+    });
 
     // --- MODAL UPLOAD LOGIC ---
     $('#formUploadExcel').on('submit', function(e) {
@@ -1885,7 +2721,94 @@ $(document).ready(function() {
             contentType: false,
             dataType: 'json',
             success: function(res) {
-                if (res.status === 'success') {
+                if (res.status === 'preview') {
+                    const diffs = Array.isArray(res.diffs) ? res.diffs : [];
+                    const diffCount = Number(res.diff_count || diffs.length || 0);
+
+                    let html = `<div class="text-start small mb-2">${res.message || 'Preview perbedaan.'}</div>`;
+                    html += `<div class="text-start small mb-2"><b>Total Perbedaan:</b> ${diffCount}</div>`;
+                    html += `<div class="text-start small mb-3 p-2 bg-light rounded border-start border-4 border-primary">
+                        <strong>Selisih</strong> = selisih antara <strong>jumlah aktual di file Excel</strong> dengan <strong>jumlah produk hasil mapping dari booking CS berstatus Completed</strong> yang sudah tercatat di sistem (pemakaian auto, per kombinasi tanggal &amp; cabang &amp; jenis).
+                        Jika sudah pernah ada input manual untuk tanggal yang sama, angka &quot;Tercatat di sistem&quot; dapat memuat gabungan auto + manual.
+                    </div>`;
+
+                    if (diffs.length > 0) {
+                        html += `<div style="max-height: 360px; overflow:auto; border:1px solid #eee; border-radius:8px;">
+                            <table class="table table-sm table-striped mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Tanggal</th>
+                                        <th>Cabang</th>
+                                        <th>Jenis</th>
+                                        <th>Kode</th>
+                                        <th>Item</th>
+                                        <th class="text-end" title="Total pemakaian yang sudah ada di sistem (biasanya auto dari booking Completed)">Tercatat di sistem</th>
+                                        <th class="text-end" title="Jumlah aktual dari file Excel">Excel (aktual)</th>
+                                        <th class="text-end" title="Excel (aktual) − Tercatat di sistem">Selisih</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+                        diffs.forEach(d => {
+                            const tgl = d.tanggal || '';
+                            const cab = d.nama_klinik || d.klinik_id || '';
+                            const jenis = d.jenis || '';
+                            const kode = d.kode_barang || '';
+                            const nama = d.nama_barang || '';
+                            const ex = d.existing_qty ?? 0;
+                            const up = d.upload_qty ?? 0;
+                            const df = d.diff ?? 0;
+                            html += `<tr>
+                                <td>${tgl}</td>
+                                <td>${cab}</td>
+                                <td>${jenis}</td>
+                                <td>${kode}</td>
+                                <td>${nama}</td>
+                                <td class="text-end">${ex}</td>
+                                <td class="text-end">${up}</td>
+                                <td class="text-end"><b>${df}</b></td>
+                            </tr>`;
+                        });
+                        html += `</tbody></table></div>`;
+                        if (diffCount > diffs.length) {
+                            html += `<div class="text-muted small mt-2">Ditampilkan ${diffs.length} baris pertama dari ${diffCount} perbedaan.</div>`;
+                        }
+                    } else {
+                        html += `<div class="alert alert-success small mb-0">Tidak ada perbedaan. Data upload sudah sama dengan data sistem.</div>`;
+                    }
+
+                    Swal.fire({
+                        title: 'Preview BHP Harian',
+                        html: html,
+                        width: '90%',
+                        showCancelButton: true,
+                        confirmButtonText: 'Lanjutkan Proses',
+                        cancelButtonText: 'Batal'
+                    }).then((r) => {
+                        if (!r.isConfirmed) return;
+                        Swal.fire({
+                            title: 'Memproses...',
+                            text: 'Mohon tunggu, data sedang disimpan',
+                            allowOutsideClick: false,
+                            didOpen: () => { Swal.showLoading(); }
+                        });
+                        $.ajax({
+                            url: 'actions/process_pemakaian_bhp_upload.php',
+                            method: 'POST',
+                            data: { ajax: '1', action: 'confirm_upload', token: res.token, _csrf: PEMAKAIAN_CSRF },
+                            dataType: 'json',
+                            success: function(res2) {
+                                if (res2.status === 'success') {
+                                    Swal.fire('Berhasil', res2.message, 'success').then(() => { location.reload(); });
+                                } else {
+                                    Swal.fire('Gagal', res2.message || 'Gagal memproses upload', 'error');
+                                }
+                            },
+                            error: function() {
+                                Swal.fire('Error', 'Terjadi kesalahan sistem saat konfirmasi upload', 'error');
+                            }
+                        });
+                    });
+                } else if (res.status === 'success') {
                     Swal.fire('Berhasil', res.message, 'success').then(() => { location.reload(); });
                 } else if (res.status === 'error' && res.errors) {
                     const uomErrors = res.errors.filter(e => e.type === 'uom_mismatch');

@@ -7,6 +7,32 @@ require_once __DIR__ . '/../lib/counter.php';
 
 use Shuchkin\SimpleXLSX;
 
+function acquire_named_locks(mysqli $conn, array $lockNames, int $timeoutSeconds = 10): array {
+    $acquired = [];
+    foreach ($lockNames as $name) {
+        $esc = $conn->real_escape_string($name);
+        $r = $conn->query("SELECT GET_LOCK('$esc', " . (int)$timeoutSeconds . ") AS got");
+        $got = (int)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['got'] ?? 0) : 0);
+        if ($got !== 1) {
+            // Release any acquired locks before failing
+            foreach ($acquired as $n) {
+                $e = $conn->real_escape_string($n);
+                $conn->query("SELECT RELEASE_LOCK('$e')");
+            }
+            throw new Exception("Sistem sedang memproses stok (lock: $name). Coba lagi sebentar.");
+        }
+        $acquired[] = $name;
+    }
+    return $acquired;
+}
+
+function release_named_locks(mysqli $conn, array $acquired): void {
+    foreach ($acquired as $name) {
+        $esc = $conn->real_escape_string($name);
+        $conn->query("SELECT RELEASE_LOCK('$esc')");
+    }
+}
+
 // Ensure logs table exists
 try {
     $conn->query("CREATE TABLE IF NOT EXISTS upload_logs (
@@ -53,6 +79,7 @@ $user_id = $_SESSION['user_id'];
 $user_klinik_id = $_SESSION['klinik_id'] ?? null;
 $filename = $_FILES['excel_file']['name'] ?? 'unknown';
 $is_ajax = (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest') || isset($_POST['ajax']);
+$is_confirm_upload = ($is_ajax && isset($_POST['action']) && $_POST['action'] === 'confirm_upload');
 
 // Validation helper
 function add_error(&$errors, $row, $col, $msg, $type = 'general', $data = []) {
@@ -96,32 +123,73 @@ if ($is_ajax && isset($_POST['action']) && $_POST['action'] === 'fix_uom_mapping
 }
 
 function parse_custom_date($date_str) {
-    // Format: "dd Month yyyy, HH:mm" (e.g. "04 March 2026, 16:00")
-    $months = [
-        'January' => '01', 'February' => '02', 'March' => '03', 'April' => '04',
-        'May' => '05', 'June' => '06', 'July' => '07', 'August' => '08',
-        'September' => '09', 'October' => '10', 'November' => '11', 'December' => '12'
-    ];
-    
-    if (preg_match('/^(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4}),\s+(\d{1,2}):(\d{2})$/', trim($date_str), $matches)) {
-        $day = str_pad($matches[1], 2, '0', STR_PAD_LEFT);
-        $month_name = ucfirst(strtolower($matches[2]));
-        $year = $matches[3];
-        $hour = str_pad($matches[4], 2, '0', STR_PAD_LEFT);
-        $min = $matches[5];
-        
-        if (isset($months[$month_name])) {
-            $month = $months[$month_name];
-            $iso_date = "$year-$month-$day $hour:$min:00";
-            if (checkdate((int)$month, (int)$day, (int)$year)) {
-                return $iso_date;
-            }
+    $date_str = trim((string)$date_str);
+    if ($date_str === '') return false;
+
+    // Task Fix: Gunakan strtotime untuk fleksibilitas format (April 14, 2026, 4:35 PM dsb)
+    // strtotime sangat baik menangani format standar bahasa Inggris.
+    $ts = strtotime($date_str);
+    if ($ts !== false && $ts > 0) {
+        $iso = date('Y-m-d H:i:s', $ts);
+        // Validasi tambahan untuk memastikan tahun masuk akal
+        $year = (int)date('Y', $ts);
+        if ($year > 2000 && $year < 2100) {
+            return $iso;
         }
     }
+
+    // Jika strtotime gagal, coba format manual yang mungkin mengandung koma unik
+    $formats = [
+        'd F Y, H:i',
+        'F d, Y, g:i A',
+        'F d, Y, h:i A',
+        'd M Y, H:i',
+        'M d, Y, g:i A',
+    ];
+
+    foreach ($formats as $fmt) {
+        $d = DateTime::createFromFormat($fmt, $date_str);
+        if ($d) {
+            return $d->format('Y-m-d H:i:s');
+        }
+    }
+
     return false;
 }
 
 try {
+    // Confirm previously previewed upload (no need to re-upload the file)
+    if ($is_confirm_upload) {
+        $token = trim((string)($_POST['token'] ?? ''));
+        if ($token === '') throw new Exception('Token preview tidak valid.');
+        $preview_store = $_SESSION['pemakaian_bhp_upload_preview'] ?? [];
+        $payload = $preview_store[$token] ?? null;
+        if (!$payload || empty($payload['data_to_process']) || !is_array($payload['data_to_process'])) {
+            throw new Exception('Preview tidak ditemukan atau sudah kadaluarsa. Silakan upload ulang.');
+        }
+
+        $data_to_process = $payload['data_to_process'];
+        $row_count = count($data_to_process);
+
+        // Cleanup token to avoid re-use
+        unset($_SESSION['pemakaian_bhp_upload_preview'][$token]);
+        if (empty($_SESSION['pemakaian_bhp_upload_preview'])) unset($_SESSION['pemakaian_bhp_upload_preview']);
+
+        // Rebuild master_uom for ratio conversion
+        $master_uom = [];
+        $res_uom = $conn->query("
+            SELECT c.kode_barang, b.id AS barang_id, c.from_uom, c.to_uom, c.multiplier 
+            FROM inventory_barang_uom_conversion c
+            JOIN inventory_barang b ON b.kode_barang = c.kode_barang
+        ");
+        while($res_uom && ($r = $res_uom->fetch_assoc())) {
+            $master_uom[(int)$r['barang_id']][] = $r;
+        }
+
+        // Go to processing phase
+        goto PROCESS_UPLOAD;
+    }
+
     // 1. File validation
     if (!isset($_FILES['excel_file']) || $_FILES['excel_file']['error'] !== UPLOAD_ERR_OK) {
         throw new Exception('File tidak berhasil diupload.');
@@ -239,12 +307,8 @@ try {
         // a. Date validation
         $iso_date = parse_custom_date($tgl_app);
         if (!$iso_date) {
-            add_error($errors, $row_num, 'Tanggal Appointment', "Format salah. Gunakan 'dd Month yyyy, HH:mm' (contoh: 04 March 2026, 16:00)");
-        }
-
-        // b. Numeric validation
-        if (!is_numeric($patient_id)) {
-            add_error($errors, $row_num, 'Appointment Patient ID', "Harus angka numerik.");
+            add_error($errors, $row_num, 'Tanggal Appointment', "Format salah. Gunakan format standar (Contoh: '04 March 2026, 16:00' atau 'April 14, 2026, 4:35 PM')");
+            continue;
         }
 
         // c. Patient Name
@@ -378,7 +442,151 @@ try {
         redirect('index.php?page=pemakaian_bhp_list');
     }
 
+    // Preview diff (BHP Harian) before committing
+    if ($is_ajax) {
+        // Prune old previews
+        if (!isset($_SESSION['pemakaian_bhp_upload_preview']) || !is_array($_SESSION['pemakaian_bhp_upload_preview'])) {
+            $_SESSION['pemakaian_bhp_upload_preview'] = [];
+        }
+        foreach ($_SESSION['pemakaian_bhp_upload_preview'] as $k => $v) {
+            $ts = (int)($v['created_at'] ?? 0);
+            if ($ts > 0 && $ts < (time() - 3600)) unset($_SESSION['pemakaian_bhp_upload_preview'][$k]);
+        }
+
+        $token = bin2hex(random_bytes(16));
+        $_SESSION['pemakaian_bhp_upload_preview'][$token] = [
+            'created_at' => time(),
+            'filename' => $filename,
+            'data_to_process' => $data_to_process
+        ];
+
+        // Build barang map for display
+        $barang_map = [];
+        $barang_ids = array_values(array_unique(array_map(fn($d) => (int)$d['item_id'], $data_to_process)));
+        if (!empty($barang_ids)) {
+            $ids_str = implode(',', array_map('intval', $barang_ids));
+            $res_bm = $conn->query("SELECT id, kode_barang, nama_barang FROM inventory_barang WHERE id IN ($ids_str)");
+            while ($res_bm && ($rbm = $res_bm->fetch_assoc())) {
+                $barang_map[(int)$rbm['id']] = [
+                    'kode_barang' => (string)($rbm['kode_barang'] ?? ''),
+                    'nama_barang' => (string)($rbm['nama_barang'] ?? '')
+                ];
+            }
+        }
+
+        $klinik_map = [];
+        $res_km = $conn->query("SELECT id, nama_klinik FROM inventory_klinik WHERE status = 'active'");
+        while ($res_km && ($rk = $res_km->fetch_assoc())) {
+            $klinik_map[(int)$rk['id']] = (string)($rk['nama_klinik'] ?? '');
+        }
+
+        $upload_agg = [];
+        $group_keys = [];
+        foreach ($data_to_process as $d) {
+            $tgl = (string)$d['tanggal_only'];
+            $kid = (int)$d['klinik_id'];
+            $jenis = !empty($d['nama_nakes']) ? 'hc' : 'klinik';
+            $bid = (int)$d['item_id'];
+            $qty_in = (float)$d['qty'];
+            $uom_in = (string)$d['uom'];
+
+            $ratio = 1.0;
+            if (isset($master_uom[$bid])) {
+                foreach ($master_uom[$bid] as $conv) {
+                    if (strcasecmp((string)$conv['from_uom'], $uom_in) === 0) {
+                        $ratio = (float)($conv['multiplier'] ?? 1);
+                        break;
+                    }
+                }
+            }
+            if ($ratio <= 0.0000001) $ratio = 1.0;
+            $qty_final = (float)round($qty_in / $ratio, 4);
+
+            $gk = $tgl . '|' . $kid . '|' . $jenis;
+            $group_keys[$gk] = ['tanggal' => $tgl, 'klinik_id' => $kid, 'jenis' => $jenis];
+            $k = $gk . '|' . $bid;
+            if (!isset($upload_agg[$k])) $upload_agg[$k] = 0.0;
+            $upload_agg[$k] += $qty_final;
+        }
+
+        $existing_agg = [];
+        foreach ($group_keys as $gk => $g) {
+            $stmt_e = $conn->prepare("
+                SELECT pbd.barang_id, SUM(pbd.qty) AS qty
+                FROM inventory_pemakaian_bhp_detail pbd
+                JOIN inventory_pemakaian_bhp pb ON pb.id = pbd.pemakaian_bhp_id
+                WHERE pb.klinik_id = ? AND pb.jenis_pemakaian = ? AND DATE(pb.tanggal) = ?
+                GROUP BY pbd.barang_id
+            ");
+            $stmt_e->bind_param("iss", $g['klinik_id'], $g['jenis'], $g['tanggal']);
+            $stmt_e->execute();
+            $res_e = $stmt_e->get_result();
+            while ($res_e && ($er = $res_e->fetch_assoc())) {
+                $bid = (int)$er['barang_id'];
+                $k = $gk . '|' . $bid;
+                $existing_agg[$k] = (float)($er['qty'] ?? 0);
+            }
+        }
+
+        $all_keys = array_unique(array_merge(array_keys($upload_agg), array_keys($existing_agg)));
+        $diffs = [];
+        foreach ($all_keys as $k) {
+            $parts = explode('|', $k);
+            if (count($parts) < 4) continue;
+            $tgl = $parts[0];
+            $kid = (int)$parts[1];
+            $jenis = $parts[2];
+            $bid = (int)$parts[3];
+
+            $u = (float)($upload_agg[$k] ?? 0);
+            $e = (float)($existing_agg[$k] ?? 0);
+            $dlt = $u - $e;
+            if (abs($dlt) < 0.00005) continue;
+
+            $bm = $barang_map[$bid] ?? ['kode_barang' => '', 'nama_barang' => ''];
+            $diffs[] = [
+                'tanggal' => $tgl,
+                'klinik_id' => $kid,
+                'nama_klinik' => $klinik_map[$kid] ?? '',
+                'jenis' => $jenis,
+                'barang_id' => $bid,
+                'kode_barang' => $bm['kode_barang'],
+                'nama_barang' => $bm['nama_barang'],
+                'existing_qty' => round($e, 4),
+                'upload_qty' => round($u, 4),
+                'diff' => round($dlt, 4),
+            ];
+        }
+
+        echo json_encode([
+            'status' => 'preview',
+            'token' => $token,
+            'message' => 'Preview membandingkan jumlah di file Excel dengan jumlah yang sudah tercatat di sistem per tanggal, cabang, dan jenis (klinik/HC). Kolom selisih = Qty Excel (aktual) dikurangi qty tercatat; pada alur normal qty tercatat berasal dari pemakaian auto hasil mapping booking CS berstatus Completed.',
+            'diffs' => array_slice($diffs, 0, 300),
+            'diff_count' => count($diffs)
+        ]);
+        exit;
+    }
+
     // 6. Process Atomic Transaction
+    PROCESS_UPLOAD:
+    // Acquire locks for all affected (date|clinic|jenis) to prevent concurrent stock mutation conflicts.
+    // This does NOT change business logic, only prevents race conditions during upload commits.
+    $lock_names = [];
+    foreach ($data_to_process as $d) {
+        $tgl = (string)($d['tanggal_only'] ?? '');
+        $kid = (int)($d['klinik_id'] ?? 0);
+        $jenis = !empty($d['nama_nakes']) ? 'hc' : 'klinik';
+        if ($tgl === '' || $kid <= 0) continue;
+        $lock_names[] = 'stock_pemakaian_bhp_upload_' . $kid . '_' . $jenis . '_' . preg_replace('/[^0-9]/', '', $tgl);
+    }
+    $lock_names = array_values(array_unique($lock_names));
+    sort($lock_names); // deterministic order to avoid deadlocks
+    $locks_acquired = [];
+    if (!empty($lock_names)) {
+        $locks_acquired = acquire_named_locks($conn, $lock_names, 10);
+    }
+
     $conn->begin_transaction();
     
     // Group items by Transaction (Patient ID + Full Timestamp)
@@ -400,11 +608,22 @@ try {
         $created_at = $m['tanggal_full'];
         $jenis_pemakaian = !empty($m['nama_nakes']) ? 'hc' : 'klinik';
         $catatan_transaksi = $m['nama_pasien'] . ' (' . $m['patient_id'] . ') - ' . $m['layanan'];
+
+        // Take out temporary auto-deduction for the same day & clinic (BHP harian)
+        $tgl_only = date('Y-m-d', strtotime($m['tanggal_only']));
+        $auto_key = $tgl_only . '|' . (int)$m['klinik_id'] . '|' . $jenis_pemakaian;
+        static $auto_cleared = [];
+        if (empty($auto_cleared[$auto_key])) {
+            $stmt_del = $conn->prepare("DELETE FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND DATE(tanggal) = ?");
+            $stmt_del->bind_param("iss", $m['klinik_id'], $jenis_pemakaian, $tgl_only);
+            $stmt_del->execute();
+            $auto_cleared[$auto_key] = 1;
+        }
         
         // Generate number
         $dateKey = date('Ymd', strtotime($m['tanggal_only']));
-        $seq = next_sequence($conn, 'PBH', $dateKey);
-        $prefix = 'PBH-' . $dateKey . '-';
+        $seq = next_sequence($conn, 'BHP', $dateKey);
+        $prefix = 'BHP-' . $dateKey . '-';
         $nomor_pemakaian = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
         $stmt = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
@@ -478,6 +697,7 @@ try {
     }
 
     $conn->commit();
+    if (!empty($locks_acquired)) release_named_locks($conn, $locks_acquired);
 
     // Log success
     $stmt_log = $conn->prepare("INSERT INTO inventory_upload_logs (user_id, filename, status, rows_success, rows_failed, error_details) VALUES (?, ?, 'success', ?, 0, NULL)");
@@ -501,6 +721,14 @@ try {
     } catch (Exception $rollback_err) {
         // Ignore rollback errors
     }
+    // Always try to release locks if they were acquired
+    try {
+        if (isset($locks_acquired) && !empty($locks_acquired)) {
+            release_named_locks($conn, $locks_acquired);
+        }
+    } catch (Exception $lock_err) {
+        // Ignore lock release errors
+    }
     
     // Log failure
     $stmt_log = $conn->prepare("INSERT INTO inventory_upload_logs (user_id, filename, status, rows_success, rows_failed, error_details) VALUES (?, ?, 'failed', 0, ?, ?)");
@@ -516,5 +744,3 @@ try {
     $_SESSION['error'] = "Gagal memproses file: " . $msg;
     redirect('index.php?page=pemakaian_bhp_list');
 }
-
-

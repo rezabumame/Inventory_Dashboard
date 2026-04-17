@@ -475,6 +475,7 @@ if (!empty($booking_ids)) {
                             }
                             ?>
                             <span class="badge <?= $bt_badge ?>"><?= $bt_label ?></span>
+                            <div class="x-small text-muted mt-1">#<?= htmlspecialchars($row['nomor_booking'] ?? '-') ?></div>
                         </td>
                         <td>
                             <div class="fw-semibold">
@@ -662,7 +663,7 @@ if (!empty($booking_ids)) {
                 <input type="hidden" name="client_request_id" id="client_request_id" value="">
                 <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                     <div id="bookingStockWarning" class="alert alert-warning py-2 small mb-3 d-none">
-                        <i class="fas fa-exclamation-triangle me-1"></i> <strong>Peringatan:</strong> Beberapa pemeriksaan yang dipilih memiliki stok mandatory yang kosong. Booking tetap dapat dilanjutkan.
+                        <i class="fas fa-exclamation-triangle me-1"></i> <strong>Peringatan:</strong> Core kosong: proses tetap lanjut sesuai kebijakan, mohon follow up restock.
                     </div>
                     <div class="alert alert-info py-2 small mb-3">
                         <i class="fas fa-info-circle me-1"></i> Isi data utama, lalu pilih pemeriksaan. Qty pemeriksaan otomatis mengikuti Pax.
@@ -1092,20 +1093,56 @@ function formatExamOption(state) {
     return $state;
 }
 
+let __oosPreviewTimer = null;
+let __oosPreviewXhr = null;
 function checkSelectedStock() {
-    var hasOutOfStock = false;
+    const examIds = [];
+    let hasOutOfStock = false;
+
     $('.patient-exam-select').each(function() {
-        var $opt = $(this).find('option:selected');
-        if ($opt.data('available') == 0) {
-            hasOutOfStock = true;
-        }
+        const $opt = $(this).find('option:selected');
+        const exId = parseInt($opt.val() || '0', 10);
+        if (exId > 0) examIds.push(exId);
+        if ($opt.data('available') == 0) hasOutOfStock = true;
     });
-    
-    if (hasOutOfStock) {
-        $('#bookingStockWarning').removeClass('d-none');
-    } else {
+
+    if (!hasOutOfStock) {
         $('#bookingStockWarning').addClass('d-none');
+        return;
     }
+
+    // Debounce preview calls while user is selecting
+    if (__oosPreviewTimer) clearTimeout(__oosPreviewTimer);
+    __oosPreviewTimer = setTimeout(function() {
+        if (__oosPreviewXhr && __oosPreviewXhr.readyState !== 4) {
+            try { __oosPreviewXhr.abort(); } catch (e) {}
+        }
+        const klinikId = parseInt($('#klinik_id').val() || '0', 10);
+        const statusBooking = $('input[name="status_booking"]:checked').val() || '';
+        __oosPreviewXhr = $.ajax({
+            url: 'api/get_core_oos_items.php',
+            method: 'POST',
+            dataType: 'json',
+            data: { _csrf: BOOKING_CSRF, klinik_id: klinikId, status_booking: statusBooking, exam_ids: examIds }
+        }).done(function(res) {
+            const $w = $('#bookingStockWarning');
+            if (!res || !res.success || !res.items || res.items.length === 0) {
+                $w.html('<i class="fas fa-exclamation-triangle me-1"></i> <strong>Peringatan:</strong> Core kosong: proses tetap lanjut sesuai kebijakan, mohon follow up restock.');
+                $w.removeClass('d-none');
+                return;
+            }
+            const list = res.items.map(function(x){ return '<li>' + $('<div>').text(x).html() + '</li>'; }).join('');
+            $w.html(
+                '<i class="fas fa-exclamation-triangle me-1"></i> <strong>Peringatan:</strong> Core kosong (item):' +
+                '<ul class="mb-1 mt-1 ps-4">' + list + '</ul>' +
+                '<span class="small opacity-75">Proses tetap lanjut sesuai kebijakan, mohon follow up restock.</span>'
+            );
+            $w.removeClass('d-none');
+        }).fail(function() {
+            // Keep generic message if preview fails
+            $('#bookingStockWarning').removeClass('d-none');
+        });
+    }, 250);
 }
 
 $(document).on('change', '.patient-exam-select', function() {
@@ -1372,6 +1409,37 @@ window.openBookingDetail = function(id) {
                 let s = n.toFixed(4).replace(/\.?0+$/, "");
                 return s === "" ? "0" : s;
             };
+            const fmtDateIdShort = function(v) {
+                const raw = (v || '').toString().trim();
+                if (!raw) return '-';
+                const datePart = raw.split(' ')[0];
+                const m = datePart.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (!m) return raw;
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+                const yyyy = m[1];
+                const mm = parseInt(m[2], 10);
+                const dd = m[3];
+                if (mm < 1 || mm > 12) return raw;
+                return dd + ' ' + months[mm - 1] + ' ' + yyyy;
+            };
+            const formatOosItemsHtml = function(raw) {
+                const text = (raw || '').toString().trim();
+                if (!text) return '<div class="small mb-0">Beberapa item tidak tersedia saat booking.</div>';
+                // Keep each item intact: separator should be between items, not between "Sisa" and "Butuh".
+                const parts = text
+                    .split(/\)\s*,\s*/g)
+                    .map(function(p) {
+                        p = (p || '').trim();
+                        if (p && !p.endsWith(')')) p += ')';
+                        return p;
+                    })
+                    .filter(Boolean);
+                if (!parts.length) return '<div class="small mb-0">' + esc(text) + '</div>';
+                const lis = parts.map(function(p) {
+                    return '<li class="booking-oos-item">' + esc(p) + '</li>';
+                }).join('');
+                return '<ul class="booking-oos-list mb-0">' + lis + '</ul>';
+            };
             
             var rows = items.length ? items.map(function(it) {
                 var needed = parseFloat(it.qty || 0);
@@ -1398,9 +1466,14 @@ window.openBookingDetail = function(id) {
             if (parseInt(h.is_out_of_stock) === 1) {
                 stockWarningHtml = `
                     <div class="col-12">
-                        <div class="alert alert-danger mb-0 py-2">
-                            <i class="fas fa-exclamation-triangle me-2"></i>
-                            <strong>Stok Kosong:</strong> ${esc(h.out_of_stock_items || 'Beberapa item tidak tersedia saat booking')}
+                        <div class="alert alert-danger mb-0 py-2 booking-oos-alert">
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="fas fa-exclamation-triangle mt-1"></i>
+                                <div class="w-100">
+                                    <div class="fw-bold mb-1">Stok Kosong</div>
+                                    ${formatOosItemsHtml(h.out_of_stock_items)}
+                                </div>
+                            </div>
                         </div>
                     </div>`;
             }
@@ -1413,17 +1486,21 @@ window.openBookingDetail = function(id) {
                         <span class="badge bg-light text-dark border">Jotform: ${parseInt(h.jotform_submitted) === 1 ? 'Sudah' : 'Belum'}</span>
                         <span class="badge bg-light text-dark border">Status: ${esc(h.status_booking || '-')}</span>
                     </div></div>
-                    <div class="col-md-4"><div class="border rounded-3 p-3 h-100">
-                        <div class="text-muted small">Tanggal/Jam</div><div class="fw-semibold">${esc(h.tanggal_pemeriksaan)} / ${esc(h.jam_layanan || '-')}</div>
+                    <div class="col-md-4"><div class="booking-detail-card p-3 h-100">
+                        <div class="booking-detail-label">Tanggal/Jam</div>
+                        <div class="booking-detail-value">${esc(fmtDateIdShort(h.tanggal_pemeriksaan))} <span class="booking-detail-sep">/</span> ${esc(h.jam_layanan || '-')}</div>
                     </div></div>
-                    <div class="col-md-4"><div class="border rounded-3 p-3 h-100">
-                        <div class="text-muted small">Klinik/CS</div><div class="fw-semibold">${esc(h.nama_klinik)} / ${esc(h.cs_name || '-')}</div>
+                    <div class="col-md-4"><div class="booking-detail-card p-3 h-100">
+                        <div class="booking-detail-label">Klinik/CS</div>
+                        <div class="booking-detail-value">${esc(h.nama_klinik)} <span class="booking-detail-sep">/</span> ${esc(h.cs_name || '-')}</div>
                     </div></div>
-                    <div class="col-md-4"><div class="border rounded-3 p-3 h-100">
-                        <div class="text-muted small">Pasien (${esc(h.jumlah_pax || 1)} pax)</div>${pasienHtml}
+                    <div class="col-md-4"><div class="booking-detail-card p-3 h-100">
+                        <div class="booking-detail-label">Pasien (${esc(h.jumlah_pax || 1)} pax)</div>
+                        <div class="booking-pasien-content">${pasienHtml}</div>
                     </div></div>
-                    <div class="col-12"><div class="border rounded-3 p-3">
-                        <div class="text-muted small">Pemeriksaan</div><div class="fw-semibold">${esc(res.jenis_pemeriksaan || '-')}</div>
+                    <div class="col-12"><div class="booking-detail-card p-3">
+                        <div class="booking-detail-label">Pemeriksaan</div>
+                        <div class="booking-detail-value text-success-emphasis">${esc(res.jenis_pemeriksaan || '-')}</div>
                     </div></div>
                     <div class="col-12"><div class="border rounded-3 overflow-hidden">
                         <div class="px-3 py-2 bg-light d-flex justify-content-between"><strong>Detail Item</strong><small>Qty per item</small></div>
@@ -1604,6 +1681,53 @@ window.submitAdjust = function() {
     });
 };
 </script>
+
+<style>
+    .booking-detail-card {
+        border: 1px solid #dfe3ea;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+    }
+    .booking-detail-label {
+        color: #667085;
+        font-size: .82rem;
+        margin-bottom: .35rem;
+    }
+    .booking-detail-value {
+        font-weight: 700;
+        font-size: 1.05rem;
+        color: #1d2939;
+        line-height: 1.35;
+    }
+    .booking-detail-sep {
+        color: #98a2b3;
+        font-weight: 500;
+        margin: 0 .1rem;
+    }
+    .booking-pasien-content .fw-semibold {
+        font-size: 1.05rem;
+        color: #1d2939;
+    }
+    .booking-pasien-content .small.text-success {
+        font-size: .95rem;
+        line-height: 1.3;
+    }
+    .booking-oos-alert {
+        border-color: rgba(220, 53, 69, .35);
+        background: #fff5f5;
+    }
+    .booking-oos-list {
+        padding-left: 1.15rem;
+        margin-top: .2rem;
+        max-height: 180px;
+        overflow-y: auto;
+    }
+    .booking-oos-item {
+        margin-bottom: .2rem;
+        line-height: 1.35;
+    }
+</style>
 
 <script>
 window.toggleActionDrawer = function(btn) {

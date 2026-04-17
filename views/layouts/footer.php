@@ -12,12 +12,16 @@
             // Only init if table has columns
             if (colCount > 0) {
                 // Determine default sort
-                // If table has >= 2 columns, sort by index 1 (usually date/created_at)
-                // Else sort by index 0
-                const sortIdx = colCount >= 2 ? 1 : 0;
+                // Respect data-order-col attribute if present, else default to index 1 (date)
+                let sortIdx = $t.data('order-col');
+                if (sortIdx === undefined) {
+                    sortIdx = colCount >= 2 ? 1 : 0;
+                }
+                
+                const sortDir = $t.data('order-dir') || 'desc';
                 
                 $t.DataTable({
-                    "order": [[ sortIdx, "desc" ]]
+                    "order": [[ sortIdx, sortDir ]]
                 });
             }
         });

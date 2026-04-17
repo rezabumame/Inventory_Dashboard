@@ -43,8 +43,10 @@ try {
         $nama_pemeriksaan = trim((string)$rows[$i][0]);
         $kode_barang = trim((string)$rows[$i][1]);
         $qty = (float)($rows[$i][3] ?? 0);
-        $kategori_raw = strtolower(trim((string)($rows[$i][4] ?? 'mandatory')));
-        $is_mandatory = ($kategori_raw === 'optional' || $kategori_raw === '0') ? 0 : 1;
+        $kategori_raw = strtolower(trim((string)($rows[$i][4] ?? 'core')));
+        // Backward compatible: Mandatory/Optional still accepted.
+        // Core = mandatory(1), Support = optional(0)
+        $is_mandatory = in_array($kategori_raw, ['support', 'optional', '0'], true) ? 0 : 1;
         
         if ($nama_pemeriksaan === '') continue;
         

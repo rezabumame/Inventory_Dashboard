@@ -32,6 +32,8 @@ if ($role === 'admin_klinik' && (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_i
 
 $today = date('Y-m-d');
 if (strtotime($tanggal) > strtotime($today)) $tanggal = $today;
+$min_month_date = date('Y-m-01');
+if (strtotime($tanggal) < strtotime($min_month_date)) $tanggal = $min_month_date;
 $month_start = date('Y-m-01', strtotime($tanggal));
 $month_end = date('Y-m-t', strtotime($tanggal));
 $tanggal_end_ts = $tanggal . ' 23:59:59';
@@ -93,12 +95,12 @@ $match_sql = '(' . implode(' OR ', $match) . ')';
 
 $baseline_onsite = 0.0;
 if ($kode_klinik !== '') {
-    $r = $conn->query("SELECT COALESCE(MAX(qty),0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc_k' AND $match_sql");
+    $r = $conn->query("SELECT COALESCE(qty,0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc_k' AND $match_sql ORDER BY updated_at DESC LIMIT 1");
     if ($r && $r->num_rows > 0) $baseline_onsite = (float)($r->fetch_assoc()['qty'] ?? 0);
 }
 $baseline_hc = 0.0;
 if ($kode_homecare !== '') {
-    $r = $conn->query("SELECT COALESCE(MAX(qty),0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc_h' AND $match_sql");
+    $r = $conn->query("SELECT COALESCE(qty,0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc_h' AND $match_sql ORDER BY updated_at DESC LIMIT 1");
     if ($r && $r->num_rows > 0) $baseline_hc = (float)($r->fetch_assoc()['qty'] ?? 0);
 }
 $baseline_onsite = $baseline_onsite / $multiplier;
@@ -162,7 +164,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'hc'
-          AND ts.level_id = $klinik_id
+          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id = $klinik_id)
           AND ts.tipe_transaksi = 'out'
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs' AND ts.created_at <= '$re'
@@ -175,7 +177,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'hc'
-          AND ts.level_id = $klinik_id
+          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id = $klinik_id)
           AND ts.tipe_transaksi = 'in'
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs' AND ts.created_at <= '$re'
@@ -195,8 +197,8 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
         JOIN inventory_pemakaian_bhp_detail pbd ON pbd.pemakaian_bhp_id = pb.id
         WHERE pb.klinik_id = $klinik_id
           AND pbd.barang_id = $barang_id
-          AND pb.created_at > '$rs' AND pb.created_at <= '$re'
-          AND pb.created_at >= '$ms'
+          AND pb.tanggal > '$rs' AND pb.tanggal <= '$re'
+          AND pb.tanggal >= '$ms'
         GROUP BY pb.id, pb.nomor_pemakaian, pb.tanggal, pb.created_at, pb.jenis_pemakaian
         ORDER BY pb.created_at ASC, pb.id ASC
     ");

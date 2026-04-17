@@ -109,7 +109,7 @@ if ($can_cs_edit) {
                 
                 <div class="modal-body" style="max-height: 75vh; overflow-y: auto;">
                     <div id="bookingEditStockWarning" class="alert alert-warning py-2 small mb-3 d-none">
-                        <i class="fas fa-exclamation-triangle me-1"></i> <strong>Peringatan:</strong> Beberapa pemeriksaan yang dipilih memiliki stok mandatory yang kosong. Perubahan tetap dapat disimpan.
+                        <i class="fas fa-exclamation-triangle me-1"></i> <strong>Peringatan:</strong> Core kosong: proses tetap lanjut sesuai kebijakan, mohon follow up restock.
                     </div>
                     <div class="row g-3">
                         <div class="col-12">
@@ -332,14 +332,53 @@ if ($can_cs_edit) {
         return $state;
     }
 
+    let __editOosPreviewTimer = null;
+    let __editOosPreviewXhr = null;
     function checkEditSelectedStock() {
-        var hasOutOfStock = false;
+        const examIds = [];
+        let hasOutOfStock = false;
         $('.patient-exam-select').each(function() {
-            var $opt = $(this).find('option:selected');
+            const $opt = $(this).find('option:selected');
+            const exId = parseInt($opt.val() || '0', 10);
+            if (exId > 0) examIds.push(exId);
             if ($opt.data('available') == 0) hasOutOfStock = true;
         });
-        if (hasOutOfStock) $('#bookingEditStockWarning').removeClass('d-none');
-        else $('#bookingEditStockWarning').addClass('d-none');
+        const $w = $('#bookingEditStockWarning');
+        if (!hasOutOfStock) {
+            $w.addClass('d-none');
+            return;
+        }
+
+        if (__editOosPreviewTimer) clearTimeout(__editOosPreviewTimer);
+        __editOosPreviewTimer = setTimeout(function() {
+            if (__editOosPreviewXhr && __editOosPreviewXhr.readyState !== 4) {
+                try { __editOosPreviewXhr.abort(); } catch (e) {}
+            }
+            const klinikId = parseInt($('#edit_klinik_id').val() || '0', 10);
+            const statusBooking = $('input[name="new_status_booking"]:checked').val() || '';
+            const csrf = $('#formEditBookingReal input[name="_csrf"]').val() || '';
+            __editOosPreviewXhr = $.ajax({
+                url: 'api/get_core_oos_items.php',
+                method: 'POST',
+                dataType: 'json',
+                data: { _csrf: csrf, klinik_id: klinikId, status_booking: statusBooking, exam_ids: examIds }
+            }).done(function(res) {
+                if (!res || !res.success || !res.items || res.items.length === 0) {
+                    $w.html('<i class="fas fa-exclamation-triangle me-1"></i> <strong>Peringatan:</strong> Core kosong: proses tetap lanjut sesuai kebijakan, mohon follow up restock.');
+                    $w.removeClass('d-none');
+                    return;
+                }
+                const list = res.items.map(function(x){ return '<li>' + $('<div>').text(x).html() + '</li>'; }).join('');
+                $w.html(
+                    '<i class="fas fa-exclamation-triangle me-1"></i> <strong>Peringatan:</strong> Core kosong (item):' +
+                    '<ul class="mb-1 mt-1 ps-4">' + list + '</ul>' +
+                    '<span class="small opacity-75">Proses tetap lanjut sesuai kebijakan, mohon follow up restock.</span>'
+                );
+                $w.removeClass('d-none');
+            }).fail(function() {
+                $w.removeClass('d-none');
+            });
+        }, 250);
     }
 
     $(document).on('change', '.patient-exam-select', function() {

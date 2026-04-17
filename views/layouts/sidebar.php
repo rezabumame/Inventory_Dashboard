@@ -28,6 +28,17 @@ if (isset($_SESSION['user_id'])) {
         $badge_spv = (int)($q_spv->fetch_assoc()['cnt'] ?? 0);
     }
 }
+
+$top_role_label = strtoupper(str_replace('_', ' ', (string)($role ?? ($_SESSION['role'] ?? ''))));
+$top_role_sub = '';
+$roles_with_klinik = ['admin_klinik', 'spv_klinik', 'cs', 'petugas_hc'];
+if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !empty($_SESSION['klinik_id'])) {
+    $kid = (int)$_SESSION['klinik_id'];
+    $rk_top = $conn->query("SELECT nama_klinik FROM inventory_klinik WHERE id = $kid LIMIT 1");
+    if ($rk_top && $rk_top->num_rows > 0) {
+        $top_role_sub = (string)($rk_top->fetch_assoc()['nama_klinik'] ?? '');
+    }
+}
 ?>
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -159,7 +170,10 @@ if (isset($_SESSION['user_id'])) {
         <div class="d-flex align-items-center">
             <div class="me-3 text-end d-none d-sm-block">
                 <div class="fw-bold small"><?= $_SESSION['nama_lengkap'] ?? 'User' ?></div>
-                <div class="text-muted" style="font-size: 10px;"><?= strtoupper(str_replace('_', ' ', $role)) ?></div>
+                <div class="text-muted" style="font-size: 10px;"><?= htmlspecialchars($top_role_label) ?></div>
+                <?php if ($top_role_sub !== ''): ?>
+                    <div class="text-muted" style="font-size: 10px;"><?= htmlspecialchars($top_role_sub) ?></div>
+                <?php endif; ?>
             </div>
             <div class="dropdown">
                 <a href="#" class="d-flex align-items-center link-dark text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
@@ -170,7 +184,10 @@ if (isset($_SESSION['user_id'])) {
                 <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0" aria-labelledby="dropdownUser1">
                     <li class="px-3 py-2 d-sm-none">
                         <div class="fw-bold small"><?= $_SESSION['nama_lengkap'] ?? 'User' ?></div>
-                        <div class="text-muted" style="font-size: 10px;"><?= strtoupper(str_replace('_', ' ', $role)) ?></div>
+                        <div class="text-muted" style="font-size: 10px;"><?= htmlspecialchars($top_role_label) ?></div>
+                        <?php if ($top_role_sub !== ''): ?>
+                            <div class="text-muted" style="font-size: 10px;"><?= htmlspecialchars($top_role_sub) ?></div>
+                        <?php endif; ?>
                     </li>
                     <li class="d-sm-none"><hr class="dropdown-divider"></li>
                     <li><a class="dropdown-item py-2" href="index.php?page=profile"><i class="fas fa-user-circle me-2 text-muted"></i>Profil Saya</a></li>

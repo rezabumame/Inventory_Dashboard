@@ -92,7 +92,7 @@ try {
         throw new Exception("Tidak ada item yang perlu dibooking");
     }
 
-    // 2. Check Effective Availability (Identify out-of-stock items but allow booking)
+    // 2. Check Effective Availability (Core items only). Core = is_mandatory=1
     $out_of_stock_items = [];
     foreach ($total_needed as $bid => $qty_need) {
         $bid = (int)$bid;

@@ -297,7 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt_pasien->execute();
                 $pasien_id = $conn->insert_id;
 
-                // Get items for this exam (mandatory only - optional items don't affect stock reservation)
+                // Get items for this exam (Core only - Support items don't affect stock reservation)
                 $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid AND is_mandatory = 1");
                 while($row = $res->fetch_assoc()) {
                     $qty_total = $row['qty_per_pemeriksaan'] * $qty_multiplier;

@@ -186,7 +186,7 @@ try {
     }
     if (empty($total_needed)) throw new Exception("Tidak ada item yang perlu dibooking (cek master pemeriksaan).");
 
-    // Identify out-of-stock items but allow booking
+    // Identify out-of-stock items (Core only) and keep as warning flag
     $out_of_stock_items = [];
     foreach ($total_needed as $bid => $qty_need) {
         $bid = (int)$bid;

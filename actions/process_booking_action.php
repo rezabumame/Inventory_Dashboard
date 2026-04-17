@@ -71,8 +71,107 @@ try {
             if (!in_array($role, ['admin_klinik', 'super_admin'], true)) {
                 throw new Exception('Access denied');
             }
+
+            // 1. Ambil data booking untuk status dan klinik
+            $klinik_id = (int)$booking['klinik_id'];
+            $is_hc = (stripos($booking['status_booking'], 'HC') !== false);
+            $jenis_pemakaian = $is_hc ? 'hc' : 'klinik';
+            $created_by = (int)$_SESSION['user_id'];
+            $nomor_pemakaian = 'BHP-AUTO-' . time() . '-' . $id;
+
+            // 2. Hitung total qty per barang_id dari Master Pemeriksaan (Core & Support)
+            $items_to_deduct = [];
+            
+            // Ambil semua pasien dan pemeriksaan yang ada di booking ini
+            $res_pasien = $conn->query("SELECT pemeriksaan_grup_id FROM inventory_booking_pasien WHERE booking_id = $id");
+            while ($pasien = $res_pasien->fetch_assoc()) {
+                $pid = (int)$pasien['pemeriksaan_grup_id'];
+                
+                // Ambil SEMUA item dari master grup (Core & Support)
+                $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+                while ($item = $res_items->fetch_assoc()) {
+                    $bid = (int)$item['barang_id'];
+                    $qty = (float)$item['qty_per_pemeriksaan'];
+                    
+                    if ($qty > 0) {
+                        if (!isset($items_to_deduct[$bid])) {
+                            $items_to_deduct[$bid] = 0;
+                        }
+                        $items_to_deduct[$bid] += $qty;
+                    }
+                }
+            }
+
+            // 3. Jika ada item yang perlu didekduk, buat data pemakaian_bhp (Auto)
+            if (!empty($items_to_deduct)) {
+                $bhp_tanggal = (string)($booking['tanggal_pemeriksaan'] ?? '');
+                if ($bhp_tanggal === '') $bhp_tanggal = date('Y-m-d');
+                $bhp_tanggal .= ' 00:00:00';
+
+                // Insert header
+                $stmt_h = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, catatan_transaksi, created_by, created_at, status, is_auto, booking_id) VALUES (?, ?, ?, ?, 'Auto-deduction from Booking Completed', ?, NOW(), 'active', 1, ?)");
+                $stmt_h->bind_param("sssiii", $nomor_pemakaian, $bhp_tanggal, $jenis_pemakaian, $klinik_id, $created_by, $id);
+                $stmt_h->execute();
+                $pemakaian_id = $conn->insert_id;
+
+                // Insert details and record transactions
+                $stmt_d = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan) VALUES (?, ?, ?, ?)");
+                
+                $level = $is_hc ? 'hc' : 'klinik';
+                $level_id = $klinik_id; // For klinik, level_id is klinik_id. For HC, it should be user_id, but booking doesn't have it yet.
+                
+                // If HC, try to find a default user_id for this clinic to satisfy the dashboard query
+                if ($is_hc) {
+                    $res_u = $conn->query("SELECT id FROM inventory_users WHERE klinik_id = $klinik_id AND role = 'petugas_hc' AND status = 'active' LIMIT 1");
+                    if ($res_u && $u_row = $res_u->fetch_assoc()) {
+                        $level_id = (int)$u_row['id'];
+                    }
+                }
+
+                foreach ($items_to_deduct as $bid => $qty) {
+                    $bid = (int)$bid;
+                    $qty = (float)$qty;
+
+                    // Cari satuan barang
+                    $res_b = $conn->query("SELECT satuan FROM inventory_barang WHERE id = $bid LIMIT 1");
+                    $satuan = $res_b->num_rows > 0 ? $res_b->fetch_assoc()['satuan'] : 'PCS';
+                    
+                    $stmt_d->bind_param("iids", $pemakaian_id, $bid, $qty, $satuan);
+                    $stmt_d->execute();
+
+                    // Record Transaction for Dashboard Sellout
+                    $eff = stock_effective($conn, $klinik_id, $is_hc, $bid);
+                    $qty_before = $eff['ok'] ? (float)($eff['on_hand'] ?? 0) : 0.0;
+                    $qty_after = $qty_before - $qty;
+
+                    $ref_type = 'pemakaian_bhp';
+                    $ref_id = (int)$pemakaian_id;
+                    $catatan = "BHP (Auto-Booking) " . $nomor_pemakaian;
+                    $created_at_str = date('Y-m-d H:i:s');
+
+                    $stmt_trans = $conn->prepare("
+                        INSERT INTO inventory_transaksi_stok
+                        (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
+                        VALUES (?, ?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    $stmt_trans->bind_param("isidddsisis", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $ref_type, $ref_id, $catatan, $created_by, $created_at_str);
+                    $stmt_trans->execute();
+
+                    // Update Internal Stock Tables
+                    if ($is_hc && $level_id !== $klinik_id) {
+                        $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+                        $stmt_upd->bind_param("diiii", $qty, $created_by, $bid, $level_id, $klinik_id);
+                        $stmt_upd->execute();
+                    } elseif (!$is_hc) {
+                        $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
+                        $stmt_upd->bind_param("diii", $qty, $created_by, $bid, $klinik_id);
+                        $stmt_upd->execute();
+                    }
+                }
+            }
+
             $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'completed', butuh_fu = 0 WHERE id = $id");
-            $msg = "Booking selesai.";
+            $msg = "Booking selesai dan pemakaian BHP otomatis tercatat (sementara).";
             break;
 
         case 'fu':

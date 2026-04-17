@@ -18,11 +18,13 @@ $stmt = $conn->prepare("
         pb.*,
         k.nama_klinik,
         u_created.nama_lengkap as created_by_name,
-        u_hc.nama_lengkap as hc_name
+        u_hc.nama_lengkap as hc_name,
+        u_actor.nama_lengkap as change_actor_name
     FROM inventory_pemakaian_bhp pb
     LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
     LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
     LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
+    LEFT JOIN inventory_users u_actor ON pb.change_actor_user_id = u_actor.id
     WHERE pb.id = ?
 ");
 $stmt->bind_param("i", $id);
@@ -38,7 +40,29 @@ $header = $result->fetch_assoc();
 
 // Check if we have pending data (Proposed Edit)
 $is_pending_edit = ($header['status'] === 'pending_edit' && !empty($header['pending_data']));
-$pending_payload = $is_pending_edit ? json_decode($header['pending_data'], true) : null;
+$has_history = (!empty($header['pending_data'])); // True if there was ever an edit request
+$pending_payload = $has_history ? json_decode($header['pending_data'], true) : null;
+$request_meta = ($has_history && is_array($pending_payload) && isset($pending_payload['meta']) && is_array($pending_payload['meta']))
+    ? $pending_payload['meta'] : [];
+$source_map = [
+    'admin_logistik' => 'Admin Logistik',
+    'nakes' => 'Nakes',
+    'sistem_integrasi' => 'Sistem/Integrasi',
+];
+$change_source_raw = (string)($request_meta['change_source'] ?? ($header['change_source'] ?? ''));
+$change_source_label = (string)($source_map[$change_source_raw] ?? '-');
+$change_actor_name = (string)($header['change_actor_name'] ?? '-');
+$change_actor_id_meta = (int)($request_meta['change_actor_user_id'] ?? 0);
+$change_actor_name_meta = (string)($request_meta['change_actor_name'] ?? '');
+
+if ($change_actor_name_meta !== '') {
+    $change_actor_name = $change_actor_name_meta;
+} elseif (($change_actor_name === '' || $change_actor_name === '-') && $change_actor_id_meta > 0) {
+    $r_actor = $conn->query("SELECT nama_lengkap FROM inventory_users WHERE id = " . $change_actor_id_meta . " LIMIT 1");
+    if ($r_actor && $r_actor->num_rows > 0) {
+        $change_actor_name = (string)($r_actor->fetch_assoc()['nama_lengkap'] ?? '-');
+    }
+}
 
 // Get detail items (Original)
 $original_details_data = [];
@@ -61,61 +85,124 @@ while ($row = $original_details_result->fetch_assoc()) {
     $original_details_data[$row['barang_id']] = $row;
 }
 
-// If pending edit, overwrite header values with proposed ones and prepare proposed items
+// If pending edit or has history, prepare the "diff" view
 $display_details = [];
-if ($is_pending_edit && $pending_payload) {
-    $header['tanggal'] = $pending_payload['tanggal'] ?? $header['tanggal'];
-    $header['jenis_pemakaian'] = $pending_payload['jenis_pemakaian'] ?? $header['jenis_pemakaian'];
-    $header['catatan_transaksi'] = $pending_payload['catatan_transaksi'] ?? $header['catatan_transaksi'];
+if ($has_history && $pending_payload) {
+    // If status is active, header is already the "new" version from DB.
+    // If status is pending_edit, we need to manually apply pending changes for preview.
+    if ($is_pending_edit) {
+        $header['tanggal'] = $pending_payload['tanggal'] ?? $header['tanggal'];
+        $header['jenis_pemakaian'] = $pending_payload['jenis_pemakaian'] ?? $header['jenis_pemakaian'];
+        $header['catatan_transaksi'] = $pending_payload['catatan_transaksi'] ?? $header['catatan_transaksi'];
+    }
     
-    $proposed_items_map = [];
-    if (isset($pending_payload['items']) && is_array($pending_payload['items'])) {
-        foreach ($pending_payload['items'] as $it) {
-            $bid = (int)$it['barang_id'];
-            $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = $bid")->fetch_assoc();
-            $proposed_items_map[$bid] = [
-                'barang_id' => $bid,
-                'kode_barang' => $b_res['kode_barang'] ?? '-',
-                'nama_barang' => $b_res['nama_barang'] ?? 'Unknown Item',
-                'qty' => (float)$it['qty'],
-                'satuan_display' => $it['satuan'] ?? ($b_res['satuan'] ?? '-'),
-                'catatan_item' => $it['catatan'] ?? '-'
-            ];
+    // Task Fix: If the transaction is already 'active', we should NOT show the diff view
+    // because the 'original' data in DB is already the 'new' data.
+    // We only show diff view if it's still 'pending_edit'.
+    if (!$is_pending_edit && $header['status'] === 'active') {
+        foreach ($original_details_data as $bid => $original_item) {
+            $display_details[] = $original_item;
         }
-    }
-
-    // Compare original and proposed items
-    foreach ($proposed_items_map as $bid => $proposed_item) {
-        if (isset($original_details_data[$bid])) {
-            $original_item = $original_details_data[$bid];
-            
-            $is_qty_changed = (float)$original_item['qty'] !== (float)$proposed_item['qty'];
-            $is_satuan_changed = trim((string)$original_item['satuan_display']) !== trim((string)$proposed_item['satuan_display']);
-            $is_catatan_changed = trim((string)($original_item['catatan_item'] ?? '')) !== trim((string)($proposed_item['catatan_item'] ?? ''));
-
-            if ($is_qty_changed || $is_satuan_changed || $is_catatan_changed) {
-                $proposed_item['change_type'] = 'changed';
-                $proposed_item['original_qty'] = $original_item['qty'];
-                $proposed_item['original_satuan'] = $original_item['satuan_display'];
-                $proposed_item['original_catatan'] = $original_item['catatan_item'];
-            } else {
-                $proposed_item['change_type'] = 'unchanged';
+    } else {
+        $ops = $pending_payload['items_ops'] ?? [];
+        if (is_array($ops) && !empty($ops)) {
+        $original_by_detail_id = [];
+        foreach ($original_details_data as $row) {
+            $original_by_detail_id[(int)$row['id']] = $row;
+        }
+        foreach ($ops as $op) {
+            $op_type = (string)($op['op'] ?? '');
+            if ($op_type === 'add') {
+                $bid = (int)($op['barang_id'] ?? 0);
+                $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = " . $bid . " LIMIT 1");
+                $b = $b_res ? $b_res->fetch_assoc() : [];
+                $display_details[] = [
+                    'change_type' => 'added',
+                    'barang_id' => $bid,
+                    'kode_barang' => $b['kode_barang'] ?? '-',
+                    'nama_barang' => $b['nama_barang'] ?? 'Unknown Item',
+                    'qty' => (float)($op['qty'] ?? 0),
+                    'satuan_display' => (string)($op['satuan'] ?? ($b['satuan'] ?? '-')),
+                    'catatan_item' => (string)($op['catatan_item'] ?? '')
+                ];
+                continue;
             }
-            $display_details[] = $proposed_item;
-            unset($original_details_data[$bid]); // Mark as processed
-        } else {
-            $proposed_item['change_type'] = 'added';
-            $display_details[] = $proposed_item;
+            if ($op_type === 'remove') {
+                $did = (int)($op['detail_id'] ?? 0);
+                $row = $original_by_detail_id[$did] ?? null;
+                if (!$row) continue;
+                $row['change_type'] = 'removed';
+                $display_details[] = $row;
+                continue;
+            }
+            if ($op_type === 'update') {
+                $did = (int)($op['detail_id'] ?? 0);
+                $row = $original_by_detail_id[$did] ?? null;
+                $after = $op['after'] ?? [];
+                if (!$row) continue;
+                $bid_after = (int)($after['barang_id'] ?? 0);
+                $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = " . $bid_after . " LIMIT 1");
+                $b = $b_res ? $b_res->fetch_assoc() : [];
+                $display_details[] = [
+                    'change_type' => 'changed',
+                    'barang_id' => $bid_after,
+                    'kode_barang' => $b['kode_barang'] ?? '-',
+                    'nama_barang' => $b['nama_barang'] ?? 'Unknown Item',
+                    'qty' => (float)($after['qty'] ?? 0),
+                    'satuan_display' => (string)($after['satuan'] ?? ($b['satuan'] ?? '-')),
+                    'catatan_item' => (string)($after['catatan_item'] ?? ''),
+                    'original_qty' => (float)($row['qty'] ?? 0),
+                    'original_satuan' => (string)($row['satuan_display'] ?? ''),
+                    'original_catatan' => (string)($row['catatan_item'] ?? ''),
+                    'original_nama_barang' => (string)($row['nama_barang'] ?? '-'),
+                ];
+            }
+        }
+    } else {
+        // Backward compatibility for old pending payload.
+        $proposed_items_map = [];
+        if (isset($pending_payload['items']) && is_array($pending_payload['items'])) {
+            foreach ($pending_payload['items'] as $it) {
+                $bid = (int)$it['barang_id'];
+                $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = $bid")->fetch_assoc();
+                $proposed_items_map[$bid] = [
+                    'barang_id' => $bid,
+                    'kode_barang' => $b_res['kode_barang'] ?? '-',
+                    'nama_barang' => $b_res['nama_barang'] ?? 'Unknown Item',
+                    'qty' => (float)$it['qty'],
+                    'satuan_display' => $it['satuan'] ?? ($b_res['satuan'] ?? '-'),
+                    'catatan_item' => $it['catatan'] ?? '-'
+                ];
+            }
+        }
+        foreach ($proposed_items_map as $bid => $proposed_item) {
+            if (isset($original_details_data[$bid])) {
+                $original_item = $original_details_data[$bid];
+                $is_qty_changed = (float)$original_item['qty'] !== (float)$proposed_item['qty'];
+                $is_satuan_changed = trim((string)$original_item['satuan_display']) !== trim((string)$proposed_item['satuan_display']);
+                $is_catatan_changed = trim((string)($original_item['catatan_item'] ?? '')) !== trim((string)($proposed_item['catatan_item'] ?? ''));
+                if ($is_qty_changed || $is_satuan_changed || $is_catatan_changed) {
+                    $proposed_item['change_type'] = 'changed';
+                    $proposed_item['original_qty'] = $original_item['qty'];
+                    $proposed_item['original_satuan'] = $original_item['satuan_display'];
+                    $proposed_item['original_catatan'] = $original_item['catatan_item'];
+                } else {
+                    $proposed_item['change_type'] = 'unchanged';
+                }
+                $display_details[] = $proposed_item;
+                unset($original_details_data[$bid]);
+            } else {
+                $proposed_item['change_type'] = 'added';
+                $display_details[] = $proposed_item;
+            }
+        }
+        foreach ($original_details_data as $bid => $original_item) {
+            $original_item['change_type'] = 'removed';
+            $display_details[] = $original_item;
         }
     }
-
-    // Any remaining items in original_details_data were removed
-    foreach ($original_details_data as $bid => $original_item) {
-        $original_item['change_type'] = 'removed';
-        $display_details[] = $original_item;
-    }
-    // Sort display_details for consistent output (e.g., by barang_id)
-    usort($display_details, fn($a, $b) => $a['barang_id'] <=> $b['barang_id']);
+}
+    usort($display_details, fn($a, $b) => ($a['barang_id'] <=> $b['barang_id']));
 
 } else {
     // If not pending edit, use original details from the map
@@ -124,6 +211,39 @@ if ($is_pending_edit && $pending_payload) {
     }
     // Sort for consistent output
     usort($display_details, fn($a, $b) => $a['barang_id'] <=> $b['barang_id']);
+}
+
+if (!function_exists('compact_transaction_note')) {
+    function compact_transaction_note(string $raw): string
+    {
+        $raw = trim($raw);
+        if ($raw === '') return '';
+
+        if (stripos($raw, 'Catatan Item:') === false && stripos($raw, 'Auto Deduction') === false) {
+            return $raw;
+        }
+
+        $main = preg_replace('/\bCatatan Item:\s*[\s\S]*$/i', '', $raw);
+        $main = preg_replace('/\bAuto Deduction(\s*\(.*?\))?:\s*[\s\S]*$/i', '', (string)$main);
+        $main = trim((string)$main);
+
+        preg_match_all('/Auto:\s*([A-Za-z0-9\-\/_,\s]+)/i', $raw, $m);
+        $refs = [];
+        if (!empty($m[1])) {
+            foreach ($m[1] as $chunk) {
+                foreach (preg_split('/\s*,\s*/', trim((string)$chunk)) as $ref) {
+                    $ref = trim((string)$ref);
+                    if ($ref !== '') $refs[$ref] = true;
+                }
+            }
+        }
+
+        $parts = [];
+        if ($main !== '') $parts[] = $main;
+        if (!empty($refs)) $parts[] = 'Auto Deduction: ' . implode(', ', array_keys($refs));
+
+        return trim(implode("\n\n", $parts));
+    }
 }
 ?>
 
@@ -134,6 +254,18 @@ if ($is_pending_edit && $pending_payload) {
             <div>
                 <h6 class="mb-1 fw-bold">Menunggu Persetujuan SPV</h6>
                 <p class="mb-0 small opacity-75">Detail di bawah adalah perubahan yang diusulkan oleh Admin Klinik. <br>
+                <span class="badge bg-success-subtle text-success border border-success-subtle">Ditambahkan</span> 
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Dihapus</span> 
+                <span class="badge bg-info-subtle text-info border border-info-subtle">Diubah</span>
+                </p>
+            </div>
+        </div>
+    <?php elseif ($has_history): ?>
+        <div class="alert alert-success border-0 shadow-sm rounded-3 mb-4 d-flex align-items-center">
+            <i class="fas fa-check-circle me-3 fs-4 text-success"></i>
+            <div>
+                <h6 class="mb-1 fw-bold">Transaksi Telah Diubah (Approved)</h6>
+                <p class="mb-0 small opacity-75">Detail di bawah menampilkan riwayat perubahan yang telah disetujui oleh SPV. <br>
                 <span class="badge bg-success-subtle text-success border border-success-subtle">Ditambahkan</span> 
                 <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Dihapus</span> 
                 <span class="badge bg-info-subtle text-info border border-info-subtle">Diubah</span>
@@ -209,23 +341,47 @@ if ($is_pending_edit && $pending_payload) {
     </div>
 
     <?php if (!empty($header['catatan_transaksi'])): ?>
+    <?php $catatan_transaksi_display = compact_transaction_note((string)$header['catatan_transaksi']); ?>
     <div class="note-box mb-3">
         <div class="note-box-title">
             <i class="fas fa-sticky-note me-1"></i> Catatan Transaksi
         </div>
         <div class="note-box-content">
-            <?= nl2br(htmlspecialchars($header['catatan_transaksi'])) ?>
+            <?= nl2br(htmlspecialchars($catatan_transaksi_display)) ?>
         </div>
     </div>
     <?php endif; ?>
 
-    <?php if (!empty($header['approval_reason'])): ?>
+    <?php if (!empty($header['approval_reason']) && $header['status'] !== 'active'): ?>
     <div class="note-box mb-4 border-warning bg-warning-subtle">
         <div class="note-box-title text-warning">
             <i class="fas fa-history me-1"></i> Alasan Perubahan / History
         </div>
         <div class="note-box-content text-dark fw-medium">
             <?= nl2br(htmlspecialchars($header['approval_reason'])) ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($has_history): ?>
+    <div class="note-box mb-4 border-info bg-info-subtle">
+        <div class="note-box-title text-info">
+            <i class="fas fa-file-signature me-1"></i> Riwayat Request Perubahan
+        </div>
+        <div class="note-box-content text-dark fw-medium">
+            <div><strong>Alasan perubahan:</strong> <?= htmlspecialchars((string)($request_meta['reason_label'] ?? $header['approval_reason'] ?? '-')) ?></div>
+            <div><strong>Sumber perubahan:</strong> <?= htmlspecialchars($change_source_label) ?></div>
+            <div><strong>Pelaku asal:</strong> <?= htmlspecialchars($change_actor_name) ?></div>
+            <?php if (!empty($header['spv_approved_by'])): ?>
+                <?php 
+                    $spv_id = (int)$header['spv_approved_by'];
+                    $r_spv = $conn->query("SELECT nama_lengkap FROM inventory_users WHERE id = $spv_id LIMIT 1");
+                    $spv_name = $r_spv ? ($r_spv->fetch_assoc()['nama_lengkap'] ?? '-') : '-';
+                ?>
+                <div class="mt-2 pt-2 border-top border-info-subtle small text-muted">
+                    <i class="fas fa-check-double me-1"></i> Disetujui oleh <strong><?= htmlspecialchars($spv_name) ?></strong> pada <?= date('d F Y H:i', strtotime($header['spv_approved_at'])) ?>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
     <?php endif; ?>
@@ -274,6 +430,9 @@ if ($is_pending_edit && $pending_payload) {
                                     case 'changed':
                                         $row_class = 'table-info';
                                         $change_indicator = '<i class="fas fa-edit text-info me-1"></i>';
+                                        if (!empty($detail['original_nama_barang']) && (string)$detail['original_nama_barang'] !== (string)$detail['nama_barang']) {
+                                            $change_indicator .= '<small class="text-muted">(Item: ' . htmlspecialchars((string)$detail['original_nama_barang']) . ' <i class="fas fa-arrow-right mx-1"></i> ' . htmlspecialchars((string)$detail['nama_barang']) . ')</small> ';
+                                        }
                                         $qty_display = fmt_qty($detail['original_qty']) . ' <i class="fas fa-arrow-right mx-1"></i> ' . fmt_qty($detail['qty']);
                                         $satuan_display = htmlspecialchars($detail['original_satuan']) . ' <i class="fas fa-arrow-right mx-1"></i> ' . htmlspecialchars($detail['satuan_display']);
                                         $catatan_display = htmlspecialchars($detail['original_catatan'] ?: '-') . ' <i class="fas fa-arrow-right mx-1"></i> ' . htmlspecialchars($detail['catatan_item'] ?: '-');
@@ -307,6 +466,24 @@ if ($is_pending_edit && $pending_payload) {
             </table>
         </div>
     </div>
+
+    <?php 
+    $user_role = $_SESSION['role'] ?? '';
+    $user_klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
+    $can_approve = ($user_role === 'super_admin' || ($user_role === 'spv_klinik' && (int)$header['klinik_id'] === $user_klinik_id));
+    $is_pending = (strpos((string)$header['status'], 'pending') !== false || (strpos((string)$header['nomor_pemakaian'], 'REQ-ADD-') !== false && $header['status'] !== 'active'));
+    
+    if ($can_approve && $is_pending): 
+    ?>
+    <div class="mt-4 pt-3 border-top d-flex justify-content-end gap-2" id="detailApprovalActions">
+        <button class="btn btn-outline-danger px-4 rounded-pill fw-bold reject-request" data-id="<?= $id ?>">
+            <i class="fas fa-times me-2"></i>Tolak
+        </button>
+        <button class="btn btn-success px-4 rounded-pill fw-bold approve-request" data-id="<?= $id ?>">
+            <i class="fas fa-check me-2"></i>Approve & Simpan
+        </button>
+    </div>
+    <?php endif; ?>
 </div>
 
 <style>
@@ -400,6 +577,8 @@ if ($is_pending_edit && $pending_payload) {
     font-size: 0.85rem;
     color: #2d3748;
     line-height: 1.5;
+    max-height: 120px;
+    overflow-y: auto;
 }
 
 .section-title {

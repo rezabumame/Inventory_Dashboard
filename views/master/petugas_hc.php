@@ -148,11 +148,11 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
         </div>
     </div>
 
+    <?php if ($can_choose_klinik): ?>
     <div class="card shadow-sm mb-3">
         <div class="card-body">
             <form method="GET" class="row g-2 align-items-end">
                 <input type="hidden" name="page" value="petugas_hc">
-                <?php if ($can_choose_klinik): ?>
                 <div class="col-md-6">
                     <label class="form-label fw-bold small text-muted mb-1">Klinik</label>
                     <select class="form-select" name="klinik_id" onchange="this.form.submit()">
@@ -164,17 +164,10 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <?php endif; ?>
-                <div class="col-md-6">
-                    <label class="form-label fw-bold small text-muted mb-1">Cari Petugas</label>
-                    <div class="input-group">
-                        <input type="text" class="form-control" name="q" placeholder="Nama atau username..." value="<?= htmlspecialchars($search_query) ?>">
-                        <button class="btn btn-primary" type="submit"><i class="fas fa-search"></i></button>
-                    </div>
-                </div>
             </form>
         </div>
     </div>
+    <?php endif; ?>
 
     <div class="card shadow-sm">
         <div class="card-body">
@@ -195,11 +188,12 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
                             <tr>
                                 <td>
                                     <div class="fw-semibold"><?= htmlspecialchars($p['nama_klinik']) ?></div>
-                                    <div class="small text-muted">HC Base: <?= htmlspecialchars($p['kode_homecare'] ?? '-') ?></div>
                                 </td>
                                 <td class="fw-semibold"><?= htmlspecialchars($p['nama_lengkap']) ?></td>
                                 <td><span class="badge bg-light text-dark border"><?= htmlspecialchars($p['username']) ?></span></td>
-                                <td><span class="badge bg-light text-dark border"><?= htmlspecialchars($p['kode_homecare'] ?? '-') ?></span></td>
+                                <td>
+                                    <span class="badge bg-light text-dark border"><?= htmlspecialchars(trim((string)($p['kode_homecare'] ?? '-'))) ?></span>
+                                </td>
                                 <td>
                                     <?php if (($p['status'] ?? 'active') === 'active'): ?>
                                         <span class="badge bg-success">Active</span>
