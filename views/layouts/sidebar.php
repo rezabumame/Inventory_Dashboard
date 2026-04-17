@@ -139,8 +139,11 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['super_admin', 'admin_gudang'])): ?>
+        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'])): ?>
         <div class="sidebar-heading">LAPORAN</div>
+        <a href="index.php?page=monthly_summary" class="sidebar-link <?= $current_page == 'monthly_summary' ? 'active' : '' ?>">
+            <i class="fas fa-chart-line"></i> Rekap Bulanan
+        </a>
         <a href="index.php?page=laporan_transaksi" class="sidebar-link <?= $current_page == 'laporan_transaksi' ? 'active' : '' ?>">
             <i class="fas fa-history"></i> Riwayat Transaksi
         </a>

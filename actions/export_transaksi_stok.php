@@ -7,8 +7,11 @@ if (!isset($_SESSION['user_id'])) {
     die("Unauthorized");
 }
 
-$role = (string)($_SESSION['role'] ?? '');
-if (!in_array($role, ['super_admin', 'admin_gudang'], true)) {
+$user_role = (string)($_SESSION['role'] ?? '');
+$user_klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
+$can_filter_klinik = in_array($user_role, ['super_admin', 'admin_gudang'], true);
+
+if (!in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)) {
     die("Access denied");
 }
 
@@ -17,6 +20,7 @@ $start_date = isset($_GET['start_date']) && $_GET['start_date'] !== '' ? (string
 $end_date = isset($_GET['end_date']) && $_GET['end_date'] !== '' ? (string)$_GET['end_date'] : date('Y-m-t');
 $barang_id = isset($_GET['barang_id']) ? (string)$_GET['barang_id'] : '';
 $tipe = isset($_GET['tipe']) ? (string)$_GET['tipe'] : '';
+$selected_klinik = $can_filter_klinik ? (isset($_GET['klinik_id']) ? $_GET['klinik_id'] : '') : $user_klinik_id;
 
 // Sanitize without changing intended behavior
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) $start_date = date('Y-m-01');
@@ -26,14 +30,35 @@ $tipe = trim($tipe);
 if ($tipe !== '' && !in_array($tipe, ['in', 'out'], true)) $tipe = '';
 
 // Build Query
-$sql = "SELECT t.*, b.kode_barang, b.nama_barang, u.username as user_name
+$sql = "SELECT t.*, b.kode_barang, b.nama_barang, u.username as user_name,
+        CASE 
+            WHEN t.level = 'klinik' THEN k.nama_klinik
+            WHEN t.level = 'hc' THEN CONCAT('HC: ', phc.nama_petugas, ' (', khc.nama_klinik, ')')
+            ELSE 'Gudang Utama'
+        END as unit_name
         FROM inventory_transaksi_stok t
         JOIN inventory_barang b ON t.barang_id = b.id
         LEFT JOIN inventory_users u ON t.created_by = u.id
+        LEFT JOIN inventory_klinik k ON t.level = 'klinik' AND t.level_id = k.id
+        LEFT JOIN inventory_hc_petugas phc ON t.level = 'hc' AND t.level_id = phc.id
+        LEFT JOIN inventory_klinik khc ON phc.klinik_id = khc.id
         WHERE DATE(t.created_at) BETWEEN ? AND ?";
 
 $params = [$start_date, $end_date];
 $types = "ss";
+
+// Clinic Filter Logic
+if ($selected_klinik && $selected_klinik !== 'all') {
+    $kid = (int)$selected_klinik;
+    $sql .= " AND (
+        (t.level = 'klinik' AND t.level_id = ?) 
+        OR 
+        (t.level = 'hc' AND t.level_id IN (SELECT id FROM inventory_hc_petugas WHERE klinik_id = ?))
+    )";
+    $params[] = $kid;
+    $params[] = $kid;
+    $types .= "ii";
+}
 
 if ($barang_id !== '' && $barang_id_int > 0) {
     $sql .= " AND t.barang_id = ?";
@@ -96,7 +121,7 @@ if ($result && $result->num_rows > 0) {
         echo '<td>' . htmlspecialchars($qty_sign . number_format($row['qty'])) . '</td>';
         echo '<td>' . htmlspecialchars(number_format($row['qty_sebelum'])) . '</td>';
         echo '<td>' . htmlspecialchars(number_format($row['qty_sesudah'])) . '</td>';
-        echo '<td>' . htmlspecialchars(ucfirst(str_replace('_', ' ', $row['level'] ?? '-'))) . '</td>';
+        echo '<td>' . htmlspecialchars($row['unit_name'] ?? '-') . '</td>';
         echo '<td>' . htmlspecialchars($row['referensi_tipe'] ?? '-') . '</td>';
         echo '<td>' . htmlspecialchars($row['referensi_id'] ?? '-') . '</td>';
         echo '<td>' . htmlspecialchars($row['user_name'] ?? '-') . '</td>';

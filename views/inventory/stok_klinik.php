@@ -521,8 +521,8 @@ if ($active_tab == 'stok') {
     .refresh-btn { border-width: 2px; border-radius: 10px; padding: 0.6rem 1rem; }
     .last-update { font-size: 0.875rem; color: #6c757d; }
     .text-sellout-hc { color: #dc3545 !important; }
-    .text-reserve-onsite { color: #ffc107 !important; }
-    .text-reserve-hc { color: #ffc107 !important; }
+    .text-reserve-onsite { color: #0891b2 !important; }
+    .text-reserve-hc { color: #0891b2 !important; }
 </style>
 
 <!-- TAB CONTENT: STOK KLINIK -->
@@ -1093,11 +1093,11 @@ function openStokBreakdown(barangId, namaBarang) {
                                 <?= fmt_qty($sellout_hc) ?>
                             </td>
                             <?php endif; ?>
-                            <td class="text-center <?= $reserve > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>">
+                            <td class="text-center <?= $reserve > 0 ? 'text-reserve-onsite fw-bold' : 'text-muted small' ?>">
                                 <?= fmt_qty($reserve) ?>
                             </td>
                             <?php if ($show_hc): ?>
-                            <td class="text-center <?= $reserve_hc > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>">
+                            <td class="text-center <?= $reserve_hc > 0 ? 'text-reserve-hc fw-bold' : 'text-muted small' ?>">
                                 <?= fmt_qty($reserve_hc) ?>
                             </td>
                             <?php endif; ?>

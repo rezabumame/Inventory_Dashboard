@@ -95,6 +95,10 @@ switch ($page) {
         include 'views/inventory/pemakaian_bhp_list.php';
         break;
 
+    case 'monthly_summary':
+        include 'views/laporan/monthly_summary.php';
+        break;
+
     // Pengaturan
     case 'settings_integrasi':
         include 'views/settings/integrasi.php';
