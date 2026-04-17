@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/settings.php';
+require_once __DIR__ . '/../../lib/stock.php';
 check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik']);
 
 $user_role = $_SESSION['role'];
@@ -222,10 +223,10 @@ if ($can_filter_klinik) {
                                 <?php endif; ?>
                             </td>
                             <td class="text-center fw-bold <?= $row['tipe_transaksi'] == 'in' ? 'text-success' : 'text-danger' ?>">
-                                <?= $row['tipe_transaksi'] == 'in' ? '+' : '-' ?><?= number_format($row['qty']) ?>
+                                <?= $row['tipe_transaksi'] == 'in' ? '+' : '-' ?><?= fmt_qty($row['qty']) ?>
                             </td>
-                            <td class="text-center text-muted"><?= number_format($row['qty_sebelum']) ?></td>
-                            <td class="text-center fw-bold text-dark"><?= number_format($row['qty_sesudah']) ?></td>
+                            <td class="text-center text-muted"><?= fmt_qty($row['qty_sebelum']) ?></td>
+                            <td class="text-center fw-bold text-dark"><?= fmt_qty($row['qty_sesudah']) ?></td>
                             <td>
                                 <div class="small text-dark fw-semibold"><?= $row['referensi_tipe'] ?></div>
                                 <div class="text-muted" style="font-size: 0.75rem;">ID: <?= $row['referensi_id'] ?></div>
