@@ -21,15 +21,15 @@ if ($tipe !== '' && !in_array($tipe, ['in', 'out'], true)) $tipe = '';
 $sql = "SELECT t.*, b.kode_barang, b.nama_barang, u.username as user_name,
         CASE 
             WHEN t.level = 'klinik' THEN k.nama_klinik
-            WHEN t.level = 'hc' THEN CONCAT('HC: ', phc.nama_petugas, ' (', khc.nama_klinik, ')')
+            WHEN t.level = 'hc' THEN COALESCE(CONCAT('HC: ', uhc.nama_lengkap, ' (', khc.nama_klinik, ')'), 'HC (Unknown)')
             ELSE 'Gudang Utama'
         END as unit_name
         FROM inventory_transaksi_stok t
         JOIN inventory_barang b ON t.barang_id = b.id
         LEFT JOIN inventory_users u ON t.created_by = u.id
         LEFT JOIN inventory_klinik k ON t.level = 'klinik' AND t.level_id = k.id
-        LEFT JOIN inventory_hc_petugas phc ON t.level = 'hc' AND t.level_id = phc.id
-        LEFT JOIN inventory_klinik khc ON phc.klinik_id = khc.id
+        LEFT JOIN inventory_users uhc ON t.level = 'hc' AND t.level_id = uhc.id
+        LEFT JOIN inventory_klinik khc ON uhc.klinik_id = khc.id
         WHERE DATE(t.created_at) BETWEEN ? AND ?";
 
 $params = [$start_date, $end_date];
@@ -41,7 +41,7 @@ if ($selected_klinik && $selected_klinik !== 'all') {
     $sql .= " AND (
         (t.level = 'klinik' AND t.level_id = ?) 
         OR 
-        (t.level = 'hc' AND t.level_id IN (SELECT id FROM inventory_hc_petugas WHERE klinik_id = ?))
+        (t.level = 'hc' AND t.level_id IN (SELECT id FROM inventory_users WHERE klinik_id = ?))
     )";
     $params[] = $kid;
     $params[] = $kid;
