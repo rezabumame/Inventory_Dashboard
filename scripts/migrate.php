@@ -530,6 +530,7 @@ try {
     });
     
     run_migration_task("Update: inventory_transfer_barang_detail qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transfer_barang_detail MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
+    run_migration_task("Update: inventory_pemakaian_bhp status enum", function() use ($conn) { return $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN status ENUM('active','pending_add','pending_edit','pending_delete','rejected') DEFAULT 'active'") ? "Updated" : "Failed"; });
 
     run_migration_task("Table: inventory_booking_request_dedup", function() use ($conn) { return m_ensure_table($conn, "inventory_booking_request_dedup", "CREATE TABLE IF NOT EXISTS inventory_booking_request_dedup (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -578,6 +579,7 @@ try {
         ['inventory_request_barang', 'processed_at', "TIMESTAMP NULL"],
         ['inventory_request_barang_detail', 'qty_received', "INT NOT NULL DEFAULT 0"],
         ['inventory_pemeriksaan_grup_detail', 'is_mandatory', "TINYINT(1) NOT NULL DEFAULT 1"],
+        ['inventory_pemakaian_bhp', 'user_hc_id', "INT NULL AFTER klinik_id"],
     ];
 
     foreach ($cols as $c) {
