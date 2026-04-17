@@ -20,8 +20,13 @@ if ($tipe !== '' && !in_array($tipe, ['in', 'out'], true)) $tipe = '';
 // Build Query
 $sql = "SELECT t.*, b.kode_barang, b.nama_barang, u.username as user_name,
         CASE 
-            WHEN t.level = 'klinik' THEN k.nama_klinik
-            WHEN t.level = 'hc' THEN COALESCE(CONCAT('HC: ', uhc.nama_lengkap, ' (', khc.nama_klinik, ')'), 'HC (Unknown)')
+            WHEN t.level = 'klinik' THEN COALESCE(k.nama_klinik, 'Unit Tidak Terdeteksi')
+            WHEN t.level = 'hc' THEN 
+                CASE 
+                    WHEN uhc.id IS NOT NULL THEN CONCAT('HC: ', uhc.nama_lengkap, ' (', COALESCE(khc.nama_klinik, 'Klinik Unknown'), ')')
+                    WHEN khc_direct.id IS NOT NULL THEN CONCAT('HC: General (', khc_direct.nama_klinik, ')')
+                    ELSE CONCAT('HC (ID: ', t.level_id, ')')
+                END
             ELSE 'Gudang Utama'
         END as unit_name
         FROM inventory_transaksi_stok t
@@ -30,6 +35,7 @@ $sql = "SELECT t.*, b.kode_barang, b.nama_barang, u.username as user_name,
         LEFT JOIN inventory_klinik k ON t.level = 'klinik' AND t.level_id = k.id
         LEFT JOIN inventory_users uhc ON t.level = 'hc' AND t.level_id = uhc.id
         LEFT JOIN inventory_klinik khc ON uhc.klinik_id = khc.id
+        LEFT JOIN inventory_klinik khc_direct ON t.level = 'hc' AND t.level_id = khc_direct.id
         WHERE DATE(t.created_at) BETWEEN ? AND ?";
 
 $params = [$start_date, $end_date];
@@ -41,11 +47,12 @@ if ($selected_klinik && $selected_klinik !== 'all') {
     $sql .= " AND (
         (t.level = 'klinik' AND t.level_id = ?) 
         OR 
-        (t.level = 'hc' AND t.level_id IN (SELECT id FROM inventory_users WHERE klinik_id = ?))
+        (t.level = 'hc' AND (t.level_id IN (SELECT id FROM inventory_users WHERE klinik_id = ?) OR t.level_id = ?))
     )";
     $params[] = $kid;
     $params[] = $kid;
-    $types .= "ii";
+    $params[] = $kid;
+    $types .= "iii";
 }
 
 if ($barang_id > 0) {

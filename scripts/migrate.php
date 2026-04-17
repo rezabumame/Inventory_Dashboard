@@ -11,324 +11,249 @@ if (!$is_cli) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Database Migration - Bumame Inventory</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #6366f1;
-            --primary-2: #22c55e;
-            --success: #22c55e;
-            --warn: #f59e0b;
+            --primary: #204EAB;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --success: #10b981;
             --error: #ef4444;
-            --bg: #060712;
-            --card: rgba(255,255,255,.06);
-            --card-2: rgba(255,255,255,.08);
-            --text: rgba(255,255,255,.92);
-            --text-muted: rgba(255,255,255,.62);
-            --ring: rgba(99,102,241,.45);
-            --border: rgba(255,255,255,.10);
-            --shadow: 0 20px 60px rgba(0,0,0,.45);
+            --info: #3b82f6;
+            --noop-bg: #f1f5f9;
         }
+        * { box-sizing: border-box; }
         body {
-            font-family: "Inter", sans-serif;
-            background: radial-gradient(1200px 800px at 20% 10%, rgba(99,102,241,.35), transparent 55%),
-                        radial-gradient(900px 700px at 80% 30%, rgba(34,197,94,.22), transparent 55%),
-                        radial-gradient(900px 700px at 60% 95%, rgba(245,158,11,.14), transparent 55%),
-                        var(--bg);
+            font-family: "Poppins", sans-serif;
+            background: var(--bg);
             color: var(--text);
             margin: 0;
-            padding: 2.25rem 1.25rem;
-            display: flex;
-            justify-content: center;
-            min-height: 100vh;
+            padding: 1.5rem 1rem;
+            line-height: 1.5;
         }
         .container {
             width: 100%;
-            max-width: 980px;
+            max-width: 850px;
+            margin: 0 auto;
         }
         .header {
-            margin-bottom: 1.25rem;
-            text-align: center;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
-        .header h1 {
-            font-size: 2.25rem;
+        .header-title h1 {
+            color: var(--primary);
             font-weight: 700;
+            font-size: 1.5rem;
             margin: 0;
-            letter-spacing: -0.04em;
-            background: linear-gradient(90deg, rgba(99,102,241,1), rgba(34,197,94,1));
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
+            letter-spacing: -0.02em;
         }
-        .header p {
+        .header-title p {
             color: var(--text-muted);
-            margin-top: 0.65rem;
+            margin: 4px 0 0 0;
+            font-size: 0.875rem;
         }
         .card {
             background: var(--card);
-            border-radius: 1.25rem;
-            box-shadow: var(--shadow);
-            padding: 1.1rem;
-            overflow: hidden;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px -5px rgba(0,0,0,0.07);
+            padding: 2rem;
             border: 1px solid var(--border);
-            backdrop-filter: blur(14px);
         }
-        .topbar {
-            background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
-            border: 1px solid var(--border);
-            border-radius: 1.1rem;
-            padding: 0.95rem 1rem;
-            margin-bottom: 0.9rem;
+        .stats-grid {
             display: grid;
-            gap: 0.75rem;
-        }
-        .toprow {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            grid-template-columns: repeat(4, 1fr);
             gap: 1rem;
-            flex-wrap: wrap;
+            margin-bottom: 2rem;
         }
-        .brand {
-            display: flex;
-            align-items: center;
-            gap: .75rem;
-            min-width: 260px;
-        }
-        .pulse {
-            width: 12px;
-            height: 12px;
-            border-radius: 999px;
-            background: rgba(34,197,94,1);
-            box-shadow: 0 0 0 0 rgba(34,197,94,.55);
-            animation: pulse 1.2s infinite;
-        }
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(34,197,94,.55); }
-            70% { box-shadow: 0 0 0 12px rgba(34,197,94,0); }
-            100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
-        }
-        .brand-title {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 2px;
-        }
-        .brand-title .t1 { font-weight: 700; letter-spacing: -0.02em; }
-        .brand-title .t2 { font-size: 0.82rem; color: var(--text-muted); }
-        .chips {
-            display: flex;
-            gap: .5rem;
-            flex-wrap: wrap;
-            justify-content: flex-end;
-        }
-        .chip {
-            font-size: 0.78rem;
-            padding: 0.28rem 0.55rem;
-            border-radius: 999px;
+        .stat-card {
+            padding: 1rem;
+            background: var(--bg);
+            border-radius: 12px;
             border: 1px solid var(--border);
-            background: rgba(255,255,255,.05);
-            color: var(--text);
+            transition: transform 0.2s;
         }
-        .chip b { font-weight: 700; }
-        .progress {
-            height: 12px;
-            border-radius: 999px;
-            background: rgba(255,255,255,.06);
-            border: 1px solid var(--border);
+        .stat-card:hover { transform: translateY(-2px); }
+        .stat-val { display: block; font-weight: 700; color: var(--text); font-size: 1.25rem; line-height: 1.2; }
+        .stat-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
+        
+        .progress-container {
+            margin-bottom: 2.5rem;
+        }
+        .progress-bar-bg {
+            height: 8px;
+            background: var(--border);
+            border-radius: 10px;
             overflow: hidden;
             position: relative;
         }
-        .progress > .bar {
-            height: 100%;
-            width: 0%;
-            border-radius: 999px;
-            background: linear-gradient(90deg, rgba(99,102,241,1), rgba(34,197,94,1), rgba(245,158,11,1));
-            transition: width .25s ease;
+        #pbar { 
+            height: 100%; 
+            background: linear-gradient(90deg, var(--primary), #3b82f6); 
+            width: 0%; 
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); 
         }
-        .progress > .shine {
-            position: absolute;
-            top: -50%;
-            left: -30%;
-            width: 35%;
-            height: 200%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent);
-            transform: rotate(18deg);
-            animation: shine 1.25s linear infinite;
-            pointer-events: none;
-        }
-        @keyframes shine {
-            0% { left: -30%; }
-            100% { left: 120%; }
-        }
-        .filters {
+
+        .tabs-nav {
             display: flex;
-            gap: .5rem;
-            flex-wrap: wrap;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
         }
-        .btn {
-            appearance: none;
-            border: 1px solid var(--border);
-            background: rgba(255,255,255,.04);
-            color: var(--text);
-            padding: 0.45rem 0.65rem;
-            border-radius: 0.85rem;
-            font-size: 0.82rem;
+        .tab-btn {
+            padding: 0.75rem 0.25rem;
             cursor: pointer;
-            transition: transform .12s ease, background .12s ease, border-color .12s ease;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            border-bottom: 3px solid transparent;
+            position: relative;
+            transition: all 0.2s;
         }
-        .btn:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.18); background: rgba(255,255,255,.06); }
-        .btn.active { outline: 2px solid var(--ring); border-color: rgba(99,102,241,.55); background: rgba(99,102,241,.14); }
-        .task-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
+        .tab-btn:hover { color: var(--primary); }
+        .tab-btn.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
         }
+        .tab-btn .count-badge {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 20px;
+            margin-left: 6px;
+            background: var(--border);
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+        .tab-btn.active .count-badge { background: var(--primary); color: #fff; }
+
+        .task-list { list-style: none; padding: 0; margin: 0; }
         .task-item {
             display: flex;
-            align-items: center;
-            padding: 0.85rem 0.85rem;
-            border-bottom: 1px solid rgba(255,255,255,.08);
-            gap: 0.75rem;
-            border-radius: 0.95rem;
-            margin: 0.25rem 0;
-            background: rgba(255,255,255,.02);
-            animation: pop .22s ease;
+            align-items: flex-start;
+            padding: 1rem;
+            border-radius: 10px;
+            margin-bottom: 0.5rem;
+            background: #fff;
+            border: 1px solid transparent;
+            transition: all 0.2s;
         }
-        @keyframes pop {
-            from { transform: translateY(6px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-        .task-item:last-child {
-            border-bottom: none;
-        }
-        .task-status {
+        .task-item:hover { border-color: var(--border); background: var(--bg); }
+        .task-icon-box {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 2.1rem;
-            height: 2.1rem;
-            border-radius: 0.75rem;
-            background: rgba(255,255,255,.06);
-            border: 1px solid rgba(255,255,255,.10);
-            flex: 0 0 auto;
+            margin-right: 1rem;
+            flex-shrink: 0;
+            font-size: 1.1rem;
         }
-        .task-status.success { color: var(--success); }
-        .task-status.noop { color: rgba(199,210,254,1); }
-        .task-status.error { color: var(--error); }
-        .task-info {
-            flex-grow: 1;
-            min-width: 0;
+        .task-content { flex: 1; min-width: 0; }
+        .task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+        .task-name { font-weight: 600; font-size: 0.95rem; color: var(--text); }
+        .task-msg { font-size: 0.8rem; color: var(--text-muted); }
+        
+        .status-badge {
+            font-size: 0.65rem;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
         }
-        .task-name {
-            font-weight: 600;
-            font-size: 0.92rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.75rem;
-        }
-        .task-desc {
-            font-size: 0.8125rem;
-            color: var(--text-muted);
-        }
-        .footer {
-            margin-top: 2rem;
-            text-align: center;
-            font-size: 0.875rem;
-            color: var(--text-muted);
-        }
-        .badge {
-            font-size: 0.75rem;
-            padding: 0.125rem 0.5rem;
-            border-radius: 9999px;
-            font-weight: 600;
-            margin-left: 0.5rem;
-            border: 1px solid rgba(255,255,255,.10);
-        }
-        .badge-success { background: rgba(34,197,94,.14); color: rgba(187,247,208,1); }
-        .badge-info { background: rgba(99,102,241,.14); color: rgba(199,210,254,1); }
-        .badge-error { background: rgba(239,68,68,.14); color: rgba(254,202,202,1); }
-        .badge-warn { background: rgba(245,158,11,.14); color: rgba(253,230,138,1); }
-        .muted { color: var(--text-muted); }
-        .sr {
-            position: absolute !important;
-            width: 1px; height: 1px;
-            padding: 0; margin: -1px;
-            overflow: hidden; clip: rect(0, 0, 0, 0);
-            white-space: nowrap; border: 0;
-        }
-        .confetti {
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            overflow: hidden;
-            z-index: 50;
-        }
-        .confetti i {
-            position: absolute;
-            width: 10px;
-            height: 14px;
-            background: rgba(99,102,241,1);
-            top: -30px;
-            border-radius: 2px;
-            opacity: .9;
-            animation: fall 1.4s linear forwards;
-        }
+        
+        .bg-changed { background: rgba(16, 185, 129, 0.1); color: #059669; }
+        .bg-noop { background: rgba(100, 116, 139, 0.1); color: #475569; }
+        .bg-error { background: rgba(239, 68, 68, 0.1); color: #dc2626; }
+        
+        .icon-changed { background: #dcfce7; color: #166534; }
+        .icon-noop { background: #f1f5f9; color: #475569; }
+        .icon-error { background: #fee2e2; color: #991b1b; }
+
+        #history-tasks-list { opacity: 0.8; }
+        #history-tasks-list .task-item { background: #fcfcfc; }
+
+        .footer { text-align: center; margin-top: 2rem; font-size: 0.8rem; color: var(--text-muted); }
+        
+        #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 100; overflow: hidden; }
+        #confetti i { position: absolute; top: -20px; animation: fall linear forwards; }
         @keyframes fall {
-            to { transform: translateY(calc(100vh + 60px)) rotate(260deg); opacity: 1; }
+            to { transform: translateY(105vh) rotate(360deg); }
         }
-        @media (prefers-reduced-motion: reduce) {
-            .pulse, .progress > .shine, .task-item, .confetti i { animation: none !important; }
-            .progress > .bar { transition: none !important; }
-        }
+
+        /* Hide items being echoed by PHP initially */
+        #php-buffer { display: none; }
     </style>
 </head>
 <body>
-    <div class="confetti" id="confetti" aria-hidden="true"></div>
+    <div id="confetti"></div>
     <div class="container">
         <div class="header">
-            <h1>System Migration</h1>
-            <p>Verifying and updating database schema...</p>
+            <div class="header-title">
+                <h1>Database Migration</h1>
+                <p>Ensuring system schema & data integrity</p>
+            </div>
+            <div class="header-action">
+                <span class="status-badge bg-changed" id="sync-status">Live Sync</span>
+            </div>
         </div>
+        
         <div class="card">
-            <div class="topbar">
-                <div class="toprow">
-                    <div class="brand">
-                        <div class="pulse" title="Running"></div>
-                        <div class="brand-title">
-                            <div class="t1">Migration Live Console</div>
-                            <div class="t2">Streaming progress in real-time</div>
-                        </div>
-                    </div>
-                    <div class="chips" aria-label="Migration counters">
-                        <div class="chip">Total: <b id="c-total">0</b></div>
-                        <div class="chip">Changed: <b id="c-changed">0</b></div>
-                        <div class="chip">No-op: <b id="c-noop">0</b></div>
-                        <div class="chip">Errors: <b id="c-error">0</b></div>
-                    </div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="stat-label">Total Tasks</span>
+                    <span class="stat-val" id="c-total">0</span>
                 </div>
-                <div class="progress" aria-label="Progress">
-                    <div class="bar" id="pbar"></div>
-                    <div class="shine" aria-hidden="true"></div>
+                <div class="stat-card">
+                    <span class="stat-label" style="color:#059669">Changed</span>
+                    <span class="stat-val" id="c-changed">0</span>
                 </div>
-                <div class="toprow">
-                    <div class="filters" aria-label="Filters">
-                        <button class="btn active" data-filter="all" type="button">All</button>
-                        <button class="btn" data-filter="changed" type="button">Changed</button>
-                        <button class="btn" data-filter="noop" type="button">No-op</button>
-                        <button class="btn" data-filter="error" type="button">Error</button>
-                    </div>
-                    <div class="muted" style="font-size:.82rem">
-                        <span title="Ada perubahan di DB / data">✅ <b>CHANGED</b></span>
-                        <span style="margin:0 .4rem;opacity:.55">•</span>
-                        <span title="Tidak ada perubahan (sudah sesuai / dilewati)">⬜ <b>NO-OP</b></span>
-                        <span style="margin:0 .4rem;opacity:.55">•</span>
-                        <span title="Terjadi error saat task dijalankan">❌ <b>ERROR</b></span>
-                        <span style="margin-left:.6rem;opacity:.65">— klik filter untuk fokus</span>
-                    </div>
+                <div class="stat-card">
+                    <span class="stat-label" style="color:#475569">Already Fixed</span>
+                    <span class="stat-val" id="c-noop">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label" style="color:#dc2626">Errors</span>
+                    <span class="stat-val" id="c-error">0</span>
                 </div>
             </div>
-            <ul class="task-list">';
+
+            <div class="progress-container">
+                <div class="progress-bar-bg">
+                    <div id="pbar"></div>
+                </div>
+            </div>
+
+            <div class="tabs-nav">
+                <div class="tab-btn active" data-tab="new">
+                    New Updates <span id="c-new-badge" class="count-badge">0</span>
+                </div>
+                <div class="tab-btn" data-tab="history">
+                    Already Fixed <span id="c-history-badge" class="count-badge">0</span>
+                </div>
+            </div>
+
+            <div id="new-tasks-container">
+                <ul class="task-list" id="new-tasks-list"></ul>
+            </div>
+            <div id="history-tasks-container" style="display:none">
+                <ul class="task-list" id="history-tasks-list"></ul>
+            </div>
+            
+            <!-- PHP Output Buffer -->
+            <div id="php-buffer"></div>
+        </div>
+        
+        <div class="footer">
+            Bumame Inventory System &bull; &copy; 2026 &bull; Stable Release 2.1
+        </div>
+    </div>
+</body>';
 }
 
 function table_exists(mysqli $conn, string $table): bool {
@@ -368,25 +293,32 @@ function run_migration_task(string $name, callable $callback) {
         $displayText = $message ?: $detail;
         $is_noop = ($status === 'success') && preg_match('/^(Already|Skipped|Table not found)/i', trim((string)$detail));
         $kind = ($status === 'success') ? ($is_noop ? 'noop' : 'changed') : 'error';
-        $icon = ($kind === 'changed') ? '✅' : (($kind === 'noop') ? '⬜' : '❌');
-        $statusClass = ($kind === 'changed') ? 'success' : (($kind === 'noop') ? 'noop' : 'error');
-        $badgeClass = ($kind === 'changed') ? 'badge-success' : (($kind === 'noop') ? 'badge-info' : 'badge-error');
-        $kindLabel = ($kind === 'changed') ? 'CHANGED' : (($kind === 'noop') ? 'NO-OP' : 'ERROR');
-        $kindBadge = ($kind === 'changed') ? 'badge-success' : (($kind === 'noop') ? 'badge-info' : 'badge-error');
         
-        echo '<li class="task-item" data-kind="' . $kind . '">
-            <div class="task-status ' . $statusClass . '" title="' . htmlspecialchars($kindLabel) . '">' . $icon . '</div>
-            <div class="task-info">
-                <div class="task-name">
-                    <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' . htmlspecialchars($name) . '</span>
-                    <span style="display:flex;align-items:center;gap:.45rem;flex:0 0 auto;">
-                        <span class="badge ' . $kindBadge . '" style="letter-spacing:.08em;font-size:.68rem;padding:.15rem .45rem;">' . $kindLabel . '</span>
-                        <span class="badge ' . $badgeClass . '">' . htmlspecialchars($displayText) . '</span>
-                    </span>
-                </div>
-            </div>
-        </li>';
-        // Flush output buffer to show progress
+        $icon = ($kind === 'changed') ? 'check' : (($kind === 'noop') ? 'minus' : 'times');
+        $statusLabel = ($kind === 'changed') ? 'CHANGED' : (($kind === 'noop') ? 'NO-OP' : 'ERROR');
+        
+        // Output into the hidden buffer
+        echo '<script>
+            (function() {
+                const li = document.createElement("li");
+                li.className = "task-item";
+                li.dataset.kind = "' . $kind . '";
+                li.innerHTML = `
+                    <div class="task-icon-box icon-' . $kind . '">
+                        <i class="fas fa-' . $icon . '"></i>
+                    </div>
+                    <div class="task-content">
+                        <div class="task-header">
+                            <span class="task-name">' . htmlspecialchars($name) . '</span>
+                            <span class="status-badge bg-' . $kind . '">' . $statusLabel . '</span>
+                        </div>
+                        <div class="task-msg">' . htmlspecialchars($displayText) . '</div>
+                    </div>
+                `;
+                document.getElementById("php-buffer").appendChild(li);
+            })();
+        </script>';
+        
         if (ob_get_level() > 0) ob_flush();
         flush();
     }
@@ -746,55 +678,64 @@ if (!$is_cli) {
 </body>
 <script>
 (function () {
-  const list = document.querySelector(".task-list");
+  const phpBuffer = document.getElementById("php-buffer");
+  const newTasksList = document.getElementById("new-tasks-list");
+  const historyTasksList = document.getElementById("history-tasks-list");
+  const newTasksContainer = document.getElementById("new-tasks-container");
+  const historyTasksContainer = document.getElementById("history-tasks-container");
+  
   const totalEl = document.getElementById("c-total");
   const changedEl = document.getElementById("c-changed");
   const noopEl = document.getElementById("c-noop");
   const errEl = document.getElementById("c-error");
+  const newBadge = document.getElementById("c-new-badge");
+  const historyBadge = document.getElementById("c-history-badge");
   const pbar = document.getElementById("pbar");
   const confetti = document.getElementById("confetti");
-  const btns = Array.from(document.querySelectorAll("[data-filter]"));
+  const tabs = Array.from(document.querySelectorAll(".tab-btn"));
 
-  function classify(li) {
-    if (li.dataset && li.dataset.kind) return li.dataset.kind;
-    const badge = li.querySelector(".badge");
-    const status = li.querySelector(".task-status");
-    const text = (badge ? badge.textContent : "").trim().toLowerCase();
-    const icon = status ? status.textContent.trim() : "";
-    const isError = li.querySelector(".task-status.error") || icon === "❌";
-    const isNoop = icon === "⬜" || /^already|^skipped|^table not found/.test(text);
-    li.dataset.kind = isError ? "error" : (isNoop ? "noop" : "changed");
-    return li.dataset.kind;
+  function moveTask(li) {
+    const kind = li.dataset.kind;
+    if (kind === "noop") {
+        historyTasksList.appendChild(li);
+    } else {
+        newTasksList.appendChild(li);
+    }
+    recount();
   }
 
   function recount() {
-    const items = Array.from(list.querySelectorAll("li.task-item"));
+    const allItems = Array.from(document.querySelectorAll("li.task-item"));
     let changed = 0, noop = 0, err = 0;
-    for (const li of items) {
-      const kind = li.dataset.kind || classify(li);
+    
+    for (const li of allItems) {
+      const kind = li.dataset.kind;
       if (kind === "changed") changed++;
       else if (kind === "noop") noop++;
       else if (kind === "error") err++;
     }
-    const total = items.length;
-    if (totalEl) totalEl.textContent = String(total);
+    
+    if (totalEl) totalEl.textContent = String(allItems.length);
     if (changedEl) changedEl.textContent = String(changed);
     if (noopEl) noopEl.textContent = String(noop);
     if (errEl) errEl.textContent = String(err);
+    
+    if (newBadge) newBadge.textContent = String(changed + err);
+    if (historyBadge) historyBadge.textContent = String(noop);
 
-    // Unknown total count: use a “soft” progress (approaches 100%).
     if (pbar) {
-      const soft = 100 * (1 - Math.pow(0.93, total));
-      pbar.style.width = Math.min(99, Math.max(6, soft)) + "%";
-    }
-
-    // Heuristic: last task name indicates end.
-    const doneHint = total > 0 && items[items.length - 1].textContent.includes("Data: replace PBH in catatan");
-    if (doneHint && pbar) {
-      pbar.style.width = "100%";
-      if (err === 0) fireConfetti();
-      const pulse = document.querySelector(".pulse");
-      if (pulse) pulse.style.background = err === 0 ? "rgba(34,197,94,1)" : "rgba(239,68,68,1)";
+      const total = allItems.length || 1;
+      const progress = ((changed + noop + err) / total) * 100;
+      pbar.style.width = Math.min(100, progress) + "%";
+      
+      if (progress >= 100 && err === 0) {
+          fireConfetti();
+          document.getElementById("sync-status").textContent = "Completed";
+          document.getElementById("sync-status").className = "status-badge bg-changed";
+      } else if (progress >= 100 && err > 0) {
+          document.getElementById("sync-status").textContent = "Done with Errors";
+          document.getElementById("sync-status").className = "status-badge bg-error";
+      }
     }
   }
 
@@ -803,47 +744,53 @@ if (!$is_cli) {
     if (confettiFired || !confetti) return;
     confettiFired = true;
     const colors = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#a78bfa"];
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 60; i++) {
       const p = document.createElement("i");
       const left = Math.random() * 100;
-      const delay = Math.random() * 0.35;
-      const dur = 1.05 + Math.random() * 0.85;
+      const delay = Math.random() * 0.5;
+      const dur = 1.5 + Math.random() * 1.5;
       const rot = Math.random() * 360;
+      const size = 6 + Math.random() * 6;
       p.style.left = left + "vw";
       p.style.animationDelay = delay + "s";
       p.style.animationDuration = dur + "s";
       p.style.transform = `rotate(${rot}deg)`;
       p.style.background = colors[i % colors.length];
-      p.style.opacity = String(0.7 + Math.random() * 0.3);
-      p.style.width = (7 + Math.random() * 8) + "px";
-      p.style.height = (10 + Math.random() * 10) + "px";
+      p.style.width = size + "px";
+      p.style.height = (size * 1.5) + "px";
+      p.style.borderRadius = "2px";
       confetti.appendChild(p);
-      setTimeout(() => p.remove(), (delay + dur) * 1000 + 300);
+      setTimeout(() => p.remove(), (delay + dur) * 1000 + 500);
     }
   }
 
-  function setFilter(kind) {
-    for (const li of list.querySelectorAll("li.task-item")) {
-      const k = li.dataset.kind || classify(li);
-      li.style.display = (kind === "all" || k === kind) ? "" : "none";
+  function setTab(tab) {
+    if (tab === "new") {
+        newTasksContainer.style.display = "";
+        historyTasksContainer.style.display = "none";
+    } else {
+        newTasksContainer.style.display = "none";
+        historyTasksContainer.style.display = "";
     }
-    for (const b of btns) b.classList.toggle("active", b.dataset.filter === kind);
+    for (const t of tabs) t.classList.toggle("active", t.dataset.tab === tab);
   }
 
-  for (const b of btns) b.addEventListener("click", () => setFilter(b.dataset.filter));
+  for (const t of tabs) t.addEventListener("click", () => setTab(t.dataset.tab));
 
-  if (list) {
-    const obs = new MutationObserver((muts) => {
-      for (const m of muts) {
-        for (const node of m.addedNodes) {
-          if (node && node.nodeType === 1 && node.matches && node.matches("li.task-item")) classify(node);
+  const obs = new MutationObserver((muts) => {
+    for (const m of muts) {
+      for (const node of m.addedNodes) {
+        if (node && node.nodeType === 1 && node.matches && node.matches("li.task-item")) {
+            moveTask(node);
         }
       }
-      recount();
-    });
-    obs.observe(list, { childList: true });
-  }
-
+    }
+  });
+  
+  obs.observe(phpBuffer, { childList: true });
+  
+  // Initial check for any existing items
+  Array.from(phpBuffer.children).forEach(moveTask);
   recount();
 })();
 </script>
