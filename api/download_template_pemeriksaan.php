@@ -29,13 +29,14 @@ $sql = "SELECT
             g.nama_pemeriksaan AS paket,
             d.id_biosys,
             d.nama_layanan,
-            d.barang_id,
+            COALESCE(NULLIF(b.kode_barang, ''), b.odoo_product_id) AS code_barang,
             b.nama_barang AS consumables,
             d.qty_per_pemeriksaan AS qty,
-            b.satuan AS uom
+            COALESCE(NULLIF(uc.to_uom, ''), b.satuan) AS uom
         FROM inventory_pemeriksaan_grup g
         LEFT JOIN inventory_pemeriksaan_grup_detail d ON g.id = d.pemeriksaan_grup_id
         LEFT JOIN inventory_barang b ON d.barang_id = b.id
+        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         ORDER BY g.id ASC, d.id_biosys ASC, b.nama_barang ASC";
 
 $res = $conn->query($sql);
@@ -46,16 +47,16 @@ if ($res && $res->num_rows > 0) {
             (string)$row['paket'],
             (string)($row['id_biosys'] ?? ''),
             (string)($row['nama_layanan'] ?? ''),
-            (string)($row['barang_id'] ?? ''),
+            (string)($row['code_barang'] ?? ''),
             (string)($row['consumables'] ?? ''),
             (string)($row['qty'] ?? ''),
             (string)($row['uom'] ?? '')
         ];
     }
 } else {
-    // If no data, add examples
+    // If no data, add examples using Codes
+    $data[] = ['PKT450', 'Paket Anemia', '191001', 'Hematologi Lengkap', '506', 'Plester Medis', '1', 'Pcs'];
     $data[] = ['PKT450', 'Paket Anemia', '191001', 'Hematologi Lengkap', '491', 'Tabung Vaccutainer Ungu', '1', 'Tube'];
-    $data[] = ['PKT450', 'Paket Anemia', '191001', 'Hematologi Lengkap', '10', 'Vaccutainer Needle 22', '1', 'Pcs'];
 }
 
 SimpleXLSXGen::fromArray($data)->downloadAs('Template_Pemeriksaan.xlsx');
