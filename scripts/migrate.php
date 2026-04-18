@@ -474,6 +474,21 @@ try {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
 
     // Columns
+    run_migration_task("Update: inventory_pemeriksaan_grup id to VARCHAR", function() use ($conn) {
+        $conn->query("ALTER TABLE inventory_pemeriksaan_grup MODIFY id VARCHAR(50) NOT NULL");
+        return "Updated";
+    });
+
+    run_migration_task("Update: inventory_pemeriksaan_grup_detail grup_id to VARCHAR", function() use ($conn) {
+        $conn->query("ALTER TABLE inventory_pemeriksaan_grup_detail MODIFY pemeriksaan_grup_id VARCHAR(50) NOT NULL");
+        return "Updated";
+    });
+
+    run_migration_task("Update: inventory_booking_pasien grup_id to VARCHAR", function() use ($conn) {
+        $conn->query("ALTER TABLE inventory_booking_pasien MODIFY pemeriksaan_grup_id VARCHAR(50) NOT NULL");
+        return "Updated";
+    });
+
     $cols = [
         ['inventory_barang', 'kode_barang', "VARCHAR(64) NULL"],
         ['inventory_barang', 'nama_barang', "VARCHAR(255) NULL"],
@@ -483,6 +498,7 @@ try {
         ['inventory_barang', 'odoo_product_id', "VARCHAR(64) NULL"],
         ['inventory_barang', 'uom', "VARCHAR(64) NULL"],
         ['inventory_barang', 'barcode', "VARCHAR(64) NULL"],
+        ['inventory_barang', 'tipe', "ENUM('Core', 'Support') DEFAULT NULL AFTER kategori"],
         ['inventory_booking_pemeriksaan', 'booking_type', "VARCHAR(10) NULL"],
         ['inventory_booking_pemeriksaan', 'jam_layanan', "VARCHAR(10) NULL"],
         ['inventory_booking_pemeriksaan', 'jotform_submitted', "TINYINT(1) NOT NULL DEFAULT 0"],
@@ -511,6 +527,9 @@ try {
         ['inventory_request_barang', 'processed_at', "TIMESTAMP NULL"],
         ['inventory_request_barang_detail', 'qty_received', "INT NOT NULL DEFAULT 0"],
         ['inventory_pemeriksaan_grup_detail', 'is_mandatory', "TINYINT(1) NOT NULL DEFAULT 1"],
+        ['inventory_pemeriksaan_grup_detail', 'id_biosys', "VARCHAR(50) DEFAULT NULL AFTER pemeriksaan_grup_id"],
+        ['inventory_pemeriksaan_grup_detail', 'nama_layanan', "VARCHAR(255) DEFAULT NULL AFTER id_biosys"],
+        ['inventory_pemeriksaan_grup', 'created_at', "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"],
         ['inventory_pemakaian_bhp', 'user_hc_id', "INT NULL AFTER klinik_id"],
     ];
 
@@ -520,7 +539,14 @@ try {
         });
     }
 
-    run_migration_task("Update: inventory_pemakaian_bhp tanggal type", function() use ($conn) { return $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN tanggal DATETIME NOT NULL") ? "Updated" : "Failed"; });
+    // Initial settings for GSheet sync
+    run_migration_task("Data: GSheet Sync Settings", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_app_settings')) return "Table not found";
+        $conn->query("INSERT IGNORE INTO inventory_app_settings (k, v) VALUES ('gsheet_exam_url', '')");
+        $conn->query("INSERT IGNORE INTO inventory_app_settings (k, v) VALUES ('gsheet_exam_sheet', '')");
+        $conn->query("INSERT IGNORE INTO inventory_app_settings (k, v) VALUES ('gsheet_exam_mapping', '{}')");
+        return "Settings Initialized";
+    });
 
     // Indexes
     run_migration_task("Index: inventory_barang uniq_odoo", function() use ($conn) { return m_ensure_unique_if_clean($conn, 'inventory_barang', 'odoo_product_id', 'uniq_odoo_product_id'); });

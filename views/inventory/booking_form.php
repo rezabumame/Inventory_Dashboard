@@ -163,9 +163,11 @@ foreach ($kliniks as $k) {
         $is_possible = true;
         
         if (!isset($recipes[$eid]) || empty($recipes[$eid])) {
-            $max_possible = 0;
-            $is_possible = false;
+            $max_possible = 999999;
+            $is_possible = true;
+            $no_mapping = true;
         } else {
+            $no_mapping = false;
             foreach ($recipes[$eid] as $ing) {
                 $bid = $ing['barang_id'];
                 $req = $ing['qty_per_pemeriksaan'];
@@ -184,11 +186,12 @@ foreach ($kliniks as $k) {
         }
         
         // Only add if ready > 0 (as requested)
-        if ($is_possible && $max_possible > 0) {
+        if ($is_possible) {
             $availability_map[$kid][] = [
                 'id' => $eid,
                 'name' => $ename,
-                'qty' => $max_possible
+                'qty' => $max_possible,
+                'no_mapping' => $no_mapping
             ];
         }
     }
@@ -498,7 +501,13 @@ function updateExamOptions(klinikId) {
     } else {
         currentExamOptions = '<option value="">- Pilih Pemeriksaan -</option>';
         availData[klinikId].forEach(function(ex) {
-            currentExamOptions += `<option value="${ex.id}">${ex.name} (Ready: ${ex.qty})</option>`;
+            var readyText = '';
+            if (ex.no_mapping) {
+                readyText = '(Input Manual di BHP)';
+            } else {
+                readyText = `(Ready: ${ex.qty})`;
+            }
+            currentExamOptions += `<option value="${ex.id}">${ex.name} ${readyText}</option>`;
         });
     }
 

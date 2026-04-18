@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../../config/settings.php';
 check_role(['super_admin']);
 
 // Fetch Groups
@@ -6,16 +7,27 @@ $groups = $conn->query("
     SELECT 
         g.id,
         g.nama_pemeriksaan,
+        g.created_at,
         COUNT(d.id) AS total_items
     FROM inventory_pemeriksaan_grup g
     LEFT JOIN inventory_pemeriksaan_grup_detail d ON d.pemeriksaan_grup_id = g.id
-    GROUP BY g.id, g.nama_pemeriksaan
-    ORDER BY g.nama_pemeriksaan ASC
-    LIMIT 500
+    GROUP BY g.id, g.nama_pemeriksaan, g.created_at
+    ORDER BY g.created_at DESC
 ");
 
 // Fetch Barang for Dropdown
-$barangs = $conn->query("SELECT id, kode_barang, nama_barang, satuan FROM inventory_barang WHERE kode_barang IS NOT NULL AND kode_barang <> '' ORDER BY nama_barang ASC");
+$barangs = $conn->query("
+    SELECT 
+        b.id, 
+        b.kode_barang, 
+        b.nama_barang, 
+        COALESCE(NULLIF(uc.to_uom, ''), b.satuan) AS satuan, 
+        b.tipe 
+    FROM inventory_barang b
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    WHERE b.kode_barang IS NOT NULL AND b.kode_barang <> '' 
+    ORDER BY b.nama_barang ASC
+");
 $barang_opts = [];
 while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
 ?>
@@ -34,6 +46,9 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
             </nav>
         </div>
         <div class="col-auto text-end">
+            <button class="btn btn-outline-primary btn-sm me-2" id="btnConfigGSheet">
+                <i class="fas fa-cog me-1"></i>Config GSheet
+            </button>
             <button class="btn btn-outline-success btn-sm me-2" data-bs-toggle="modal" data-bs-target="#modalImport">
                 <i class="fas fa-file-import me-1"></i>Import
             </button>
@@ -75,6 +90,40 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
         color: white !important;
         border-color: #0dcaf0 !important;
     }
+    /* Expand Row Styles */
+    .btn-toggle-detail {
+        cursor: pointer;
+        color: #204EAB;
+        width: 30px;
+        text-align: center;
+        font-size: 0.9rem;
+    }
+    .main-row {
+        cursor: pointer;
+    }
+    .main-row:hover {
+        background-color: rgba(32, 78, 171, 0.05) !important;
+    }
+    .detail-row {
+        background-color: #fcfcfc;
+        display: none;
+    }
+    .detail-container {
+        padding: 15px;
+        border-left: 4px solid #204EAB;
+    }
+    .table-detail th {
+        background-color: #e9ecef !important;
+        font-size: 0.7rem !important;
+        color: #495057 !important;
+    }
+    .extra-small {
+        font-size: 0.7rem;
+    }
+    .btn-xs {
+        padding: 0.1rem 0.4rem;
+        font-size: 0.7rem;
+    }
 </style>
 
 <div class="row">
@@ -82,26 +131,32 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
         <div class="card shadow-sm border-0">
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-hover table-sm align-middle" id="examTable">
+                    <table class="table table-sm align-middle" id="examTable">
                         <thead class="table-light">
                             <tr>
-                                <th>Nama Pemeriksaan</th>
+                                <th width="40"></th>
+                                <th width="120">ID Paket</th>
+                                <th>Nama Paket</th>
                                 <th width="120" class="text-center">Item</th>
-                                <th width="140">Aksi</th>
+                                <th width="100">Aksi</th>
+                                <th class="d-none">Created At</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php while($g = $groups->fetch_assoc()): ?>
-                                <tr data-grup-id="<?= (int)$g['id'] ?>" data-grup-nama="<?= htmlspecialchars($g['nama_pemeriksaan'], ENT_QUOTES) ?>">
+                                <tr class="main-row" data-grup-id="<?= htmlspecialchars($g['id'], ENT_QUOTES) ?>" data-grup-nama="<?= htmlspecialchars($g['nama_pemeriksaan'], ENT_QUOTES) ?>">
+                                    <td>
+                                        <div class="btn-toggle-detail" title="Lihat Detail">
+                                            <i class="fas fa-caret-right"></i>
+                                        </div>
+                                    </td>
+                                    <td class="fw-bold text-primary"><?= htmlspecialchars($g['id']) ?></td>
                                     <td class="fw-semibold"><?= htmlspecialchars($g['nama_pemeriksaan']) ?></td>
                                     <td class="text-center">
                                         <span class="badge bg-light text-dark border" data-role="total-items"><?= (int)$g['total_items'] ?></span>
                                     </td>
                                     <td>
                                         <div class="btn-group" role="group">
-                                            <button type="button" class="btn btn-sm btn-outline-primary btnDetail" title="Detail">
-                                                <i class="fas fa-list"></i>
-                                            </button>
                                             <button type="button" class="btn btn-sm btn-outline-warning btnEdit" title="Edit">
                                                 <i class="fas fa-edit"></i>
                                             </button>
@@ -110,6 +165,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                             </button>
                                         </div>
                                     </td>
+                                    <td class="d-none"><?= $g['created_at'] ?></td>
                                 </tr>
                             <?php endwhile; ?>
                         </tbody>
@@ -131,7 +187,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                 </div>
                 <div class="modal-body">
                     <div class="alert alert-info py-2 small mb-3">
-                        <i class="fas fa-info-circle me-1"></i> Gunakan template Excel untuk mengimport data secara massal. Pastikan kolom <strong>Kategori</strong> diisi dengan "Core" atau "Support" (tetap menerima "Mandatory"/"Optional").
+                        <i class="fas fa-info-circle me-1"></i> Gunakan template Excel untuk mengimport data secara massal. Item mapping akan otomatis menyesuaikan dengan data di <strong>Database Barang</strong>.
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Download Template</label>
@@ -142,8 +198,16 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Pilih File Excel (.xlsx)</label>
+                        <label class="form-label fw-bold">Pilih File Excel (.xlsx)</label>
                         <input type="file" name="excel_file" class="form-control" accept=".xlsx" required>
+                        <div class="form-text">Gunakan template yang sudah didownload.</div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="delete_all" id="checkDeleteAll" value="1">
+                        <label class="form-check-label fw-bold text-danger" for="checkDeleteAll">
+                            Hapus Semua Data Lama Sebelum Import
+                        </label>
+                        <div class="form-text small text-muted">Centang ini jika Anda ingin mengganti seluruh daftar pemeriksaan dengan data dari file Excel.</div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -157,34 +221,125 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
     </div>
 </div>
 
-<!-- Modal View -->
-<div class="modal fade" id="modalViewGrup" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+<!-- Modal Config GSheet -->
+<div class="modal fade" id="modalConfigGSheet" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold" id="viewTitle">Detail</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-cog me-2"></i>Konfigurasi Google Sheets</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Item</th>
-                                        <th width="120" class="text-center">Tipe</th>
-                                <th width="80" class="text-center">Qty</th>
-                            </tr>
-                        </thead>
-                        <tbody id="viewItemsBody"></tbody>
-                    </table>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Apps Script Webhook URL</label>
+                    <div class="input-group">
+                        <input type="text" id="gsheetUrl" class="form-control" placeholder="https://script.google.com/macros/s/.../exec" value="<?= get_setting('gsheet_exam_url') ?>">
+                        <button class="btn btn-primary" id="btnCheckGSheet">Cek Sheet</button>
+                    </div>
+                    <div class="form-text text-muted">Input URL Webhook dari Google Apps Script yang sudah dideploy.</div>
                 </div>
+
+                <div id="sectionSheetMapping" style="display:none;">
+                    <hr>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Pilih Sheet</label>
+                        <select id="gsheetName" class="form-select"></select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Mapping Kolom</label>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered mb-0">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th>Field Database</th>
+                                        <th>Kolom GSheet</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mappingBody">
+                                    <tr>
+                                        <td>ID Paket / Kode Pemeriksaan</td>
+                                        <td><select class="form-select form-select-sm map-col" data-key="id_paket"></select></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Nama Pemeriksaan / Paket</td>
+                                        <td><select class="form-select form-select-sm map-col" data-key="nama_paket"></select></td>
+                                    </tr>
+                                    <tr>
+                                        <td>ID Biosys</td>
+                                        <td><select class="form-select form-select-sm map-col" data-key="id_biosys"></select></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Layanan</td>
+                                        <td><select class="form-select form-select-sm map-col" data-key="layanan"></select></td>
+                                    </tr>
+                                    <tr>
+                                        <td>ID Barang / Kode Odoo</td>
+                                        <td><select class="form-select form-select-sm map-col" data-key="barang_id"></select></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Qty</td>
+                                        <td><select class="form-select form-select-sm map-col" data-key="qty"></select></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-info" id="btnSyncNow" style="display:none;"><i class="fas fa-sync me-1"></i>Sync Sekarang</button>
+                <button type="button" class="btn btn-primary" id="btnSaveGSheetConfig">Simpan Konfigurasi</button>
             </div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="modalDetailGrup" tabindex="-1">
+<!-- Modal Review Import -->
+<div class="modal fade" id="modalReviewImport" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Review Validasi Import
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning py-2 small mb-3">
+                    <i class="fas fa-info-circle me-1"></i> Terdapat beberapa ketidaksesuaian data antara Excel dan Database. Silakan perbaiki sebelum melanjutkan.
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle" id="tableReviewImport">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Item (Berdasarkan Excel)</th>
+                                <th width="100" class="text-center">UoM</th>
+                                <th width="350">Koreksi & Tindakan</th>
+                                <th width="120" class="text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reviewImportBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer bg-light">
+                <div class="me-auto small text-muted" id="reviewStats"></div>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-success fw-bold" id="btnFinalizeImport">
+                    <i class="fas fa-check-circle me-1"></i> Konfirmasi & Import Data
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+<div class="modal fade" id="modalDetailGrup" tabindex="-1">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title fw-bold" id="detailTitle">Edit</h5>
@@ -202,9 +357,11 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                             <table class="table table-sm table-bordered align-middle mb-0">
                                 <thead class="table-light">
                                     <tr>
+                                        <th width="100">ID Biosys</th>
+                                        <th>Layanan</th>
                                         <th>Item</th>
-                                        <th width="120" class="text-center">Tipe</th>
-                                        <th width="80" class="text-center">Qty</th>
+                                        <th width="80" class="text-center">Tipe</th>
+                                        <th width="60" class="text-center">Qty</th>
                                         <th width="44"></th>
                                     </tr>
                                 </thead>
@@ -215,7 +372,10 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                     <div class="col-lg-4">
                         <div class="border rounded-3 p-3 bg-light">
                             <div class="fw-bold mb-2 text-primary"><i class="fas fa-cog me-1"></i> Pengaturan</div>
-                            <label class="form-label mb-1 small fw-bold">Nama Pemeriksaan</label>
+                            <label class="form-label mb-1 small fw-bold">ID Paket</label>
+                            <input type="text" class="form-control mb-3" id="detailGrupId" readonly>
+                            
+                            <label class="form-label mb-1 small fw-bold">Nama Paket</label>
                             <div class="input-group mb-4">
                                 <input type="text" class="form-control" id="detailGrupNama" value="">
                                 <button type="button" class="btn btn-primary-custom" id="btnSaveNama">
@@ -226,6 +386,14 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                             <div class="fw-bold mb-2 text-success"><i class="fas fa-plus-circle me-1"></i> Tambah Item</div>
                             <form class="row g-2" id="formAddMapping">
                                 <div class="col-12">
+                                    <label class="form-label mb-1 small fw-bold">ID Biosys</label>
+                                    <input type="text" name="id_biosys" class="form-control form-control-sm" placeholder="Contoh: 191001" id="detailIdBiosys">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label mb-1 small fw-bold">Layanan</label>
+                                    <input type="text" name="layanan" class="form-control form-control-sm" placeholder="Contoh: Hematologi" id="detailLayanan">
+                                </div>
+                                <div class="col-12">
                                     <label class="form-label mb-1 small fw-bold">Pilih Barang</label>
                                     <select name="barang_id" class="form-select form-select-sm select2" required id="detailBarangId">
                                         <option value="">- Pilih Barang -</option>
@@ -234,17 +402,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                                <div class="col-6">
-                                    <label class="form-label mb-1 small fw-bold">Kategori</label>
-                                    <div class="segmented-control">
-                                        <input type="hidden" name="is_mandatory" id="detailIsMandatory" value="1">
-                                        <div class="btn-group btn-group-sm w-100">
-                                            <button type="button" class="btn btn-outline-danger active-mandatory btn-seg-main" data-val="1">Core</button>
-                                            <button type="button" class="btn btn-outline-info btn-seg-main" data-val="0">Support</button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-6">
+                                <div class="col-12">
                                     <label class="form-label mb-1 small fw-bold">Qty</label>
                                     <input type="number" name="qty" class="form-control form-control-sm" placeholder="Qty" required min="1" value="1" id="detailQty">
                                 </div>
@@ -263,6 +421,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
 <div class="modal fade" id="modalGrup" tabindex="-1">
     <div class="modal-dialog modal-xl">
         <form id="formGrup" class="modal-content">
+            <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
             <input type="hidden" name="id" id="grupId" value="">
             <div class="modal-header">
                 <h5 class="modal-title fw-bold" id="grupModalTitle">Buat Pemeriksaan Baru</h5>
@@ -270,8 +429,13 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
             </div>
             <div class="modal-body">
                 <div class="row g-3">
-                    <div class="col-md-12">
-                        <label class="form-label fw-semibold">Nama Pemeriksaan</label>
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">ID Paket</label>
+                        <input type="text" name="id_paket" class="form-control" required id="grupIdPaket" placeholder="Contoh: PKT001">
+                        <div class="form-text small">ID Paket bersifat unik dan wajib diinput manual.</div>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label fw-semibold">Nama Paket</label>
                         <input type="text" name="nama_pemeriksaan" class="form-control" required id="grupNama" placeholder="Contoh: Paket Screening A">
                     </div>
                     
@@ -286,8 +450,9 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                             <table class="table table-sm table-bordered align-middle" id="tableNewMapping">
                                 <thead class="table-light">
                                     <tr>
+                                        <th width="150">ID Biosys</th>
+                                        <th>Layanan</th>
                                         <th>Item Barang</th>
-                                        <th width="150" class="text-center">Tipe</th>
                                         <th width="120" class="text-center">Jumlah (Qty)</th>
                                         <th width="50"></th>
                                     </tr>
@@ -295,21 +460,18 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                 <tbody id="newMappingBody">
                                     <tr>
                                         <td>
-                                            <select name="barang_ids[]" class="form-select form-select-sm select2-modal" required>
-                                                <option value="">- Pilih Barang -</option>
-                                                <?php foreach($barang_opts as $b): ?>
-                                                    <option value="<?= (int)$b['id'] ?>"><?= htmlspecialchars($b['kode_barang']) ?> - <?= htmlspecialchars($b['nama_barang']) ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
+                                            <input type="text" name="id_biosys_list[]" class="form-control form-control-sm" placeholder="ID Biosys">
                                         </td>
                                         <td>
-                                            <div class="segmented-control">
-                                                <input type="hidden" name="is_mandatory_list[]" class="hid-mandatory" value="1">
-                                                <div class="btn-group btn-group-sm w-100">
-                                                    <button type="button" class="btn btn-outline-danger active-mandatory btn-seg-row" data-val="1">Core</button>
-                                                    <button type="button" class="btn btn-outline-info btn-seg-row" data-val="0">Support</button>
-                                                </div>
-                                            </div>
+                                            <input type="text" name="layanan_list[]" class="form-control form-control-sm" placeholder="Nama Layanan">
+                                        </td>
+                                        <td>
+                                            <select name="barang_ids[]" class="form-select form-select-sm select2-modal barang-select-row" required>
+                                                <option value="">- Pilih Barang -</option>
+                                                <?php foreach($barang_opts as $b): ?>
+                                                    <option value="<?= (int)$b['id'] ?>" data-tipe="<?= htmlspecialchars((string)($b['tipe'] ?? '')) ?>"><?= htmlspecialchars($b['kode_barang']) ?> - <?= htmlspecialchars($b['nama_barang']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
                                         </td>
                                         <td>
                                             <input type="number" name="qtys[]" class="form-control form-control-sm text-center" value="1" min="1" required>
@@ -346,7 +508,7 @@ function setRowTotalItems(grupId, total) {
 }
 
 function loadDetail(grupId) {
-    $('#detailItemsBody').html('<tr><td colspan="4" class="text-center text-muted py-3">Memuat...</td></tr>');
+    $('#detailItemsBody').html('<tr><td colspan="6" class="text-center text-muted py-3">Memuat...</td></tr>');
     $.ajax({
         url: 'api/ajax_pemeriksaan_detail.php',
         method: 'POST',
@@ -354,22 +516,24 @@ function loadDetail(grupId) {
         data: { grup_id: grupId },
         success: function(res) {
             if (!res || !res.success) {
-                $('#detailItemsBody').html('<tr><td colspan="4" class="text-center text-danger py-3">' + (res && res.message ? res.message : 'Gagal memuat') + '</td></tr>');
+                $('#detailItemsBody').html('<tr><td colspan="6" class="text-center text-danger py-3">' + (res && res.message ? res.message : 'Gagal memuat') + '</td></tr>');
                 return;
             }
             $('#detailGrupId').val(res.grup.id);
             $('#detailGrupNama').val(res.grup.nama_pemeriksaan);
-            $('#detailTitle').text('Edit: ' + res.grup.nama_pemeriksaan);
+            $('#detailTitle').text('Edit: [' + res.grup.id + '] ' + res.grup.nama_pemeriksaan);
             const rows = [];
             if (Array.isArray(res.details) && res.details.length > 0) {
                 res.details.forEach(function(d) {
-                    const code = (d.kode_barang ? d.kode_barang : (d.barang_id ? d.barang_id : '-'));
+                    const code = (d.kode_barang ? d.kode_barang : (d.odoo_product_id ? d.odoo_product_id : '-'));
                     const itemText = code + ' - ' + (d.nama_barang ? d.nama_barang : '') + (d.satuan ? ' (' + d.satuan + ')' : '');
-                    const badge = parseInt(d.is_mandatory) === 1 ? 
-                        '<span class="badge bg-danger px-2"><i class="fas fa-exclamation-circle me-1"></i>Core</span>' : 
-                        '<span class="badge bg-info px-2"><i class="fas fa-info-circle me-1"></i>Support</span>';
+                    const badge = d.tipe === 'Core' ? 
+                        '<span class="badge bg-danger px-2">Core</span>' : 
+                        '<span class="badge bg-info px-2">Support</span>';
                     rows.push(
                         '<tr>' +
+                            '<td class="text-muted small">' + (d.id_biosys || '-') + '</td>' +
+                            '<td class="small">' + (d.nama_layanan || '-') + '</td>' +
                             '<td class="fw-semibold">' + $('<div>').text(itemText).html() + '</td>' +
                             '<td class="text-center">' + badge + '</td>' +
                             '<td class="text-center fw-semibold">' + d.qty_per_pemeriksaan + '</td>' +
@@ -380,54 +544,68 @@ function loadDetail(grupId) {
                     );
                 });
             } else {
-                rows.push('<tr><td colspan="4" class="text-center text-muted py-3">Belum ada mapping item.</td></tr>');
+                rows.push('<tr><td colspan="6" class="text-center text-muted py-3">Belum ada mapping item.</td></tr>');
             }
             $('#detailItemsBody').html(rows.join(''));
             setRowTotalItems(res.grup.id, res.total_items);
         },
         error: function() {
-            $('#detailItemsBody').html('<tr><td colspan="4" class="text-center text-danger py-3">Gagal memuat</td></tr>');
+            $('#detailItemsBody').html('<tr><td colspan="6" class="text-center text-danger py-3">Gagal memuat</td></tr>');
         }
     });
 }
 
-function loadView(grupId) {
-    $('#viewItemsBody').html('<tr><td colspan="3" class="text-center text-muted py-3">Memuat...</td></tr>');
+function loadView(grupId, container) {
+    const contentBox = container.find('.detail-content');
+    const spinner = container.find('.loading-spinner');
+
+    if (contentBox.html().trim() !== '') return; // Already loaded
+
+    spinner.removeClass('d-none');
     $.ajax({
         url: 'api/ajax_pemeriksaan_detail.php',
         method: 'POST',
         dataType: 'json',
         data: { grup_id: grupId },
         success: function(res) {
+            spinner.addClass('d-none');
             if (!res || !res.success) {
-                $('#viewItemsBody').html('<tr><td colspan="3" class="text-center text-danger py-3">' + (res && res.message ? res.message : 'Gagal memuat') + '</td></tr>');
+                contentBox.html('<div class="text-danger small p-2">Gagal memuat detail: ' + (res && res.message ? res.message : '') + '</div>');
                 return;
             }
-            $('#viewTitle').text('Detail: ' + res.grup.nama_pemeriksaan);
-            const rows = [];
+            
+            let html = '<div class="p-3 bg-light border-start border-primary border-4">' +
+                       '<table class="table table-sm table-bordered table-detail mb-0">' +
+                       '<thead><tr>' +
+                       '<th width="100">ID Biosys</th>' +
+                       '<th>Layanan</th>' +
+                       '<th width="120">Kode Barang</th>' +
+                       '<th>Consumables</th>' +
+                       '<th width="80" class="text-center">Qty</th>' +
+                       '<th width="80" class="text-center">UoM</th>' +
+                       '</tr></thead><tbody>';
+
             if (Array.isArray(res.details) && res.details.length > 0) {
                 res.details.forEach(function(d) {
-                    const code = (d.kode_barang ? d.kode_barang : (d.barang_id ? d.barang_id : '-'));
-                    const itemText = code + ' - ' + (d.nama_barang ? d.nama_barang : '') + (d.satuan ? ' (' + d.satuan + ')' : '');
-                    const badge = parseInt(d.is_mandatory) === 1 ? 
-                        '<span class="badge bg-danger px-2">Core</span>' : 
-                        '<span class="badge bg-info px-2">Support</span>';
-                    rows.push(
-                        '<tr>' +
-                            '<td class="fw-semibold">' + $('<div>').text(itemText).html() + '</td>' +
-                            '<td class="text-center">' + badge + '</td>' +
-                            '<td class="text-center fw-semibold">' + d.qty_per_pemeriksaan + '</td>' +
-                        '</tr>'
-                    );
+                    const code = (d.kode_barang ? d.kode_barang : (d.odoo_product_id ? d.odoo_product_id : '-'));
+                    html += '<tr>' +
+                            '<td class="text-muted">' + (d.id_biosys || '-') + '</td>' +
+                            '<td>' + (d.nama_layanan || '-') + '</td>' +
+                            '<td class="fw-bold text-primary">' + code + '</td>' +
+                            '<td class="fw-semibold">' + d.nama_barang + '</td>' +
+                            '<td class="text-center">' + d.qty_per_pemeriksaan + '</td>' +
+                            '<td class="text-center">' + (d.satuan || '-') + '</td>' +
+                            '</tr>';
                 });
             } else {
-                rows.push('<tr><td colspan="3" class="text-center text-muted py-3">Belum ada mapping item.</td></tr>');
+                html += '<tr><td colspan="6" class="text-center text-muted py-2">Belum ada mapping item.</td></tr>';
             }
-            $('#viewItemsBody').html(rows.join(''));
-            setRowTotalItems(res.grup.id, res.total_items);
+            html += '</tbody></table></div>';
+            contentBox.html(html);
         },
         error: function() {
-            $('#viewItemsBody').html('<tr><td colspan="3" class="text-center text-danger py-3">Gagal memuat</td></tr>');
+            spinner.addClass('d-none');
+            contentBox.html('<div class="text-danger small p-2">Terjadi kesalahan saat memuat data.</div>');
         }
     });
 }
@@ -459,8 +637,8 @@ $(document).ready(function() {
         }
     });
 
-    $('#examTable').DataTable({
-        "order": [[ 0, "asc" ]],
+    const table = $('#examTable').DataTable({
+        "order": [[ 5, "desc" ]],
         "pageLength": 10,
         "lengthChange": false,
         "dom": "<'row mb-2'<'col-sm-12 col-md-6 d-flex align-items-center'><'col-sm-12 col-md-6 d-flex align-items-center justify-content-end'f>>" +
@@ -468,20 +646,28 @@ $(document).ready(function() {
                "<'row mt-2'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
         "language": {
             "searchPlaceholder": "Cari..."
-        }
+        },
+        "columnDefs": [
+            { "orderable": false, "targets": [0, 4] }
+        ]
     });
+
+    // Store clean options HTML for dynamic rows
+    const BARANG_OPTIONS_HTML = <?= json_encode(array_reduce($barang_opts, function($carry, $item) {
+        return $carry . '<option value="'.(int)$item['id'].'" data-tipe="'.htmlspecialchars((string)($item['tipe'] ?? '')).'" data-uom="'.htmlspecialchars((string)($item['satuan'] ?? '')).'">'.htmlspecialchars($item['kode_barang']).' - '.htmlspecialchars($item['nama_barang']).'</option>';
+    }, '')) ?>;
 
     $('#btnNewExam').on('click', function() {
         $('#grupModalTitle').text('Buat Pemeriksaan Baru');
         $('#grupId').val('');
+        $('#grupIdPaket').val('');
         $('#grupNama').val('');
         $('#newMappingBody').html('<tr>' +
-            '<td><select name="barang_ids[]" class="form-select form-select-sm select2-modal" required><option value="">- Pilih Barang -</option>' + 
-            <?= json_encode(array_reduce($barang_opts, function($carry, $item) {
-                return $carry . '<option value="'.(int)$item['id'].'">'.htmlspecialchars($item['kode_barang']).' - '.htmlspecialchars($item['nama_barang']).'</option>';
-            }, '')) ?> + 
+            '<td><input type="text" name="id_biosys_list[]" class="form-control form-control-sm" placeholder="ID Biosys"></td>' +
+            '<td><input type="text" name="layanan_list[]" class="form-control form-control-sm" placeholder="Nama Layanan"></td>' +
+            '<td><select name="barang_ids[]" class="form-select form-select-sm select2-modal barang-select-row" required><option value="">- Pilih Barang -</option>' + 
+            BARANG_OPTIONS_HTML + 
             '</select></td>' +
-            '<td><div class="segmented-control"><input type="hidden" name="is_mandatory_list[]" class="hid-mandatory" value="1"><div class="btn-group btn-group-sm w-100"><button type="button" class="btn btn-outline-danger active-mandatory btn-seg-row" data-val="1">Core</button><button type="button" class="btn btn-outline-info btn-seg-row" data-val="0">Support</button></div></div></td>' +
             '<td><input type="number" name="qtys[]" class="form-control form-control-sm text-center" value="1" min="1" required></td>' +
             '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btnRemoveRow"><i class="fas fa-times"></i></button></td>' +
             '</tr>');
@@ -491,18 +677,43 @@ $(document).ready(function() {
 
     $('#btnAddRow').off('click').on('click', function() {
         const newRow = $('<tr>' +
-            '<td><select name="barang_ids[]" class="form-select form-select-sm select2-modal" required><option value="">- Pilih Barang -</option>' + 
-            <?= json_encode(array_reduce($barang_opts, function($carry, $item) {
-                return $carry . '<option value="'.(int)$item['id'].'">'.htmlspecialchars($item['kode_barang']).' - '.htmlspecialchars($item['nama_barang']).'</option>';
-            }, '')) ?> + 
+            '<td><input type="text" name="id_biosys_list[]" class="form-control form-control-sm" placeholder="ID Biosys"></td>' +
+            '<td><input type="text" name="layanan_list[]" class="form-control form-control-sm" placeholder="Nama Layanan"></td>' +
+            '<td><select name="barang_ids[]" class="form-select form-select-sm select2-modal barang-select-row" required>' + 
+            '<option value="">- Pilih Barang -</option>' + 
+            BARANG_OPTIONS_HTML + 
             '</select></td>' +
-            '<td><div class="segmented-control"><input type="hidden" name="is_mandatory_list[]" class="hid-mandatory" value="1"><div class="btn-group btn-group-sm w-100"><button type="button" class="btn btn-outline-danger active-mandatory btn-seg-row" data-val="1">Core</button><button type="button" class="btn btn-outline-info btn-seg-row" data-val="0">Support</button></div></div></td>' +
             '<td><input type="number" name="qtys[]" class="form-control form-control-sm text-center" value="1" min="1" required></td>' +
             '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btnRemoveRow"><i class="fas fa-times"></i></button></td>' +
             '</tr>');
+        
         $('#newMappingBody').append(newRow);
-        initSelect2Modal();
+        
+        // Initialize Select2 only for the new row's select
+        newRow.find('.select2-modal').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            dropdownParent: $('#modalGrup')
+        });
     });
+
+    $(document).on('change', '.barang-select-row', function() {
+        const tr = $(this).closest('tr');
+        const data = tr.find('.barang-select-row').select2('data')[0];
+        const tipe = data && data.element ? $(data.element).data('tipe') : '';
+        
+        if (tipe === 'Core') {
+            updateRowTipe(tr, 1);
+        } else if (tipe === 'Support') {
+            updateRowTipe(tr, 0);
+        }
+    });
+
+    function updateRowTipe(tr, val) {
+        tr.find('.hid-mandatory').val(val);
+        tr.find('.btn-seg-row').removeClass('active-mandatory');
+        tr.find('.btn-seg-row[data-val="' + val + '"]').addClass('active-mandatory');
+    }
 
     $(document).on('click', '.btnRemoveRow', function() {
         if ($('#newMappingBody tr').length > 1) {
@@ -524,6 +735,135 @@ $(document).ready(function() {
         });
     }
 
+    // GSheet Configuration
+    let GS_HEADERS = [];
+    const GS_CONFIG = <?= json_encode([
+        'url' => get_setting('gsheet_exam_url'),
+        'sheet' => get_setting('gsheet_exam_sheet'),
+        'mapping' => json_decode(get_setting('gsheet_exam_mapping', '{}'), true)
+    ]) ?>;
+
+    $('#btnConfigGSheet').on('click', function() {
+        const m = new bootstrap.Modal(document.getElementById('modalConfigGSheet'));
+        m.show();
+        
+        // Reset view to show saved config immediately
+        if (GS_CONFIG.url && GS_CONFIG.sheet) {
+            $('#sectionSheetMapping').show();
+            $('#btnSyncNow').show();
+            
+            // Populate Sheet Name dropdown with the saved value
+            $('#gsheetName').html(`<option value="${GS_CONFIG.sheet}" selected>${GS_CONFIG.sheet}</option>`);
+            
+            // Populate mapping dropdowns with saved values
+            $('.map-col').each(function() {
+                const key = $(this).data('key');
+                const savedVal = (GS_CONFIG.mapping && GS_CONFIG.mapping[key]) ? GS_CONFIG.mapping[key] : '';
+                if (savedVal) {
+                    $(this).html(`<option value="${savedVal}" selected>${savedVal}</option>`);
+                } else {
+                    $(this).html('<option value="">- Pilih Kolom -</option>');
+                }
+            });
+        }
+    });
+
+    $('#btnCheckGSheet').on('click', function() {
+        const url = $('#gsheetUrl').val();
+        if (!url) return alert('Input URL terlebih dahulu');
+
+        const btn = $(this);
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+
+        $.getJSON('api/ajax_gsheet_proxy.php', { url: url, action: 'get_sheets' }, function(res) {
+            btn.prop('disabled', false).text('Cek Sheet');
+            if (res.success) {
+                let opts = '<option value="">- Pilih Sheet -</option>';
+                res.sheets.forEach(s => {
+                    const selected = s === GS_CONFIG.sheet ? 'selected' : '';
+                    opts += `<option value="${s}" ${selected}>${s}</option>`;
+                });
+                $('#gsheetName').html(opts);
+                $('#sectionSheetMapping').fadeIn();
+                if (GS_CONFIG.sheet) $('#gsheetName').trigger('change');
+            } else {
+                alert(res.message || 'Gagal mengambil daftar sheet');
+            }
+        }).fail(function() {
+            btn.prop('disabled', false).text('Cek Sheet');
+            alert('Gagal menghubungi server proxy atau Apps Script. Pastikan URL benar dan sudah dideploy sebagai Public (Anyone).');
+        });
+    });
+
+    $('#gsheetName').on('change', function() {
+        const sheet = $(this).val();
+        const url = $('#gsheetUrl').val();
+        if (!sheet) return;
+
+        $.getJSON('api/ajax_gsheet_proxy.php', { url: url, action: 'get_headers', sheet: sheet }, function(res) {
+            if (res.success) {
+                GS_HEADERS = res.headers;
+                let opts = '<option value="">- Pilih Kolom -</option>';
+                GS_HEADERS.forEach(h => {
+                    opts += `<option value="${h}">${h}</option>`;
+                });
+                $('.map-col').each(function() {
+                    const key = $(this).data('key');
+                    $(this).html(opts);
+                    if (GS_CONFIG.mapping && GS_CONFIG.mapping[key]) {
+                        $(this).val(GS_CONFIG.mapping[key]);
+                    }
+                });
+                $('#btnSyncNow').show();
+            } else {
+                alert(res.message || 'Gagal mengambil header kolom');
+            }
+        });
+    });
+
+    $('#btnSaveGSheetConfig').on('click', function() {
+        const config = {
+            url: $('#gsheetUrl').val(),
+            sheet: $('#gsheetName').val(),
+            mapping: {}
+        };
+        $('.map-col').each(function() {
+            config.mapping[$(this).data('key')] = $(this).val();
+        });
+
+        const btn = $(this);
+        btn.prop('disabled', true).text('Menyimpan...');
+
+        $.post('api/ajax_pemeriksaan_save_gs_config.php', {
+            config: JSON.stringify(config),
+            _csrf: PEMERIKSAAN_CSRF
+        }, function(res) {
+            btn.prop('disabled', false).text('Simpan Konfigurasi');
+            if (res.success) {
+                alert('Konfigurasi berhasil disimpan');
+                location.reload();
+            } else {
+                alert(res.message || 'Gagal menyimpan konfigurasi');
+            }
+        }, 'json');
+    });
+
+    $('#btnSyncNow').on('click', function() {
+        if (!confirm('Mulai sinkronisasi sekarang?')) return;
+        const btn = $(this);
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Syncing...');
+
+        $.post('api/ajax_pemeriksaan_sync_gsheet.php', { _csrf: PEMERIKSAAN_CSRF }, function(res) {
+            btn.prop('disabled', false).html('<i class="fas fa-sync me-1"></i> Sync Sekarang');
+            if (res.success) {
+                alert(res.message);
+                location.reload();
+            } else {
+                alert(res.message || 'Gagal sinkronisasi');
+            }
+        }, 'json');
+    });
+
     $('#examTable').on('click', '.btnEdit', function() {
         const tr = $(this).closest('tr');
         const id = tr.data('grup-id');
@@ -532,11 +872,28 @@ $(document).ready(function() {
         m.show();
     });
 
-    $('#examTable').on('click', '.btnDetail', function() {
-        const tr = $(this).closest('tr');
+    $('#examTable').on('click', '.main-row', function(e) {
+        // Don't expand if clicking on action buttons
+        if ($(e.target).closest('.btn-group').length) return;
+        
+        const tr = $(this);
+        const row = table.row(tr);
+        const icon = tr.find('.btn-toggle-detail i');
         const id = tr.data('grup-id');
-        loadView(id);
-        new bootstrap.Modal(document.getElementById('modalViewGrup')).show();
+
+        if (row.child.isShown()) {
+            row.child.hide();
+            icon.removeClass('fa-caret-down').addClass('fa-caret-right');
+        } else {
+            // Create container for detail
+            const containerHtml = '<div class="detail-wrapper-' + id + '">' +
+                                  '<div class="text-center py-2 loading-spinner">' +
+                                  '<i class="fas fa-spinner fa-spin text-primary"></i> Memuat detail...' +
+                                  '</div><div class="detail-content"></div></div>';
+            row.child(containerHtml).show();
+            loadView(id, $('.detail-wrapper-' + id));
+            icon.removeClass('fa-caret-right').addClass('fa-caret-down');
+        }
     });
 
     $('#examTable').on('click', '.btnDelete', function() {
@@ -568,7 +925,7 @@ $(document).ready(function() {
             url: 'api/ajax_pemeriksaan_save.php',
             method: 'POST',
             dataType: 'json',
-            data: $(this).serialize() + '&_csrf=' + encodeURIComponent(PEMERIKSAAN_CSRF),
+            data: $(this).serialize(),
             success: function(res) {
                 if (!res || !res.success) {
                     alert(res && res.message ? res.message : 'Gagal menyimpan');
@@ -580,7 +937,7 @@ $(document).ready(function() {
                 if (existing.length) {
                     existing.data('grup-nama', nama);
                     existing.attr('data-grup-nama', nama);
-                    existing.find('td').first().text(nama);
+                    existing.find('td').eq(2).text(nama); // Index 2 is Nama Paket
                     $('#modalGrup').modal('hide');
                 } else {
                     // Success, reload page to show new data with mapping count
@@ -594,13 +951,19 @@ $(document).ready(function() {
         });
     });
 
+    let IMPORT_VALID_DATA = [];
+    let IMPORT_INVALID_SUMMARY = [];
+    let IMPORT_ALL_INVALID_ROWS = [];
+    let IMPORT_DELETE_ALL = false;
+    let IMPORT_TOTAL_EXCEL_ROWS = 0;
+
     $('#formImport').on('submit', function(e) {
         e.preventDefault();
         const formData = new FormData(this);
         formData.append('_csrf', PEMERIKSAAN_CSRF);
         
         const btn = $('#btnDoImport');
-        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Mengimport...');
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Memvalidasi...');
         
         $.ajax({
             url: 'api/ajax_pemeriksaan_import.php',
@@ -612,11 +975,23 @@ $(document).ready(function() {
             success: function(res) {
                 btn.prop('disabled', false).html('<i class="fas fa-upload me-1"></i> Mulai Import');
                 if (!res || !res.success) {
-                    alert(res && res.message ? res.message : 'Gagal mengimport');
+                    alert(res && res.message ? res.message : 'Gagal memproses file');
                     return;
                 }
-                alert(res.message);
-                location.reload();
+                
+                IMPORT_VALID_DATA = res.valid_data || [];
+                IMPORT_INVALID_SUMMARY = res.invalid_summary || [];
+                IMPORT_ALL_INVALID_ROWS = res.all_invalid_rows || [];
+                IMPORT_DELETE_ALL = res.delete_all;
+                IMPORT_TOTAL_EXCEL_ROWS = res.total_excel_rows || 0;
+
+                if (res.needs_review) {
+                    $('#modalImport').modal('hide');
+                    renderReviewImport();
+                    new bootstrap.Modal(document.getElementById('modalReviewImport')).show();
+                } else {
+                    finalizeImport(IMPORT_VALID_DATA);
+                }
             },
             error: function() {
                 btn.prop('disabled', false).html('<i class="fas fa-upload me-1"></i> Mulai Import');
@@ -625,18 +1000,215 @@ $(document).ready(function() {
         });
     });
 
+    function renderReviewImport() {
+        const body = $('#reviewImportBody');
+        body.empty();
+        
+        const activeSummary = IMPORT_INVALID_SUMMARY.filter(s => s !== null);
+        if (activeSummary.length === 0) {
+            body.append('<tr><td colspan="6" class="text-center py-4 text-success"><i class="fas fa-check-circle me-1"></i> Semua isu sudah diperbaiki. Silakan klik "Konfirmasi & Import".</td></tr>');
+            $('#reviewStats').text(`${IMPORT_VALID_DATA.length} baris siap import.`);
+            return;
+        }
+
+        IMPORT_INVALID_SUMMARY.forEach((summary, index) => {
+            if (summary === null) return;
+
+            let correctionHtml = '';
+            const key = summary.error_type + '|' + summary.barang_id + (summary.uom_excel ? '|' + summary.uom_excel.toLowerCase() : '');
+
+            if (summary.error_type === 'item_not_found') {
+                correctionHtml = `
+                    <div class="input-group input-group-sm">
+                        <select class="form-select select2-review replace-item" data-index="${index}" data-key="${key}">
+                            <option value="">- Cari Item Pengganti -</option>
+                            ${BARANG_OPTIONS_HTML}
+                        </select>
+                    </div>
+                    <div class="extra-small text-muted mt-1">Ditemukan pada <strong>${summary.count}</strong> baris mapping</div>`;
+            } else if (summary.error_type === 'uom_mismatch') {
+                correctionHtml = `
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="badge bg-light text-dark border">Excel: ${summary.uom_excel}</span>
+                        <i class="fas fa-arrow-right text-muted small"></i>
+                        <span class="badge bg-success">Sistem: ${summary.system_uom}</span>
+                    </div>
+                    <button type="button" class="btn btn-xs btn-primary btnFixUom" data-index="${index}" data-key="${key}">
+                        <i class="fas fa-magic me-1"></i>Gunakan UoM Sistem untuk ${summary.count} baris
+                    </button>`;
+            }
+
+            body.append(`
+                <tr data-index="${index}">
+                    <td>
+                        <div class="fw-bold small">${summary.consumables} (ID: ${summary.barang_id})</div>
+                        <div class="text-danger extra-small"><i class="fas fa-times-circle me-1"></i>${summary.error}</div>
+                    </td>
+                    <td class="text-center small">${summary.uom_excel || '-'}</td>
+                    <td>${correctionHtml}</td>
+                    <td class="text-center">
+                        <button type="button" class="btn btn-sm btn-outline-danger btnIgnoreSummary" data-index="${index}" data-key="${key}" title="Abaikan semua">
+                            <i class="fas fa-trash-alt me-1"></i>Abaikan
+                        </button>
+                    </td>
+                </tr>
+            `);
+        });
+
+        $('#reviewStats').text(`${activeSummary.length} kelompok isu ditemukan, total ${IMPORT_VALID_DATA.length} baris tervalidasi.`);
+        
+        $('.select2-review').each(function() {
+            if (!$(this).hasClass('select2-hidden-accessible')) {
+                $(this).select2({
+                    theme: 'bootstrap-5',
+                    width: '100%',
+                    dropdownParent: $('#modalReviewImport')
+                });
+            }
+        });
+    }
+
+    function applyBulkFix(summaryKey, newBarangId) {
+        // Move all rows with this key from ALL_INVALID to VALID
+        const rowsToMove = IMPORT_ALL_INVALID_ROWS.filter(r => r && r.summary_key === summaryKey);
+        
+        rowsToMove.forEach(row => {
+            if (newBarangId) row.barang_id = newBarangId;
+            IMPORT_VALID_DATA.push(row);
+        });
+
+        // Mark these rows as processed in the raw list
+        IMPORT_ALL_INVALID_ROWS = IMPORT_ALL_INVALID_ROWS.map(r => r && r.summary_key === summaryKey ? null : r);
+    }
+
+    $(document).on('change', '.replace-item', function() {
+        const tr = $(this).closest('tr');
+        const index = $(this).data('index');
+        const summaryKey = $(this).data('key');
+        const selectedId = $(this).val();
+        if (!selectedId) return;
+
+        applyBulkFix(summaryKey, selectedId);
+        IMPORT_INVALID_SUMMARY[index] = null;
+        
+        tr.fadeOut(300, function() {
+            tr.remove();
+            const activeSummaryCount = IMPORT_INVALID_SUMMARY.filter(s => s !== null).length;
+            if (activeSummaryCount === 0) {
+                renderReviewImport();
+            } else {
+                $('#reviewStats').text(`${activeSummaryCount} kelompok isu ditemukan, total ${IMPORT_VALID_DATA.length} baris tervalidasi.`);
+            }
+        });
+    });
+
+    $(document).on('click', '.btnFixUom', function() {
+        const tr = $(this).closest('tr');
+        const index = $(this).data('index');
+        const summaryKey = $(this).data('key');
+
+        applyBulkFix(summaryKey, null); // Keep existing ID, just move to valid
+        IMPORT_INVALID_SUMMARY[index] = null;
+        
+        tr.fadeOut(300, function() {
+            tr.remove();
+            const activeSummaryCount = IMPORT_INVALID_SUMMARY.filter(s => s !== null).length;
+            if (activeSummaryCount === 0) {
+                renderReviewImport();
+            } else {
+                $('#reviewStats').text(`${activeSummaryCount} kelompok isu ditemukan, total ${IMPORT_VALID_DATA.length} baris tervalidasi.`);
+            }
+        });
+    });
+
+    $(document).on('click', '.btnIgnoreSummary', function() {
+        const tr = $(this).closest('tr');
+        const index = $(this).data('index');
+        const summaryKey = $(this).data('key');
+
+        // Remove from raw invalid rows
+        IMPORT_ALL_INVALID_ROWS = IMPORT_ALL_INVALID_ROWS.map(r => r && r.summary_key === summaryKey ? null : r);
+        IMPORT_INVALID_SUMMARY[index] = null;
+        
+        tr.fadeOut(300, function() {
+            tr.remove();
+            const activeSummaryCount = IMPORT_INVALID_SUMMARY.filter(s => s !== null).length;
+            if (activeSummaryCount === 0) {
+                renderReviewImport();
+            } else {
+                $('#reviewStats').text(`${activeSummaryCount} kelompok isu ditemukan, total ${IMPORT_VALID_DATA.length} baris tervalidasi.`);
+            }
+        });
+    });
+
+    $('#btnFinalizeImport').on('click', function() {
+        const finalMappings = IMPORT_VALID_DATA;
+        if (finalMappings.length === 0) {
+            alert('Tidak ada data valid untuk diimport.');
+            return;
+        }
+
+        const btn = $(this);
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Menyimpan...');
+
+        $.ajax({
+            url: 'api/ajax_pemeriksaan_import_finalize.php',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                mappings: finalMappings,
+                delete_all: IMPORT_DELETE_ALL,
+                total_excel_rows: IMPORT_TOTAL_EXCEL_ROWS,
+                _csrf: PEMERIKSAAN_CSRF
+            }),
+            success: function(res) {
+                if (!res || !res.success) {
+                    alert(res && res.message ? res.message : 'Gagal menyimpan data');
+                    btn.prop('disabled', false).html('<i class="fas fa-check-circle me-1"></i> Konfirmasi & Import Data');
+                    return;
+                }
+                
+                if (confirm(res.message + '\n\nApakah Anda ingin mendownload laporan baris yang dilewati?')) {
+                    window.location.href = 'api/download_ignored_report.php';
+                    setTimeout(() => { location.reload(); }, 2000);
+                } else {
+                    location.reload();
+                }
+            },
+            error: function() {
+                alert('Terjadi kesalahan saat menyimpan data.');
+                btn.prop('disabled', false).html('<i class="fas fa-check-circle me-1"></i> Konfirmasi & Import Data');
+            }
+        });
+    });
+
+    function finalizeImport(data) {
+        IMPORT_VALID_DATA = data;
+        $('#btnFinalizeImport').trigger('click');
+    }
+
     $('#formAddMapping').on('submit', function(e) {
         e.preventDefault();
         const grupId = $('#detailGrupId').val();
         const barangId = $('#detailBarangId').val();
         const qty = $('#detailQty').val();
-        const isMandatory = $('#detailIsMandatory').val();
+        const idBiosys = $('#detailIdBiosys').val();
+        const layanan = $('#detailLayanan').val();
+
         if (!grupId || !barangId || !qty) return;
+
         $.ajax({
             url: 'api/ajax_pemeriksaan_detail_save.php',
             method: 'POST',
             dataType: 'json',
-            data: { grup_id: grupId, barang_id: barangId, qty: qty, is_mandatory: isMandatory, _csrf: PEMERIKSAAN_CSRF },
+            data: { 
+                grup_id: grupId, 
+                barang_id: barangId, 
+                qty: qty,
+                id_biosys: idBiosys,
+                layanan: layanan,
+                _csrf: PEMERIKSAAN_CSRF 
+            },
             success: function(res) {
                 if (!res || !res.success) {
                     alert(res && res.message ? res.message : 'Gagal menyimpan mapping');
@@ -695,7 +1267,7 @@ $(document).ready(function() {
                 const row = getRowByGrupId(id);
                 row.data('grup-nama', nm);
                 row.attr('data-grup-nama', nm);
-                row.find('td').first().text(nm);
+                row.find('td').eq(2).text(nm); // Index 2 is Nama Paket
                 $('#detailTitle').text('Edit: ' + nm);
             },
             error: function() {

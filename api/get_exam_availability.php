@@ -62,16 +62,22 @@ $last_update_esc = $last_update !== '' ? $conn->real_escape_string($last_update)
 $exams = [];
 $res_ex = $conn->query("SELECT id, nama_pemeriksaan FROM inventory_pemeriksaan_grup ORDER BY nama_pemeriksaan ASC");
 while ($res_ex && ($row = $res_ex->fetch_assoc())) {
-    $exams[(int)$row['id']] = [
-        'id' => (int)$row['id'],
+    $gid = trim((string)$row['id']);
+    $exams[$gid] = [
+        'id' => $gid,
         'name' => (string)($row['nama_pemeriksaan'] ?? ''),
         'ingredients' => []
     ];
 }
 
-$res_det = $conn->query("SELECT pemeriksaan_grup_id, barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE is_mandatory = 1");
+$res_det = $conn->query("
+    SELECT d.pemeriksaan_grup_id, d.barang_id, d.qty_per_pemeriksaan 
+    FROM inventory_pemeriksaan_grup_detail d
+    JOIN inventory_barang b ON d.barang_id = b.id
+    WHERE b.tipe = 'Core'
+");
 while ($res_det && ($d = $res_det->fetch_assoc())) {
-    $gid = (int)($d['pemeriksaan_grup_id'] ?? 0);
+    $gid = trim((string)$d['pemeriksaan_grup_id']);
     if (!isset($exams[$gid])) continue;
     $exams[$gid]['ingredients'][] = [
         'barang_id' => (int)($d['barang_id'] ?? 0),
@@ -200,7 +206,19 @@ foreach ($needed_barang_ids as $bid => $_t) {
 $out = [];
 foreach ($exams as $ex) {
     $ings = $ex['ingredients'];
-    if (empty($ings)) continue;
+    
+    // If no ingredients, it's always available (as requested: selectable even if no mapping)
+    if (empty($ings)) {
+        $out[] = [
+            'id' => $ex['id'], 
+            'name' => $ex['name'], 
+            'qty' => 0, // Or maybe null/9999 to indicate no limit
+            'is_available' => true,
+            'no_mapping' => true
+        ];
+        continue;
+    }
+
     $max_possible = 999999;
     foreach ($ings as $ing) {
         $bid = (int)$ing['barang_id'];

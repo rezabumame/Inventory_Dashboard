@@ -42,23 +42,21 @@ try {
     
     for ($i = 1; $i < count($rows); $i++) {
         $id = (int)$rows[$i][0];
-        $stok_min_input = $rows[$i][3]; // Column index 3 (0-indexed)
+        $stok_min_input = $rows[$i][3]; // Column index 3 (Stok Minimum)
+        $tipe_input = trim((string)($rows[$i][4] ?? '')); // Column index 4 (Tipe)
         
         if ($id <= 0) {
             $skipped_count++;
             continue;
         }
 
-        // If blank, skip as requested
-        if ($stok_min_input === '' || $stok_min_input === null) {
-            $skipped_count++;
-            continue;
+        // Validate tipe input
+        if (!in_array($tipe_input, ['Core', 'Support', ''], true)) {
+            $tipe_input = ''; // Fallback to empty if invalid
         }
 
-        $stok_min_input = (int)$stok_min_input;
-
         // Fetch current to compare
-        $stmt_curr = $conn->prepare("SELECT stok_minimum FROM inventory_barang WHERE id = ?");
+        $stmt_curr = $conn->prepare("SELECT stok_minimum, tipe FROM inventory_barang WHERE id = ?");
         $stmt_curr->bind_param("i", $id);
         $stmt_curr->execute();
         $curr_res = $stmt_curr->get_result()->fetch_assoc();
@@ -69,16 +67,23 @@ try {
         }
 
         $stok_min_db = (int)$curr_res['stok_minimum'];
+        $tipe_db = (string)($curr_res['tipe'] ?? '');
 
-        // If same, skip as requested
-        if ($stok_min_input === $stok_min_db) {
+        // Check if anything changed
+        $min_changed = ($stok_min_input !== '' && $stok_min_input !== null && (int)$stok_min_input !== $stok_min_db);
+        $tipe_changed = ($tipe_input !== $tipe_db);
+
+        if (!$min_changed && !$tipe_changed) {
             $skipped_count++;
             continue;
         }
 
+        $final_min = $min_changed ? (int)$stok_min_input : $stok_min_db;
+        $final_tipe = $tipe_changed ? ($tipe_input ?: null) : ($tipe_db ?: null);
+
         // Update
-        $stmt_upd = $conn->prepare("UPDATE inventory_barang SET stok_minimum = ? WHERE id = ?");
-        $stmt_upd->bind_param("ii", $stok_min_input, $id);
+        $stmt_upd = $conn->prepare("UPDATE inventory_barang SET stok_minimum = ?, tipe = ? WHERE id = ?");
+        $stmt_upd->bind_param("isi", $final_min, $final_tipe, $id);
         $stmt_upd->execute();
         $updated_count++;
     }

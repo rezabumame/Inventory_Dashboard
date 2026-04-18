@@ -12,6 +12,7 @@ $q = $conn->query("
         b.odoo_product_id,
         b.uom,
         b.barcode,
+        b.tipe,
         COALESCE(NULLIF(uc.from_uom, ''), COALESCE(b.uom, '')) AS uom_odoo,
         COALESCE(NULLIF(uc.to_uom, ''), COALESCE(b.satuan, '')) AS uom_operasional,
         COALESCE(uc.multiplier, 1) AS uom_ratio
@@ -96,6 +97,7 @@ $without_min = $total - $with_min;
                             <th style="width:130px;">UOM Operasional</th>
                             <th style="width:130px;">UOM Odoo</th>
                             <th style="width:120px;" class="text-end">Ratio</th>
+                            <th style="width:100px;">Tipe</th>
                             <th style="width:140px;">Kategori</th>
                             <th style="width:120px;" class="text-end">Min Stok</th>
                             <th style="width:220px;">Odoo</th>
@@ -109,6 +111,7 @@ $without_min = $total - $with_min;
                             data-kode="<?= htmlspecialchars((string)($r['kode_barang'] ?? ''), ENT_QUOTES) ?>"
                             data-nama="<?= htmlspecialchars((string)($r['nama_barang'] ?? ''), ENT_QUOTES) ?>"
                             data-min="<?= (int)($r['stok_minimum'] ?? 0) ?>"
+                            data-tipe="<?= htmlspecialchars((string)($r['tipe'] ?? ''), ENT_QUOTES) ?>"
                         >
                             <td class="text-muted"><?= (int)$r['id'] ?></td>
                             <td class="fw-semibold"><?= htmlspecialchars((string)($r['kode_barang'] ?? '-')) ?></td>
@@ -117,6 +120,15 @@ $without_min = $total - $with_min;
                             <td class="text-muted small"><?= htmlspecialchars((string)($r['uom_odoo'] ?? ($r['uom'] ?? '-'))) ?></td>
                             <td class="text-end fw-semibold <?= (float)($r['uom_ratio'] ?? 1) === 1.0 ? 'text-muted' : '' ?>">
                                 <?= htmlspecialchars(rtrim(rtrim(number_format((float)($r['uom_ratio'] ?? 1), 8, '.', ''), '0'), '.')) ?>
+                            </td>
+                            <td>
+                                <?php if (($r['tipe'] ?? '') === 'Core'): ?>
+                                    <span class="badge bg-danger">Core</span>
+                                <?php elseif (($r['tipe'] ?? '') === 'Support'): ?>
+                                    <span class="badge bg-info">Support</span>
+                                <?php else: ?>
+                                    <span class="text-muted small">-</span>
+                                <?php endif; ?>
                             </td>
                             <td class="text-muted small"><?= htmlspecialchars((string)($r['kategori'] ?? '-')) ?></td>
                             <td class="text-end fw-semibold <?= (int)($r['stok_minimum'] ?? 0) === 0 ? 'text-muted' : '' ?>">
@@ -145,21 +157,30 @@ $without_min = $total - $with_min;
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title fw-bold">
-                    <i class="fas fa-edit me-2"></i>Edit Min Stok
+                    <i class="fas fa-edit me-2"></i>Edit Barang
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="actions/process_barang_min_stok.php">
+            <form method="POST" action="actions/process_barang_edit.php">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <div class="modal-body">
-                    <input type="hidden" name="barang_id" id="minBarangId" value="">
-                    <div class="mb-2">
+                    <input type="hidden" name="barang_id" id="editBarangId" value="">
+                    <div class="mb-3">
                         <div class="text-muted small">Barang</div>
-                        <div class="fw-semibold" id="minBarangLabel">-</div>
+                        <div class="fw-semibold" id="editBarangLabel">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Tipe Barang</label>
+                        <select class="form-select" name="tipe" id="editTipeValue">
+                            <option value="">- Belum Ditentukan -</option>
+                            <option value="Core">Core</option>
+                            <option value="Support">Support</option>
+                        </select>
+                        <div class="form-text">Tipe ini akan otomatis terpilih saat mapping item BHP.</div>
                     </div>
                     <div class="mb-2">
                         <label class="form-label fw-semibold">Min Stok</label>
-                        <input type="number" class="form-control" name="stok_minimum" id="minStokValue" min="0" step="1" required>
+                        <input type="number" class="form-control" name="stok_minimum" id="editMinStokValue" min="0" step="1" required>
                         <div class="form-text">Nilai 0 berarti tidak ada batas minimum.</div>
                     </div>
                 </div>
@@ -224,9 +245,11 @@ document.addEventListener('click', function(e) {
     const kode = tr.getAttribute('data-kode') || '-';
     const nama = tr.getAttribute('data-nama') || '-';
     const min = tr.getAttribute('data-min') || '0';
-    document.getElementById('minBarangId').value = id;
-    document.getElementById('minBarangLabel').textContent = kode + ' - ' + nama;
-    document.getElementById('minStokValue').value = min;
+    const tipe = tr.getAttribute('data-tipe') || '';
+    document.getElementById('editBarangId').value = id;
+    document.getElementById('editBarangLabel').textContent = kode + ' - ' + nama;
+    document.getElementById('editMinStokValue').value = min;
+    document.getElementById('editTipeValue').value = tipe;
     const modal = new bootstrap.Modal(document.getElementById('modalEditMin'));
     modal.show();
 });

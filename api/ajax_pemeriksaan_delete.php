@@ -15,8 +15,8 @@ if (($_SESSION['role'] ?? '') !== 'super_admin') {
 }
 require_csrf();
 
-$id = (int)($_POST['id'] ?? 0);
-if ($id <= 0) {
+$id = trim((string)($_POST['id'] ?? ''));
+if ($id === '') {
     echo json_encode(['success' => false, 'message' => 'Invalid id']);
     exit;
 }
@@ -24,11 +24,11 @@ if ($id <= 0) {
 $conn->begin_transaction();
 try {
     $stmt = $conn->prepare("DELETE FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ?");
-    $stmt->bind_param("i", $id);
+    $stmt->bind_param("s", $id);
     $stmt->execute();
 
     $stmt = $conn->prepare("DELETE FROM inventory_pemeriksaan_grup WHERE id = ?");
-    $stmt->bind_param("i", $id);
+    $stmt->bind_param("s", $id);
     $stmt->execute();
 
     $conn->commit();

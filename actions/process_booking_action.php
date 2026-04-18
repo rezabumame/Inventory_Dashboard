@@ -85,10 +85,10 @@ try {
             // Ambil semua pasien dan pemeriksaan yang ada di booking ini
             $res_pasien = $conn->query("SELECT pemeriksaan_grup_id FROM inventory_booking_pasien WHERE booking_id = $id");
             while ($pasien = $res_pasien->fetch_assoc()) {
-                $pid = (int)$pasien['pemeriksaan_grup_id'];
+                $pid = trim((string)$pasien['pemeriksaan_grup_id']);
                 
                 // Ambil SEMUA item dari master grup (Core & Support)
-                $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+                $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid'");
                 while ($item = $res_items->fetch_assoc()) {
                     $bid = (int)$item['barang_id'];
                     $qty = (float)$item['qty_per_pemeriksaan'];

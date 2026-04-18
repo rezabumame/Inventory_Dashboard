@@ -15,30 +15,31 @@ if (($_SESSION['role'] ?? '') !== 'super_admin') {
 }
 require_csrf();
 
-$grup_id = (int)($_POST['grup_id'] ?? 0);
+$grup_id = trim((string)($_POST['grup_id'] ?? ''));
 $barang_id = (int)($_POST['barang_id'] ?? 0);
 $qty = (int)($_POST['qty'] ?? 0);
-$is_mandatory = (int)($_POST['is_mandatory'] ?? 1);
+$id_biosys = trim((string)($_POST['id_biosys'] ?? ''));
+$layanan = trim((string)($_POST['layanan'] ?? ''));
 
-if ($grup_id <= 0 || $barang_id <= 0 || $qty <= 0) {
+if ($grup_id === '' || $barang_id <= 0 || $qty <= 0) {
     echo json_encode(['success' => false, 'message' => 'Data tidak valid']);
     exit;
 }
 
-$stmt = $conn->prepare("SELECT id FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ? AND barang_id = ?");
-$stmt->bind_param("ii", $grup_id, $barang_id);
+$stmt = $conn->prepare("SELECT id FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ? AND barang_id = ? AND id_biosys = ? AND nama_layanan = ?");
+$stmt->bind_param("siss", $grup_id, $barang_id, $id_biosys, $layanan);
 $stmt->execute();
 $res = $stmt->get_result();
 if ($res->num_rows > 0) {
-    $stmt = $conn->prepare("UPDATE inventory_pemeriksaan_grup_detail SET qty_per_pemeriksaan = ?, is_mandatory = ? WHERE pemeriksaan_grup_id = ? AND barang_id = ?");
-    $stmt->bind_param("iiii", $qty, $is_mandatory, $grup_id, $barang_id);
+    $stmt = $conn->prepare("UPDATE inventory_pemeriksaan_grup_detail SET qty_per_pemeriksaan = ? WHERE pemeriksaan_grup_id = ? AND barang_id = ? AND id_biosys = ? AND nama_layanan = ?");
+    $stmt->bind_param("isiss", $qty, $grup_id, $barang_id, $id_biosys, $layanan);
     if (!$stmt->execute()) {
         echo json_encode(['success' => false, 'message' => $stmt->error]);
         exit;
     }
 } else {
-    $stmt = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup_detail (pemeriksaan_grup_id, barang_id, qty_per_pemeriksaan, is_mandatory) VALUES (?, ?, ?, ?)");
-    $stmt->bind_param("iiii", $grup_id, $barang_id, $qty, $is_mandatory);
+    $stmt = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup_detail (pemeriksaan_grup_id, id_biosys, nama_layanan, barang_id, qty_per_pemeriksaan) VALUES (?, ?, ?, ?, ?)");
+    $stmt->bind_param("sssii", $grup_id, $id_biosys, $layanan, $barang_id, $qty);
     if (!$stmt->execute()) {
         echo json_encode(['success' => false, 'message' => $stmt->error]);
         exit;

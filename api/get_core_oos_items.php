@@ -37,7 +37,7 @@ if ($role === 'admin_klinik' && (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_i
 }
 
 if (!is_array($exam_ids)) $exam_ids = [];
-$exam_ids = array_values(array_unique(array_filter(array_map('intval', $exam_ids), fn($v) => $v > 0)));
+$exam_ids = array_values(array_unique(array_filter(array_map('trim', $exam_ids), fn($v) => $v !== '')));
 if (empty($exam_ids)) {
     echo json_encode(['success' => true, 'is_out_of_stock' => 0, 'items' => []]);
     exit;
@@ -48,7 +48,14 @@ if (stripos($status_booking, 'Clinic') !== false) $is_hc = false;
 
 $total_needed = [];
 foreach ($exam_ids as $pid) {
-    $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = " . (int)$pid . " AND is_mandatory = 1");
+    // Only check CORE items from Database Barang
+    $res = $conn->query("
+        SELECT d.barang_id, d.qty_per_pemeriksaan 
+        FROM inventory_pemeriksaan_grup_detail d
+        JOIN inventory_barang b ON d.barang_id = b.id
+        WHERE d.pemeriksaan_grup_id = '" . $conn->real_escape_string($pid) . "' 
+        AND b.tipe = 'Core'
+    ");
     while ($res && ($row = $res->fetch_assoc())) {
         $bid = (int)($row['barang_id'] ?? 0);
         $qty = (float)($row['qty_per_pemeriksaan'] ?? 0);

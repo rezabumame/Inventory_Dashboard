@@ -10,11 +10,11 @@ if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['super_a
     die('Unauthorized');
 }
 
-$sql = "SELECT id, kode_barang, nama_barang, stok_minimum FROM inventory_barang ORDER BY nama_barang ASC";
+$sql = "SELECT id, kode_barang, nama_barang, stok_minimum, tipe FROM inventory_barang ORDER BY nama_barang ASC";
 $res = $conn->query($sql);
 
 $data = [
-    ['ID (DO NOT EDIT)', 'Kode Barang', 'Nama Barang', 'Stok Minimum']
+    ['ID (DO NOT EDIT)', 'Kode Barang', 'Nama Barang', 'Stok Minimum', 'Tipe (Core/Support)']
 ];
 
 while ($row = $res->fetch_assoc()) {
@@ -22,7 +22,8 @@ while ($row = $res->fetch_assoc()) {
         (int)$row['id'],
         (string)$row['kode_barang'],
         (string)$row['nama_barang'],
-        (int)$row['stok_minimum']
+        (int)$row['stok_minimum'],
+        (string)($row['tipe'] ?? '')
     ];
 }
 

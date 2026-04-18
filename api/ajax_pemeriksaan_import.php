@@ -26,95 +26,150 @@ if (!$xlsx) {
     exit;
 }
 
+// Function to clean and trim strings including hidden characters
+function clean_string($str) {
+    if ($str === null) return '';
+    // Remove non-printable characters and trim
+    $str = preg_replace('/[\x00-\x1F\x7F-\x9F\xAD]/u', '', (string)$str);
+    return trim($str);
+}
+
 $rows = $xlsx->rows();
 if (count($rows) < 2) {
     echo json_encode(['success' => false, 'message' => 'File Excel kosong atau tidak sesuai format.']);
     exit;
 }
 
-$conn->begin_transaction();
-try {
-    $inserted_count = 0;
-    $mapping_count = 0;
-    $cleared_grups = [];
-    
-    // Skip header row
-    for ($i = 1; $i < count($rows); $i++) {
-        $nama_pemeriksaan = trim((string)$rows[$i][0]);
-        $kode_barang = trim((string)$rows[$i][1]);
-        $qty = (float)($rows[$i][3] ?? 0);
-        $kategori_raw = strtolower(trim((string)($rows[$i][4] ?? 'core')));
-        // Backward compatible: Mandatory/Optional still accepted.
-        // Core = mandatory(1), Support = optional(0)
-        $is_mandatory = in_array($kategori_raw, ['support', 'optional', '0'], true) ? 0 : 1;
-        
-        if ($nama_pemeriksaan === '') continue;
-        
-        // 1. Get or Create Grup
-        $stmt = $conn->prepare("SELECT id FROM inventory_pemeriksaan_grup WHERE nama_pemeriksaan = ?");
-        $stmt->bind_param("s", $nama_pemeriksaan);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        
-        if ($res->num_rows > 0) {
-            $grup_id = $res->fetch_assoc()['id'];
-            
-            // NEW: Clear existing mapping for this grup ONCE per import session
-            if (!in_array($grup_id, $cleared_grups)) {
-                $stmt_del = $conn->prepare("DELETE FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ?");
-                $stmt_del->bind_param("i", $grup_id);
-                $stmt_del->execute();
-                $cleared_grups[] = $grup_id;
-            }
-        } else {
-            $stmt_ins = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup (nama_pemeriksaan, keterangan) VALUES (?, '')");
-            $stmt_ins->bind_param("s", $nama_pemeriksaan);
-            $stmt_ins->execute();
-            $grup_id = $conn->insert_id;
-            $inserted_count++;
-            $cleared_grups[] = $grup_id; // Also mark as "cleared" so we don't try to delete again (though it's empty)
-        }
-        
-        // 2. Mapping Item if kode_barang is provided
-        if ($kode_barang !== '' && $qty > 0) {
-            $stmt_b = $conn->prepare("SELECT id FROM inventory_barang WHERE kode_barang = ?");
-            $stmt_b->bind_param("s", $kode_barang);
-            $stmt_b->execute();
-            $res_b = $stmt_b->get_result();
-            
-            if ($res_b->num_rows > 0) {
-                $barang_id = $res_b->fetch_assoc()['id'];
-                
-                // Check if already mapped
-                $stmt_check = $conn->prepare("SELECT id FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ? AND barang_id = ?");
-                $stmt_check->bind_param("ii", $grup_id, $barang_id);
-                $stmt_check->execute();
-                
-                if ($stmt_check->get_result()->num_rows === 0) {
-                    $stmt_map = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup_detail (pemeriksaan_grup_id, barang_id, qty_per_pemeriksaan, is_mandatory) VALUES (?, ?, ?, ?)");
-                    $stmt_map->bind_param("iidi", $grup_id, $barang_id, $qty, $is_mandatory);
-                    $stmt_map->execute();
-                    $mapping_count++;
-                } else {
-                    // Update existing mapping category/qty if re-imported? 
-                    // User didn't explicitly ask for update, but it's good practice.
-                    // For now, let's just stick to the request: ensure category exists.
-                    $stmt_upd = $conn->prepare("UPDATE inventory_pemeriksaan_grup_detail SET qty_per_pemeriksaan = ?, is_mandatory = ? WHERE pemeriksaan_grup_id = ? AND barang_id = ?");
-                    $stmt_upd->bind_param("diii", $qty, $is_mandatory, $grup_id, $barang_id);
-                    $stmt_upd->execute();
-                }
-            }
-        }
+$valid_mappings = [];
+$all_invalid_rows = [];
+$invalid_summary = []; // Key: error_type|barang_id|uom_excel
+$delete_all = isset($_POST['delete_all']) && $_POST['delete_all'] == '1';
+$total_excel_rows = 0;
+
+// Cache barangs for faster lookup
+$barangs_cache = [];
+$barangs_by_code = [];
+$barangs_by_odoo = [];
+$res_b = $conn->query("
+    SELECT 
+        b.id, 
+        b.kode_barang, 
+        b.odoo_product_id, 
+        b.nama_barang, 
+        COALESCE(NULLIF(uc.to_uom, ''), b.satuan) AS satuan
+    FROM inventory_barang b
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+");
+while($b = $res_b->fetch_assoc()) {
+    $barangs_cache[$b['id']] = $b;
+    if ($b['kode_barang'] !== null && $b['kode_barang'] !== '') {
+        $barangs_by_code[clean_string($b['kode_barang'])] = $b;
     }
-    
-    $conn->commit();
-    echo json_encode([
-        'success' => true, 
-        'message' => "Berhasil mengimport $inserted_count pemeriksaan baru dan $mapping_count mapping item."
-    ]);
-} catch (Exception $e) {
-    $conn->rollback();
-    echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
+    if ($b['odoo_product_id'] !== null && $b['odoo_product_id'] !== '') {
+        $barangs_by_odoo[clean_string($b['odoo_product_id'])] = $b;
+    }
 }
+
+// Skip header row
+for ($i = 1; $i < count($rows); $i++) {
+    $id_paket = clean_string($rows[$i][0] ?? '');
+    $nama_pemeriksaan = clean_string($rows[$i][1] ?? '');
+    $id_biosys = clean_string($rows[$i][2] ?? '');
+    $layanan = clean_string($rows[$i][3] ?? '');
+    
+    $raw_barang_id = clean_string($rows[$i][4] ?? '');
+    $consumables = clean_string($rows[$i][5] ?? '');
+    $qty = (float)($rows[$i][6] ?? 0);
+    $uom_excel = clean_string($rows[$i][7] ?? '');
+    
+    if ($id_paket === '' || $nama_pemeriksaan === '') continue;
+    
+    $total_excel_rows++;
+
+    $row_data = [
+        'id_paket' => $id_paket,
+        'nama_paket' => $nama_pemeriksaan,
+        'id_biosys' => $id_biosys,
+        'layanan' => $layanan,
+        'barang_id' => $raw_barang_id, // Default to what's in excel for now
+        'consumables' => $consumables,
+        'qty' => $qty,
+        'uom_excel' => $uom_excel,
+        'system_uom' => null
+    ];
+
+    if ($raw_barang_id !== '' && $qty > 0) {
+        // Try to find item by Code or Odoo ID (DO NOT use internal database ID)
+        $b = null;
+        if (isset($barangs_by_code[$raw_barang_id])) {
+            $b = $barangs_by_code[$raw_barang_id];
+        } elseif (isset($barangs_by_odoo[$raw_barang_id])) {
+            $b = $barangs_by_odoo[$raw_barang_id];
+        }
+
+        if (!$b) {
+            $error_type = 'item_not_found';
+            $error_msg = "ID Barang $raw_barang_id tidak ditemukan";
+            
+            $summary_key = $error_type . '|' . $raw_barang_id;
+            if (!isset($invalid_summary[$summary_key])) {
+                $invalid_summary[$summary_key] = [
+                    'error_type' => $error_type,
+                    'barang_id' => $raw_barang_id,
+                    'consumables' => $consumables,
+                    'uom_excel' => $uom_excel,
+                    'error' => $error_msg,
+                    'count' => 0
+                ];
+            }
+            $invalid_summary[$summary_key]['count']++;
+            $row_data['summary_key'] = $summary_key;
+            $all_invalid_rows[] = $row_data;
+
+        } else {
+            $row_data['barang_id'] = $b['id']; // Use actual ID
+            $row_data['system_uom'] = $b['satuan'];
+            
+            if (strtolower($uom_excel) !== strtolower($b['satuan'])) {
+                $error_type = 'uom_mismatch';
+                $error_msg = "UoM berbeda (Excel: $uom_excel, Sistem: {$b['satuan']})";
+                
+                $summary_key = $error_type . '|' . $b['id'] . '|' . strtolower($uom_excel);
+                if (!isset($invalid_summary[$summary_key])) {
+                    $invalid_summary[$summary_key] = [
+                        'error_type' => $error_type,
+                        'barang_id' => $b['id'],
+                        'consumables' => $consumables,
+                        'uom_excel' => $uom_excel,
+                        'system_uom' => $b['satuan'],
+                        'error' => $error_msg,
+                        'count' => 0
+                    ];
+                }
+                $invalid_summary[$summary_key]['count']++;
+                $row_data['summary_key'] = $summary_key;
+                $all_invalid_rows[] = $row_data;
+
+            } else {
+                $valid_mappings[] = $row_data;
+            }
+        }
+    } else {
+        $valid_mappings[] = $row_data;
+    }
+}
+
+echo json_encode([
+    'success' => true,
+    'needs_review' => !empty($invalid_summary),
+    'total_excel_rows' => $total_excel_rows,
+    'valid_count' => count($valid_mappings),
+    'invalid_count' => count($all_invalid_rows),
+    'invalid_summary' => array_values($invalid_summary),
+    'all_invalid_rows' => $all_invalid_rows,
+    'valid_data' => $valid_mappings,
+    'delete_all' => $delete_all
+]);
+exit;
 
 

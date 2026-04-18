@@ -1039,12 +1039,17 @@ window.loadExamOptions = function(klinikId, callback) {
         success: function(data) {
             examOptionsModal = '<option value="">Pilih pemeriksaan...</option>';
             if (data && data.length > 0) {
-                data.forEach(function(exam) {
-                    var readyText = exam.is_available ? `(Ready: ${exam.qty})` : '(STOK KOSONG)';
-                    var textClass = exam.is_available ? '' : 'text-danger';
-                    examOptionsModal += `<option value="${exam.id}" data-available="${exam.is_available ? 1 : 0}" class="${textClass}">${exam.name} ${readyText}</option>`;
-                });
-            } else {
+                    data.forEach(function(exam) {
+                        var readyText = '';
+                        if (exam.no_mapping) {
+                            readyText = '(Input Manual di BHP)';
+                        } else {
+                            readyText = exam.is_available ? `(Ready: ${exam.qty})` : '(STOK KOSONG)';
+                        }
+                        var textClass = exam.is_available ? '' : 'text-danger';
+                        examOptionsModal += `<option value="${exam.id}" data-available="${exam.is_available ? 1 : 0}" class="${textClass}">${exam.name} ${readyText}</option>`;
+                    });
+                } else {
                 examOptionsModal = '<option value="">Tidak ada pemeriksaan tersedia</option>';
             }
             updateAllExamSelects();
