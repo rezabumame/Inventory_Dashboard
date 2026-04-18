@@ -107,7 +107,7 @@ if ($can_cs_edit) {
                 <input type="hidden" name="booking_id" value="<?= $id ?>">
                 <input type="hidden" name="request_reason" value="<?= htmlspecialchars($request_reason) ?>">
                 
-                <div class="modal-body" style="max-height: 75vh; overflow-y: auto;">
+                <div class="modal-body">
                     <div id="bookingEditStockWarning" class="alert alert-warning py-2 small mb-3 d-none">
                         <i class="fas fa-exclamation-triangle me-1"></i> <strong>Peringatan:</strong> Core kosong: proses tetap lanjut sesuai kebijakan, mohon follow up restock.
                     </div>
@@ -320,6 +320,7 @@ if ($can_cs_edit) {
                 templateResult: formatExamOptionEdit,
                 templateSelection: formatExamOptionEdit
             });
+            if (selectedId) $select.trigger('change');
         }
         checkEditSelectedStock();
     }

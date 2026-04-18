@@ -76,10 +76,11 @@ try {
             throw new Exception("Pasien " . ($p['nama'] ?: 'tanpa nama') . " belum memilih pemeriksaan!");
         }
         foreach ($p_exams as $pid) {
-            $pid = intval($pid);
-            if ($pid <= 0) continue;
+            $pid = trim((string)$pid);
+            if ($pid === '') continue;
             
-            $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid AND is_mandatory = 1");
+            $pid_esc = $conn->real_escape_string($pid);
+            $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
             while($row = $res->fetch_assoc()) {
                 $bid = intval($row['barang_id']);
                 $qty = (float)$row['qty_per_pemeriksaan'];
@@ -88,9 +89,11 @@ try {
         }
     }
 
+    /* 
     if (empty($total_needed)) {
         throw new Exception("Tidak ada item yang perlu dibooking");
     }
+    */
 
     // 2. Check Effective Availability (Core items only). Core = is_mandatory=1
     $out_of_stock_items = [];
@@ -142,8 +145,8 @@ try {
         $p_exams = $p['exams'] ?? [];
 
         foreach ($p_exams as $pid) {
-            $pid = intval($pid);
-            if ($pid <= 0) continue;
+            $pid = trim((string)$pid);
+            if ($pid === '') continue;
 
             // Insert patient-exam link
             $stmt_pasien->bind_param("isiss", $book_id, $pnama, $pid, $ptlp, $ptgl);
@@ -151,7 +154,8 @@ try {
             $pasien_row_id = (int)$conn->insert_id;
 
             // Insert inventory details for this specific patient
-            $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+            $pid_esc = $conn->real_escape_string($pid);
+            $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
             while ($res_items && ($i_row = $res_items->fetch_assoc())) {
                 $barang_id = (int)$i_row['barang_id'];
                 $qty_unit = (float)$i_row['qty_per_pemeriksaan'];

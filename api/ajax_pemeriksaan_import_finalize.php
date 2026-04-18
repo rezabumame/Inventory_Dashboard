@@ -112,12 +112,12 @@ try {
 
             if ($stmt_check->get_result()->num_rows === 0) {
                 $stmt_map = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup_detail (pemeriksaan_grup_id, id_biosys, nama_layanan, barang_id, qty_per_pemeriksaan) VALUES (?, ?, ?, ?, ?)");
-                $stmt_map->bind_param("sssii", $grup_id, $id_biosys, $layanan, $barang_id, $qty);
+                $stmt_map->bind_param("sssid", $grup_id, $id_biosys, $layanan, $barang_id, $qty);
                 $stmt_map->execute();
                 $mapping_count++;
             } else {
                 $stmt_upd = $conn->prepare("UPDATE inventory_pemeriksaan_grup_detail SET qty_per_pemeriksaan = ? WHERE pemeriksaan_grup_id = ? AND barang_id = ? AND id_biosys = ? AND nama_layanan = ?");
-                $stmt_upd->bind_param("isiss", $qty, $grup_id, $barang_id, $id_biosys, $layanan);
+                $stmt_upd->bind_param("dsiss", $qty, $grup_id, $barang_id, $id_biosys, $layanan);
                 $stmt_upd->execute();
                 $mapping_count++;
             }

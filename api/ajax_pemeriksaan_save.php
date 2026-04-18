@@ -66,11 +66,11 @@ try {
         $stmt_detail = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup_detail (pemeriksaan_grup_id, id_biosys, nama_layanan, barang_id, qty_per_pemeriksaan) VALUES (?, ?, ?, ?, ?)");
         foreach ($barang_ids as $index => $barang_id) {
             $barang_id = (int)$barang_id;
-            $qty = (int)($qtys[$index] ?? 1);
+            $qty = (float)($qtys[$index] ?? 1);
             $id_biosys = trim((string)($id_biosys_list[$index] ?? ''));
             $layanan = trim((string)($layanan_list[$index] ?? ''));
             if ($barang_id > 0 && $qty > 0) {
-                $stmt_detail->bind_param("sssii", $id_paket, $id_biosys, $layanan, $barang_id, $qty);
+                $stmt_detail->bind_param("sssid", $id_paket, $id_biosys, $layanan, $barang_id, $qty);
                 $stmt_detail->execute();
             }
         }

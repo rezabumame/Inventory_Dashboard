@@ -446,6 +446,10 @@ try {
         $conn->query("ALTER TABLE inventory_booking_detail MODIFY COLUMN qty_adjust DECIMAL(18,4) DEFAULT 0.0000");
         return "Updated 5 columns";
     });
+
+    run_migration_task("Update: inventory_pemeriksaan_grup_detail qty", function() use ($conn) {
+        return $conn->query("ALTER TABLE inventory_pemeriksaan_grup_detail MODIFY COLUMN qty_per_pemeriksaan DECIMAL(18,4) NOT NULL DEFAULT 1") ? "Updated" : "Failed";
+    });
     
     run_migration_task("Update: inventory_pemakaian_bhp_detail qty", fn() => $conn->query("ALTER TABLE inventory_pemakaian_bhp_detail MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed");
     
