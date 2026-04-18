@@ -1,19 +1,12 @@
 <?php
 require_once __DIR__ . '/../../config/settings.php';
-check_role(['super_admin']);
+check_role(['super_admin', 'admin_klinik', 'cs']);
 
-// Fetch Groups
-$groups = $conn->query("
-    SELECT 
-        g.id,
-        g.nama_pemeriksaan,
-        g.created_at,
-        COUNT(d.id) AS total_items
-    FROM inventory_pemeriksaan_grup g
-    LEFT JOIN inventory_pemeriksaan_grup_detail d ON d.pemeriksaan_grup_id = g.id
-    GROUP BY g.id, g.nama_pemeriksaan, g.created_at
-    ORDER BY g.created_at DESC
-");
+$role = $_SESSION['role'] ?? '';
+$can_edit = ($role === 'super_admin');
+
+// Fetch Groups - REMOVED for server-side pagination
+//$groups = $conn->query("..."); 
 
 // Fetch Barang for Dropdown
 $barangs = $conn->query("
@@ -46,6 +39,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
             </nav>
         </div>
         <div class="col-auto text-end">
+            <?php if ($can_edit): ?>
             <button class="btn btn-outline-primary btn-sm me-2" id="btnConfigGSheet">
                 <i class="fas fa-cog me-1"></i>Config GSheet
             </button>
@@ -55,6 +49,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
             <button class="btn btn-primary btn-sm px-3" id="btnNewExam">
                 <i class="fas fa-plus me-1"></i>Buat Baru
             </button>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -138,36 +133,14 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                 <th width="120">ID Paket</th>
                                 <th>Nama Paket</th>
                                 <th width="120" class="text-center">Item</th>
+                                <?php if ($can_edit): ?>
                                 <th width="100">Aksi</th>
+                                <?php endif; ?>
                                 <th class="d-none">Created At</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php while($g = $groups->fetch_assoc()): ?>
-                                <tr class="main-row" data-grup-id="<?= htmlspecialchars($g['id'], ENT_QUOTES) ?>" data-grup-nama="<?= htmlspecialchars($g['nama_pemeriksaan'], ENT_QUOTES) ?>">
-                                    <td>
-                                        <div class="btn-toggle-detail" title="Lihat Detail">
-                                            <i class="fas fa-caret-right"></i>
-                                        </div>
-                                    </td>
-                                    <td class="fw-bold text-primary"><?= htmlspecialchars($g['id']) ?></td>
-                                    <td class="fw-semibold"><?= htmlspecialchars($g['nama_pemeriksaan']) ?></td>
-                                    <td class="text-center">
-                                        <span class="badge bg-light text-dark border" data-role="total-items"><?= (int)$g['total_items'] ?></span>
-                                    </td>
-                                    <td>
-                                        <div class="btn-group" role="group">
-                                            <button type="button" class="btn btn-sm btn-outline-warning btnEdit" title="Edit">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                            <button type="button" class="btn btn-sm btn-outline-danger btnDelete" title="Hapus">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </div>
-                                    </td>
-                                    <td class="d-none"><?= $g['created_at'] ?></td>
-                                </tr>
-                            <?php endwhile; ?>
+                            <!-- Loaded via DataTables Server-side -->
                         </tbody>
                     </table>
                 </div>
@@ -362,7 +335,9 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                         <th>Item</th>
                                         <th width="80" class="text-center">Tipe</th>
                                         <th width="60" class="text-center">Qty</th>
+                                        <?php if ($can_edit): ?>
                                         <th width="44"></th>
+                                        <?php endif; ?>
                                     </tr>
                                 </thead>
                                 <tbody id="detailItemsBody"></tbody>
@@ -377,12 +352,15 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                             
                             <label class="form-label mb-1 small fw-bold">Nama Paket</label>
                             <div class="input-group mb-4">
-                                <input type="text" class="form-control" id="detailGrupNama" value="">
+                                <input type="text" class="form-control" id="detailGrupNama" value="" <?= $can_edit ? '' : 'readonly' ?>>
+                                <?php if ($can_edit): ?>
                                 <button type="button" class="btn btn-primary-custom" id="btnSaveNama">
                                     <i class="fas fa-save"></i>
                                 </button>
+                                <?php endif; ?>
                             </div>
 
+                            <?php if ($can_edit): ?>
                             <div class="fw-bold mb-2 text-success"><i class="fas fa-plus-circle me-1"></i> Tambah Item</div>
                             <form class="row g-2" id="formAddMapping">
                                 <div class="col-12">
@@ -410,6 +388,11 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                     <button type="submit" class="btn btn-sm btn-success w-100 fw-bold"><i class="fas fa-plus me-1"></i> Tambah ke Mapping</button>
                                 </div>
                             </form>
+                            <?php else: ?>
+                            <div class="alert alert-info small py-2">
+                                <i class="fas fa-info-circle me-1"></i> Anda dalam mode <strong>View Only</strong>. Hubungi tim Super Admin untuk perubahan data paket pemeriksaan.
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -498,6 +481,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
 
 <script>
 const PEMERIKSAAN_CSRF = <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>;
+const CAN_EDIT = <?= json_encode($can_edit) ?>;
 function getRowByGrupId(grupId) {
     return $('#examTable tbody tr[data-grup-id="' + grupId + '"]');
 }
@@ -530,6 +514,10 @@ function loadDetail(grupId) {
                     const badge = d.tipe === 'Core' ? 
                         '<span class="badge bg-danger px-2">Core</span>' : 
                         '<span class="badge bg-info px-2">Support</span>';
+                    const deleteBtn = CAN_EDIT ? 
+                        '<td class="text-center">' +
+                            '<button type="button" class="btn btn-sm btn-outline-danger btnDeleteDetail" data-detail-id="' + d.id + '"><i class="fas fa-trash"></i></button>' +
+                        '</td>' : '';
                     rows.push(
                         '<tr>' +
                             '<td class="text-muted small">' + (d.id_biosys || '-') + '</td>' +
@@ -537,9 +525,7 @@ function loadDetail(grupId) {
                             '<td class="fw-semibold">' + $('<div>').text(itemText).html() + '</td>' +
                             '<td class="text-center">' + badge + '</td>' +
                             '<td class="text-center fw-semibold">' + d.qty_per_pemeriksaan + '</td>' +
-                            '<td class="text-center">' +
-                                '<button type="button" class="btn btn-sm btn-outline-danger btnDeleteDetail" data-detail-id="' + d.id + '"><i class="fas fa-trash"></i></button>' +
-                            '</td>' +
+                            deleteBtn +
                         '</tr>'
                     );
                 });
@@ -638,18 +624,71 @@ $(document).ready(function() {
     });
 
     const table = $('#examTable').DataTable({
+        "processing": true,
+        "serverSide": true,
+        "ajax": {
+            "url": "api/ajax_pemeriksaan_list.php",
+            "type": "POST"
+        },
         "order": [[ 5, "desc" ]],
         "pageLength": 10,
         "lengthChange": false,
+        "columns": [
+            { 
+                "data": null, 
+                "orderable": false,
+                "render": function() {
+                    return '<div class="btn-toggle-detail" title="Lihat Detail"><i class="fas fa-caret-right"></i></div>';
+                }
+            },
+            { 
+                "data": "id",
+                "render": function(data) {
+                    return '<span class="fw-bold text-primary">' + data + '</span>';
+                }
+            },
+            { 
+                "data": "nama_pemeriksaan",
+                "render": function(data) {
+                    return '<span class="fw-semibold">' + data + '</span>';
+                }
+            },
+            { 
+                "data": "total_items",
+                "className": "text-center",
+                "render": function(data) {
+                    return '<span class="badge bg-light text-dark border" data-role="total-items">' + data + '</span>';
+                }
+            },
+            { 
+                "data": null,
+                "visible": CAN_EDIT,
+                "orderable": false,
+                "render": function(data, type, row) {
+                    return '<div class="btn-group" role="group">' +
+                                '<button type="button" class="btn btn-sm btn-outline-warning btnEdit" title="Edit">' +
+                                    '<i class="fas fa-edit"></i>' +
+                                '</button>' +
+                                '<button type="button" class="btn btn-sm btn-outline-danger btnDelete" title="Hapus">' +
+                                    '<i class="fas fa-trash"></i>' +
+                                '</button>' +
+                            '</div>';
+                }
+            },
+            { "data": "created_at", "visible": false }
+        ],
+        "createdRow": function(row, data, dataIndex) {
+            $(row).addClass('main-row');
+            $(row).attr('data-grup-id', data.id);
+            $(row).attr('data-grup-nama', data.nama_pemeriksaan);
+        },
         "dom": "<'row mb-2'<'col-sm-12 col-md-6 d-flex align-items-center'><'col-sm-12 col-md-6 d-flex align-items-center justify-content-end'f>>" +
                "<'row'<'col-sm-12'tr>>" +
                "<'row mt-2'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
         "language": {
-            "searchPlaceholder": "Cari..."
-        },
-        "columnDefs": [
-            { "orderable": false, "targets": [0, 4] }
-        ]
+            "searchPlaceholder": "Cari...",
+            "processing": '<div class="spinner-border spinner-border-sm text-primary" role="status"><span class="visually-hidden">Loading...</span></div> Memuat data...'
+        }
     });
 
     // Store clean options HTML for dynamic rows

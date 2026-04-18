@@ -8,7 +8,7 @@ if (!isset($_SESSION['user_id'])) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
 }
-if (($_SESSION['role'] ?? '') !== 'super_admin') {
+if (!in_array($_SESSION['role'] ?? '', ['super_admin', 'admin_klinik', 'cs'])) {
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }

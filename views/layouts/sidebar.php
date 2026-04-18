@@ -106,11 +106,14 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
-        <?php if ($role === 'super_admin'): ?>
+        <?php if ($role === 'super_admin' || in_array($role, ['admin_klinik', 'cs'])): ?>
         <div class="sidebar-heading">MASTER DATA</div>
         <a href="index.php?page=pemeriksaan" class="sidebar-link <?= $current_page == 'pemeriksaan' ? 'active' : '' ?>">
-            <i class="fas fa-notes-medical"></i> Master Pemeriksaan
+            <i class="fas fa-notes-medical"></i> <?= ($role === 'super_admin') ? 'Master Pemeriksaan' : 'Daftar Pemeriksaan' ?>
         </a>
+        <?php endif; ?>
+
+        <?php if ($role === 'super_admin'): ?>
         <a href="index.php?page=klinik" class="sidebar-link <?= $current_page == 'klinik' ? 'active' : '' ?>">
             <i class="fas fa-clinic-medical"></i> Data Klinik
         </a>
