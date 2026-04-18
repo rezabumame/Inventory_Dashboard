@@ -92,115 +92,115 @@ foreach ($exams as $ex) {
         if ($bid > 0) $needed_barang_ids[$bid] = true;
     }
 }
-if (empty($needed_barang_ids)) {
-    echo json_encode([]);
-    exit;
-}
-$bid_list = implode(',', array_map('intval', array_keys($needed_barang_ids)));
 
 $stock_map = [];
-$q = "
-SELECT
-    b.id AS barang_id,
-    COALESCE(sm.qty, 0) / COALESCE(uc.multiplier, 1) AS baseline_qty
-FROM inventory_barang b
-LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-LEFT JOIN inventory_stock_mirror sm
-  ON TRIM(sm.location_code) = '$loc_esc'
- AND (
-      (TRIM(b.odoo_product_id) <> '' AND sm.odoo_product_id = b.odoo_product_id)
-      OR (TRIM(b.kode_barang) <> '' AND TRIM(sm.kode_barang) = TRIM(b.kode_barang))
- )
-WHERE b.id IN ($bid_list)
-GROUP BY b.id, uc.multiplier, sm.qty
-";
-$rs = $conn->query($q);
-while ($rs && ($row = $rs->fetch_assoc())) {
-    $stock_map[(int)$row['barang_id']] = (float)($row['baseline_qty'] ?? 0);
-}
-
 $sellout_map = [];
-$sellout_filter = "pb.tanggal >= '$month_start_esc 00:00:00' AND pb.tanggal <= '$month_end_esc 23:59:59'";
-if ($last_update_esc !== '') $sellout_filter .= " AND pb.created_at > '$last_update_esc'";
-$jenis_cond = $dest === 'hc' ? "pb.jenis_pemakaian = 'hc'" : "pb.jenis_pemakaian <> 'hc'";
-$r = $conn->query("
-    SELECT pbd.barang_id, COALESCE(SUM(pbd.qty), 0) AS qty
-    FROM inventory_pemakaian_bhp_detail pbd
-    JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
-    WHERE pb.klinik_id = $klinik_id
-      AND $jenis_cond
-      AND $sellout_filter
-      AND pbd.barang_id IN ($bid_list)
-    GROUP BY pbd.barang_id
-");
-while ($r && ($row = $r->fetch_assoc())) $sellout_map[(int)$row['barang_id']] = (float)($row['qty'] ?? 0);
-
 $reserve_map = [];
-$reserve_cond = $dest === 'hc' ? "bp.status_booking LIKE '%HC%'" : "bp.status_booking LIKE '%Clinic%'";
-$reserve_field = $dest === 'hc' ? "CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END" : "CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END";
-$r = $conn->query("
-    SELECT bd.barang_id, COALESCE(SUM($reserve_field), 0) AS qty
-    FROM inventory_booking_detail bd
-    JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
-    WHERE bp.klinik_id = $klinik_id
-      AND bp.status = 'booked'
-      AND $reserve_cond
-      AND bp.tanggal_pemeriksaan >= '$today_esc'
-      AND bp.tanggal_pemeriksaan <= '$month_end_esc'
-      AND bd.barang_id IN ($bid_list)
-    GROUP BY bd.barang_id
-");
-while ($r && ($row = $r->fetch_assoc())) $reserve_map[(int)$row['barang_id']] = (float)($row['qty'] ?? 0);
-
 $transfer_in_map = [];
 $transfer_out_map = [];
-if ($last_update_esc !== '') {
-    if ($dest === 'hc') {
-        $r = $conn->query("
-            SELECT ts.barang_id,
-                   COALESCE(SUM(CASE WHEN ts.tipe_transaksi='in' THEN ts.qty ELSE 0 END), 0) AS qty_in,
-                   COALESCE(SUM(CASE WHEN ts.tipe_transaksi='out' THEN ts.qty ELSE 0 END), 0) AS qty_out
-            FROM inventory_transaksi_stok ts
-            WHERE ts.level = 'hc'
-              AND ts.level_id = $klinik_id
-              AND ts.referensi_tipe = 'hc_petugas_transfer'
-              AND ts.created_at > '$last_update_esc'
-              AND ts.created_at >= '" . $conn->real_escape_string($month_start . " 00:00:00") . "'
-              AND ts.barang_id IN ($bid_list)
-            GROUP BY ts.barang_id
-        ");
-    } else {
-        $r = $conn->query("
-            SELECT ts.barang_id,
-                   COALESCE(SUM(CASE WHEN ts.tipe_transaksi='in' THEN ts.qty ELSE 0 END), 0) AS qty_in,
-                   COALESCE(SUM(CASE WHEN ts.tipe_transaksi='out' THEN ts.qty ELSE 0 END), 0) AS qty_out
-            FROM inventory_transaksi_stok ts
-            WHERE ts.level = 'klinik'
-              AND ts.level_id = $klinik_id
-              AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')
-              AND ts.created_at > '$last_update_esc'
-              AND ts.created_at >= '" . $conn->real_escape_string($month_start . " 00:00:00") . "'
-              AND ts.barang_id IN ($bid_list)
-            GROUP BY ts.barang_id
-        ");
-    }
-    while ($r && ($row = $r->fetch_assoc())) {
-        $bid = (int)($row['barang_id'] ?? 0);
-        $transfer_in_map[$bid] = (float)($row['qty_in'] ?? 0);
-        $transfer_out_map[$bid] = (float)($row['qty_out'] ?? 0);
-    }
-}
-
 $available_barang = [];
-foreach ($needed_barang_ids as $bid => $_t) {
-    $base = (float)($stock_map[$bid] ?? 0);
-    $sell = (float)($sellout_map[$bid] ?? 0);
-    $resv = (float)($reserve_map[$bid] ?? 0);
-    $tin = (float)($transfer_in_map[$bid] ?? 0);
-    $tout = (float)($transfer_out_map[$bid] ?? 0);
-    $avail = $base + $tin - $tout - $sell - $resv;
-    if ($avail < 0) $avail = 0;
-    $available_barang[$bid] = $avail;
+
+if (!empty($needed_barang_ids)) {
+    $bid_list = implode(',', array_map('intval', array_keys($needed_barang_ids)));
+
+    $q = "
+    SELECT
+        b.id AS barang_id,
+        COALESCE(sm.qty, 0) / COALESCE(uc.multiplier, 1) AS baseline_qty
+    FROM inventory_barang b
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    LEFT JOIN inventory_stock_mirror sm
+      ON TRIM(sm.location_code) = '$loc_esc'
+     AND (
+          (TRIM(b.odoo_product_id) <> '' AND sm.odoo_product_id = b.odoo_product_id)
+          OR (TRIM(b.kode_barang) <> '' AND TRIM(sm.kode_barang) = TRIM(b.kode_barang))
+     )
+    WHERE b.id IN ($bid_list)
+    GROUP BY b.id, uc.multiplier, sm.qty
+    ";
+    $rs = $conn->query($q);
+    while ($rs && ($row = $rs->fetch_assoc())) {
+        $stock_map[(int)$row['barang_id']] = (float)($row['baseline_qty'] ?? 0);
+    }
+
+    $sellout_filter = "pb.tanggal >= '$month_start_esc 00:00:00' AND pb.tanggal <= '$month_end_esc 23:59:59'";
+    if ($last_update_esc !== '') $sellout_filter .= " AND pb.created_at > '$last_update_esc'";
+    $jenis_cond = $dest === 'hc' ? "pb.jenis_pemakaian = 'hc'" : "pb.jenis_pemakaian <> 'hc'";
+    $r = $conn->query("
+        SELECT pbd.barang_id, COALESCE(SUM(pbd.qty), 0) AS qty
+        FROM inventory_pemakaian_bhp_detail pbd
+        JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
+        WHERE pb.klinik_id = $klinik_id
+          AND $jenis_cond
+          AND $sellout_filter
+          AND pbd.barang_id IN ($bid_list)
+        GROUP BY pbd.barang_id
+    ");
+    while ($r && ($row = $r->fetch_assoc())) $sellout_map[(int)$row['barang_id']] = (float)($row['qty'] ?? 0);
+
+    $reserve_cond = $dest === 'hc' ? "bp.status_booking LIKE '%HC%'" : "bp.status_booking LIKE '%Clinic%'";
+    $reserve_field = $dest === 'hc' ? "CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END" : "CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END";
+    $r = $conn->query("
+        SELECT bd.barang_id, COALESCE(SUM($reserve_field), 0) AS qty
+        FROM inventory_booking_detail bd
+        JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
+        WHERE bp.klinik_id = $klinik_id
+          AND bp.status = 'booked'
+          AND $reserve_cond
+          AND bp.tanggal_pemeriksaan >= '$today_esc'
+          AND bp.tanggal_pemeriksaan <= '$month_end_esc'
+          AND bd.barang_id IN ($bid_list)
+        GROUP BY bd.barang_id
+    ");
+    while ($r && ($row = $r->fetch_assoc())) $reserve_map[(int)$row['barang_id']] = (float)($row['qty'] ?? 0);
+
+    if ($last_update_esc !== '') {
+        if ($dest === 'hc') {
+            $r = $conn->query("
+                SELECT ts.barang_id,
+                       COALESCE(SUM(CASE WHEN ts.tipe_transaksi='in' THEN ts.qty ELSE 0 END), 0) AS qty_in,
+                       COALESCE(SUM(CASE WHEN ts.tipe_transaksi='out' THEN ts.qty ELSE 0 END), 0) AS qty_out
+                FROM inventory_transaksi_stok ts
+                WHERE ts.level = 'hc'
+                  AND ts.level_id = $klinik_id
+                  AND ts.referensi_tipe = 'hc_petugas_transfer'
+                  AND ts.created_at > '$last_update_esc'
+                  AND ts.created_at >= '" . $conn->real_escape_string($month_start . " 00:00:00") . "'
+                  AND ts.barang_id IN ($bid_list)
+                GROUP BY ts.barang_id
+            ");
+        } else {
+            $r = $conn->query("
+                SELECT ts.barang_id,
+                       COALESCE(SUM(CASE WHEN ts.tipe_transaksi='in' THEN ts.qty ELSE 0 END), 0) AS qty_in,
+                       COALESCE(SUM(CASE WHEN ts.tipe_transaksi='out' THEN ts.qty ELSE 0 END), 0) AS qty_out
+                FROM inventory_transaksi_stok ts
+                WHERE ts.level = 'klinik'
+                  AND ts.level_id = $klinik_id
+                  AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')
+                  AND ts.created_at > '$last_update_esc'
+                  AND ts.created_at >= '" . $conn->real_escape_string($month_start . " 00:00:00") . "'
+                  AND ts.barang_id IN ($bid_list)
+                GROUP BY ts.barang_id
+            ");
+        }
+        while ($r && ($row = $r->fetch_assoc())) {
+            $bid = (int)($row['barang_id'] ?? 0);
+            $transfer_in_map[$bid] = (float)($row['qty_in'] ?? 0);
+            $transfer_out_map[$bid] = (float)($row['qty_out'] ?? 0);
+        }
+    }
+
+    foreach ($needed_barang_ids as $bid => $_t) {
+        $base = (float)($stock_map[$bid] ?? 0);
+        $sell = (float)($sellout_map[$bid] ?? 0);
+        $resv = (float)($reserve_map[$bid] ?? 0);
+        $tin = (float)($transfer_in_map[$bid] ?? 0);
+        $tout = (float)($transfer_out_map[$bid] ?? 0);
+        $avail = $base + $tin - $tout - $sell - $resv;
+        if ($avail < 0) $avail = 0;
+        $available_barang[$bid] = $avail;
+    }
 }
 
 $out = [];
