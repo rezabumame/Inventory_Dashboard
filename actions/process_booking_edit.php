@@ -232,7 +232,7 @@ try {
             if ($pid === '') continue;
 
             // Insert patient-exam link
-            $stmt_pasien->bind_param("isiss", $booking_id, $pnama, $pid, $ptlp, $ptgl);
+            $stmt_pasien->bind_param("issss", $booking_id, $pnama, $pid, $ptlp, $ptgl);
             if (!$stmt_pasien->execute()) throw new Exception("Error saving patient exam: " . $stmt_pasien->error);
             $pasien_row_id = (int)$conn->insert_id;
 

@@ -226,8 +226,8 @@ try {
                 foreach ($patients as $p) {
                     $p_exams = $p['exams'] ?? [];
                     foreach ($p_exams as $pid) {
-                        $pid = intval($pid);
-                        $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid AND is_mandatory = 1");
+                        $pid_esc = $conn->real_escape_string(trim((string)$pid));
+                        $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc' AND is_mandatory = 1");
                         while($row = $res->fetch_assoc()) {
                             $bid = intval($row['barang_id']);
                             $qty = (float)$row['qty_per_pemeriksaan'];
@@ -279,12 +279,13 @@ try {
                     $p_exams = $p['exams'] ?? [];
 
                     foreach ($p_exams as $pid) {
-                        $pid = intval($pid);
-                        $stmt_pasien->bind_param("isiis", $id, $pnama, $pid, $ptlp, $ptgl);
+                        $pid = trim((string)$pid);
+                        $stmt_pasien->bind_param("issss", $id, $pnama, $pid, $ptlp, $ptgl);
                         $stmt_pasien->execute();
                         $pasien_id = $conn->insert_id;
 
-                        $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid AND is_mandatory = 1");
+                        $pid_esc = $conn->real_escape_string($pid);
+                        $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc' AND is_mandatory = 1");
                         while ($i_row = $res_items->fetch_assoc()) {
                             $bid = (int)$i_row['barang_id'];
                             $qty_unit = (float)$i_row['qty_per_pemeriksaan'];
@@ -388,8 +389,8 @@ try {
             foreach ($additional_patients as $p) {
                 $p_exams = $p['exams'] ?? [];
                 foreach ($p_exams as $pid) {
-                    $pid = intval($pid);
-                    $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+                    $pid_esc = $conn->real_escape_string(trim((string)$pid));
+                    $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
                     while($row = $res->fetch_assoc()) {
                         $bid = (int)$row['barang_id'];
                         $qty = (float)$row['qty_per_pemeriksaan'];
@@ -419,12 +420,13 @@ try {
                 $p_exams = $p['exams'] ?? [];
 
                 foreach ($p_exams as $pid) {
-                    $pid = intval($pid);
-                    $stmt_pasien->bind_param("isi", $id, $p_nama, $pid);
+                    $pid = trim((string)$pid);
+                    $stmt_pasien->bind_param("iss", $id, $p_nama, $pid);
                     $stmt_pasien->execute();
                     $pasien_row_id = (int)$conn->insert_id;
 
-                    $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = $pid");
+                    $pid_esc = $conn->real_escape_string($pid);
+                    $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
                     while ($i_row = $res_items->fetch_assoc()) {
                         $bid = (int)$i_row['barang_id'];
                         $qty_unit = (float)$i_row['qty_per_pemeriksaan'];

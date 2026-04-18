@@ -92,17 +92,16 @@ if ($can_cs_edit) {
 
 <div class="modal fade" id="modalEditBookingReal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header" style="background-color:#204EAB;">
-                <div>
-                    <h5 class="modal-title fw-bold mb-0 text-white">
-                        <i class="fas fa-edit me-2"></i>Edit Booking: <?= htmlspecialchars($booking['nomor_booking']) ?>
-                    </h5>
-                    <div class="small text-white">Ubah data booking, pasien, dan pemeriksaan.</div>
+            <form id="formEditBookingReal" method="POST" class="modal-content">
+                <div class="modal-header" style="background-color:#204EAB;">
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0 text-white">
+                            <i class="fas fa-edit me-2"></i>Edit Booking: <?= htmlspecialchars($booking['nomor_booking']) ?>
+                        </h5>
+                        <div class="small text-white">Ubah data booking, pasien, dan pemeriksaan.</div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form id="formEditBookingReal" method="POST">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <input type="hidden" name="booking_id" value="<?= $id ?>">
                 <input type="hidden" name="request_reason" value="<?= htmlspecialchars($request_reason) ?>">
@@ -214,7 +213,6 @@ if ($can_cs_edit) {
                     </button>
                 </div>
             </form>
-        </div>
     </div>
 </div>
 
@@ -340,8 +338,8 @@ if ($can_cs_edit) {
         let hasOutOfStock = false;
         $('.patient-exam-select').each(function() {
             const $opt = $(this).find('option:selected');
-            const exId = parseInt($opt.val() || '0', 10);
-            if (exId > 0) examIds.push(exId);
+            const exId = $opt.val() || '';
+            if (exId !== '') examIds.push(exId);
             if ($opt.data('available') == 0) hasOutOfStock = true;
         });
         const $w = $('#bookingEditStockWarning');

@@ -1106,8 +1106,8 @@ function checkSelectedStock() {
 
     $('.patient-exam-select').each(function() {
         const $opt = $(this).find('option:selected');
-        const exId = parseInt($opt.val() || '0', 10);
-        if (exId > 0) examIds.push(exId);
+        const exId = $opt.val() || '';
+        if (exId !== '') examIds.push(exId);
         if ($opt.data('available') == 0) hasOutOfStock = true;
     });
 
@@ -1122,7 +1122,7 @@ function checkSelectedStock() {
         if (__oosPreviewXhr && __oosPreviewXhr.readyState !== 4) {
             try { __oosPreviewXhr.abort(); } catch (e) {}
         }
-        const klinikId = parseInt($('#klinik_id').val() || '0', 10);
+        const klinikId = parseInt($('#klinik_id_modal').val() || '0', 10);
         const statusBooking = $('input[name="status_booking"]:checked').val() || '';
         __oosPreviewXhr = $.ajax({
             url: 'api/get_core_oos_items.php',
