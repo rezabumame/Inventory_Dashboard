@@ -571,7 +571,7 @@ if ($active_tab == 'stok') {
             <?php if (!in_array($_SESSION['role'], ['cs','admin_klinik','spv_klinik'])): ?>
             <div class="col-md-6">
                 <div class="d-flex flex-column align-items-end">
-                    <button type="button" class="btn btn-outline-primary refresh-btn d-flex align-items-center justify-content-center gap-2" onclick="syncFromOdoo(this)" <?= $is_history_date ? 'disabled' : '' ?>>
+                    <button type="button" class="btn btn-outline-primary refresh-btn d-flex align-items-center justify-content-center gap-2" onclick="confirmSync(this)" <?= $is_history_date ? 'disabled' : '' ?>>
                         <i class="fas fa-sync-alt"></i><span>Refresh dari Odoo</span>
                     </button>
                     <div class="last-update mt-1" id="lastUpdateText">Terakhir update: <?= htmlspecialchars($last_update_text ?? '-') ?></div>
@@ -1221,6 +1221,24 @@ function loadHCDetail(barangId, klinikId, namaBarang) {
 
 // removed: loadSelloutDetail (not used)
 
+function confirmSync(btn) {
+    Swal.fire({
+        title: 'Konfirmasi Sinkronisasi',
+        text: 'Apakah Anda yakin ingin melakukan sinkronisasi stok dari Odoo sekarang? Proses ini mungkin memakan waktu beberapa saat.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#204EAB',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Ya, Sync Sekarang',
+        cancelButtonText: 'Batal',
+        reverseButtons: true
+    }).then((result) => {
+        if (result.isConfirmed) {
+            syncFromOdoo(btn);
+        }
+    });
+}
+
 async function syncFromOdoo(btn) {
     const statusEl = document.getElementById('syncStatus');
     const lastEl = document.getElementById('lastUpdateText');
@@ -1232,7 +1250,13 @@ async function syncFromOdoo(btn) {
         const res = await fetch('api/sync_odoo.php', { method: 'POST', body: fd });
         const data = await res.json();
         if (data.success) {
-            statusEl.textContent = `Selesai. Produk: ${data.products}, Lokasi: ${data.locations}, Baris: ${data.rows}`;
+            Swal.fire({
+                title: 'Berhasil!',
+                text: `Sinkronisasi selesai. Produk: ${data.products}, Lokasi: ${data.locations}, Baris: ${data.rows}`,
+                icon: 'success',
+                timer: 2000,
+                showConfirmButton: false
+            });
             if (lastEl) {
                 const now = new Date();
                 const pad = n => n.toString().padStart(2, '0');

@@ -45,161 +45,179 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="<?= base_url('assets/css/style.css') ?>" rel="stylesheet">
     <style>
-        body {
-            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-            font-family: 'Inter', sans-serif;
-            min-height: 100vh;
+        :root {
+            --primary-blue: #204EAB;
+            --secondary-blue: #3b82f6;
+            --text-dark: #1e293b;
+            --text-muted: #64748b;
         }
-        .login-wrapper {
+        body {
+            background: #D1E5FF;
+            font-family: 'Inter', sans-serif;
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            margin: 0;
         }
         .login-card {
             width: 100%;
-            max-width: 440px;
-            border-radius: 20px;
-            border: none;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            max-width: 400px;
             background: #ffffff;
-        }
-        .login-header {
-            padding: 40px 40px 10px;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            padding: 40px;
             text-align: center;
         }
-        .login-logo {
-            width: 70px;
-            height: 70px;
-            background: #E8EFFF;
-            border-radius: 16px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
+        .logo-container {
+            margin-bottom: 30px;
+        }
+        .logo-container img {
+            width: 160px;
+            height: auto;
+            margin-bottom: 5px;
+        }
+        .subtitle {
+            color: #204EAB;
+            font-size: 14px;
+            font-weight: 400;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            text-align: left;
             margin-bottom: 20px;
         }
-        .login-body {
-            padding: 30px 40px 40px;
-        }
         .form-label {
+            font-size: 14px;
             font-weight: 600;
-            font-size: 0.85rem;
-            color: #475569;
+            color: var(--text-dark);
             margin-bottom: 8px;
+            display: block;
         }
-        .input-group {
-            border-radius: 10px;
-            overflow: hidden;
+        .input-wrapper {
+            position: relative;
+        }
+        .form-control-custom {
+            width: 100%;
+            padding: 12px 15px;
+            background: #ffffff;
             border: 1px solid #e2e8f0;
-            transition: all 0.2s;
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-dark);
+            transition: all 0.2s ease;
+            box-sizing: border-box;
         }
-        .input-group:focus-within {
-            border-color: #204EAB;
-            box-shadow: 0 0 0 4px rgba(32, 78, 171, 0.1);
+        .form-control-custom:focus {
+            outline: none;
+            border-color: var(--secondary-blue);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         }
-        .input-group-text {
-            background: transparent;
+        .password-toggle {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
             border: none;
             color: #94a3b8;
-            padding-left: 15px;
+            cursor: pointer;
+            padding: 0;
+            font-size: 14px;
         }
-        .form-control {
-            border: none;
-            padding: 12px 12px 12px 0;
-            font-size: 0.95rem;
-        }
-        .form-control:focus {
-            box-shadow: none;
-        }
-        #togglePasswordBtn {
-            border: none;
-            background: transparent;
-            color: #94a3b8;
-        }
-        .btn-primary {
-            background-color: #204EAB;
-            border: none;
-            border-radius: 12px;
+        .btn-signin {
+            width: 100%;
             padding: 12px;
+            background: #204EAB;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
             font-weight: 600;
-            transition: all 0.3s;
+            cursor: pointer;
             margin-top: 10px;
+            transition: background 0.2s ease;
         }
-        .btn-primary:hover {
-            background-color: #1a3e8a;
-            transform: translateY(-1px);
-            box-shadow: 0 10px 15px -3px rgba(32, 78, 171, 0.2);
+        .btn-signin:hover {
+            background: #1a3e8a;
+        }
+        .footer-text {
+            margin-top: 30px;
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+        .alert-custom {
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 20px;
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fee2e2;
+            text-align: left;
         }
     </style>
 </head>
 <body>
-
-<div class="login-wrapper">
     <div class="login-card">
-        <div class="login-header">
-            <div class="login-logo">
-                <img src="<?= base_url('assets/img/favicon.ico') ?>" alt="Logo" style="width: 35px;">
-            </div>
-            <h3 class="fw-bold text-dark mb-1">Bumame Inventory</h3>
-            <p class="text-muted small">Healthcare Logistics & Inventory System</p>
+        <div class="logo-container">
+            <img src="<?= base_url('assets/img/logo.png') ?>" alt="Bumame Logo">
+            <div class="subtitle">Bumame Inventory Dashboard</div>
         </div>
-        
-        <div class="login-body">
-            <?php if ($error): ?>
-                <div class="alert alert-danger py-2 small mb-4 border-0 shadow-sm d-flex align-items-center">
-                    <i class="fas fa-exclamation-circle me-2"></i>
-                    <div><?= $error ?></div>
-                </div>
-            <?php endif; ?>
-            
-            <form method="POST" action="">
-                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
-                <div class="mb-3">
-                    <label class="form-label">Username</label>
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="fas fa-user-circle"></i></span>
-                        <input type="text" name="username" class="form-control" placeholder="Enter your username" required autofocus>
-                    </div>
-                </div>
-                <div class="mb-4">
-                    <label class="form-label">Password</label>
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="fas fa-lock"></i></span>
-                        <input type="password" name="password" id="loginPassword" class="form-control" placeholder="••••••••" required>
-                        <button type="button" id="togglePasswordBtn">
-                            <i class="fas fa-eye" id="togglePasswordIcon"></i>
-                        </button>
-                    </div>
-                </div>
-                
-                <button type="submit" class="btn btn-primary w-100">
-                    Sign In <i class="fas fa-arrow-right ms-2 small"></i>
-                </button>
-            </form>
-            
-            <div class="mt-5 text-center">
-                <small class="text-muted">&copy; <?= date('Y') ?> Bumame Cahaya Medika. All rights reserved.</small>
+
+        <?php if ($error): ?>
+            <div class="alert-custom">
+                <i class="fas fa-exclamation-circle me-1"></i>
+                <?= htmlspecialchars($error) ?>
             </div>
+        <?php endif; ?>
+
+        <form action="" method="POST">
+            <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+            
+            <div class="form-group">
+                <label class="form-label">Username</label>
+                <div class="input-wrapper">
+                    <input type="text" name="username" class="form-control-custom" placeholder="Enter your username" required autofocus>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <div class="input-wrapper">
+                    <input type="password" name="password" id="loginPassword" class="form-control-custom" placeholder="Enter your password" required>
+                    <button type="button" class="password-toggle" id="togglePasswordBtn">
+                        <i class="fas fa-eye" id="togglePasswordIcon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-signin">
+                Sign In
+            </button>
+        </form>
+
+        <div class="footer-text">
+            &copy; <?= date('Y') ?> Bumame Cahaya Medika. All rights reserved.
         </div>
     </div>
-</div>
 
-<script>
-    document.getElementById('togglePasswordBtn').addEventListener('click', function() {
-        const passwordInput = document.getElementById('loginPassword');
-        const icon = document.getElementById('togglePasswordIcon');
-        
-        if (passwordInput.type === 'password') {
-            passwordInput.type = 'text';
-            icon.classList.remove('fa-eye');
-            icon.classList.add('fa-eye-slash');
-        } else {
-            passwordInput.type = 'password';
-            icon.classList.remove('fa-eye-slash');
-            icon.classList.add('fa-eye');
-        }
-    });
-</script>
+    <script>
+        document.getElementById('togglePasswordBtn').addEventListener('click', function() {
+            const passwordInput = document.getElementById('loginPassword');
+            const icon = document.getElementById('togglePasswordIcon');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                passwordInput.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        });
+    </script>
 </body>
 </html>

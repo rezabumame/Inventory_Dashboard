@@ -41,15 +41,9 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
 }
 ?>
 <div class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-        <a href="index.php?page=dashboard" class="sidebar-brand text-decoration-none">
-            <span class="sidebar-brand-mark" aria-hidden="true">
-                <img src="<?= base_url('assets/img/favicon.ico') ?>" alt="">
-            </span>
-            <div class="sidebar-brand-text">
-                <div class="sidebar-brand-title">Bumame</div>
-                <div class="sidebar-brand-subtitle">Inventory</div>
-            </div>
+    <div class="sidebar-header d-flex justify-content-center align-items-center">
+        <a href="index.php?page=dashboard" class="sidebar-brand text-decoration-none text-center">
+            <img src="<?= base_url('assets/img/logo.png') ?>" alt="Bumame Logo" style="max-width: 140px; height: auto;">
         </a>
     </div>
     <div class="sidebar-menu" id="sidebar-menu-scroll">

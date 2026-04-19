@@ -225,7 +225,7 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                         </div>
                         <div class="col-12 d-flex gap-2">
                             <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
-                            <button type="button" class="btn btn-outline-primary" onclick="runSyncNow(this)"><i class="fas fa-sync-alt"></i> Jalankan Sekarang</button>
+                            <button type="button" class="btn btn-outline-primary" onclick="confirmSyncNow(this)"><i class="fas fa-sync-alt"></i> Jalankan Sekarang</button>
                             <button type="button" class="btn btn-outline-secondary" onclick="testConn(this)"><i class="fas fa-plug"></i> Tes Koneksi</button>
                             <small class="text-muted ms-2 align-self-center" id="runStatus"></small>
                         </div>
@@ -379,6 +379,24 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     toggleFields();
 
+    window.confirmSyncNow = function(btn) {
+        Swal.fire({
+            title: 'Konfirmasi Sinkronisasi',
+            text: 'Apakah Anda yakin ingin menjalankan sinkronisasi Odoo sekarang?',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#204EAB',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Ya, Jalankan',
+            cancelButtonText: 'Batal',
+            reverseButtons: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                runSyncNow(btn);
+            }
+        });
+    }
+
     window.runSyncNow = async function(btn) {
         const s = document.getElementById('runStatus');
         s.textContent = 'Memproses...';
@@ -389,6 +407,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const res = await fetch('api/sync_odoo.php', { method: 'POST', body: fd });
             const data = await res.json();
             if (data.success) {
+                Swal.fire({
+                    title: 'Berhasil!',
+                    text: 'Sinkronisasi Odoo telah selesai.',
+                    icon: 'success',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
                 s.textContent = 'Selesai';
             } else {
                 s.textContent = 'Gagal: ' + (data.message || 'Unknown');
