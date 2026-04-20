@@ -114,7 +114,12 @@ function require_csrf(): void {
     $token = $_POST['_csrf'] ?? ($_GET['_csrf'] ?? '');
     if (!csrf_validate((string)$token)) {
         http_response_code(403);
-        echo "CSRF validation failed";
+        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'CSRF validation failed']);
+        } else {
+            echo "CSRF validation failed";
+        }
         exit;
     }
 }

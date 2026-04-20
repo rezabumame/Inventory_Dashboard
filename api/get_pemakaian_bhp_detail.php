@@ -37,9 +37,10 @@ if ($result->num_rows === 0) {
 }
 
 $header = $result->fetch_assoc();
+$is_revision = !empty($header['parent_id']);
 
 // Check if we have pending data (Proposed Edit)
-$is_pending_edit = ($header['status'] === 'pending_edit' && !empty($header['pending_data']));
+$is_pending_edit = (in_array($header['status'], ['pending_edit', 'pending_approval_spv']) && !empty($header['pending_data']));
 $has_history = (!empty($header['pending_data'])); // True if there was ever an edit request
 $pending_payload = $has_history ? json_decode($header['pending_data'], true) : null;
 $request_meta = ($has_history && is_array($pending_payload) && isset($pending_payload['meta']) && is_array($pending_payload['meta']))
@@ -101,12 +102,41 @@ if ($has_history && $pending_payload) {
     // We only show diff view if it's still 'pending_edit'.
     if (!$is_pending_edit && $header['status'] === 'active') {
         foreach ($original_details_data as $bid => $original_item) {
+            if ($is_revision) {
+                // If it's a revision and already active, the qty in DB is the delta
+                if ($original_item['qty'] < 0) {
+                    $original_item['change_type'] = 'removed';
+                } else {
+                    $original_item['change_type'] = 'added'; // or 'changed', but 'added' is safer for positive delta
+                }
+            }
             $display_details[] = $original_item;
         }
     } else {
         $ops = $pending_payload['items_ops'] ?? [];
-        if (is_array($ops) && !empty($ops)) {
-        $original_by_detail_id = [];
+        $delta_items = $pending_payload['delta_items'] ?? [];
+        
+        if ($is_revision && !empty($delta_items)) {
+            // New logic for Revision (Delta-based)
+            foreach ($delta_items as $d_it) {
+                $bid = (int)($d_it['barang_id'] ?? 0);
+                $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = " . $bid . " LIMIT 1");
+                $b = $b_res ? $b_res->fetch_assoc() : [];
+                $qty_delta = (float)($d_it['qty'] ?? 0);
+                
+                $display_details[] = [
+                    'change_type' => ($qty_delta < 0 ? 'removed' : 'added'),
+                    'barang_id' => $bid,
+                    'kode_barang' => $b['kode_barang'] ?? '-',
+                    'nama_barang' => $b['nama_barang'] ?? 'Unknown Item',
+                    'qty' => abs($qty_delta),
+                    'satuan_display' => (string)($d_it['satuan'] ?? ($b['satuan'] ?? '-')),
+                    'catatan_item' => (string)($d_it['catatan_item'] ?? '')
+                ];
+            }
+        } elseif (is_array($ops) && !empty($ops)) {
+            // Logic for standard Edit (Operation-based)
+            $original_by_detail_id = [];
         foreach ($original_details_data as $row) {
             $original_by_detail_id[(int)$row['id']] = $row;
         }
@@ -288,8 +318,8 @@ if (!function_exists('compact_transaction_note')) {
                         <span class="info-value fw-bold text-dark"><?= htmlspecialchars($header['nomor_pemakaian']) ?></span>
                     </div>
                     <div class="info-item">
-                        <span class="info-label">Tanggal</span>
-                        <span class="info-value"><?= date('d F Y H:i', strtotime($header['tanggal'])) ?></span>
+                        <span class="info-label">Tanggal Pemakaian BHP</span>
+                        <span class="info-value"><?= date('d F Y', strtotime($header['tanggal'])) ?></span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Jenis Pemakaian</span>
@@ -393,14 +423,14 @@ if (!function_exists('compact_transaction_note')) {
         </div>
         <div class="table-responsive rounded-3 border">
             <table class="table table-hover align-middle mb-0">
-                <thead class="bg-light">
+                <thead style="background-color: #204EAB; color: white;">
                     <tr>
-                        <th width="50" class="text-center py-3 text-muted small fw-bold">No</th>
-                        <th class="py-3 text-muted small fw-bold">Kode Barang</th>
-                        <th class="py-3 text-muted small fw-bold">Nama Barang</th>
-                        <th width="100" class="text-center py-3 text-muted small fw-bold">Qty</th>
-                        <th width="100" class="py-3 text-muted small fw-bold">Satuan</th>
-                        <th class="py-3 text-muted small fw-bold">Catatan Item</th>
+                        <th width="60" class="text-center py-3 small fw-bold text-uppercase">No</th>
+                        <th width="120" class="py-3 small fw-bold text-uppercase">Kode Barang</th>
+                        <th class="py-3 small fw-bold text-uppercase">Nama Barang</th>
+                        <th width="100" class="text-center py-3 small fw-bold text-uppercase">Qty</th>
+                        <th width="100" class="py-3 small fw-bold text-uppercase">Satuan</th>
+                        <th class="py-3 small fw-bold text-uppercase">Catatan Item</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -419,13 +449,20 @@ if (!function_exists('compact_transaction_note')) {
                                     case 'added':
                                         $row_class = 'table-success';
                                         $change_indicator = '<i class="fas fa-plus-circle text-success me-1"></i>';
+                                        if ($is_revision) {
+                                            $qty_display = '<span class="badge bg-success px-3 py-2" style="font-size: 0.9rem;">+' . fmt_qty($detail['qty']) . '</span>';
+                                        }
                                         break;
                                     case 'removed':
                                         $row_class = 'table-danger';
                                         $change_indicator = '<i class="fas fa-minus-circle text-danger me-1"></i>';
-                                        $qty_display = '<del>' . $qty_display . '</del>';
-                                        $satuan_display = '<del>' . $satuan_display . '</del>';
-                                        $catatan_display = '<del>' . $catatan_display . '</del>';
+                                        if ($is_revision) {
+                                            $qty_display = '<span class="badge bg-danger px-3 py-2" style="font-size: 0.9rem;">' . fmt_qty($detail['qty']) . '</span>';
+                                        } else {
+                                            $qty_display = '<del>' . $qty_display . '</del>';
+                                            $satuan_display = '<del>' . $satuan_display . '</del>';
+                                            $catatan_display = '<del>' . $catatan_display . '</del>';
+                                        }
                                         break;
                                     case 'changed':
                                         $row_class = 'table-info';
@@ -433,7 +470,13 @@ if (!function_exists('compact_transaction_note')) {
                                         if (!empty($detail['original_nama_barang']) && (string)$detail['original_nama_barang'] !== (string)$detail['nama_barang']) {
                                             $change_indicator .= '<small class="text-muted">(Item: ' . htmlspecialchars((string)$detail['original_nama_barang']) . ' <i class="fas fa-arrow-right mx-1"></i> ' . htmlspecialchars((string)$detail['nama_barang']) . ')</small> ';
                                         }
-                                        $qty_display = fmt_qty($detail['original_qty']) . ' <i class="fas fa-arrow-right mx-1"></i> ' . fmt_qty($detail['qty']);
+                                        if ($is_revision) {
+                                            $delta = (float)$detail['qty'] - (float)$detail['original_qty'];
+                                            $delta_str = ($delta > 0 ? '+' : '') . fmt_qty($delta);
+                                            $qty_display = '<span class="badge bg-primary px-3 py-2" style="font-size: 0.9rem;">' . $delta_str . '</span><br><small class="text-muted">(' . fmt_qty($detail['original_qty']) . ' <i class="fas fa-arrow-right"></i> ' . fmt_qty($detail['qty']) . ')</small>';
+                                        } else {
+                                            $qty_display = fmt_qty($detail['original_qty']) . ' <i class="fas fa-arrow-right mx-1"></i> ' . fmt_qty($detail['qty']);
+                                        }
                                         $satuan_display = htmlspecialchars($detail['original_satuan']) . ' <i class="fas fa-arrow-right mx-1"></i> ' . htmlspecialchars($detail['satuan_display']);
                                         $catatan_display = htmlspecialchars($detail['original_catatan'] ?: '-') . ' <i class="fas fa-arrow-right mx-1"></i> ' . htmlspecialchars($detail['catatan_item'] ?: '-');
                                         break;
@@ -467,23 +510,7 @@ if (!function_exists('compact_transaction_note')) {
         </div>
     </div>
 
-    <?php 
-    $user_role = $_SESSION['role'] ?? '';
-    $user_klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
-    $can_approve = ($user_role === 'super_admin' || ($user_role === 'spv_klinik' && (int)$header['klinik_id'] === $user_klinik_id));
-    $is_pending = (strpos((string)$header['status'], 'pending') !== false || (strpos((string)$header['nomor_pemakaian'], 'REQ-ADD-') !== false && $header['status'] !== 'active'));
-    
-    if ($can_approve && $is_pending): 
-    ?>
-    <div class="mt-4 pt-3 border-top d-flex justify-content-end gap-2" id="detailApprovalActions">
-        <button class="btn btn-outline-danger px-4 rounded-pill fw-bold reject-request" data-id="<?= $id ?>">
-            <i class="fas fa-times me-2"></i>Tolak
-        </button>
-        <button class="btn btn-success px-4 rounded-pill fw-bold approve-request" data-id="<?= $id ?>">
-            <i class="fas fa-check me-2"></i>Approve & Simpan
-        </button>
-    </div>
-    <?php endif; ?>
+
 </div>
 
 <style>
@@ -588,9 +615,7 @@ if (!function_exists('compact_transaction_note')) {
 }
 
 .qty-pill {
-    background-color: #204EAB;
-    color: white;
-    padding: 2px 12px;
+    display: inline-block;
     border-radius: 50px;
     font-size: 0.85rem;
     font-weight: 600;

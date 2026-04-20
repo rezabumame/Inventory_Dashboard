@@ -466,7 +466,7 @@ try {
     });
     
     run_migration_task("Update: inventory_transfer_barang_detail qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transfer_barang_detail MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
-    run_migration_task("Update: inventory_pemakaian_bhp status enum", function() use ($conn) { return $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN status ENUM('active','pending_add','pending_edit','pending_delete','rejected') DEFAULT 'active'") ? "Updated" : "Failed"; });
+    run_migration_task("Update: inventory_pemakaian_bhp status enum", function() use ($conn) { return $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN status ENUM('active','pending_add','pending_edit','pending_delete','rejected','revised','pending_approval_spv') DEFAULT 'active'") ? "Updated" : "Failed"; });
 
     run_migration_task("Table: inventory_booking_request_dedup", function() use ($conn) { return m_ensure_table($conn, "inventory_booking_request_dedup", "CREATE TABLE IF NOT EXISTS inventory_booking_request_dedup (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -512,7 +512,9 @@ try {
         ['inventory_booking_pemeriksaan', 'butuh_fu', "TINYINT(1) NOT NULL DEFAULT 0"],
         ['inventory_booking_pemeriksaan', 'is_out_of_stock', "TINYINT(1) NOT NULL DEFAULT 0"],
         ['inventory_booking_pemeriksaan', 'out_of_stock_items', "TEXT NULL"],
-        ['inventory_pemakaian_bhp', 'status', "ENUM('active','pending_add','pending_edit','pending_delete','rejected') DEFAULT 'active'"],
+        ['inventory_pemakaian_bhp', 'status', "ENUM('active','pending_add','pending_edit','pending_delete','rejected','revised','pending_approval_spv') DEFAULT 'active'"],
+        ['inventory_pemakaian_bhp', 'revision', "INT DEFAULT 0 AFTER parent_id"],
+        ['inventory_pemakaian_bhp', 'no_bhp_parent', "VARCHAR(50) NULL AFTER revision"],
         ['inventory_pemakaian_bhp', 'approval_reason', "TEXT NULL"],
         ['inventory_pemakaian_bhp', 'spv_approved_by', "INT NULL"],
         ['inventory_pemakaian_bhp', 'spv_approved_at', "DATETIME NULL"],
@@ -682,6 +684,72 @@ try {
         if ($exists > 0) return "Already exists";
         $ok = $conn->query("ALTER TABLE inventory_pemakaian_bhp ADD CONSTRAINT fk_pemakaian_change_actor FOREIGN KEY (change_actor_user_id) REFERENCES inventory_users(id)");
         return $ok ? "Created" : "Failed";
+    });
+
+    run_migration_task("Data: Update BHP No Format (2026 -> 26)", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_pemakaian_bhp')) return "Table not found";
+
+        // 1. Update BHP-20... -> BHP-26...
+        $res = $conn->query("SELECT id, nomor_pemakaian FROM inventory_pemakaian_bhp WHERE nomor_pemakaian LIKE 'BHP-20%'");
+        $updated_count = 0;
+        while ($row = $res->fetch_assoc()) {
+            $old_no = $row['nomor_pemakaian'];
+            $new_no = 'BHP-' . substr($old_no, 6);
+            $stmt = $conn->prepare("UPDATE inventory_pemakaian_bhp SET nomor_pemakaian = ? WHERE id = ?");
+            $stmt->bind_param("si", $new_no, $row['id']);
+            $stmt->execute();
+            $updated_count++;
+        }
+
+        // 2. Update REQ-ADD-20... -> REQ-ADD-26...
+        $res_req = $conn->query("SELECT id, nomor_pemakaian FROM inventory_pemakaian_bhp WHERE nomor_pemakaian LIKE 'REQ-ADD-20%'");
+        while ($row = $res_req->fetch_assoc()) {
+            $old_no = $row['nomor_pemakaian'];
+            // REQ-ADD-20260413-0001 -> REQ-ADD-260413-0001
+            $new_no = 'REQ-ADD-' . substr($old_no, 10);
+            $stmt = $conn->prepare("UPDATE inventory_pemakaian_bhp SET nomor_pemakaian = ? WHERE id = ?");
+            $stmt->bind_param("si", $new_no, $row['id']);
+            $stmt->execute();
+            $updated_count++;
+        }
+
+        return $updated_count > 0 ? "Updated $updated_count numbers" : "Already Up-to-date";
+    });
+
+    run_migration_task("Schema: BHP parent_id & status revised", function() use ($conn) {
+        $msg = [];
+        $check_parent = $conn->query("SHOW COLUMNS FROM inventory_pemakaian_bhp LIKE 'parent_id'");
+        if ($check_parent->num_rows == 0) {
+            $conn->query("ALTER TABLE inventory_pemakaian_bhp ADD COLUMN parent_id INT NULL AFTER id");
+            $conn->query("ALTER TABLE inventory_pemakaian_bhp ADD CONSTRAINT fk_pemakaian_parent FOREIGN KEY (parent_id) REFERENCES inventory_pemakaian_bhp(id) ON DELETE SET NULL");
+            $msg[] = "Added parent_id";
+        }
+
+        $check_rev = $conn->query("SHOW COLUMNS FROM inventory_pemakaian_bhp LIKE 'revision'");
+        if ($check_rev->num_rows == 0) {
+            $conn->query("ALTER TABLE inventory_pemakaian_bhp ADD COLUMN revision INT DEFAULT 0 AFTER parent_id");
+            $msg[] = "Added revision column";
+        }
+
+        $check_parent_no = $conn->query("SHOW COLUMNS FROM inventory_pemakaian_bhp LIKE 'no_bhp_parent'");
+        if ($check_parent_no->num_rows == 0) {
+            $conn->query("ALTER TABLE inventory_pemakaian_bhp ADD COLUMN no_bhp_parent VARCHAR(50) NULL AFTER revision");
+            $msg[] = "Added no_bhp_parent column";
+        }
+        
+        $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN status ENUM('active','pending_add','pending_edit','pending_delete','rejected','revised','pending_approval_spv') DEFAULT 'active'");
+        $msg[] = "Updated status enum";
+        
+        return count($msg) > 0 ? implode(", ", $msg) : "Already exists";
+    });
+
+    run_migration_task("Schema: BHP tanggal to DATE", function() use ($conn) {
+        $r = $conn->query("SHOW COLUMNS FROM inventory_pemakaian_bhp LIKE 'tanggal'");
+        $row = $r->fetch_assoc();
+        if (strtoupper($row['Type']) === 'DATE') return "Already DATE";
+        
+        $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN tanggal DATE NOT NULL");
+        return "Changed to DATE";
     });
 
 } catch (Throwable $e) {

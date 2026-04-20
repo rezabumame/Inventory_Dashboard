@@ -192,13 +192,15 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
             pb.tanggal,
             pb.created_at,
             pb.jenis_pemakaian,
-            SUM(pbd.qty) AS qty
+            SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) AS qty
         FROM inventory_pemakaian_bhp pb
-        JOIN inventory_pemakaian_bhp_detail pbd ON pbd.pemakaian_bhp_id = pb.id
+        JOIN inventory_transaksi_stok ts ON ts.referensi_id = pb.id
         WHERE pb.klinik_id = $klinik_id
-          AND pbd.barang_id = $barang_id
+          AND ts.barang_id = $barang_id
+          AND ts.referensi_tipe = 'pemakaian_bhp'
           AND pb.tanggal > '$rs' AND pb.tanggal <= '$re'
           AND pb.tanggal >= '$ms'
+          AND pb.status = 'active'
         GROUP BY pb.id, pb.nomor_pemakaian, pb.tanggal, pb.created_at, pb.jenis_pemakaian
         ORDER BY pb.created_at ASC, pb.id ASC
     ");
@@ -289,14 +291,16 @@ $p_res = $conn->query("
         pb.tanggal,
         pb.created_at,
         pb.jenis_pemakaian,
-        SUM(pbd.qty) AS qty
+        SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) AS qty
     FROM inventory_pemakaian_bhp pb
-    JOIN inventory_pemakaian_bhp_detail pbd ON pbd.pemakaian_bhp_id = pb.id
+    JOIN inventory_transaksi_stok ts ON ts.referensi_id = pb.id
     WHERE pb.klinik_id = $klinik_id
-      AND pbd.barang_id = $barang_id
-      AND pb.tanggal >= '$ms_q 00:00:00' AND pb.tanggal <= '$t_q 23:59:59'
+      AND ts.barang_id = $barang_id
+      AND ts.referensi_tipe = 'pemakaian_bhp'
+      AND pb.tanggal >= '$ms_q 00:00:00' AND pb.created_at <= '$t_q 23:59:59'
+      AND pb.status = 'active'
     GROUP BY pb.id, pb.nomor_pemakaian, pb.tanggal, pb.created_at, pb.jenis_pemakaian
-    ORDER BY pb.tanggal ASC, pb.id ASC
+    ORDER BY pb.created_at ASC, pb.id ASC
 ");
 $period_usage = [];
 while ($p_res && ($p_row = $p_res->fetch_assoc())) {

@@ -265,8 +265,8 @@ if ($active_tab == 'stok') {
                 if ($is_history_date) {
                     $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_date) . "' AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'";
                     $filter_bp_hc = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_date) . "' AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'";
-                    $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.tanggal <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
-                    $filter_pb_hc = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.tanggal <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
+                    $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.created_at <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
+                    $filter_pb_hc = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.created_at <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
                     $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at <= '" . $conn->real_escape_string($filter_end_ts) . "'";
                     $filter_ts_hc = $filter_ts_klinik;
                 } else {
@@ -278,7 +278,7 @@ if ($active_tab == 'stok') {
                         
                         // Sellout (Pemakaian) should only subtract what's NOT in Odoo yet.
                         // We use a 5-minute buffer to account for the sync duration (race condition).
-                        $sync_buffer_ts = date('Y-m-d H:i:s', strtotime($last_update_general) - 300);
+                        $sync_buffer_ts = date('Y-m-d H:i:s', strtotime($last_update_general));
                         $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "' AND pb.created_at > '" . $conn->real_escape_string($sync_buffer_ts) . "'";
                         $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at > '" . $conn->real_escape_string($sync_buffer_ts) . "'";
                         
@@ -319,11 +319,11 @@ if ($active_tab == 'stok') {
 
                     $rb_in_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND $rb_level_filter AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
                     $rb_out_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND $rb_level_filter AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-                    $rb_sellout_klinik_sql = "(SELECT COALESCE(SUM(pbd.qty), 0) FROM inventory_pemakaian_bhp_detail pbd JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id WHERE pbd.barang_id = b.id AND $rb_pb_filter AND TRIM(pb.jenis_pemakaian) != 'hc' AND pb.tanggal > '$rb_ts_start' AND pb.tanggal <= '$rb_ts_end' AND pb.tanggal >= '$rb_ts_min')";
+                    $rb_sellout_klinik_sql = "(SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0) FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id WHERE ts.barang_id = b.id AND ts.referensi_tipe = 'pemakaian_bhp' AND $rb_pb_filter AND TRIM(pb.jenis_pemakaian) != 'hc' AND pb.status = 'active' AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
 
                     $rb_in_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
                     $rb_out_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-                    $rb_sellout_hc_sql = "(SELECT COALESCE(SUM(pbd.qty), 0) FROM inventory_pemakaian_bhp_detail pbd JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id WHERE pbd.barang_id = b.id AND pb.klinik_id $klinik_filter_sql AND TRIM(pb.jenis_pemakaian) = 'hc' AND pb.tanggal > '$rb_ts_start' AND pb.tanggal <= '$rb_ts_end' AND pb.tanggal >= '$rb_ts_min')";
+                    $rb_sellout_hc_sql = "(SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0) FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id WHERE ts.barang_id = b.id AND ts.referensi_tipe = 'pemakaian_bhp' AND pb.klinik_id $klinik_filter_sql AND TRIM(pb.jenis_pemakaian) = 'hc' AND pb.status = 'active' AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
                 }
 
                 $union_sql = "SELECT odoo_product_id, kode_barang FROM inventory_stock_mirror WHERE TRIM(location_code) $loc_filter_sql";
@@ -360,26 +360,26 @@ if ($active_tab == 'stok') {
                              AND bp.klinik_id $klinik_filter_sql
                              AND bp.status = 'booked'
                              AND bp.status_booking LIKE '%HC%'$filter_bp_hc) as reserve_hc,
-                            (SELECT COALESCE(SUM(ts.qty), 0)
+                            (SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0)
                                  FROM inventory_transaksi_stok ts
                                  JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id
                                  WHERE ts.barang_id = b.id
                                  AND ts.level = 'klinik'
                                  AND ts.level_id $klinik_filter_sql
-                                 AND ts.tipe_transaksi = 'out'
                                  AND ts.referensi_tipe = 'pemakaian_bhp'
                                  AND pb2.klinik_id $klinik_filter_sql
-                                 AND pb2.jenis_pemakaian != 'hc'$filter_pb2_klinik) as sellout_klinik,
-                            (SELECT COALESCE(SUM(ts.qty), 0)
+                                 AND pb2.jenis_pemakaian != 'hc'$filter_pb2_klinik
+                                 AND pb2.status = 'active') as sellout_klinik,
+                            (SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0)
                                  FROM inventory_transaksi_stok ts
                                  JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id
                                  WHERE ts.barang_id = b.id
                                  AND ts.level = 'hc'
                                  AND $hc_user_filter_sql
-                                 AND ts.tipe_transaksi = 'out'
                                  AND ts.referensi_tipe = 'pemakaian_bhp'
                                  AND pb2.klinik_id $klinik_filter_sql
-                                 AND pb2.jenis_pemakaian = 'hc'$filter_pb2_hc) as sellout_hc,
+                                 AND pb2.jenis_pemakaian = 'hc'$filter_pb2_hc
+                                 AND pb2.status = 'active') as sellout_hc,
                             (SELECT COALESCE(SUM(ts.qty), 0)
                              FROM inventory_transaksi_stok ts
                              WHERE ts.barang_id = b.id

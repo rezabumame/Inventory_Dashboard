@@ -609,16 +609,55 @@ try {
         $jenis_pemakaian = !empty($m['nama_nakes']) ? 'hc' : 'klinik';
         $catatan_transaksi = $m['nama_pasien'] . ' (' . $m['patient_id'] . ') - ' . $m['layanan'];
 
-        // Take out temporary auto-deduction for the same day & clinic (BHP harian)
-        $tgl_only = date('Y-m-d', strtotime($m['tanggal_only']));
-        $auto_key = $tgl_only . '|' . (int)$m['klinik_id'] . '|' . $jenis_pemakaian;
-        static $auto_cleared = [];
-        if (empty($auto_cleared[$auto_key])) {
-            $stmt_del = $conn->prepare("DELETE FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND DATE(tanggal) = ?");
-            $stmt_del->bind_param("iss", $m['klinik_id'], $jenis_pemakaian, $tgl_only);
-            $stmt_del->execute();
-            $auto_cleared[$auto_key] = 1;
+        // --- BACKDATE CHECK (H-2) ---
+        $yesterday = date('Y-m-d', strtotime('-1 day'));
+        $selected_date = date('Y-m-d', strtotime($tanggal_val));
+        $is_backdate = ($selected_date < $yesterday);
+
+        if ($is_backdate) {
+            // IF BACKDATE, SAVE AS PENDING ADD
+            $pending_items = [];
+            foreach ($tx['items'] as $it) {
+                $pending_items[] = [
+                    'barang_id' => $it['item_id'],
+                    'qty' => $it['qty'],
+                    'satuan' => $it['uom'],
+                    'uom_mode' => 'odoo', // Upload always uses Odoo UOM mode ratio logic
+                    'catatan_item' => $m['layanan']
+                ];
+            }
+
+            $pending_data = json_encode([
+                'version' => 2,
+                'action' => 'create',
+                'meta' => [
+                    'reason_label' => 'Upload Excel (Backdate)',
+                    'change_source' => 'sistem_integrasi',
+                    'change_actor_name' => 'Upload System'
+                ],
+                'tanggal' => $tanggal_val,
+                'jenis_pemakaian' => $jenis_pemakaian,
+                'klinik_id' => $m['klinik_id'],
+                'user_hc_id' => $m['user_hc_id'],
+                'catatan_transaksi' => $catatan_transaksi,
+                'items' => $pending_items
+            ]);
+
+            $dateKey = date('ymd', strtotime($m['tanggal_only']));
+            $seq = next_sequence($conn, 'BHP-REQ', $dateKey);
+            $nomor_req = 'REQ-ADD-' . $dateKey . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+
+            $stmt = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at, status, approval_reason, pending_data, change_source, change_actor_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_add', 'Upload Excel (Backdate)', ?, 'sistem_integrasi', 'Upload System')");
+            $stmt->bind_param("sssiisiss", $nomor_req, $tanggal_val, $jenis_pemakaian, $m['klinik_id'], $m['user_hc_id'], $catatan_transaksi, $user_id, $created_at, $pending_data);
+            $stmt->execute();
+            
+            // Note: We don't insert detail or deduct stock for pending_add.
+            // It will be processed during approval in process_pemakaian_bhp_action.php
+            continue;
         }
+
+        // --- NORMAL FLOW (NOT BACKDATE) ---
+        // Take out temporary auto-deduction for the same day & clinic (BHP harian)
         
         // Generate number
         $dateKey = date('Ymd', strtotime($m['tanggal_only']));

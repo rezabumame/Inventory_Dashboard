@@ -123,14 +123,15 @@ $sellout_filter = "pb.tanggal >= '$month_start_esc 00:00:00' AND pb.tanggal <= '
 if ($last_update_esc !== '') $sellout_filter .= " AND pb.created_at > '$last_update_esc'";
 $jenis_cond = $dest === 'hc' ? "pb.jenis_pemakaian = 'hc'" : "pb.jenis_pemakaian <> 'hc'";
 $r = $conn->query("
-    SELECT pbd.barang_id, COALESCE(SUM(pbd.qty), 0) AS qty
-    FROM inventory_pemakaian_bhp_detail pbd
-    JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
+    SELECT ts.barang_id, COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0) AS qty
+    FROM inventory_transaksi_stok ts
+    JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id
     WHERE pb.klinik_id = $klinik_id
       AND $jenis_cond
       AND $sellout_filter
-      AND pbd.barang_id IN ($bid_list)
-    GROUP BY pbd.barang_id
+      AND ts.referensi_tipe = 'pemakaian_bhp'
+      AND ts.barang_id IN ($bid_list)
+    GROUP BY ts.barang_id
 ");
 while ($r && ($row = $r->fetch_assoc())) $sellout_map[(int)$row['barang_id']] = (float)($row['qty'] ?? 0);
 

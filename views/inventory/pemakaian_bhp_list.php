@@ -53,12 +53,12 @@ if ($user_role === 'petugas_hc') {
 }
 
 if (!empty($start_date)) {
-    $where_clause .= " AND pb.tanggal >= ?";
+    $where_clause .= " AND pb.created_at >= ?";
     $params[] = $start_date . ' 00:00:00';
     $types .= "s";
 }
 if (!empty($end_date)) {
-    $where_clause .= " AND pb.tanggal <= ?";
+    $where_clause .= " AND pb.created_at <= ?";
     $params[] = $end_date . ' 23:59:59';
     $types .= "s";
 }
@@ -78,7 +78,7 @@ if ($active_tab == 'list') {
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
         WHERE $where_clause AND pb.is_auto = 0
-        ORDER BY pb.nomor_pemakaian DESC
+        ORDER BY pb.created_at DESC, pb.nomor_pemakaian DESC
         LIMIT 500
     ";
 
@@ -90,12 +90,12 @@ if ($active_tab == 'list') {
     $result = $stmt->get_result();
 
     $q_pending = "
-        SELECT DATE(pb.tanggal) AS tgl, COUNT(*) AS cnt
+        SELECT pb.tanggal AS tgl, COUNT(*) AS cnt
         FROM inventory_pemakaian_bhp pb
         WHERE $where_clause
-          AND pb.status IN ('pending_edit', 'pending_delete')
+          AND pb.status IN ('pending_edit', 'pending_delete', 'pending_approval_spv', 'pending_add')
           AND pb.is_auto = 0
-        GROUP BY DATE(pb.tanggal)
+        GROUP BY pb.tanggal
         ORDER BY tgl DESC
         LIMIT 30
     ";
@@ -132,8 +132,8 @@ if ($active_tab == 'list') {
         LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
         JOIN inventory_klinik k ON pb.klinik_id = k.id
-        WHERE $where_clause AND pb.is_auto = 0
-        ORDER BY pb.nomor_pemakaian DESC
+        WHERE $where_clause AND pb.is_auto = 0 AND pb.status = 'active'
+        ORDER BY pb.created_at DESC, pb.nomor_pemakaian DESC
         LIMIT 500
     ";
     
@@ -406,13 +406,14 @@ if ($default_modal_klinik_id) {
             opacity: 0.7;
             cursor: not-allowed;
         }
+        .grayscale { filter: grayscale(1); }
     </style>
 
     <?php if ($active_tab == 'list'): ?>
     <div class="card shadow-sm">
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-hover datatable" id="tablePemakaianBHP" data-order-col="0">
+                <table class="table table-hover datatable" id="tablePemakaianBHP" data-order-col="5">
                     <thead class="table-light">
                         <tr>
                             <th>No. Pemakaian</th>
@@ -421,35 +422,32 @@ if ($default_modal_klinik_id) {
                             <th>Tanggal Pemakaian BHP</th>
                             <th>Total Item</th>
                             <th>Tanggal Input</th>
-                            <th>Dibuat Oleh</th>
                             <th>Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php while ($row = $result->fetch_assoc()): ?>
-                        <tr>
+                        <?php while ($row = $result->fetch_assoc()): 
+                            $status = $row['status'] ?? 'active';
+                            $row_class = ($status === 'rejected') ? 'table-secondary opacity-75' : '';
+                        ?>
+                        <tr class="<?= $row_class ?>">
                             <td>
-                                <div class="fw-bold"><?= htmlspecialchars($row['nomor_pemakaian']) ?></div>
-                                <?php if (!empty($row['approval_reason'])): ?>
-                                    <div class="mt-1">
-                                        <span class="badge bg-light text-muted border py-1" title="<?= htmlspecialchars($row['approval_reason']) ?>" style="font-size: 0.65rem; cursor: help;">
-                                            <i class="fas fa-info-circle me-1 text-info"></i> Ada Perubahan
-                                        </span>
-                                    </div>
+                                <div class="fw-bold <?= ($status === 'rejected') ? 'text-decoration-line-through text-muted' : '' ?>"><?= htmlspecialchars($row['nomor_pemakaian']) ?></div>
+                                <?php if ($status === 'rejected'): ?>
+                                    <span class="badge bg-secondary small" style="font-size: 0.6rem;">REJECTED</span>
                                 <?php endif; ?>
                             </td>
                             <td><?= htmlspecialchars($row['nama_klinik'] ?? '-') ?></td>
                             <td>
-                                <?php if ($row['jenis_pemakaian'] === 'klinik'): ?>
-                                    <span class="badge bg-info">Pemakaian Klinik</span>
+                                <?php if (stripos($row['jenis_pemakaian'], 'hc') !== false): ?>
+                                    <span class="badge bg-warning <?= ($status === 'rejected') ? 'grayscale' : '' ?>">HC</span>
                                 <?php else: ?>
-                                    <span class="badge bg-warning">Pemakaian HC</span>
+                                    <span class="badge bg-info <?= ($status === 'rejected') ? 'grayscale' : '' ?>">Klinik</span>
                                 <?php endif; ?>
                             </td>
-                            <td><?= date('d/m/Y H:i', strtotime($row['tanggal'])) ?></td>
+                            <td><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
                             <td><?= $row['total_items'] ?> item</td>
                             <td><?= date('d/m/Y H:i', strtotime($row['created_at'])) ?></td>
-                            <td><?= htmlspecialchars($row['created_by_name']) ?></td>
                             <td>
                                 <div class="btn-group">
                                     <button class="btn btn-sm btn-info view-detail" data-id="<?= $row['id'] ?>" title="Detail">
@@ -468,7 +466,6 @@ if ($default_modal_klinik_id) {
                                     $is_admin_klinik = $user_role === 'admin_klinik';
                                     $is_spv_klinik = $user_role === 'spv_klinik';
                                     $is_super_admin = $user_role === 'super_admin';
-                                    $status = $row['status'] ?? 'active';
                                     
                                     // Unified Access Logic
                                     $can_edit_direct = false;
@@ -566,6 +563,7 @@ if ($default_modal_klinik_id) {
                 <table class="table table-spreadsheet align-middle mb-0" id="tableDataOut">
                     <thead>
                         <tr>
+                            <th width="120"><i class="far fa-clock me-1"></i> Tgl Input</th>
                             <th width="120"><i class="far fa-calendar-alt me-1"></i> Tgl Pemakaian BHP</th>
                             <th><i class="fas fa-user-md me-1"></i> PIC / Nakes / Klinik</th>
                             <th><i class="fas fa-box me-1"></i> Item</th>
@@ -574,7 +572,6 @@ if ($default_modal_klinik_id) {
                             <th width="100" class="text-center bg-light">Qty Odoo</th>
                             <th width="80" class="bg-light">UoM Odoo</th>
                             <th><i class="fas fa-info-circle me-1"></i> Status</th>
-                            <th width="120"><i class="far fa-clock me-1"></i> Tgl Input</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -589,7 +586,8 @@ if ($default_modal_klinik_id) {
                             $uom_odoo = $row['uom_odoo'] ?: $row['satuan'];
                         ?>
                         <tr>
-                            <td><?= date('d/m/Y H:i', strtotime($row['tanggal'])) ?></td>
+                            <td><?= date('d/m/Y H:i', strtotime($row['created_at'] ?? '')) ?></td>
+                            <td><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
                             <td>
                                 <div class="nakes-pill">
                                     <?= htmlspecialchars($pic_name) ?>
@@ -613,7 +611,6 @@ if ($default_modal_klinik_id) {
                                     <?= $status_text ?>
                                 </span>
                             </td>
-                            <td><?= date('d/m/Y H:i', strtotime($row['created_at'] ?? '')) ?></td>
                         </tr>
                         <?php endwhile; ?>
                     </tbody>
@@ -863,7 +860,7 @@ if ($default_modal_klinik_id) {
 </div>
 
 <!-- Modal Tambah Pemakaian -->
-<div class="modal fade" id="modalTambah" aria-labelledby="modalTambahLabel" aria-hidden="true">
+<div class="modal fade" id="modalTambah" tabindex="-1" aria-labelledby="modalTambahLabel" aria-hidden="true" data-bs-keyboard="true" data-bs-backdrop="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content border-0 shadow">
             <div class="modal-header border-0 py-3 text-white" style="background-color: #204EAB;">
@@ -879,9 +876,15 @@ if ($default_modal_klinik_id) {
                             <div class="row g-3">
                                 <div class="col-md-3">
                                     <label class="form-label fw-semibold small mb-1">
+                                        <i class="fas fa-clock text-muted me-1"></i>Tanggal Input
+                                    </label>
+                                    <input type="text" class="form-control bg-light" value="<?= date('d/m/Y H:i') ?>" readonly>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold small mb-1">
                                         <i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal Pemakaian BHP <span class="text-danger">*</span>
                                     </label>
-                                    <input type="date" name="tanggal" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                                    <input type="date" name="tanggal" id="modalTambahTanggal" class="form-control" value="<?= date('Y-m-d') ?>" required>
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label fw-semibold small mb-1">
@@ -1370,7 +1373,7 @@ $(document).ready(function() {
     // Initialize DataOut explicitly to avoid double-init and set correct sort + empty message
     if ($('#tableDataOut').length && !$.fn.DataTable.isDataTable('#tableDataOut')) {
         $('#tableDataOut').DataTable({
-            order: [[0, 'desc']],
+            order: [[0, 'desc']], // Sort by Tanggal Input (kolom ke-0)
             language: {
                 emptyTable: 'Tidak ada data pemakaian ditemukan.'
             }
@@ -1440,7 +1443,279 @@ $(document).ready(function() {
                 });
             }
         });
-        });
+    });
+
+    // --- VERIFIKASI SEBELUM SIMPAN ---
+    $('#formPemakaianBHP').on('submit', function(e) {
+        e.preventDefault();
+        const form = $(this);
+        const rowCount = $('.modal-item-row').length;
+        if (rowCount === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Perhatian',
+                text: 'Minimal harus ada 1 item barang'
+            });
+            return false;
+        }
+
+        const tanggalStr = form.find('input[name="tanggal"]').val();
+        let isPastDay = false;
+        if (tanggalStr) {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            yesterday.setHours(0, 0, 0, 0);
+            
+            const selectedDate = new Date(tanggalStr);
+            selectedDate.setHours(0, 0, 0, 0);
+            
+            isPastDay = selectedDate < yesterday;
+        }
+
+        const userRole = '<?= $_SESSION['role'] ?>';
+        
+        // UNIFIED CONFIRMATION WRAPPER
+        const triggerFinalSubmit = (additionalData = {}) => {
+            const tanggalBhp = $('#modalTambahTanggal').val();
+            const jenisPemakaian = $('#modalJenisPemakaian').val();
+            
+            // Fix: Ambil nama klinik dengan lebih akurat
+            let klinikName = 'Klinik';
+            const $klinikSelect = $('#modalKlinikId');
+            const $klinikHidden = $('#modalKlinikIdHidden');
+
+            if ($klinikSelect.is(':visible') && $klinikSelect.val()) {
+                klinikName = $klinikSelect.find('option:selected').text();
+            } else if ($klinikHidden.length) {
+                // Ambil dari input readonly sebelumnya
+                klinikName = $klinikHidden.prev('input').val() || 'Klinik';
+            } else if ($klinikSelect.length && $klinikSelect.find('option:selected').text()) {
+                klinikName = $klinikSelect.find('option:selected').text();
+            }
+            
+            // Jika jenisnya HC, tambahkan nama petugas jika ada
+            let jenisDisplay = (jenisPemakaian === 'hc') ? 'Pemakaian HC' : 'Pemakaian Klinik';
+            if (jenisPemakaian === 'hc') {
+                const $petugasSelect = $('#modalUserHcId');
+                const $petugasHidden = $('#modalUserHcIdHidden');
+                let petugasName = '';
+                
+                if ($petugasSelect.is(':visible') && $petugasSelect.val()) {
+                    petugasName = $petugasSelect.find('option:selected').text();
+                } else if ($petugasHidden.length) {
+                    petugasName = $petugasHidden.prev('input').val();
+                }
+                
+                if (petugasName) {
+                    jenisDisplay += ` (${petugasName})`;
+                }
+            }
+
+            const itemCount = $('.modal-item-row').length;
+            
+            const d = new Date(tanggalBhp);
+            const formattedDate = ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear();
+
+            Swal.fire({
+                title: 'Konfirmasi Simpan',
+                html: `
+                    <div class="text-start small">
+                        <p class="mb-2">Apakah Anda yakin data pemakaian ini sudah benar?</p>
+                        <table class="table table-sm table-bordered mb-0">
+                        <tr><th width="40%">Klinik/Unit</th><td>${klinikName}</td></tr>
+                        <tr><th>Jenis</th><td class="text-uppercase">${jenisDisplay}</td></tr>
+                        <tr><th>Total Item</th><td>${itemCount} Item</td></tr>
+                        <tr class="table-primary"><th class="fw-bold">Tgl Pemakaian</th><td class="fw-bold text-primary">${formattedDate}</td></tr>
+                    </table>
+                        <p class="mt-3 mb-0 text-center fw-bold text-danger">Peringatan: Pastikan Tanggal Pemakaian BHP sudah sesuai!</p>
+                    </div>
+                `,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#204EAB',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Ya, Simpan Pemakaian',
+                cancelButtonText: 'Cek Kembali',
+                reverseButtons: true
+            }).then((confirmRes) => {
+                if (confirmRes.isConfirmed) {
+                    const formData = new FormData(form[0]);
+                    // Append metadata from backdate popup if exists
+                    Object.entries(additionalData).forEach(([key, val]) => {
+                        formData.append(key, val);
+                    });
+                    submitFormDirect(form, formData);
+                }
+            });
+        };
+
+        if (userRole === 'admin_klinik' && isPastDay) {
+            const reasonMap = {
+                wrong_qty: 'Salah input jumlah/kuantitas item',
+                wrong_item: 'Salah memilih jenis barang/BHP',
+                wrong_date: 'Koreksi tanggal transaksi pemakaian',
+                wrong_nakes: 'Koreksi data petugas HC/Nakes',
+                wrong_klinik: 'Koreksi data klinik/lokasi',
+                admin_libur: 'Admin sedang libur',
+                other_admin: 'Lainnya (Koreksi Administrasi)'
+            };
+            const sourceMap = {
+                admin_logistik: 'Admin Logistik',
+                nakes: 'Nakes',
+                sistem_integrasi: 'Sistem/Integrasi'
+            };
+
+            Swal.fire({
+                title: 'Request Approval (Tambah Data Backdate)',
+                html: `
+                    <div class="text-start p-2">
+                        <div class="alert alert-warning small py-2 mb-3">
+                            <i class="fas fa-exclamation-triangle me-2"></i>Tanggal pemakaian lebih dari H-2 memerlukan approval SPV.
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted mb-1">
+                                <i class="fas fa-info-circle me-1"></i> Alasan Penambahan <span class="text-danger">*</span>
+                            </label>
+                            <select id="swalReasonCodeAdd" class="form-select shadow-sm">
+                                <option value="">-- Pilih Alasan --</option>
+                                ${Object.entries(reasonMap).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted mb-1">
+                                <i class="fas fa-search me-1"></i> Sumber Informasi <span class="text-danger">*</span>
+                            </label>
+                            <select id="swalChangeSourceAdd" class="form-select shadow-sm">
+                                <option value="">-- Pilih Sumber --</option>
+                                ${Object.entries(sourceMap).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+                            </select>
+                        </div>
+                        
+                        <div class="mb-1">
+                            <label class="form-label fw-bold small text-muted mb-1">
+                                <i class="fas fa-user-check me-1"></i> Pelaku / Asal Permintaan <span class="text-danger">*</span>
+                            </label>
+                            <div id="swalActorContainerAdd">
+                                <select id="swalChangeActorAdd" class="form-select shadow-sm">
+                                    <option value="">-- Pilih Pelaku --</option>
+                                </select>
+                            </div>
+                            <div class="form-text small" style="font-size: 0.75rem;">Siapa yang meminta atau bertanggung jawab atas penambahan data terlambat ini?</div>
+                        </div>
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Lanjut',
+                cancelButtonText: 'Batal',
+                confirmButtonColor: '#204EAB',
+                customClass: {
+                    popup: 'rounded-4 shadow-lg border-0',
+                    confirmButton: 'px-4 py-2 fw-bold rounded-pill',
+                    cancelButton: 'px-4 py-2 fw-bold rounded-pill'
+                },
+                didOpen: () => {
+                    const $source = $('#swalChangeSourceAdd');
+                    const $container = $('#swalActorContainerAdd');
+                    const currentKlinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : ($('#modalKlinikIdHidden').length ? $('#modalKlinikIdHidden').val() : '');
+
+                    $source.on('change', function() {
+                        const source = $(this).val();
+                        if (!source) {
+                            $container.html('<select id="swalChangeActorAdd" class="form-select shadow-sm"><option value="">-- Pilih Pelaku --</option></select>');
+                            return;
+                        }
+
+                        if (source === 'sistem_integrasi') {
+                            $container.html(`
+                                <div class="input-group">
+                                    <select id="swalChangeActorSelectAdd" class="form-select shadow-sm" style="width: 40%">
+                                        <option value="sistem">Sistem</option>
+                                        <option value="other">Lainnya...</option>
+                                    </select>
+                                    <input type="text" id="swalChangeActorTextAdd" class="form-control shadow-sm" placeholder="Nama..." style="display:none">
+                                </div>
+                            `);
+                            $('#swalChangeActorSelectAdd').on('change', function() {
+                                if ($(this).val() === 'other') {
+                                    $('#swalChangeActorTextAdd').show().focus();
+                                } else {
+                                    $('#swalChangeActorTextAdd').hide().val('');
+                                }
+                            });
+                        } else {
+                            $container.html('<select id="swalChangeActorAdd" class="form-select shadow-sm"><option value="">Memuat...</option></select>');
+                            const $actor = $('#swalChangeActorAdd');
+                            loadChangeActorUsers(source, currentKlinikId).then((res) => {
+                                let options = ['<option value="">-- Pilih Pelaku --</option>'];
+                                if (res && res.success && Array.isArray(res.items)) {
+                                    res.items.forEach(it => options.push(`<option value="${it.id}">${it.nama_lengkap} (${it.role})</option>`));
+                                }
+                                options.push('<option value="other">-- Lainnya (Isi Manual) --</option>');
+                                $actor.html(options.join(''));
+                                
+                                $actor.on('change', function() {
+                                    if ($(this).val() === 'other') {
+                                        $container.html('<input type="text" id="swalChangeActorTextAdd" class="form-control shadow-sm" placeholder="Masukkan nama pelaku asal...">');
+                                        $('#swalChangeActorTextAdd').focus();
+                                    }
+                                });
+                            });
+                        }
+                    });
+                },
+                preConfirm: () => {
+                    const reasonCode = String($('#swalReasonCodeAdd').val() || '');
+                    const changeSource = String($('#swalChangeSourceAdd').val() || '');
+                    let actorId = 0;
+                    let actorName = '';
+
+                    if ($('#swalChangeActorTextAdd').is(':visible')) {
+                        actorName = String($('#swalChangeActorTextAdd').val() || '').trim();
+                        if (!actorName) {
+                            Swal.showValidationMessage('Nama pelaku asal wajib diisi.');
+                            return false;
+                        }
+                    } else if ($('#swalChangeActorSelectAdd').length) {
+                         actorName = $('#swalChangeActorSelectAdd').val();
+                    } else {
+                        actorId = String($('#swalChangeActorAdd').val() || '');
+                        if (!actorId) {
+                            Swal.showValidationMessage('Pelaku asal wajib dipilih.');
+                            return false;
+                        }
+                    }
+
+                    if (!reasonCode) {
+                        Swal.showValidationMessage('Alasan penambahan wajib dipilih.');
+                        return false;
+                    }
+                    if (!changeSource) {
+                        Swal.showValidationMessage('Sumber informasi wajib dipilih.');
+                        return false;
+                    }
+
+                    return {
+                        is_request_approval: '1',
+                        reason_code: reasonCode,
+                        reason: reasonMap[reasonCode] || reasonCode,
+                        change_source: changeSource,
+                        change_actor_user_id: actorId,
+                        change_actor_name: actorName
+                    };
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    triggerFinalSubmit(result.value);
+                }
+            });
+            return false;
+        }
+        
+        // NORMAL CASE (Non-Backdate)
+        triggerFinalSubmit();
+        return false;
+    });
     
     // --- MODAL TAMBAH LOGIC ---
     let modalRowIndex = 1;
@@ -1603,207 +1878,6 @@ $(document).ready(function() {
         const rowCount = $('.modal-item-row').length;
         $('.modal-remove-row').prop('disabled', rowCount === 1);
     }
-
-    // Form validation in modal
-    $('#formPemakaianBHP').on('submit', function(e) {
-        e.preventDefault();
-        const form = $(this);
-        const rowCount = $('.modal-item-row').length;
-        if (rowCount === 0) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'Perhatian',
-                text: 'Minimal harus ada 1 item barang'
-            });
-            return false;
-        }
-
-        const tanggalStr = form.find('input[name="tanggal"]').val();
-        let isPastDay = false;
-        if (tanggalStr) {
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            yesterday.setHours(0, 0, 0, 0);
-            
-            const selectedDate = new Date(tanggalStr);
-            selectedDate.setHours(0, 0, 0, 0);
-            
-            isPastDay = selectedDate < yesterday;
-        }
-
-        const userRole = '<?= $_SESSION['role'] ?>';
-        if (userRole === 'admin_klinik' && isPastDay) {
-            const reasonMap = {
-                wrong_qty: 'Salah input jumlah/kuantitas item',
-                wrong_item: 'Salah memilih jenis barang/BHP',
-                wrong_date: 'Koreksi tanggal transaksi pemakaian',
-                wrong_nakes: 'Koreksi data petugas HC/Nakes',
-                wrong_klinik: 'Koreksi data klinik/lokasi',
-                admin_libur: 'Admin sedang libur',
-                other_admin: 'Lainnya (Koreksi Administrasi)'
-            };
-            const sourceMap = {
-                admin_logistik: 'Admin Logistik',
-                nakes: 'Nakes',
-                sistem_integrasi: 'Sistem/Integrasi'
-            };
-
-            Swal.fire({
-                title: 'Request Approval (Tambah Data Backdate)',
-                html: `
-                    <div class="text-start p-2">
-                        <div class="alert alert-warning small py-2 mb-3">
-                            <i class="fas fa-exclamation-triangle me-2"></i>Tanggal pemakaian lebih dari H-2 memerlukan approval SPV.
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted mb-1">
-                                <i class="fas fa-info-circle me-1"></i> Alasan Penambahan <span class="text-danger">*</span>
-                            </label>
-                            <select id="swalReasonCodeAdd" class="form-select shadow-sm">
-                                <option value="">-- Pilih Alasan --</option>
-                                ${Object.entries(reasonMap).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
-                            </select>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted mb-1">
-                                <i class="fas fa-search me-1"></i> Sumber Informasi <span class="text-danger">*</span>
-                            </label>
-                            <select id="swalChangeSourceAdd" class="form-select shadow-sm">
-                                <option value="">-- Pilih Sumber --</option>
-                                ${Object.entries(sourceMap).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
-                            </select>
-                        </div>
-                        
-                        <div class="mb-1">
-                            <label class="form-label fw-bold small text-muted mb-1">
-                                <i class="fas fa-user-check me-1"></i> Pelaku / Asal Permintaan <span class="text-danger">*</span>
-                            </label>
-                            <div id="swalActorContainerAdd">
-                                <select id="swalChangeActorAdd" class="form-select shadow-sm">
-                                    <option value="">-- Pilih Pelaku --</option>
-                                </select>
-                            </div>
-                            <div class="form-text small" style="font-size: 0.75rem;">Siapa yang meminta atau bertanggung jawab atas penambahan data terlambat ini?</div>
-                        </div>
-                    </div>
-                `,
-                showCancelButton: true,
-                confirmButtonText: 'Kirim Request',
-                cancelButtonText: 'Batal',
-                confirmButtonColor: '#204EAB',
-                customClass: {
-                    popup: 'rounded-4 shadow-lg border-0',
-                    confirmButton: 'px-4 py-2 fw-bold rounded-pill',
-                    cancelButton: 'px-4 py-2 fw-bold rounded-pill'
-                },
-                didOpen: () => {
-                    const $source = $('#swalChangeSourceAdd');
-                    const $container = $('#swalActorContainerAdd');
-                    const currentKlinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : ($('#modalKlinikIdHidden').length ? $('#modalKlinikIdHidden').val() : '');
-
-                    $source.on('change', function() {
-                        const source = $(this).val();
-                        if (!source) {
-                            $container.html('<select id="swalChangeActorAdd" class="form-select shadow-sm"><option value="">-- Pilih Pelaku --</option></select>');
-                            return;
-                        }
-
-                        if (source === 'sistem_integrasi') {
-                            $container.html(`
-                                <div class="input-group">
-                                    <select id="swalChangeActorSelectAdd" class="form-select shadow-sm" style="width: 40%">
-                                        <option value="sistem">Sistem</option>
-                                        <option value="other">Lainnya...</option>
-                                    </select>
-                                    <input type="text" id="swalChangeActorTextAdd" class="form-control shadow-sm" placeholder="Nama..." style="display:none">
-                                </div>
-                            `);
-                            $('#swalChangeActorSelectAdd').on('change', function() {
-                                if ($(this).val() === 'other') {
-                                    $('#swalChangeActorTextAdd').show().focus();
-                                } else {
-                                    $('#swalChangeActorTextAdd').hide().val('');
-                                }
-                            });
-                        } else {
-                            $container.html('<select id="swalChangeActorAdd" class="form-select shadow-sm"><option value="">Memuat...</option></select>');
-                            const $actor = $('#swalChangeActorAdd');
-                            loadChangeActorUsers(source, currentKlinikId).then((res) => {
-                                let options = ['<option value="">-- Pilih Pelaku --</option>'];
-                                if (res && res.success && Array.isArray(res.items)) {
-                                    res.items.forEach(it => options.push(`<option value="${it.id}">${it.nama_lengkap} (${it.role})</option>`));
-                                }
-                                options.push('<option value="other">-- Lainnya (Isi Manual) --</option>');
-                                $actor.html(options.join(''));
-                                
-                                $actor.on('change', function() {
-                                    if ($(this).val() === 'other') {
-                                        $container.html('<input type="text" id="swalChangeActorTextAdd" class="form-control shadow-sm" placeholder="Masukkan nama pelaku asal...">');
-                                        $('#swalChangeActorTextAdd').focus();
-                                    }
-                                });
-                            });
-                        }
-                    });
-                },
-                preConfirm: () => {
-                    const reasonCode = String($('#swalReasonCodeAdd').val() || '');
-                    const changeSource = String($('#swalChangeSourceAdd').val() || '');
-                    let actorId = 0;
-                    let actorName = '';
-
-                    if ($('#swalChangeActorTextAdd').is(':visible')) {
-                        actorName = String($('#swalChangeActorTextAdd').val() || '').trim();
-                        if (!actorName) {
-                            Swal.showValidationMessage('Nama pelaku asal wajib diisi.');
-                            return false;
-                        }
-                    } else if ($('#swalChangeActorSelectAdd').length) {
-                         actorName = $('#swalChangeActorSelectAdd').val();
-                    } else {
-                        actorId = String($('#swalChangeActorAdd').val() || '');
-                        if (!actorId) {
-                            Swal.showValidationMessage('Pelaku asal wajib dipilih.');
-                            return false;
-                        }
-                    }
-
-                    if (!reasonCode) {
-                        Swal.showValidationMessage('Alasan penambahan wajib dipilih.');
-                        return false;
-                    }
-                    if (!changeSource) {
-                        Swal.showValidationMessage('Sumber informasi wajib dipilih.');
-                        return false;
-                    }
-
-                    return {
-                        reason_code: reasonCode,
-                        reason: reasonMap[reasonCode] || reasonCode,
-                        change_source: changeSource,
-                        change_actor_user_id: actorId,
-                        change_actor_name: actorName
-                    };
-                }
-            }).then((result) => {
-                if (!result.isConfirmed || !result.value) return;
-                const formData = new FormData(form[0]);
-                formData.append('is_request_approval', '1');
-                formData.append('reason_code', result.value.reason_code);
-                formData.append('reason', result.value.reason);
-                formData.append('change_source', result.value.change_source);
-                formData.append('change_actor_user_id', result.value.change_actor_user_id);
-                formData.append('change_actor_name', result.value.change_actor_name);
-                submitFormDirect(form, formData);
-            });
-            return false;
-        }
-        
-        const formData = new FormData(this);
-        submitFormDirect(form, formData);
-        return false;
-    });
 
     function submitFormDirect(form, formData) {
         const $btn = form.find('button[type="submit"]');
@@ -2092,13 +2166,17 @@ $(document).ready(function() {
                     `,
                     width: '950px',
                     showCancelButton: true,
-                    confirmButtonText: 'Ya, Approve',
+                    confirmButtonText: 'Approve & Simpan',
+                    denyButtonText: 'Tolak',
+                    showDenyButton: true,
                     cancelButtonText: 'Batal',
                     confirmButtonColor: '#204EAB',
+                    denyButtonColor: '#dc3545',
                     showLoaderOnConfirm: true,
                     customClass: {
                         popup: 'rounded-4 shadow-lg border-0',
                         confirmButton: 'px-4 py-2 fw-bold rounded-pill',
+                        denyButton: 'px-4 py-2 fw-bold rounded-pill',
                         cancelButton: 'px-4 py-2 fw-bold rounded-pill'
                     },
                     preConfirm: () => {
@@ -2112,8 +2190,61 @@ $(document).ready(function() {
                                 throw new Error(res.message || 'Gagal menyetujui request');
                             }
                             return res;
-                        }).catch(error => {
-                            Swal.showValidationMessage(`Request failed: ${error}`);
+                        }).catch(xhr => {
+                            let msg = 'Request failed';
+                            if (xhr.responseJSON && xhr.responseJSON.message) {
+                                msg = xhr.responseJSON.message;
+                            } else if (xhr.statusText) {
+                                msg = xhr.statusText;
+                            }
+                            Swal.showValidationMessage(msg);
+                        });
+                    },
+                    preDeny: () => {
+                        return Swal.fire({
+                            title: 'Tolak Permintaan',
+                            input: 'textarea',
+                            inputLabel: 'Alasan Penolakan',
+                            inputPlaceholder: 'Masukkan alasan penolakan...',
+                            inputAttributes: {
+                                'aria-label': 'Masukkan alasan penolakan'
+                            },
+                            showCancelButton: true,
+                            confirmButtonText: 'Kirim Penolakan',
+                            cancelButtonText: 'Batal',
+                            confirmButtonColor: '#dc3545',
+                            showLoaderOnConfirm: true,
+                            customClass: {
+                                popup: 'rounded-4 shadow-lg border-0',
+                                confirmButton: 'px-4 py-2 fw-bold rounded-pill',
+                                cancelButton: 'px-4 py-2 fw-bold rounded-pill'
+                            },
+                            preConfirm: (reason) => {
+                                if (!reason) {
+                                    Swal.showValidationMessage('Alasan penolakan wajib diisi');
+                                    return false;
+                                }
+                                return $.ajax({
+                                    url: 'actions/process_pemakaian_bhp_action.php',
+                                    method: 'POST',
+                                    data: { action: 'reject', id: id, reason: reason, _csrf: PEMAKAIAN_CSRF },
+                                    dataType: 'json'
+                                }).then(res => {
+                                    if (!res.success) {
+                                        throw new Error(res.message || 'Gagal menolak request');
+                                    }
+                                    return res;
+                                }).catch(xhr => {
+                                    let msg = 'Request failed';
+                                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                                        msg = xhr.responseJSON.message;
+                                    } else if (xhr.statusText) {
+                                        msg = xhr.statusText;
+                                    }
+                                    Swal.showValidationMessage(msg);
+                                });
+                            },
+                            allowOutsideClick: () => !Swal.isLoading()
                         });
                     },
                     allowOutsideClick: () => !Swal.isLoading()
@@ -2122,6 +2253,14 @@ $(document).ready(function() {
                         Swal.fire('Berhasil', result.value.message, 'success').then(() => {
                             location.reload();
                         });
+                    } else if (result.isDenied) {
+                        if (result.value && result.value.success) {
+                            Swal.fire('Berhasil', result.value.message, 'success').then(() => {
+                                location.reload();
+                            });
+                        } else if (result.value) {
+                            Swal.fire('Gagal', result.value.message || 'Gagal menolak permintaan', 'error');
+                        }
                     }
                 });
             },

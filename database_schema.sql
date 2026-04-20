@@ -231,7 +231,7 @@ CREATE TABLE IF NOT EXISTS `inventory_pemakaian_bhp` (
   `catatan_transaksi` text DEFAULT NULL COMMENT 'Catatan untuk keseluruhan transaksi',
   `created_by` int(11) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `status` enum('active','pending_edit','pending_delete','rejected') DEFAULT 'active',
+  `status` enum('active','pending_edit','pending_delete','rejected','revised') DEFAULT 'active',
   `approval_reason` text DEFAULT NULL,
   `spv_approved_by` int(11) DEFAULT NULL,
   `spv_approved_at` datetime DEFAULT NULL,
@@ -241,6 +241,7 @@ CREATE TABLE IF NOT EXISTS `inventory_pemakaian_bhp` (
   `change_reason_code` varchar(64) DEFAULT NULL,
   `is_auto` tinyint(1) NOT NULL DEFAULT 0,
   `booking_id` int(11) DEFAULT NULL,
+  `parent_id` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `nomor_pemakaian` (`nomor_pemakaian`),
   KEY `klinik_id` (`klinik_id`),
@@ -249,7 +250,8 @@ CREATE TABLE IF NOT EXISTS `inventory_pemakaian_bhp` (
   KEY `idx_pbh_klinik_jenis_created` (`klinik_id`,`jenis_pemakaian`,`created_at`),
   CONSTRAINT `fk_pemakaian_change_actor` FOREIGN KEY (`change_actor_user_id`) REFERENCES `inventory_users` (`id`),
   CONSTRAINT `fk_pemakaian_created_by` FOREIGN KEY (`created_by`) REFERENCES `inventory_users` (`id`),
-  CONSTRAINT `fk_pemakaian_klinik` FOREIGN KEY (`klinik_id`) REFERENCES `inventory_klinik` (`id`)
+  CONSTRAINT `fk_pemakaian_klinik` FOREIGN KEY (`klinik_id`) REFERENCES `inventory_klinik` (`id`),
+  CONSTRAINT `fk_pemakaian_parent` FOREIGN KEY (`parent_id`) REFERENCES `inventory_pemakaian_bhp` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS `inventory_pemakaian_bhp_detail` (

@@ -36,12 +36,12 @@ if ($user_role === 'admin_klinik' && $user_klinik_id) {
 }
 
 if (!empty($start_date)) {
-    $where_clause .= " AND pb.tanggal >= ?";
+    $where_clause .= " AND pb.created_at >= ?";
     $params[] = $start_date . ' 00:00:00';
     $types .= "s";
 }
 if (!empty($end_date)) {
-    $where_clause .= " AND pb.tanggal <= ?";
+    $where_clause .= " AND pb.created_at <= ?";
     $params[] = $end_date . ' 23:59:59';
     $types .= "s";
 }
@@ -59,6 +59,7 @@ $stmt_exp = $conn->prepare("
             WHEN pb.jenis_pemakaian = 'hc' THEN k.kode_homecare 
             ELSE k.kode_klinik 
         END as USER_CODE,
+        pb.jenis_pemakaian as JENIS,
         pb.tanggal as TANGGAL_PEMAKAIAN,
         pb.created_at as TANGGAL_INPUT_FULL,
         osd.reason as REASON
@@ -69,7 +70,7 @@ $stmt_exp = $conn->prepare("
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     JOIN inventory_klinik k ON pb.klinik_id = k.id
     LEFT JOIN inventory_odoo_support_data osd ON osd.key_name = TRIM(SUBSTRING_INDEX(REPLACE(ofc.product_category, '/', ' '), ' ', 1))
-    WHERE $where_clause
+    WHERE $where_clause AND pb.status = 'active'
     ORDER BY TANGGAL_INPUT_FULL DESC, ID ASC
 ");
 
@@ -103,23 +104,17 @@ $grouped_data = [];
 $used_timestamps = []; // Track [user][timestamp] to ensure uniqueness
 
 while ($row = $res->fetch_assoc()) {
-    $id = $row['ID'];
-    $tgl_orig = $row['TANGGAL_PEMAKAIAN']; // format YYYY-MM-DD HH:MM:SS
+    // Grouping to handle the case where multiple entries exist for the same item/category/user/date
+    // But we must NOT group across different dates if they are meant to be separate adjustments
     $user = trim(explode('/', $row['USER_CODE'] ?? '')[0]);
+    $tgl_input = date('d/m/Y H:i:s', strtotime($row['TANGGAL_INPUT_FULL']));
     
-    // Ensure unique timestamp per user/account
-    $tgl_adjusted = $tgl_orig;
-    $loop_count = 0;
-    while (isset($used_timestamps[$user][$tgl_adjusted]) && $loop_count < 100) {
-        $dt = new DateTime($tgl_adjusted);
-        $dt->modify('+1 second');
-        $tgl_adjusted = $dt->format('Y-m-d H:i:s');
-        $loop_count++;
-    }
-    $used_timestamps[$user][$tgl_adjusted] = true;
-    
-    // Unique key for grouping: ID + Adjusted Timestamp + User
-    $key = $id . '|' . $tgl_adjusted . '|' . $user;
+    // Task: Sederhanakan Jenis (Klinik/HC)
+    $jenis_raw = trim((string)($row['JENIS'] ?? ''));
+    $jenis_display = (stripos($jenis_raw, 'hc') !== false) ? 'HC' : 'Klinik';
+
+    // Unique key includes timestamp to keep separate adjustments separate
+    $key = $row['NAMA_BARANG'] . '|' . ($row['NAMA_BAGIAN'] ?? '') . '|' . $jenis_display . '|' . $user . '|' . $tgl_input;
     
     if (!isset($grouped_data[$key])) {
         $grouped_data[$key] = [
@@ -127,13 +122,13 @@ while ($row = $res->fetch_assoc()) {
             'NAMA_BARANG' => $row['NAMA_BARANG'],
             'NAMA_BAGIAN' => $row['NAMA_BAGIAN'] ?? '',
             'PENYESUAIAN' => 0,
-            'KET_PENYESUAIAN' => "Pemakaian BHP " . $ket_periode,
+            'KET_PENYESUAIAN' => "Pemakaian BHP " . date('d/m/Y', strtotime($row['TANGGAL_PEMAKAIAN'])),
             'SATUAN' => $row['SATUAN_ODOO'],
             'NAMA_AKUN' => '',
             'HRG_BELI' => '',
             'TOTAL' => '',
             'USER' => $user,
-            'TANGGAL_PENYESUAIAN' => date('d/m/Y H:i:s', strtotime($tgl_adjusted)),
+            'TANGGAL_PENYESUAIAN' => $tgl_input,
             'reason' => $row['REASON'] ?? ''
         ];
     }
@@ -143,8 +138,19 @@ while ($row = $res->fetch_assoc()) {
     $grouped_data[$key]['PENYESUAIAN'] += $qty_odoo;
 }
 
+// Final data processing: absolute values for Odoo adjustments? 
+// Actually, Odoo adjustments usually take negative values for reductions.
+// The user said "yang minus ke tariknya - juga", meaning they WANT the negative values to be preserved.
+// The current code already does += $qty_odoo, which preserves the sign.
+// BUT, the grouping key was too broad ($row['NAMA_BARANG'] . '|' . ($row['NAMA_BAGIAN'] ?? '') . '|' . $jenis_display . '|' . $user),
+// which might have merged a positive 2 and a negative 2 into 0 if they were in the same filter range.
+
 $excel_data = [$header];
 foreach ($grouped_data as $data) {
+    // If the net adjustment is 0, we can optionally skip it, but let's keep it if the user wants to see the record.
+    // However, usually Odoo doesn't need 0 adjustments.
+    if (abs($data['PENYESUAIAN']) < 0.000001) continue; 
+
     $excel_data[] = [
         $data['ID'],
         $data['NAMA_BARANG'],

@@ -42,7 +42,16 @@ function stock_match_clause(mysqli $conn, array $barang_row): string {
 function stock_last_update(mysqli $conn, string $location_code): string {
     $loc = $conn->real_escape_string(trim($location_code));
     $r = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc'");
-    return (string)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['last_update'] ?? '') : '');
+    $res = (string)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['last_update'] ?? '') : '');
+    
+    // If mirror is empty, try global sync setting
+    if ($res === '') {
+        $r2 = $conn->query("SELECT v FROM inventory_app_settings WHERE k = 'odoo_sync_last_run' LIMIT 1");
+        if ($r2 && ($gs = $r2->fetch_assoc())) {
+            $res = date('Y-m-d H:i:s', (int)$gs['v']);
+        }
+    }
+    return $res;
 }
 
 function stock_mirror_qty(mysqli $conn, string $location_code, string $match_clause, float $multiplier): float {
@@ -80,9 +89,19 @@ function stock_pending_transaksi(mysqli $conn, string $level, int $level_id, int
 function stock_sellout_qty(mysqli $conn, int $klinik_id, int $barang_id, string $last_update, bool $is_hc): float {
     $klinik_id = (int)$klinik_id;
     $barang_id = (int)$barang_id;
-    if ($last_update === '') return 0.0;
-    $lu = $conn->real_escape_string($last_update);
+    
+    // Per user feedback: If mirror was updated (e.g., 19 Apr), any pemakaian created BEFORE that date
+    // (e.g., 16 Apr) should be ignored because they are already accounted for in the Odoo baseline stock.
+    // We only count "pending" sellout created AFTER the last mirror sync.
+    if ($last_update === '') {
+        $lu = '2000-01-01 00:00:00';
+    } else {
+        $lu = $conn->real_escape_string($last_update);
+    }
+    
     $jenis_cond = $is_hc ? "pb.jenis_pemakaian = 'hc'" : "pb.jenis_pemakaian <> 'hc'";
+    
+    // Sum deltas from active records created AFTER the last mirror update.
     $r = $conn->query("
         SELECT COALESCE(SUM(pbd.qty),0) AS qty
         FROM inventory_pemakaian_bhp_detail pbd
@@ -91,6 +110,7 @@ function stock_sellout_qty(mysqli $conn, int $klinik_id, int $barang_id, string 
           AND $jenis_cond
           AND pb.created_at > '$lu'
           AND pbd.barang_id = $barang_id
+          AND pb.status = 'active'
     ");
     return (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
 }
@@ -144,7 +164,7 @@ function stock_effective(mysqli $conn, int $klinik_id, bool $is_hc, int $barang_
         $klinik_id,
         $barang_id,
         $last_update,
-        $is_hc ? ['hc_petugas_transfer'] : ['transfer', 'hc_petugas_transfer']
+        $is_hc ? ['hc_petugas_transfer', 'pemakaian_bhp_revision'] : ['transfer', 'hc_petugas_transfer', 'pemakaian_bhp_revision']
     );
     $sellout = stock_sellout_qty($conn, $klinik_id, $barang_id, $last_update, $is_hc);
     $reserve = stock_reserve_qty($conn, $klinik_id, $barang_id, $last_update, $is_hc);

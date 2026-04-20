@@ -44,7 +44,7 @@ if ($can_filter_klinik) {
 }
 
 // Data Fetching
-$where_pb = "pb.status = 'active' AND pb.tanggal BETWEEN '$first_day 00:00:00' AND '$last_day 23:59:59'";
+$where_pb = "pb.status = 'active' AND pb.created_at BETWEEN '$first_day 00:00:00' AND '$last_day 23:59:59'";
 $where_bp = "bp.status = 'completed' AND bp.tanggal_pemeriksaan BETWEEN '$first_day' AND '$last_day'";
 
 if ($selected_klinik && $selected_klinik !== 'all') {

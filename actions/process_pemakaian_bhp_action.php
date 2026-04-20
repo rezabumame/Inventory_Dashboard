@@ -65,24 +65,27 @@ function build_items_from_ops(mysqli $conn, int $id, array $pending_data): array
     return array_values($map);
 }
 
-// Check if user is logged in
-if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-    exit;
-}
+    // Check if user is logged in
+    if (!isset($_SESSION['user_id'])) {
+        http_response_code(401);
+        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+        exit;
+    }
 
-$action = $_POST['action'] ?? '';
-$id = intval($_POST['id'] ?? 0);
-$role = $_SESSION['role'] ?? '';
-$user_id = $_SESSION['user_id'];
-$user_klinik_id = isset($_SESSION['klinik_id']) ? (int)$_SESSION['klinik_id'] : 0;
+    $action = (string)($_POST['action'] ?? '');
+    $id = intval($_POST['id'] ?? 0);
+    $role = (string)($_SESSION['role'] ?? '');
+    $user_id = $_SESSION['user_id'];
+    $user_klinik_id = isset($_SESSION['klinik_id']) ? (int)$_SESSION['klinik_id'] : 0;
 
-if (!$id || !$action) {
-    echo json_encode(['success' => false, 'message' => 'Invalid request']);
-    exit;
-}
+    if ($id <= 0 || $action === '') {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Invalid request params']);
+        exit;
+    }
 
-require_csrf();
+    // CSRF protection
+    require_csrf();
 
 $lock_esc = '';
 
@@ -155,113 +158,92 @@ try {
             exec_or_throw($stmt_del3, 'Delete header');
             
             $msg = "Permintaan penghapusan disetujui. Data telah dihapus dan stok dikembalikan.";
-        } elseif ($header['status'] === 'pending_edit') {
-            // Apply pending data (JSON)
+        } elseif ($header['status'] === 'pending_approval_spv') {
+            // New logic for Revision Approval (Delta-based)
+            $parent_id = $header['parent_id'];
+            if (!$parent_id) throw new Exception("Data revisi tidak memiliki parent ID");
+
+            // Parse pending_data to get delta_items
             $pending_data = json_decode($header['pending_data'], true);
-            if (!$pending_data) throw new Exception("Data perubahan tidak valid");
+            if (!$pending_data || !isset($pending_data['delta_items'])) {
+                throw new Exception("Data delta revisi tidak valid");
+            }
+            $delta_items = $pending_data['delta_items'];
 
-         // Task Fix: Persiapkan payload item SEBELUM menghapus detail lama dari database
-            $items_payload = build_items_from_ops($conn, $id, $pending_data);
-            if (!is_array($items_payload) || empty($items_payload)) throw new Exception('Item perubahan kosong');
-
-            // 1. Reverse OLD stock
-            $stmt_old = $conn->prepare("SELECT barang_id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
-            $stmt_old->bind_param("i", $id);
-            exec_or_throw($stmt_old, 'Fetch old details');
-            $old_details = $stmt_old->get_result();
-            while ($item = $old_details->fetch_assoc()) {
-                $bid = (int)$item['barang_id']; $qty = (float)$item['qty'];
-                if ($header['jenis_pemakaian'] === 'hc' && !empty($header['user_hc_id'])) {
-                    $stmt_r = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-                    $old_uid = (int)$header['user_hc_id'];
-                    $old_kid = (int)$header['klinik_id'];
-                    $stmt_r->bind_param("diiii", $qty, $user_id, $bid, $old_uid, $old_kid);
-                    exec_or_throw($stmt_r, 'Reverse old stock HC');
-                } else {
-                    $old_kid = (int)$header['klinik_id'];
-                    $stmt_r = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
-                    $stmt_r->bind_param("diii", $qty, $user_id, $bid, $old_kid);
-                    exec_or_throw($stmt_r, 'Reverse old stock Klinik');
-                }
+            // Get original header details for logging context
+            $stmt_original_header = $conn->prepare("SELECT nomor_pemakaian, jenis_pemakaian, klinik_id, user_hc_id FROM inventory_pemakaian_bhp WHERE id = ? LIMIT 1");
+            $stmt_original_header->bind_param("i", $parent_id);
+            $stmt_original_header->execute();
+            $original_header = $stmt_original_header->get_result()->fetch_assoc();
+            if (!$original_header) {
+                throw new Exception("Header original tidak ditemukan untuk revisi ini.");
             }
 
-            // 2. Update Header
-            // Task: Preserve pending_data for history display after approval
-            $stmt_u = $conn->prepare("UPDATE inventory_pemakaian_bhp SET tanggal = ?, jenis_pemakaian = ?, klinik_id = ?, user_hc_id = ?, catatan_transaksi = ?, status = 'active', change_actor_name = ?, spv_approved_by = ?, spv_approved_at = NOW() WHERE id = ?");
-            $tgl_new = (string)($pending_data['tanggal'] ?? $header['tanggal']);
-            $jenis_new = (string)($pending_data['jenis_pemakaian'] ?? $header['jenis_pemakaian']);
-            $klinik_new = (int)($pending_data['klinik_id'] ?? $header['klinik_id']);
-            $user_hc_new = ($jenis_new === 'hc') ? (isset($pending_data['user_hc_id']) ? (int)$pending_data['user_hc_id'] : null) : null;
-            $cat_new = (string)($pending_data['catatan_transaksi'] ?? $header['catatan_transaksi']);
-            $actor_name_new = (string)($pending_data['meta']['change_actor_name'] ?? $header['change_actor_name'] ?? '');
-            $stmt_u->bind_param("ssiissii", $tgl_new, $jenis_new, $klinik_new, $user_hc_new, $cat_new, $actor_name_new, $user_id, $id);
-            exec_or_throw($stmt_u, 'Update header');
+            $jenis_pemakaian_ctx = $original_header['jenis_pemakaian'];
+            $klinik_id_ctx = (int)$original_header['klinik_id'];
+            $user_hc_id_ctx = (int)$original_header['user_hc_id'];
+            $original_nomor_ctx = $original_header['nomor_pemakaian'];
 
-            // 3. Replace details
-            $stmt_del_d = $conn->prepare("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
-            $stmt_del_d->bind_param("i", $id);
-            exec_or_throw($stmt_del_d, 'Clear old details');
+            // Apply deltas to stock
+            foreach ($delta_items as $delta_item) {
+                $bid = (int)$delta_item['barang_id'];
+                $qty_delta = (float)$delta_item['qty']; // This is the delta
+                $satuan = (string)$delta_item['satuan'];
+                $catatan_item = (string)$delta_item['catatan_item'];
 
-            $ref_type = 'pemakaian_bhp';
-            $stmt_del_t = $conn->prepare("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = ? AND referensi_id = ?");
-            $stmt_del_t->bind_param("si", $ref_type, $id);
-            exec_or_throw($stmt_del_t, 'Clear old stock transactions');
+                if (abs($qty_delta) < 0.000001) continue; // Skip zero deltas
 
-            $stmt_ins = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan, catatan_item) VALUES (?, ?, ?, ?, ?)");
-
-            foreach ($items_payload as $it) {
-                $bid = (int)($it['barang_id'] ?? 0);
-                $qty = (float)($it['qty'] ?? 0);
-                if ($bid <= 0 || $qty <= 0) continue;
-
-                // Pending payload can come from different sources; normalize keys.
-                $satuan = (string)($it['satuan'] ?? $it['satuan_display'] ?? '');
-                if ($satuan === '') {
-                    $rb = $conn->query("SELECT satuan FROM inventory_barang WHERE id = " . (int)$bid . " LIMIT 1");
-                    $satuan = (string)($rb && $rb->num_rows > 0 ? ($rb->fetch_assoc()['satuan'] ?? '') : '');
-                }
-                $catatan_item = (string)($it['catatan_item'] ?? $it['catatan'] ?? '');
-
-                $stmt_ins->bind_param("iidss", $id, $bid, $qty, $satuan, $catatan_item);
-                exec_or_throw($stmt_ins, 'Insert detail');
-
-                // Get stock baseline before update for logging (mirror-based, same as Inventory Klinik)
-                $eff = stock_effective($conn, (int)$klinik_new, $jenis_new === 'hc', (int)$bid);
+                $eff = stock_effective($conn, $klinik_id_ctx, $jenis_pemakaian_ctx === 'hc', $bid);
                 $qty_sebelum = $eff['ok'] ? (float)($eff['on_hand'] ?? 0) : 0.0;
-                if ($jenis_new === 'hc' && !empty($user_hc_new)) {
-                    $uid = (int)$user_hc_new;
-                    $kid = (int)$klinik_new;
 
-                    $stmt_s = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-                    $stmt_s->bind_param("diiii", $qty, $user_id, $bid, $uid, $kid);
-                    exec_or_throw($stmt_s, 'Deduct stock HC');
+                // Adjust stock based on delta
+                if ($jenis_pemakaian_ctx === 'hc' && !empty($user_hc_id_ctx)) {
+                    $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+                    $stmt_upd->bind_param("diiii", $qty_delta, $user_id, $bid, $user_hc_id_ctx, $klinik_id_ctx);
+                    exec_or_throw($stmt_upd, 'Apply delta stock HC');
                     $level = 'hc';
-                    $level_id = $uid;
+                    $level_id = $user_hc_id_ctx;
                 } else {
-                    $kid = (int)$klinik_new;
-
-                    $stmt_s = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
-                    $stmt_s->bind_param("diii", $qty, $user_id, $bid, $kid);
-                    exec_or_throw($stmt_s, 'Deduct stock Klinik');
+                    $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
+                    $stmt_upd->bind_param("diii", $qty_delta, $user_id, $bid, $klinik_id_ctx);
+                    exec_or_throw($stmt_upd, 'Apply delta stock Klinik');
                     $level = 'klinik';
-                    $level_id = $kid;
+                    $level_id = $klinik_id_ctx;
                 }
-                
-                $qty_sesudah = (float)$qty_sebelum - (float)$qty;
+
+                $qty_sesudah = $qty_sebelum - $qty_delta;
+                // Per user request: Log as 'out' with negative qty for reduction
+                $tipe_transaksi = 'out'; 
+                $log_qty = $qty_delta;
 
                 // Log transaction
-                $ref_type = 'pemakaian_bhp';
-                $cat = 'Approve edit ' . (string)($header['nomor_pemakaian'] ?? 'BHP');
-                $created_at = date('Y-m-d H:i:s', strtotime($tgl_new));
+                $ref_type = 'pemakaian_bhp'; 
+                $cat = 'Revisi ' . $header['nomor_pemakaian'] . ' disetujui (Delta). Parent: ' . $original_nomor_ctx;
+                
+                // CRITICAL FIX: The sellout logic in stock.php filters by pb.created_at > last_sync.
+                // We MUST ensure the REVISION record (pb) and its STOCK LOGS (ts) use the SAME timestamp
+                // that is clearly AFTER the last sync.
+                $created_at_val = date('Y-m-d H:i:s'); 
+
                 $stmt_log = $conn->prepare("
                     INSERT INTO inventory_transaksi_stok
                     (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
-                    VALUES (?, ?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt_log->bind_param("isidddsisis", $bid, $level, $level_id, $qty, $qty_sebelum, $qty_sesudah, $ref_type, $id, $cat, $user_id, $created_at);
-                exec_or_throw($stmt_log, 'Insert stock transaction');
+                $stmt_log->bind_param("isidddsissis", $bid, $level, $level_id, $tipe_transaksi, $log_qty, $qty_sebelum, $qty_sesudah, $ref_type, $id, $cat, $user_id, $created_at_val);
+                exec_or_throw($stmt_log, 'Insert stock transaction for delta revision');
             }
-            $msg = "Permintaan perubahan disetujui. Data pemakaian telah diperbarui.";
+
+            // Mark the REVISION record as active (Original record remains active too)
+            // CRITICAL FIX: Update created_at to the SAME timestamp as stock logs to satisfy sellout filter.
+            // Also update tanggal to NOW so it appears on today's report in Odoo Export
+            $now_val = date('Y-m-d H:i:s');
+            $today_date = date('Y-m-d');
+            $stmt_upd = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'active', spv_approved_by = ?, spv_approved_at = NOW(), created_at = ?, tanggal = ? WHERE id = ?");
+            $stmt_upd->bind_param("issi", $user_id, $now_val, $today_date, $id);
+            exec_or_throw($stmt_upd, 'Mark revision as active');
+
+            $msg = "Revisi " . $header['nomor_pemakaian'] . " telah disetujui dan delta perubahan telah diterapkan.";
         } elseif ($header['status'] === 'pending_add') {
             // Apply pending data (JSON) for NEW record
             $pending_data = json_decode($header['pending_data'], true);
@@ -279,8 +261,10 @@ try {
             $nomor_pemakaian = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
             // 2. Update Header status to active and set real number
-            $stmt_u = $conn->prepare("UPDATE inventory_pemakaian_bhp SET nomor_pemakaian = ?, status = 'active', spv_approved_by = ?, spv_approved_at = NOW() WHERE id = ?");
-            $stmt_u->bind_param("sii", $nomor_pemakaian, $user_id, $id);
+            $now_val = date('Y-m-d H:i:s');
+            $today_date = date('Y-m-d');
+            $stmt_u = $conn->prepare("UPDATE inventory_pemakaian_bhp SET nomor_pemakaian = ?, status = 'active', spv_approved_by = ?, spv_approved_at = NOW(), created_at = ?, tanggal = ? WHERE id = ?");
+            $stmt_u->bind_param("sissi", $nomor_pemakaian, $user_id, $now_val, $today_date, $id);
             exec_or_throw($stmt_u, 'Update header to active');
 
             $jenis_new = $header['jenis_pemakaian'];
@@ -329,7 +313,7 @@ try {
                 // Log transaction
                 $ref_type = 'pemakaian_bhp';
                 $cat = 'Approve backdate add ' . $nomor_pemakaian;
-                $created_at_val = date('Y-m-d H:i:s', strtotime($tanggal));
+                $created_at_val = date('Y-m-d H:i:s');
                 $stmt_log = $conn->prepare("
                     INSERT INTO inventory_transaksi_stok
                     (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
@@ -345,7 +329,7 @@ try {
     } elseif ($action === 'reject') {
         $reason = trim((string)($_POST['reason'] ?? ''));
         if (empty($reason)) throw new Exception("Alasan penolakan wajib diisi!");
-        if (!in_array((string)($header['status'] ?? ''), ['pending_add', 'pending_edit', 'pending_delete'], true)) {
+        if (!in_array((string)($header['status'] ?? ''), ['pending_add', 'pending_edit', 'pending_delete', 'pending_approval_spv'], true)) {
             throw new Exception("Status tidak valid untuk penolakan");
         }
 

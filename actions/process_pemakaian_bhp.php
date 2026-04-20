@@ -83,10 +83,15 @@ try {
 
     // --- BACKDATE CHECK FOR NEW RECORD (H-2) ---
     $is_request_approval = isset($_POST['is_request_approval']) && $_POST['is_request_approval'] === '1';
-    if (!$edit_id && !$is_request_approval && $_SESSION['role'] === 'admin_klinik') {
-        $yesterday = date('Y-m-d', strtotime('-1 day'));
-        $selected_date = date('Y-m-d', strtotime($tanggal));
-        if ($selected_date < $yesterday) {
+    
+    // Check if backdate (H-2)
+    $yesterday = date('Y-m-d', strtotime('-1 day'));
+    $selected_date = date('Y-m-d', strtotime($tanggal));
+    $is_backdate = ($selected_date < $yesterday);
+
+    if (!$edit_id && $is_backdate && !$is_request_approval) {
+        // If backdate but not via approval flow, check role
+        if ($_SESSION['role'] === 'admin_klinik') {
             throw new Exception("Tanggal pemakaian lebih dari H-2 memerlukan approval SPV");
         }
     }
@@ -166,19 +171,27 @@ try {
                             throw new Exception("Nama pelaku asal wajib diisi untuk sumber sistem/integrasi");
                         }
                     } else {
-                        if ($change_actor_user_id <= 0) {
-                            throw new Exception("Pelaku asal wajib dipilih dari master user");
+                        // Task: Validasi pelaku asal dari master user diubah menjadi non-blocking
+                        if ($change_actor_user_id > 0) {
+                            $stmt_actor = $conn->prepare("SELECT id, role, status FROM inventory_users WHERE id = ? LIMIT 1");
+                            $stmt_actor->bind_param("i", $change_actor_user_id);
+                            $stmt_actor->execute();
+                            $actor = $stmt_actor->get_result()->fetch_assoc();
+                            
+                            if ($actor && (string)($actor['status'] ?? '') === 'active') {
+                                if (!validate_change_actor($actor, $change_source)) {
+                                    // Non-blocking: Tetap izinkan jika role tidak sesuai, tapi mungkin log atau biarkan saja
+                                }
+                            } else {
+                                // Non-blocking: Jika user tidak ditemukan atau tidak aktif, biarkan change_actor_user_id NULL
+                                $change_actor_user_id = null;
+                            }
                         }
-
-                        $stmt_actor = $conn->prepare("SELECT id, role, status FROM inventory_users WHERE id = ? LIMIT 1");
-                        $stmt_actor->bind_param("i", $change_actor_user_id);
-                        $stmt_actor->execute();
-                        $actor = $stmt_actor->get_result()->fetch_assoc();
-                        if (!$actor || (string)($actor['status'] ?? '') !== 'active') {
-                            throw new Exception("Pelaku asal tidak valid / tidak aktif");
-                        }
-                        if (!validate_change_actor($actor, $change_source)) {
-                            throw new Exception("Pelaku asal tidak sesuai dengan sumber perubahan yang dipilih");
+                        
+                        // Fallback ke change_actor_name jika user id tidak valid/tidak ada
+                        if (empty($change_actor_user_id) && empty($change_actor_name)) {
+                            // Jika benar-benar kosong, baru throw error (opsional, tapi sebaiknya ada identitas)
+                            // throw new Exception("Pelaku asal wajib diisi (Master User atau Nama Free Text)");
                         }
                     }
 
@@ -271,31 +284,164 @@ try {
                         ];
                     }
 
-                    // Capture new data into pending_data JSON
+                    // Task: Mekanisme revisi No BHP (R1, R2, dst)
+                    $original_id = $old_header['parent_id'] ?? $edit_id;
+                    $original_nomor = $old_header['no_bhp_parent'] ?? $old_header['nomor_pemakaian'];
+                    
+                    // Get latest revision number for this parent
+                    $stmt_rev = $conn->prepare("SELECT MAX(revision) as max_rev FROM inventory_pemakaian_bhp WHERE parent_id = ? OR id = ?");
+                    $stmt_rev->bind_param("ii", $original_id, $original_id);
+                    $stmt_rev->execute();
+                    $max_rev = (int)($stmt_rev->get_result()->fetch_assoc()['max_rev'] ?? 0);
+                    $next_rev = $max_rev + 1;
+                    $nomor_revisi = $original_nomor . "-R" . $next_rev;
+
+                    // Fetch current active items for the original record
+                    // TASK: Logic must account for all PRIOR revisions that are still PENDING approval
+                    $stmt_current_active_items = $conn->prepare("SELECT barang_id, qty, satuan, catatan_item FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+                    $stmt_current_active_items->bind_param("i", $original_id); 
+                    $stmt_current_active_items->execute();
+                    $current_active_items_res = $stmt_current_active_items->get_result();
+                    $current_active_items_map = [];
+                    while ($row = $current_active_items_res->fetch_assoc()) {
+                        $current_active_items_map[(int)$row['barang_id']] = [
+                            'qty' => (float)$row['qty'],
+                            'satuan' => (string)$row['satuan'],
+                            'catatan_item' => (string)$row['catatan_item']
+                        ];
+                    }
+
+                    // APPLY PENDING DELTAS FROM PREVIOUS UNAPPROVED REVISIONS
+                    $stmt_pending_deltas = $conn->prepare("
+                        SELECT d.barang_id, d.qty 
+                        FROM inventory_pemakaian_bhp_detail d
+                        JOIN inventory_pemakaian_bhp h ON d.pemakaian_bhp_id = h.id
+                        WHERE h.parent_id = ? AND h.status = 'pending_approval_spv' AND h.id < ?
+                    ");
+                    // We only want to look at R1, R2, R3 etc that were created BEFORE this new revision but NOT YET APPROVED
+                    // Since this logic runs BEFORE inserting the new R record, we don't have its ID yet, but we can pass a dummy large ID or handle it.
+                    // Actually, let's just get all pending revisions for this parent.
+                    $stmt_pending_deltas->bind_param("ii", $original_id, $edit_id); // using $edit_id here is tricky if it's a new rev
+                    // Let's refine the query:
+                    $stmt_pending_deltas = $conn->prepare("
+                        SELECT d.barang_id, d.qty 
+                        FROM inventory_pemakaian_bhp_detail d
+                        JOIN inventory_pemakaian_bhp h ON d.pemakaian_bhp_id = h.id
+                        WHERE h.parent_id = ? AND h.status = 'pending_approval_spv'
+                    ");
+                    $stmt_pending_deltas->bind_param("i", $original_id);
+                    $stmt_pending_deltas->execute();
+                    $pending_deltas_res = $stmt_pending_deltas->get_result();
+                    while ($p_row = $pending_deltas_res->fetch_assoc()) {
+                        $bid_p = (int)$p_row['barang_id'];
+                        if (isset($current_active_items_map[$bid_p])) {
+                            $current_active_items_map[$bid_p]['qty'] += (float)$p_row['qty'];
+                        } else {
+                            // If it's a new item added in a pending revision
+                            $current_active_items_map[$bid_p] = [
+                                'qty' => (float)$p_row['qty'],
+                                'satuan' => '', // will be filled from $items
+                                'catatan_item' => ''
+                            ];
+                        }
+                    }
+
+                    $delta_items = [];
+                    $processed_bids = [];
+
+                    // Process proposed items (from $items)
+                    foreach ($items as $it) {
+                        $bid = (int)($it['barang_id'] ?? 0);
+                        $new_qty = (float)($it['qty'] ?? 0);
+                        $satuan = (string)($it['satuan'] ?? '');
+                        $catatan_item = (string)($it['catatan_item'] ?? '');
+
+                        if ($bid <= 0) continue; // Skip invalid items
+
+                        $old_qty = $current_active_items_map[$bid]['qty'] ?? 0.0;
+                        $delta_qty = $new_qty - $old_qty;
+
+                        if (abs($delta_qty) > 0.000001) { // Only add if there's a significant change
+                            $delta_items[] = [
+                                'barang_id' => $bid,
+                                'qty' => $delta_qty,
+                                'satuan' => $satuan,
+                                'catatan_item' => $catatan_item
+                            ];
+                        }
+                        $processed_bids[] = $bid;
+                    }
+
+                    // Process items that were in original but are not in proposed (i.e., removed)
+                    foreach ($current_active_items_map as $bid => $old_item) {
+                        if (!in_array($bid, $processed_bids)) {
+                            // Item was removed, so delta is negative of its original quantity
+                            $delta_items[] = [
+                                'barang_id' => $bid,
+                                'qty' => -$old_item['qty'],
+                                'satuan' => $old_item['satuan'],
+                                'catatan_item' => $old_item['catatan_item'] . ' (removed)'
+                            ];
+                        }
+                    }
+
+                    // Capture new data into pending_data JSON (now storing DELTAS)
+                    $tanggal_date = date('Y-m-d', strtotime($tanggal));
                     $pending_data = json_encode([
-                        'version' => 2,
+                        'version' => 4, // Increment version for delta logic
                         'meta' => [
                             'reason_label' => $reason,
                             'change_source' => $change_source,
                             'change_actor_user_id' => $change_actor_user_id,
                             'change_actor_name' => $change_actor_name
                         ],
-                        'tanggal' => $tanggal,
+                        'tanggal' => $tanggal_date,
                         'jenis_pemakaian' => $jenis_pemakaian,
                         'klinik_id' => $klinik_id,
                         'user_hc_id' => $user_hc_id,
                         'catatan_transaksi' => $catatan_transaksi,
-                        'items' => $items,
-                        'items_ops' => $validated_ops
+                        'delta_items' => $delta_items, // Store deltas here
+                        'items_ops' => $validated_ops, // Keep items_ops for audit/display if needed
+                        'original_id' => $original_id,
+                        'original_nomor' => $original_nomor,
+                        'revision' => $next_rev
                     ]);
                     
-                    $stmt = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'pending_edit', approval_reason = ?, pending_data = ?, change_source = ?, change_actor_user_id = ?, change_actor_name = ?, change_reason_code = ? WHERE id = ?");
+                    // Insert NEW record as pending revision
+                    $stmt = $conn->prepare("
+                        INSERT INTO inventory_pemakaian_bhp 
+                        (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, approval_reason, pending_data, change_source, change_actor_user_id, change_actor_name, change_reason_code, parent_id, revision, no_bhp_parent, status) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval_spv')
+                    ");
                     $reason_code = (string)($_POST['reason_code'] ?? '');
-                    $stmt->bind_param("sssissi", $reason, $pending_data, $change_source, $change_actor_user_id, $change_actor_name, $reason_code, $edit_id);
+                    $stmt->bind_param("sssiisississsiis", 
+                        $nomor_revisi, $tanggal_date, $jenis_pemakaian, $klinik_id, $user_hc_id, $catatan_transaksi, $created_by, 
+                        $reason, $pending_data, $change_source, $change_actor_user_id, $change_actor_name, $reason_code, 
+                        $original_id, $next_rev, $original_nomor
+                    );
                     $stmt->execute();
+                    $new_rev_id = $conn->insert_id;
+
+                    // Insert details for the revision record (now storing DELTAS as requested by user)
+                    $stmt_det = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan, catatan_item) VALUES (?, ?, ?, ?, ?)");
+                    
+                    foreach ($delta_items as $d_it) {
+                        $bid = (int)($d_it['barang_id'] ?? 0);
+                        $qty_delta = (float)($d_it['qty'] ?? 0);
+                        $sat_it = (string)($d_it['satuan'] ?? '');
+                        $cat_it = (string)($d_it['catatan_item'] ?? '');
+                        
+                        if ($bid <= 0 || abs($qty_delta) < 0.000001) continue;
+
+                        $stmt_det->bind_param("iidss", $new_rev_id, $bid, $qty_delta, $sat_it, $cat_it);
+                        $stmt_det->execute();
+                    }
+                    
+                    // Note: We DO NOT deduct stock here. Stock deduction happens during APPROVAL.
                     
                     $conn->commit();
-                    echo json_encode(['success' => true, 'message' => 'Permintaan perubahan telah dikirim ke SPV Klinik']);
+                    if ($lock_esc !== '') $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
+                    echo json_encode(['success' => true, 'message' => 'Revisi (' . $nomor_revisi . ') telah diajukan dan menunggu approval SPV']);
                     exit;
                 } else {
                     throw new Exception("Perubahan lewat hari memerlukan approval SPV dan hanya dapat diajukan oleh Admin Klinik");
@@ -338,12 +484,13 @@ try {
         $stmt->execute();
 
         // Update header
+        $tanggal_date = date('Y-m-d', strtotime($tanggal));
         $stmt = $conn->prepare("
             UPDATE inventory_pemakaian_bhp 
             SET tanggal = ?, jenis_pemakaian = ?, klinik_id = ?, user_hc_id = ?, catatan_transaksi = ?, status = 'active', pending_data = NULL
             WHERE id = ?
         ");
-        $stmt->bind_param("ssiisi", $tanggal, $jenis_pemakaian, $klinik_id, $user_hc_id, $catatan_transaksi, $edit_id);
+        $stmt->bind_param("ssiisi", $tanggal_date, $jenis_pemakaian, $klinik_id, $user_hc_id, $catatan_transaksi, $edit_id);
         $stmt->execute();
 
         $pemakaian_id = $edit_id;
@@ -379,6 +526,7 @@ try {
             if (empty($reason)) throw new Exception("Alasan wajib diisi");
             
             // Capture data into pending_data for NEW record
+            $tanggal_date = date('Y-m-d', strtotime($tanggal));
             $pending_data = json_encode([
                 'version' => 2,
                 'action' => 'create',
@@ -388,7 +536,7 @@ try {
                     'change_actor_user_id' => $change_actor_user_id,
                     'change_actor_name' => $change_actor_name
                 ],
-                'tanggal' => $tanggal,
+                'tanggal' => $tanggal_date,
                 'jenis_pemakaian' => $jenis_pemakaian,
                 'klinik_id' => $klinik_id,
                 'user_hc_id' => $user_hc_id,
@@ -397,7 +545,7 @@ try {
             ]);
 
             // Generate temporary nomor with prefix REQ-ADD
-             $date = date('Ymd', strtotime($tanggal));
+             $date = date('ymd', strtotime($tanggal)); // ymd (260413) instead of Ymd
              $seq = next_sequence($conn, 'BHP-REQ', $date);
             $nomor_pemakaian = 'REQ-ADD-' . $date . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
@@ -406,7 +554,7 @@ try {
                 (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, status, approval_reason, pending_data, change_source, change_actor_user_id, change_actor_name, change_reason_code) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_add', ?, ?, ?, ?, ?, ?)
             ");
-            $stmt->bind_param("sssiisississs", $nomor_pemakaian, $tanggal, $jenis_pemakaian, $klinik_id, $user_hc_id, $catatan_transaksi, $created_by, $reason, $pending_data, $change_source, $change_actor_user_id, $change_actor_name, $reason_code);
+            $stmt->bind_param("sssiisississs", $nomor_pemakaian, $tanggal_date, $jenis_pemakaian, $klinik_id, $user_hc_id, $catatan_transaksi, $created_by, $reason, $pending_data, $change_source, $change_actor_user_id, $change_actor_name, $reason_code);
             $stmt->execute();
 
             $conn->commit();
@@ -416,18 +564,19 @@ try {
         }
 
         // Generate nomor pemakaian
-        $date = date('Ymd', strtotime($tanggal));
+        $date = date('ymd', strtotime($tanggal)); // ymd (260413) instead of Ymd
         $seq = next_sequence($conn, 'BHP', $date);
         $prefix = 'BHP-' . $date . '-';
         $nomor_pemakaian = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
         // Insert header
+        $tanggal_date = date('Y-m-d', strtotime($tanggal));
         $stmt = $conn->prepare("
             INSERT INTO inventory_pemakaian_bhp 
             (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by) 
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ");
-        $stmt->bind_param("sssiisi", $nomor_pemakaian, $tanggal, $jenis_pemakaian, $klinik_id, $user_hc_id, $catatan_transaksi, $created_by);
+        $stmt->bind_param("sssiisi", $nomor_pemakaian, $tanggal_date, $jenis_pemakaian, $klinik_id, $user_hc_id, $catatan_transaksi, $created_by);
         $stmt->execute();
         $pemakaian_id = $conn->insert_id;
     }
@@ -437,7 +586,7 @@ try {
         $date_only = date('Y-m-d', strtotime($tanggal));
         
         // Cari ID pemakaian temporary
-        $stmt_find_temp = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND DATE(tanggal) = ?");
+        $stmt_find_temp = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal = ?");
         $stmt_find_temp->bind_param("iss", $klinik_id, $jenis_pemakaian, $date_only);
         $stmt_find_temp->execute();
         $res_temp = $stmt_find_temp->get_result();
@@ -531,7 +680,7 @@ try {
             (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
             VALUES (?, ?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?)
         ");
-        $created_at = date('Y-m-d H:i:s', strtotime($tanggal));
+        $created_at = date('Y-m-d H:i:s');
         $stmt_trans->bind_param(
             "isidddsisis",
             $barang_id,
