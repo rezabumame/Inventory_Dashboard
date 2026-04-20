@@ -40,8 +40,51 @@ if ($klinik_id_input === 'all') {
 $month_start = date('Y-m-01', strtotime($tanggal)) . ' 00:00:00';
 $month_end = date('Y-m-t', strtotime($tanggal)) . ' 23:59:59';
 
+// Fetch Last Update (Odoo Sync) to show only deltas
+$last_update_general = '';
+$locs_esc_list = [];
+
+if ($klinik_id_input === 'all') {
+    $res_k = $conn->query("SELECT kode_klinik FROM inventory_klinik WHERE status = 'active' AND kode_klinik != ''");
+    while($rk = $res_k->fetch_assoc()) {
+        $locs_esc_list[] = "'" . $conn->real_escape_string(trim((string)$rk['kode_klinik'])) . "'";
+    }
+} elseif ($klinik_id_input === 'gudang_utama') {
+    $res_gs = $conn->query("SELECT v FROM inventory_app_settings WHERE k = 'odoo_location_gudang_utama' LIMIT 1");
+    if ($res_gs && ($gs = $res_gs->fetch_assoc())) {
+        $locs_esc_list[] = "'" . $conn->real_escape_string(trim((string)$gs['v'])) . "'";
+    }
+} else {
+    $res_k = $conn->query("SELECT kode_klinik FROM inventory_klinik WHERE id = " . (int)$klinik_id_input . " LIMIT 1");
+    if ($res_k && ($rk = $res_k->fetch_assoc())) {
+        $locs_esc_list[] = "'" . $conn->real_escape_string(trim((string)($rk['kode_klinik'] ?? ''))) . "'";
+    }
+}
+
+if (!empty($locs_esc_list)) {
+    $locs_str = implode(',', $locs_esc_list);
+    $res_u = $conn->query("SELECT MAX(updated_at) as last_update FROM inventory_stock_mirror WHERE TRIM(location_code) IN ($locs_str)");
+    if ($res_u && $u_row = $res_u->fetch_assoc()) {
+        $last_update_general = (string)($u_row['last_update'] ?? '');
+    }
+}
+
+// Fallback to global sync run if mirror is empty
+if ($last_update_general === '') {
+    $res_gs = $conn->query("SELECT v FROM inventory_app_settings WHERE k = 'odoo_sync_last_run' LIMIT 1");
+    if ($res_gs && ($gs = $res_gs->fetch_assoc())) {
+        $last_update_general = date('Y-m-d H:i:s', (int)$gs['v']);
+    }
+}
+
 $tipe = trim($tipe);
 if (!in_array($tipe, ['in', 'out'], true)) $tipe = 'in';
+
+$last_sync_filter = "";
+if ($last_update_general !== '') {
+    $last_sync_filter = " AND ts.created_at > '" . $conn->real_escape_string($last_update_general) . "'";
+}
+
 $sql = "SELECT ts.*, u.nama_lengkap as creator_name, k.nama_klinik
         FROM inventory_transaksi_stok ts
         LEFT JOIN inventory_users u ON ts.created_by = u.id
@@ -51,6 +94,7 @@ $sql = "SELECT ts.*, u.nama_lengkap as creator_name, k.nama_klinik
           AND ts.tipe_transaksi = ?
           AND ts.created_at >= ? 
           AND ts.created_at <= ?
+          $last_sync_filter
         ORDER BY ts.created_at DESC";
 
 $stmt = $conn->prepare($sql);
