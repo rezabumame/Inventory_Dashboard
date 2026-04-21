@@ -6,7 +6,7 @@ $role = (string)($_SESSION['role'] ?? '');
 $user_klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
 $user_id = (int)($_SESSION['user_id'] ?? 0);
 $active_tab = (string)($_GET['tab'] ?? 'stok');
-if (!in_array($active_tab, ['stok', 'history'], true)) $active_tab = 'stok';
+if (!in_array($active_tab, ['stok', 'history', 'summary'], true)) $active_tab = 'stok';
 
 // Fetch data
 $selected_klinik = 0;
@@ -266,6 +266,88 @@ if ($selected_klinik > 0 && in_array($role, ['admin_klinik', 'super_admin', 'spv
 
 $petugas_name_map = [];
 $barang_name_map = [];
+$summary_rows = [];
+
+if ($selected_klinik > 0 && $active_tab === 'summary') {
+    // 1. Get all barang IDs from mirror and tas
+    $all_barang_ids = [];
+    
+    // From Mirror
+    if ($klinik_row && !empty($klinik_row['kode_homecare'])) {
+        $loc_esc = $conn->real_escape_string($klinik_row['kode_homecare']);
+        $res = $conn->query("
+            SELECT b.id 
+            FROM inventory_stock_mirror sm
+            JOIN inventory_barang b ON (b.odoo_product_id = sm.odoo_product_id OR b.kode_barang = sm.kode_barang)
+            WHERE sm.location_code = '$loc_esc'
+        ");
+        while ($res && ($r = $res->fetch_assoc())) $all_barang_ids[(int)$r['id']] = true;
+    }
+    
+    // From Tas
+    $res = $conn->query("SELECT DISTINCT barang_id FROM inventory_stok_tas_hc WHERE klinik_id = $selected_klinik");
+    while ($res && ($r = $res->fetch_assoc())) $all_barang_ids[(int)$r['barang_id']] = true;
+
+    if (!empty($all_barang_ids)) {
+        $ids_str = implode(',', array_keys($all_barang_ids));
+        
+        // Fetch detailed data for each barang
+        $res = $conn->query("
+            SELECT 
+                b.id, b.kode_barang, b.nama_barang,
+                COALESCE(uc.to_uom, b.satuan) AS uom_oper,
+                COALESCE(uc.multiplier, 1) AS ratio,
+                (SELECT COALESCE(SUM(qty), 0) FROM inventory_stok_tas_hc WHERE klinik_id = $selected_klinik AND barang_id = b.id) AS total_allocated,
+                (SELECT COALESCE(MAX(qty), 0) FROM inventory_stock_mirror WHERE (TRIM(kode_barang) = TRIM(b.kode_barang) OR TRIM(odoo_product_id) = TRIM(b.odoo_product_id)) AND TRIM(location_code) = '" . ($klinik_row ? $conn->real_escape_string($klinik_row['kode_homecare']) : '') . "') AS mirror_qty
+            FROM inventory_barang b
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+            WHERE b.id IN ($ids_str)
+            ORDER BY b.nama_barang ASC
+        ");
+        
+        while ($res && ($row = $res->fetch_assoc())) {
+            $ratio = (float)$row['ratio']; if ($ratio <= 0) $ratio = 1;
+            $mirror_oper = (float)$row['mirror_qty'] / $ratio;
+            $allocated = (float)$row['total_allocated'];
+            $diff = $allocated - $mirror_oper;
+            
+            $indicator = 'OK';
+            $indicator_class = 'text-success';
+            
+            if (abs($diff) < 0.00005) {
+                $indicator = 'OK';
+                $indicator_class = 'text-success';
+            } elseif ($diff > 0) {
+                $indicator = 'Over';
+                $indicator_class = 'text-danger';
+            } else {
+                $indicator = 'Under';
+                $indicator_class = 'text-warning';
+            }
+
+            // Check if mapped (in this context, if it exists in mirror, it's mapped to Odoo)
+            $is_mapped = ((float)$row['mirror_qty'] > 0 || (int)$conn->query("SELECT 1 FROM inventory_stock_mirror WHERE (TRIM(kode_barang) = TRIM('".$conn->real_escape_string($row['kode_barang'])."') OR TRIM(odoo_product_id) = TRIM('".$conn->real_escape_string((string)$row['id'])."')) AND TRIM(location_code) = '".($klinik_row ? $conn->real_escape_string($klinik_row['kode_homecare']) : '')."' LIMIT 1")->num_rows > 0);
+            
+            // Re-evaluating Unmapped: If it has tas stock but no mirror record at all
+            if ((float)$row['mirror_qty'] <= 0) {
+                 $indicator = 'Unmapped';
+                 $indicator_class = 'text-muted';
+            }
+
+            $summary_rows[] = [
+                'kode' => $row['kode_barang'],
+                'nama' => $row['nama_barang'],
+                'uom' => $row['uom_oper'],
+                'stok_odoo' => $mirror_oper,
+                'total_alokasi' => $allocated,
+                'selisih' => $diff,
+                'indicator' => $indicator,
+                'indicator_class' => $indicator_class
+            ];
+        }
+    }
+}
+
 if (!empty($history)) {
     $user_ids = [];
     $barang_ids = [];
@@ -398,8 +480,8 @@ if ($bulk_cancel) {
             <div class="col-md-auto">
                 <div class="d-flex gap-2">
                     <?php if (in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik'], true)): ?>
-                        <button type="button" class="btn btn-outline-primary shadow-sm h-100" data-bs-toggle="modal" data-bs-target="#modalAllocateMirrorHC">
-                            <i class="fas fa-sitemap me-2"></i>Allocasi dari Mirror HC
+                        <button type="button" class="btn btn-outline-primary shadow-sm h-100" onclick="openMassAllocationSO()">
+                            <i class="fas fa-redo me-2"></i>Alokasi Ulang (Mass/All)
                         </button>
                     <?php endif; ?>
                     <button type="button" class="btn btn-outline-primary shadow-sm h-100" data-bs-toggle="modal" data-bs-target="#modalUploadAlokasiMirrorHC">
@@ -430,6 +512,12 @@ if ($bulk_cancel) {
                 </a>
             </li>
             <?php if (in_array($role, ['admin_klinik', 'super_admin', 'spv_klinik'], true)): ?>
+            <li class="nav-item">
+                <a class="nav-link rounded-pill py-2 px-4 me-2 <?= $active_tab == 'summary' ? 'active-blue' : 'text-muted border' ?>" 
+                   href="index.php?page=stok_petugas_hc&tab=summary&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>">
+                    <i class="fas fa-list-alt me-2"></i>Summary
+                </a>
+            </li>
             <li class="nav-item">
                 <a class="nav-link rounded-pill py-2 px-4 <?= $active_tab == 'history' ? 'active-blue' : 'text-muted border' ?>" 
                    href="index.php?page=stok_petugas_hc&tab=history&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>">
@@ -657,6 +745,105 @@ if ($bulk_cancel) {
                 </div>
             </div>
             <?php endif; ?>
+
+            <div class="tab-pane fade <?= $active_tab === 'summary' ? 'show active' : '' ?>" id="tabpane-summary" role="tabpanel" aria-labelledby="tab-summary">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <div class="fw-semibold">Summary — Validasi Stok Odoo vs Alokasi Petugas</div>
+                                <div class="text-muted small">Menampilkan stok tarikan Odoo, total alokasi per barang, dan selisih.</div>
+                            </div>
+                        </div>
+
+                        <?php if ($selected_klinik <= 0): ?>
+                            <div class="alert alert-warning mb-0">Pilih Klinik terlebih dahulu untuk melihat summary.</div>
+                        <?php elseif (empty($summary_rows)): ?>
+                            <div class="alert alert-info mb-0">Tidak ada data summary untuk filter saat ini.</div>
+                        <?php else: ?>
+                            <?php
+                            $ok_count = 0; $over_count = 0; $under_count = 0; $unmapped_count = 0;
+                            foreach ($summary_rows as $sr) {
+                                if ($sr['indicator'] === 'OK') $ok_count++;
+                                elseif ($sr['indicator'] === 'Over') $over_count++;
+                                elseif ($sr['indicator'] === 'Under') $under_count++;
+                                elseif ($sr['indicator'] === 'Unmapped') $unmapped_count++;
+                            }
+                            ?>
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-3">
+                                    <div class="card bg-success bg-opacity-10 border-success">
+                                        <div class="card-body py-2 text-center">
+                                            <div class="fw-bold text-success fs-5"><?= $ok_count ?></div>
+                                            <div class="small text-muted">Sesuai (OK)</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-danger bg-opacity-10 border-danger">
+                                        <div class="card-body py-2 text-center">
+                                            <div class="fw-bold text-danger fs-5"><?= $over_count ?></div>
+                                            <div class="small text-muted">Selisih Lebih (Over)</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-warning bg-opacity-10 border-warning">
+                                        <div class="card-body py-2 text-center">
+                                            <div class="fw-bold text-warning fs-5"><?= $under_count ?></div>
+                                            <div class="small text-muted">Selisih Kurang (Under)</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-secondary bg-opacity-10 border-secondary">
+                                        <div class="card-body py-2 text-center">
+                                            <div class="fw-bold text-secondary fs-5"><?= $unmapped_count ?></div>
+                                            <div class="small text-muted">Belum Mapping</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Kode</th>
+                                            <th>Nama Barang</th>
+                                            <th class="text-center">UOM</th>
+                                            <th class="text-end">Stok Odoo</th>
+                                            <th class="text-end">Total Alokasi</th>
+                                            <th class="text-end">Selisih</th>
+                                            <th class="text-center">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($summary_rows as $row): ?>
+                                            <tr>
+                                                <td class="small"><?= htmlspecialchars($row['kode']) ?></td>
+                                                <td><?= htmlspecialchars($row['nama']) ?></td>
+                                                <td class="text-center"><?= htmlspecialchars($row['uom']) ?></td>
+                                                <td class="text-end fw-semibold"><?= fmt_qty($row['stok_odoo']) ?></td>
+                                                <td class="text-end fw-semibold"><?= fmt_qty($row['total_alokasi']) ?></td>
+                                                <td class="text-end fw-semibold <?= $row['selisih'] > 0.00005 ? 'text-danger' : ($row['selisih'] < -0.00005 ? 'text-warning' : 'text-muted') ?>">
+                                                    <?= fmt_qty($row['selisih']) ?>
+                                                </td>
+                                                <td class="text-center">
+                                                    <span class="badge bg-opacity-10 <?= str_replace('text-', 'bg-', $row['indicator_class']) ?> <?= $row['indicator_class'] ?>">
+                                                        <?= $row['indicator'] ?>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+
         </div>
     <?php endif; ?>
 </div>
@@ -783,7 +970,273 @@ document.addEventListener('DOMContentLoaded', function() {
             openUnallocatedModal();
         });
     }
+
+    // Global barang options for Mass Allocation
+    window.BARANG_OPTIONS_SO = <?= json_encode((function() use ($conn) {
+        $ops = [];
+        $r = $conn->query("
+            SELECT
+                b.id, b.kode_barang, b.nama_barang,
+                COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom_oper,
+                COALESCE(NULLIF(uc.from_uom,''), b.uom) AS uom_odoo,
+                COALESCE(uc.multiplier, 1) AS uom_ratio
+            FROM inventory_barang b
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+            ORDER BY b.nama_barang ASC
+        ");
+        while ($r && ($row = $r->fetch_assoc())) {
+            $ops[] = [
+                'id' => (int)$row['id'],
+                'text' => (trim((string)$row['kode_barang']) !== '' ? $row['kode_barang'] . ' - ' : '') . (string)$row['nama_barang'],
+                'uom_oper' => (string)($row['uom_oper'] ?? ''),
+                'uom_odoo' => (string)($row['uom_odoo'] ?? ''),
+                'uom_ratio' => (float)($row['uom_ratio'] ?? 1)
+            ];
+        }
+        return $ops;
+    })()) ?>;
+
+    // Initialize popovers
+    var popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'))
+    var popoverList = popoverTriggerList.map(function (popoverTriggerEl) {
+        return new bootstrap.Popover(popoverTriggerEl)
+    });
+
+    document.getElementById('massAllocAddRowBtn').onclick = function() {
+        addMassAllocRow();
+    };
+
+    document.getElementById('formMassAllocationSO').onsubmit = function(e) {
+        var btn = document.getElementById('btnSubmitMassSO');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...';
+    };
 });
+
+function openMassAllocationSO() {
+    var modalEl = document.getElementById('modalMassAllocationSO');
+    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+    
+    var petugasSel = document.getElementById('massAllocPetugas');
+    if (petugasSel.value) {
+        fetchPetugasStockForSO();
+    }
+}
+
+function fetchPetugasStockForSO() {
+    var klinikId = <?= (int)$selected_klinik ?>;
+    var petugasId = document.getElementById('massAllocPetugas').value;
+    var tbody = document.getElementById('massAllocItemBody');
+    var btnSubmit = document.getElementById('btnSubmitMassSO');
+
+    if (!petugasId) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Pilih petugas terlebih dahulu.</td></tr>';
+        btnSubmit.disabled = true;
+        return;
+    }
+
+    // Keep manually added rows
+    var manualRows = Array.from(tbody.querySelectorAll('.mass-alloc-row.manually-added'));
+    
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin me-2"></i>Memuat stok petugas...</td></tr>';
+    btnSubmit.disabled = true;
+
+    fetch('api/ajax_hc_petugas_stock.php?klinik_id=' + klinikId + '&user_hc_id=' + petugasId)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3">' + escapeHtml(data.message) + '</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = '';
+            
+            // Re-append manually added rows first
+            manualRows.forEach(row => tbody.appendChild(row));
+            
+            if (data.items.length === 0 && manualRows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Petugas belum memiliki stok tas. Klik "Tambah Item Baru" untuk memulai.</td></tr>';
+            } else {
+                data.items.forEach(it => {
+                    // Check if item already exists in manual rows to avoid duplicates
+                    var exists = manualRows.some(row => row.querySelector('.so-barang-select').value == it.barang_id);
+                    if (!exists) {
+                        addMassAllocRow(it);
+                    }
+                });
+            }
+            btnSubmit.disabled = false;
+            filterMassAllocTable(); // Re-apply current filter
+        })
+        .catch(err => {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3">Gagal memuat data stok.</td></tr>';
+        });
+}
+
+function addMassAllocRow(data = null) {
+    var tbody = document.getElementById('massAllocItemBody');
+    // Clear placeholder
+    var placeholder = tbody.querySelector('td[colspan="6"]');
+    if (placeholder) placeholder.closest('tr').remove();
+
+    var isManual = (data === null);
+    var row = document.createElement('tr');
+    row.className = 'mass-alloc-row' + (isManual ? ' manually-added' : '');
+    row.dataset.rowIndex = Date.now() + Math.random().toString(36).substr(2, 9);
+    
+    var barangId = data ? data.barang_id : '';
+    var qtyLama = data ? data.qty_lama : 0;
+    var uomOper = data ? data.uom_oper : '';
+    var uomOdoo = data ? data.uom_odoo : '';
+    var uomRatio = data ? data.uom_ratio : 1;
+
+    var optionsHtml = '<option value="">- Pilih Barang -</option>';
+    window.BARANG_OPTIONS_SO.forEach(opt => {
+        var selected = (opt.id == barangId) ? 'selected' : '';
+        optionsHtml += `<option value="${opt.id}" ${selected} 
+            data-uom-oper="${escapeAttr(opt.uom_oper)}" 
+            data-uom-odoo="${escapeAttr(opt.uom_odoo)}" 
+            data-uom-ratio="${opt.uom_ratio}">${escapeHtml(opt.text)}</option>`;
+    });
+
+    row.innerHTML = `
+        <td class="p-1 ps-3" style="min-width: 250px;">
+            <select name="barang_id[]" class="form-select form-select-sm so-barang-select" required onchange="handleSoBarangChange(this)">
+                ${optionsHtml}
+            </select>
+        </td>
+        <td class="p-1 text-end fw-bold text-muted small" style="width: 100px;">
+            <span class="so-qty-lama-text">${fmtQty(qtyLama)}</span>
+            <input type="hidden" name="qty_lama[]" value="${qtyLama}" class="so-qty-lama-input">
+        </td>
+        <td class="p-1" style="width: 120px;">
+            <input type="number" name="qty_so[]" class="form-control form-control-sm text-end so-qty-input fw-bold" 
+                step="0.0001" min="0" value="" oninput="calculateSoDiff(this)">
+        </td>
+        <td class="p-1 text-end fw-bold so-diff-text small" style="width: 100px;">0</td>
+        <td class="p-1" style="width: 120px;">
+            <select name="uom_mode[]" class="form-select form-select-sm so-uom-select small" onchange="handleSoUomChange(this)">
+                <option value="oper">${escapeHtml(uomOper || 'Satuan')}</option>
+                ${(uomOdoo && uomOdoo !== uomOper) ? `<option value="odoo">${escapeHtml(uomOdoo)}</option>` : ''}
+            </select>
+        </td>
+        <td class="p-1 text-center" style="width: 50px;">
+            <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="this.closest('tr').remove(); updateSubmitBtnState();">
+                <i class="fas fa-trash-alt"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(row);
+    
+    var select = row.querySelector('.so-barang-select');
+    if (typeof $ !== 'undefined' && $.fn.select2) {
+        $(select).select2({
+            dropdownParent: $('#modalMassAllocationSO'),
+            width: '100%',
+            theme: 'bootstrap-5',
+            selectionCssClass: 'select2--small',
+            dropdownCssClass: 'select2--small'
+        }).on('change', function() {
+            handleSoBarangChange(this);
+            filterMassAllocTable();
+        });
+    }
+
+    if (isManual) {
+        // Clear filter when adding manual row so user can see it
+        var searchInput = document.getElementById('massAllocSearch');
+        if (searchInput.value !== '') {
+            searchInput.value = '';
+            filterMassAllocTable();
+        }
+        // Focus the new select
+        setTimeout(() => {
+            if (typeof $ !== 'undefined' && $.fn.select2) $(select).select2('open');
+            else select.focus();
+        }, 100);
+    }
+
+    calculateSoDiff(row.querySelector('.so-qty-input'));
+    updateSubmitBtnState();
+}
+
+function handleSoBarangChange(select) {
+    var row = select.closest('tr');
+    var opt = select.options[select.selectedIndex];
+    if (!opt || !opt.value) return;
+
+    var uomOper = opt.getAttribute('data-uom-oper');
+    var uomOdoo = opt.getAttribute('data-uom-odoo');
+    
+    var uomSelect = row.querySelector('.so-uom-select');
+    uomSelect.innerHTML = `<option value="oper">${escapeHtml(uomOper)}</option>`;
+    if (uomOdoo && uomOdoo !== uomOper) {
+        uomSelect.innerHTML += `<option value="odoo">${escapeHtml(uomOdoo)}</option>`;
+    }
+    
+    calculateSoDiff(row.querySelector('.so-qty-input'));
+}
+
+function handleSoUomChange(select) {
+    var row = select.closest('tr');
+    calculateSoDiff(row.querySelector('.so-qty-input'));
+}
+
+function calculateSoDiff(input) {
+    var row = input.closest('tr');
+    var qtyLama = parseFloat(row.querySelector('.so-qty-lama-input').value) || 0;
+    var qtySo = parseFloat(input.value) || 0;
+    
+    var uomSelect = row.querySelector('.so-uom-select');
+    var uomMode = uomSelect.value;
+    
+    var barangSelect = row.querySelector('.so-barang-select');
+    var opt = barangSelect.options[barangSelect.selectedIndex];
+    var ratio = opt ? (parseFloat(opt.getAttribute('data-uom-ratio')) || 1) : 1;
+
+    // Convert SO to operational if needed
+    var qtySoOper = (uomMode === 'odoo') ? (qtySo / ratio) : qtySo;
+    
+    var diff = qtySoOper - qtyLama;
+    var diffText = row.querySelector('.so-diff-text');
+    diffText.textContent = (diff > 0 ? '+' : '') + fmtQty(diff);
+    
+    if (diff > 0.00001) {
+        diffText.className = 'p-1 text-end fw-bold so-diff-text small text-success';
+    } else if (diff < -0.00001) {
+        diffText.className = 'p-1 text-end fw-bold so-diff-text small text-danger';
+    } else {
+        diffText.className = 'p-1 text-end fw-bold so-diff-text small text-muted';
+    }
+}
+
+function filterMassAllocTable() {
+    var input = document.getElementById('massAllocSearch');
+    var filter = input.value.toLowerCase().trim();
+    var rows = document.querySelectorAll('#massAllocItemBody .mass-alloc-row');
+    
+    rows.forEach(row => {
+        var barangSelect = row.querySelector('.so-barang-select');
+        var text = '';
+        if (barangSelect.selectedIndex >= 0) {
+            text = barangSelect.options[barangSelect.selectedIndex].text.toLowerCase();
+        }
+        
+        if (text.indexOf(filter) > -1) {
+            row.style.display = "";
+        } else {
+            row.style.display = "none";
+        }
+    });
+}
+
+function updateSubmitBtnState() {
+    var tbody = document.getElementById('massAllocItemBody');
+    var btnSubmit = document.getElementById('btnSubmitMassSO');
+    var rows = tbody.querySelectorAll('.mass-alloc-row');
+    btnSubmit.disabled = (rows.length === 0);
+}
 
 function openUnallocatedModal() {
     var klinikId = <?= (int)$selected_klinik ?>;
@@ -1111,112 +1564,80 @@ function fmtQty(v) {
 </script>
 
 <?php if (in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik'], true) && $role !== 'petugas_hc' && $selected_klinik > 0): ?>
-<div class="modal fade" id="modalAllocateMirrorHC" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+<div class="modal fade" id="modalMassAllocationSO" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow">
-            <div class="modal-header border-0 text-white" style="background-color:#204EAB;">
-                <h5 class="modal-title fw-bold text-white"><i class="fas fa-sitemap me-2"></i>Allocasi dari Mirror HC (Initial Mapping)</h5>
+            <div class="modal-header border-0 text-white py-2" style="background-color:#204EAB;">
+                <h6 class="modal-title fw-bold text-white mb-0"><i class="fas fa-redo me-2"></i>Alokasi Ulang (Mass/All) - Stock Opname</h6>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="actions/process_hc_allocate_from_mirror.php" class="modal-body bg-light" id="formAllocateHC">
+            <form method="POST" action="actions/process_hc_mass_allocation_so.php" class="modal-body bg-light p-2" id="formMassAllocationSO">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                 <input type="hidden" name="klinik_id" value="<?= (int)$selected_klinik ?>">
-                <input type="hidden" name="is_ajax" value="1">
                 
-                <div id="allocateErrorContainer" class="alert alert-danger d-none mb-3"></div>
+                <div id="massAllocationErrorContainer" class="alert alert-danger d-none mb-2 py-2 small"></div>
                 
-                <div class="alert alert-info mb-3">
-                    <div class="fw-semibold">Catatan</div>
-                    <div class="small">Fitur ini hanya membagi stok HC mirror klinik ke “stok tas” petugas (lokal) dan tidak mengurangi stok Onsite/HC. Gunakan untuk mapping awal setelah refresh Odoo.</div>
-                </div>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label fw-bold small">Petugas HC</label>
-                        <select name="user_hc_id" class="form-select" required>
-                            <option value="">- Pilih Petugas -</option>
-                            <?php foreach ($petugas_list as $p): ?>
-                                <option value="<?= (int)$p['id'] ?>"><?= htmlspecialchars($p['nama_lengkap']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-12">
-                        <div class="card border-0 shadow-sm">
-                            <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-                                <div class="fw-semibold">Daftar Item</div>
-                                <button type="button" class="btn btn-success btn-sm" id="allocateAddRowBtn">
-                                    <i class="fas fa-plus-circle me-1"></i>Tambah Item
-                                </button>
-                            </div>
-                            <div class="card-body p-0">
-                                <div class="table-responsive">
-                                    <table class="table table-hover align-middle mb-0">
-                                        <thead class="bg-light">
-                                            <tr>
-                                                <th>Barang</th>
-                                                <th class="text-end" style="width:140px;">Qty</th>
-                                                <th class="text-center" style="width:140px;">UOM</th>
-                                                <th class="text-center" style="width:60px;">Aksi</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="allocateItemBody">
-                                            <tr class="allocate-item-row">
-                                                <td class="p-2">
-                                                    <select name="barang_id[]" class="form-select allocate-barang-select" required>
-                                                        <option value="">- Pilih Barang -</option>
-                                                        <?php
-                                                            require_once __DIR__ . '/../../lib/stock.php';
-                                                            $res_b2 = $conn->query("
-                                                                SELECT
-                                                                    b.id,
-                                                                    b.kode_barang,
-                                                                    b.nama_barang,
-                                                                    COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom_oper,
-                                                                    COALESCE(NULLIF(uc.from_uom,''), '') AS uom_odoo,
-                                                                    COALESCE(uc.multiplier, 1) AS uom_ratio
-                                                                FROM inventory_barang b
-                                                                LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-                                                                ORDER BY b.nama_barang ASC
-                                                            ");
-                                                            while ($res_b2 && ($bb2 = $res_b2->fetch_assoc())):
-                                                                // Optimized: removed heavy stock_effective loop
-                                                        ?>
-                                                            <option value="<?= (int)$bb2['id'] ?>"
-                                                                    data-uom-oper="<?= htmlspecialchars((string)($bb2['uom_oper'] ?? ''), ENT_QUOTES) ?>"
-                                                                    data-uom-odoo="<?= htmlspecialchars((string)($bb2['uom_odoo'] ?? ''), ENT_QUOTES) ?>"
-                                                                    data-uom-ratio="<?= htmlspecialchars((string)($bb2['uom_ratio'] ?? '1'), ENT_QUOTES) ?>">
-                                                                    <?= htmlspecialchars(($bb2['kode_barang'] ?? '-') . ' - ' . ($bb2['nama_barang'] ?? '-')) ?>
-                                                            </option>
-                                                        <?php endwhile; ?>
-                                                    </select>
-                                                </td>
-                                                <td class="p-2">
-                                                    <input type="number" name="qty[]" class="form-control" min="0.0001" step="0.0001" required>
-                                                </td>
-                                                <td class="p-2">
-                                                    <select name="uom_mode[]" class="form-select form-select-sm allocate-uom-select" required>
-                                                        <option value="oper">-</option>
-                                                    </select>
-                                                </td>
-                                                <td class="text-center border-start">
-                                                    <button type="button" class="btn btn-sm btn-link text-danger allocate-remove-row">
-                                                        <i class="fas fa-trash-alt"></i>
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <div class="d-flex align-items-center gap-3">
+                        <div style="min-width: 200px;">
+                            <label class="form-label fw-bold small mb-1">Petugas HC</label>
+                            <select name="user_hc_id" id="massAllocPetugas" class="form-select form-select-sm" required onchange="fetchPetugasStockForSO()">
+                                <option value="">- Pilih Petugas -</option>
+                                <?php foreach ($petugas_list as $p): ?>
+                                    <option value="<?= (int)$p['id'] ?>" <?= (int)$petugas_user_id === (int)$p['id'] ? 'selected' : '' ?>><?= htmlspecialchars($p['nama_lengkap']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="mt-4">
+                            <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-3" data-bs-toggle="popover" data-bs-trigger="focus" title="Mekanisme Alokasi Ulang (SO)" data-bs-html="true" data-bs-content="<ul class='small mb-0 ps-3'><li>Sistem menampilkan data stok sebelumnya (Stok Tas) sebagai acuan.</li><li>Input hasil **Stock Opname (SO)** pada masing-masing item.</li><li>Selisih akan dihitung otomatis (**SO - Stok Lama**).</li><li>Klik 'Tambah Item' jika ada barang baru yang belum tercatat di tas petugas.</li></ul>">
+                                <i class="fas fa-info-circle me-1"></i>Petunjuk SO
+                            </button>
                         </div>
                     </div>
-                    <div class="col-12">
-                        <label class="form-label fw-bold small">Catatan</label>
-                        <input type="text" name="catatan" class="form-control" placeholder="opsional">
+                </div>
+
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white py-1 d-flex justify-content-between align-items-center">
+                        <div class="fw-semibold small">Daftar Item & Hasil SO</div>
+                        <div class="d-flex gap-2 align-items-center">
+                            <div class="input-group input-group-sm" style="width: 250px;">
+                                <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
+                                <input type="text" id="massAllocSearch" class="form-control border-start-0" placeholder="Cari item..." onkeyup="filterMassAllocTable()">
+                            </div>
+                            <button type="button" class="btn btn-success btn-sm" id="massAllocAddRowBtn">
+                                <i class="fas fa-plus-circle me-1"></i>Tambah Item
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive" style="max-height: 350px;">
+                            <table class="table table-sm table-hover align-middle mb-0" id="massAllocTable">
+                                <thead class="bg-light sticky-top">
+                                    <tr class="small">
+                                        <th class="ps-3">Barang</th>
+                                        <th class="text-end" style="width:100px;">Stok Lama</th>
+                                        <th class="text-end" style="width:120px;">Hasil SO</th>
+                                        <th class="text-end" style="width:100px;">Selisih</th>
+                                        <th class="text-center" style="width:120px;">UOM</th>
+                                        <th class="text-center" style="width:50px;">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="massAllocItemBody">
+                                    <tr><td colspan="6" class="text-center text-muted py-3 small">Pilih petugas terlebih dahulu.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
-                <div class="modal-footer border-0 px-0 pb-0">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-outline-primary">Simpan Allocasi</button>
+
+                <div class="mt-2">
+                    <label class="form-label fw-bold small mb-1">Catatan</label>
+                    <input type="text" name="catatan" class="form-control form-control-sm" placeholder="Contoh: Stock Opname Rutin">
+                </div>
+
+                <div class="modal-footer border-0 p-0 mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-sm btn-primary" id="btnSubmitMassSO" disabled>Simpan Alokasi Ulang</button>
                 </div>
             </form>
         </div>

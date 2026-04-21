@@ -103,7 +103,9 @@ $r = $conn->query("
         TRIM(COALESCE(b.odoo_product_id, '')) AS odoo_product_id,
         TRIM(COALESCE(b.barcode, '')) AS barcode,
         COALESCE(uc.multiplier, 1) AS multiplier,
-        COALESCE(MAX(sm.qty), 0) AS mirror_qty_raw
+        COALESCE(NULLIF(uc.to_uom,''), '') AS uom_oper,
+        COALESCE(NULLIF(uc.from_uom,''), '') AS uom_odoo,
+        COALESCE(SUM(sm.qty), 0) AS mirror_qty_raw
     FROM inventory_barang b
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     LEFT JOIN inventory_stock_mirror sm ON TRIM(sm.location_code) = '$loc'
@@ -119,8 +121,7 @@ while ($r && ($row = $r->fetch_assoc())) {
     if ($bid <= 0) continue;
     $mult = (float)($row['multiplier'] ?? 1);
     if ($mult <= 0) $mult = 1;
-    if ($mult <= 0) $mult = 1;
-    $mirror = (float)($row['mirror_qty_raw'] ?? 0) / $mult;
+    $mirror = (float)($row['mirror_qty_raw'] ?? 0); // Remove division to match template raw display
     $mirror_by_barang[$bid] = $mirror;
     $uom_mult[$bid] = $mult;
     $uom_oper_map[$bid] = trim((string)($row['uom_oper'] ?? ''));

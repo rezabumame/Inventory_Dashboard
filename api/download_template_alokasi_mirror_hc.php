@@ -89,7 +89,7 @@ $r = $conn->query("
         COALESCE(uc.multiplier, 1) AS multiplier,
         COALESCE(NULLIF(uc.to_uom,''), '') AS uom_oper,
         COALESCE(NULLIF(uc.from_uom,''), '') AS uom_odoo,
-        COALESCE(MAX(sm.qty), 0) AS mirror_qty_raw
+        COALESCE(SUM(sm.qty), 0) AS mirror_qty_raw
     FROM inventory_barang b
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     LEFT JOIN inventory_stock_mirror sm ON TRIM(sm.location_code) = '$loc'
@@ -148,9 +148,8 @@ foreach ($petugas as $idx => $p) {
         $b_satuan = trim((string)($b['b_satuan'] ?? ''));
         $b_uom = trim((string)($b['b_uom'] ?? ''));
         $use_oper = ($uom_oper !== '');
-        $mirror = $use_oper ? ($mirror_raw / $mult) : $mirror_raw;
-        $existing_raw = (float)($existing_map[$uid][$bid] ?? 0);
-        $existing = $use_oper ? ($existing_raw / $mult) : $existing_raw;
+        $mirror = $mirror_raw; // Removed division to prevent "strange" conversion results (e.g., 0.03)
+        $existing = (float)($existing_map[$uid][$bid] ?? 0); // Already in operational units if conversion exists
 
         // Determine all available units for this item
         $uoms_available = [];

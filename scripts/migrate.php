@@ -431,6 +431,14 @@ try {
         KEY idx_barang (barang_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
 
+    // Mass Allocation SO: Ensure qty fields support 0 and defaults are correct
+    run_migration_task("Mass SO: inventory_stok_tas_hc qty (ensure default 0)", function() use ($conn) { 
+        return $conn->query("ALTER TABLE inventory_stok_tas_hc MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Ensured" : "Failed"; 
+    });
+    run_migration_task("Mass SO: inventory_hc_tas_allocation qty (ensure default 0)", function() use ($conn) { 
+        return $conn->query("ALTER TABLE inventory_hc_tas_allocation MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Ensured" : "Failed"; 
+    });
+
     run_migration_task("Update: inventory_hc_petugas_transfer qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_hc_petugas_transfer MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_hc_tas_allocation qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_hc_tas_allocation MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_stok_tas_hc qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_stok_tas_hc MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
