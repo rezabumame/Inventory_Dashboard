@@ -565,9 +565,28 @@ try {
 
         // Generate nomor pemakaian
         $date = date('ymd', strtotime($tanggal)); // ymd (260413) instead of Ymd
-        $seq = next_sequence($conn, 'BHP', $date);
         $prefix = 'BHP-' . $date . '-';
-        $nomor_pemakaian = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+        
+        // Loop to prevent duplicate nomor_pemakaian
+        $max_retries = 10;
+        $nomor_pemakaian = '';
+        for ($i = 0; $i < $max_retries; $i++) {
+            $seq = next_sequence($conn, 'BHP', $date);
+            $temp_nomor = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+            
+            // Check if this number already exists in database
+            $stmt_check = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE nomor_pemakaian = ? LIMIT 1");
+            $stmt_check->bind_param("s", $temp_nomor);
+            $stmt_check->execute();
+            if ($stmt_check->get_result()->num_rows === 0) {
+                $nomor_pemakaian = $temp_nomor;
+                break;
+            }
+        }
+        
+        if (empty($nomor_pemakaian)) {
+            throw new Exception('Gagal membuat nomor pemakaian unik setelah beberapa kali percobaan. Silakan coba lagi.');
+        }
 
         // Insert header
         $tanggal_date = date('Y-m-d', strtotime($tanggal));

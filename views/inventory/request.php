@@ -1,6 +1,7 @@
 <?php
 check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik']);
 require_once __DIR__ . '/../../lib/counter.php';
+require_once __DIR__ . '/../../lib/stock.php';
 require_once __DIR__ . '/../../config/settings.php';
 
 $message = '';
@@ -344,119 +345,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 return $info;
                             };
 
-                            $location_candidates = function(string $input): array {
-                                $input = trim($input);
-                                if ($input === '') return [];
-                                $candidates = [];
-                                $candidates[] = $input;
-                                if (stripos($input, '/stock') === false && strpos($input, '/') === false) {
-                                    $candidates[] = $input . '/Stock';
-                                }
-                                if (preg_match('/\/Stock$/i', $input)) {
-                                    $candidates[] = preg_replace('/\/Stock$/i', '', $input);
-                                }
-                                $seen = [];
-                                $uniq = [];
-                                foreach ($candidates as $c) {
-                                    $k = strtolower($c);
-                                    if (isset($seen[$k])) continue;
-                                    $seen[$k] = true;
-                                    $uniq[] = $c;
-                                }
-                                $prefer = [];
-                                foreach ($uniq as $c) if (preg_match('/\/Stock$/i', $c)) $prefer[] = $c;
-                                foreach ($uniq as $c) if (!preg_match('/\/Stock$/i', $c)) $prefer[] = $c;
-                                return $prefer;
-                            };
-
-                            $get_best_mirror = function(array $locs, string $kode_barang, string $odoo_product_id) use ($conn): array {
-                                $kb = trim($kode_barang);
-                                $oid = trim($odoo_product_id);
-                                $clauses = [];
-                                if ($kb !== '') $clauses[] = "TRIM(kode_barang) = '" . $conn->real_escape_string($kb) . "'";
-                                if ($oid !== '') $clauses[] = "TRIM(odoo_product_id) = '" . $conn->real_escape_string($oid) . "'";
-                                if (empty($clauses) || empty($locs)) return ['loc' => '', 'qty' => 0, 'last_update' => ''];
-                                $best_qty = 0;
-                                $best_loc = '';
-                                foreach ($locs as $loc) {
-                                    $loc_esc = $conn->real_escape_string(trim($loc));
-                                    $where = "TRIM(location_code) = '$loc_esc' AND (" . implode(' OR ', $clauses) . ")";
-                                    $res = $conn->query("SELECT COALESCE(MAX(qty), 0) AS qty FROM inventory_stock_mirror WHERE $where");
-                                    $q = (float)($res && $res->num_rows > 0 ? ($res->fetch_assoc()['qty'] ?? 0) : 0);
-                                    if ($q > $best_qty) {
-                                        $best_qty = $q;
-                                        $best_loc = (string)$loc;
-                                    }
-                                }
-                                $last_update = '';
-                                if ($best_loc !== '') {
-                                    $loc_esc = $conn->real_escape_string(trim($best_loc));
-                                    $ru = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc_esc'");
-                                    if ($ru && $ru->num_rows > 0) $last_update = (string)($ru->fetch_assoc()['last_update'] ?? '');
-                                }
-                                return ['loc' => $best_loc, 'qty' => $best_qty, 'last_update' => $last_update];
-                            };
-
-                            $get_effective_qty = function(string $level, int $level_id, int $barang_id) use ($conn, $get_barang_info, $location_candidates, $get_best_mirror): array {
-                                $info = $get_barang_info($barang_id);
-                                $mult = (float)($info['multiplier'] ?? 1);
-                                if ($mult <= 0) $mult = 1;
-
-                                if ($level === 'gudang_utama') {
-                                    $gudang_loc = trim((string)get_setting('odoo_location_gudang_utama', ''));
-                                    if ($gudang_loc !== '') {
-                                        $locs = $location_candidates($gudang_loc);
-                                        $mirror = $get_best_mirror($locs, (string)$info['kode_barang'], (string)$info['odoo_product_id']);
-                                        $qty = (float)($mirror['qty'] ?? 0) / $mult;
-                                        return ['qty' => $qty, 'loc' => (string)($mirror['loc'] ?? '')];
-                                    } else {
-                                        $stmt = $conn->prepare("SELECT qty FROM inventory_stok_gudang_utama WHERE barang_id = ? LIMIT 1");
-                                        $stmt->bind_param("i", $barang_id);
-                                        $stmt->execute();
-                                        $qty = (float)($stmt->get_result()->fetch_assoc()['qty'] ?? 0);
-                                        return ['qty' => $qty, 'loc' => ''];
-                                    }
-                                }
-
-                                if ($level !== 'klinik' || $level_id <= 0) return ['qty' => 0, 'loc' => ''];
-                                $r = $conn->query("SELECT kode_klinik, nama_klinik FROM inventory_klinik WHERE id = $level_id LIMIT 1");
-                                $kode_klinik = '';
-                                if ($r && $r->num_rows > 0) $kode_klinik = (string)($r->fetch_assoc()['kode_klinik'] ?? '');
-                                $locs = $location_candidates($kode_klinik);
-                                $mirror = $get_best_mirror($locs, (string)$info['kode_barang'], (string)$info['odoo_product_id']);
-                                $base = (float)($mirror['qty'] ?? 0) / $mult;
-                                $lu = (string)($mirror['last_update'] ?? '');
-
-                                $delta_in = 0;
-                                $delta_out = 0;
-                                if ($lu !== '') {
-                                    $lu_esc = $conn->real_escape_string($lu);
-                                    $res = $conn->query("
-                                        SELECT
-                                            COALESCE(SUM(CASE WHEN tipe_transaksi = 'in' THEN qty ELSE 0 END), 0) AS in_qty,
-                                            COALESCE(SUM(CASE WHEN tipe_transaksi = 'out' THEN qty ELSE 0 END), 0) AS out_qty
-                                        FROM inventory_transaksi_stok
-                                        WHERE barang_id = $barang_id AND level = 'klinik' AND level_id = $level_id AND created_at > '$lu_esc'
-                                    ");
-                                    if ($res && $res->num_rows > 0) {
-                                        $row = $res->fetch_assoc();
-                                        $delta_in = (float)($row['in_qty'] ?? 0);
-                                        $delta_out = (float)($row['out_qty'] ?? 0);
-                                    }
-                                }
-
-                                $eff = (float)$base + (float)$delta_in - (float)$delta_out;
-                                if ($eff < 0) $eff = 0;
-
-                                if (($mirror['loc'] ?? '') === '' && $lu === '') {
-                                    $stmt = $conn->prepare("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ? LIMIT 1");
-                                    $stmt->bind_param("ii", $barang_id, $level_id);
-                                    $stmt->execute();
-                                    $eff = (float)($stmt->get_result()->fetch_assoc()['qty'] ?? 0);
-                                }
-
-                                return ['qty' => $eff, 'loc' => (string)($mirror['loc'] ?? '')];
-                            };
+                            // Remove the inline get_effective_qty function
+                            // It will be replaced by the stock_effective function from lib/stock.php
+                            // $get_effective_qty = function(string $level, int $level_id, int $barang_id) use ($conn, $get_barang_info, $location_candidates, $get_best_mirror): array {
+                            //     ... (original content of get_effective_qty) ...
+                            // };
 
                             $stmt_set_src_utama = $conn->prepare("INSERT INTO inventory_stok_gudang_utama (barang_id, qty, updated_by) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE qty = VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
                             $stmt_set_src_klinik = $conn->prepare("INSERT INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
@@ -491,8 +384,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 }
 
                                 $source_qty_before = 0;
-                                $src = $get_effective_qty((string)$source_level, (int)$source_id, (int)$b_id);
-                                $source_qty_before = (float)($src['qty'] ?? 0);
+                                $src_eff = stock_effective($conn, (int)$source_id, false, (int)$b_id); // Assuming source is always klinik or gudang_utama, not HC
+                                if ($source_level === 'gudang_utama') {
+                                    // For gudang_utama, stock_effective returns on_hand directly
+                                    $source_qty_before = (float)($src_eff['on_hand'] ?? 0);
+                                } else { // klinik
+                                    $source_qty_before = (float)($src_eff['on_hand'] ?? 0);
+                                }
+                                
                                 $uom = (string)($get_barang_info((int)$b_id)['satuan'] ?? '');
                                 if ($source_qty_before + 0.00005 < $qty_recv) {
                                     $info = $get_barang_info((int)$b_id);
@@ -517,8 +416,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 }
 
                                 $dest_qty_before = 0;
-                                $dest_stok_eff = $get_effective_qty((string)$dest_level, (int)$dest_id, (int)$b_id);
-                                $dest_qty_before = (float)($dest_stok_eff['qty'] ?? 0);
+                                $dest_eff = stock_effective($conn, (int)$dest_id, false, (int)$b_id); // Assuming dest is always klinik, not HC
+                                $dest_qty_before = (float)($dest_eff['on_hand'] ?? 0);
 
                                 $stmt_inc_check->bind_param("ii", $b_id, $dest_id);
                                 $stmt_inc_check->execute();

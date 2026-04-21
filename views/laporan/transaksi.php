@@ -67,7 +67,7 @@ if (!empty($tipe)) {
     $types .= "s";
 }
 
-$sql .= " ORDER BY t.created_at DESC LIMIT 1000";
+$sql .= " ORDER BY t.id DESC LIMIT 1000";
 
 $stmt = $conn->prepare($sql);
 $bind = [];
@@ -223,7 +223,7 @@ if ($can_filter_klinik) {
                                 <?php endif; ?>
                             </td>
                             <td class="text-center fw-bold <?= $row['tipe_transaksi'] == 'in' ? 'text-success' : 'text-danger' ?>">
-                                <?= $row['tipe_transaksi'] == 'in' ? '+' : '-' ?><?= fmt_qty($row['qty']) ?>
+                                <?= $row['tipe_transaksi'] == 'in' ? '+' : '-' ?><?= fmt_qty(abs($row['qty'])) ?>
                             </td>
                             <td class="text-center text-muted"><?= fmt_qty($row['qty_sebelum']) ?></td>
                             <td class="text-center fw-bold text-dark"><?= fmt_qty($row['qty_sesudah']) ?></td>
@@ -257,6 +257,19 @@ $(document).ready(function() {
     $('.select2-filter').select2({
         theme: 'bootstrap-5',
         width: '100%'
+    });
+
+    if ($.fn.DataTable.isDataTable('#transTable')) {
+        $('#transTable').DataTable().destroy();
+    }
+    
+    $('#transTable').DataTable({
+        "order": [[0, "desc"]], // Sort by first column (Date & Time) descending
+        "pageLength": 10,
+        "columnDefs": [
+            { "orderable": true, "targets": 0 },
+            { "orderable": true, "targets": 1 }
+        ]
     });
 });
 </script>

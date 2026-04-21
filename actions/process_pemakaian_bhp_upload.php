@@ -660,10 +660,26 @@ try {
         // Take out temporary auto-deduction for the same day & clinic (BHP harian)
         
         // Generate number
-        $dateKey = date('Ymd', strtotime($m['tanggal_only']));
-        $seq = next_sequence($conn, 'BHP', $dateKey);
+        $dateKey = date('ymd', strtotime($m['tanggal_only'])); // Use ymd (6 digits) for consistency
         $prefix = 'BHP-' . $dateKey . '-';
-        $nomor_pemakaian = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+        $max_retries = 10;
+        $nomor_pemakaian = '';
+        for ($i = 0; $i < $max_retries; $i++) {
+            $seq = next_sequence($conn, 'BHP', $dateKey);
+            $temp_nomor = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+            
+            $stmt_check = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE nomor_pemakaian = ? LIMIT 1");
+            $stmt_check->bind_param("s", $temp_nomor);
+            $stmt_check->execute();
+            if ($stmt_check->get_result()->num_rows === 0) {
+                $nomor_pemakaian = $temp_nomor;
+                break;
+            }
+        }
+
+        if (empty($nomor_pemakaian)) {
+            throw new Exception('Gagal membuat nomor pemakaian unik.');
+        }
 
         $stmt = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->bind_param("sssiisis", $nomor_pemakaian, $tanggal_val, $jenis_pemakaian, $m['klinik_id'], $m['user_hc_id'], $catatan_transaksi, $user_id, $created_at);

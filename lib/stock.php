@@ -144,14 +144,30 @@ function fmt_qty($v) {
 function stock_effective(mysqli $conn, int $klinik_id, bool $is_hc, int $barang_id): array {
     $klinik_id = (int)$klinik_id;
     $barang_id = (int)$barang_id;
-    $kl = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
-    $kode_klinik = trim((string)($kl['kode_klinik'] ?? ''));
-    $kode_homecare = trim((string)($kl['kode_homecare'] ?? ''));
-    $loc = $is_hc ? stock_resolve_location($conn, $kode_homecare) : stock_resolve_location($conn, $kode_klinik);
-    if ($loc === '') return ['ok' => false, 'message' => 'Kode lokasi belum diisi', 'available' => 0];
+    
+    $loc = '';
+    $level = 'klinik';
+    
+    if ($klinik_id === 0 && !$is_hc) {
+        $level = 'gudang_utama';
+        if (function_exists('get_setting')) {
+            $gudang_loc = trim((string)get_setting('odoo_location_gudang_utama', ''));
+            if ($gudang_loc !== '') {
+                $loc = stock_resolve_location($conn, $gudang_loc);
+            }
+        }
+    } else {
+        $kl = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+        $kode_klinik = trim((string)($kl['kode_klinik'] ?? ''));
+        $kode_homecare = trim((string)($kl['kode_homecare'] ?? ''));
+        $loc = $is_hc ? stock_resolve_location($conn, $kode_homecare) : stock_resolve_location($conn, $kode_klinik);
+        $level = $is_hc ? 'hc' : 'klinik';
+    }
+
+    if ($loc === '') return ['ok' => false, 'message' => 'Kode lokasi belum diisi', 'available' => 0, 'on_hand' => 0];
 
     $b = $conn->query("SELECT id, kode_barang, odoo_product_id, nama_barang FROM inventory_barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
-    if (!$b) return ['ok' => false, 'message' => 'Barang tidak ditemukan', 'available' => 0];
+    if (!$b) return ['ok' => false, 'message' => 'Barang tidak ditemukan', 'available' => 0, 'on_hand' => 0];
 
     $mult = stock_multiplier($conn, $barang_id);
     $match = stock_match_clause($conn, $b);
@@ -160,14 +176,15 @@ function stock_effective(mysqli $conn, int $klinik_id, bool $is_hc, int $barang_
 
     $pending = stock_pending_transaksi(
         $conn,
-        $is_hc ? 'hc' : 'klinik',
+        $level,
         $klinik_id,
         $barang_id,
         $last_update,
-        $is_hc ? ['hc_petugas_transfer', 'pemakaian_bhp_revision'] : ['transfer', 'hc_petugas_transfer', 'pemakaian_bhp_revision']
+        $level === 'hc' ? ['hc_petugas_transfer', 'pemakaian_bhp_revision'] : ['transfer', 'hc_petugas_transfer', 'pemakaian_bhp_revision']
     );
-    $sellout = stock_sellout_qty($conn, $klinik_id, $barang_id, $last_update, $is_hc);
-    $reserve = stock_reserve_qty($conn, $klinik_id, $barang_id, $last_update, $is_hc);
+    
+    $sellout = ($level === 'gudang_utama') ? 0 : stock_sellout_qty($conn, $klinik_id, $barang_id, $last_update, $is_hc);
+    $reserve = ($level === 'gudang_utama') ? 0 : stock_reserve_qty($conn, $klinik_id, $barang_id, $last_update, $is_hc);
 
     $avail = (float)$baseline + (float)$pending['in'] - (float)$pending['out'] - (float)$sellout - (float)$reserve;
     if ($avail < 0) $avail = 0;

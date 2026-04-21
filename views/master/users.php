@@ -1,8 +1,9 @@
 <?php
 check_role(['super_admin']);
 
-$error = '';
-$success = '';
+$error = $_SESSION['error'] ?? '';
+$success = $_SESSION['success'] ?? '';
+unset($_SESSION['error'], $_SESSION['success']);
 
 // Handle Actions
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
@@ -101,7 +102,10 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
             </ol>
         </nav>
     </div>
-    <div class="col-auto text-end">
+    <div class="col-auto text-end d-flex gap-2">
+        <button class="btn btn-success btn-sm px-3" data-bs-toggle="modal" data-bs-target="#modalImport">
+            <i class="fas fa-file-excel me-1"></i>Import Excel
+        </button>
         <button class="btn btn-primary btn-sm px-3" data-bs-toggle="modal" data-bs-target="#modalAdd">
             <i class="fas fa-plus me-1"></i>Tambah User
         </button>
@@ -187,6 +191,43 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                     <?php endforeach; ?>
                 </tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Import -->
+<div class="modal fade" id="modalImport" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="actions/process_user_bulk_upload.php" method="POST" enctype="multipart/form-data">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">
+                        <i class="fas fa-file-excel me-2"></i>Import User Bulk
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Gunakan template yang disediakan untuk menghindari kesalahan format.
+                        <br>
+                        <a href="api/download_template_users.php" class="btn btn-link btn-sm p-0 fw-bold">
+                            <i class="fas fa-download me-1"></i>Download Template Excel
+                        </a>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Pilih File Excel (.xlsx)</label>
+                        <input type="file" name="excel_file" class="form-control" accept=".xlsx" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-upload me-1"></i>Upload & Proses
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>

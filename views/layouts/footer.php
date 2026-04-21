@@ -6,6 +6,12 @@
         // Init DataTable
         $('.datatable').each(function() {
             const $t = $(this);
+            
+            // Skip if already initialized
+            if ($.fn.DataTable.isDataTable($t)) {
+                return;
+            }
+            
             // Count columns in header
             const colCount = $t.find('thead th').length;
             
