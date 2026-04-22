@@ -46,7 +46,7 @@ A comprehensive web-based inventory and booking management system designed for h
 - **Booking List**: Integrated scheduling and stock allocation.
 
 ### Configuration
-- **Integrasi Odoo**: RPC settings, scheduler (Interval, Daily, Weekly), and location mapping.
+- **Pengaturan Sistem**: RPC settings, scheduler (Interval, Daily, Weekly), and location mapping.
 - **Webhook Settings**: Lark and Google Sheets endpoint configuration.
 
 ---

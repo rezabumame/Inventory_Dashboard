@@ -120,12 +120,12 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
     <div class="row mb-2 align-items-center">
         <div class="col">
             <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
-                <i class="fas fa-cogs me-2"></i>Integrasi Odoo
+                <i class="fas fa-cogs me-2"></i>Pengaturan Sistem
             </h1>
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-0">
                     <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
-                    <li class="breadcrumb-item active">Integrasi Odoo</li>
+                    <li class="breadcrumb-item active">Pengaturan Sistem</li>
                 </ol>
             </nav>
         </div>

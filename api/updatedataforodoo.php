@@ -125,7 +125,7 @@ if (!$due && !$force) {
 
 if ($sysToken === '') {
     http_response_code(500);
-    echo json_encode(['success' => false, 'ran' => false, 'message' => 'Token scheduler belum diset. Isi Token Scheduler di Pengaturan Integrasi Odoo.', 'debug' => $debug], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['success' => false, 'ran' => false, 'message' => 'Token scheduler belum diset. Isi Token Scheduler di Pengaturan Sistem.', 'debug' => $debug], JSON_UNESCAPED_UNICODE);
     exit;
 }
 

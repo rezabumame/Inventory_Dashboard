@@ -122,7 +122,7 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <div class="sidebar-heading">PENGATURAN</div>
         <a href="index.php?page=settings_integrasi" class="sidebar-link <?= $current_page == 'settings_integrasi' ? 'active' : '' ?>">
-            <i class="fas fa-cogs"></i> Integrasi Odoo
+            <i class="fas fa-cogs"></i> Pengaturan Sistem
         </a>
         <a href="index.php?page=odoo_format_config" class="sidebar-link <?= $current_page == 'odoo_format_config' ? 'active' : '' ?>">
             <i class="fas fa-file-invoice"></i> Format Odoo
