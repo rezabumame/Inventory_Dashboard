@@ -340,13 +340,48 @@ if (!empty($all_barang_ids)) {
         color: #0369a1 !important; /* Dark blue text for data rows */
     }
 
-    .table-recap thead th.bg-reference {
-        color: #ffffff !important; /* White text for header to match others */
+    .bg-reference-onsite {
+        background-color: #e0f2fe !important;
+        color: #0369a1 !important;
+    }
+
+    .bg-reference-hc {
+        background-color: #dbeafe !important; /* Slightly darker blue for HC reference */
+        color: #1e40af !important;
+    }
+
+    .bg-onsite {
+        background-color: #f0fdf4 !important; /* Soft Green for Onsite */
+        color: #166534 !important;
+    }
+
+    .bg-hc {
+        background-color: #fff7ed !important; /* Soft Orange for HC */
+        color: #9a3412 !important;
+    }
+
+    .bg-total {
+        background-color: #f8fafc !important; /* Soft Grey for Total */
+        color: #1e293b !important;
+    }
+
+    .table-recap thead th.bg-onsite,
+    .table-recap thead th.bg-hc,
+    .table-recap thead th.bg-total,
+    .table-recap thead th.bg-reference-onsite,
+    .table-recap thead th.bg-reference-hc {
+        color: #ffffff !important;
         border: 1px solid rgba(255,255,255,0.2) !important;
     }
 
     .val-zero { color: #94a3b8; font-weight: 400; }
     .val-nonzero { font-weight: 700; color: #1e293b; }
+
+    .col-data-width {
+        width: 85px !important;
+        min-width: 85px !important;
+        max-width: 85px !important;
+    }
 
     .btn-refresh-odoo {
         border: 2px solid var(--primary-color);
@@ -541,20 +576,20 @@ if (!empty($all_barang_ids)) {
                             <th rowspan="2">Nama Barang</th>
                             <th rowspan="2" class="text-center">Satuan</th>
                             <th colspan="3" class="text-center">Sellout</th>
-                            <th colspan="2" class="text-center">Non-Reserve (Incl. Adjustment)</th>
+                            <th colspan="2" class="text-center">Non-Reserve<br><small style="text-transform: none; opacity: 0.8;">(Incl. Adjustment)</small></th>
                             <th colspan="2" class="text-center">Reserve-Sold</th>
                             <th colspan="2" class="text-center bg-reference">Reserve-Booked</th>
                         </tr>
                         <tr>
-                            <th class="text-center">Total</th>
-                            <th class="text-center">Onsite</th>
-                            <th class="text-center">HC</th>
-                            <th class="text-center">Onsite</th>
-                            <th class="text-center">HC</th>
-                            <th class="text-center">Onsite</th>
-                            <th class="text-center">HC</th>
-                            <th class="text-center bg-reference">Onsite</th>
-                            <th class="text-center bg-reference">HC</th>
+                            <th class="text-center bg-total col-data-width">Total</th>
+                            <th class="text-center bg-onsite col-data-width">Onsite</th>
+                            <th class="text-center bg-hc col-data-width">HC</th>
+                            <th class="text-center bg-onsite col-data-width">Onsite</th>
+                            <th class="text-center bg-hc col-data-width">HC</th>
+                            <th class="text-center bg-onsite col-data-width">Onsite</th>
+                            <th class="text-center bg-hc col-data-width">HC</th>
+                            <th class="text-center bg-reference-onsite col-data-width">Onsite</th>
+                            <th class="text-center bg-reference-hc col-data-width">HC</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -565,42 +600,42 @@ if (!empty($all_barang_ids)) {
                             <td class="text-center small text-muted"><?= htmlspecialchars($row['satuan']) ?></td>
                             
                             <!-- Sellout Total -->
-                            <td class="text-center <?= $row['sellout_total'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                            <td class="text-center bg-total col-data-width <?= $row['sellout_total'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
                                 <?= fmt_qty($row['sellout_total']) ?>
                             </td>
                             <!-- Sellout Onsite -->
-                            <td class="text-center <?= $row['sellout_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                            <td class="text-center bg-onsite col-data-width <?= $row['sellout_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
                                 <?= fmt_qty($row['sellout_onsite']) ?>
                             </td>
                             <!-- Sellout HC -->
-                            <td class="text-center <?= $row['sellout_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                            <td class="text-center bg-hc col-data-width <?= $row['sellout_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
                                 <?= fmt_qty($row['sellout_hc']) ?>
                             </td>
                             
                             <!-- Non-Reserve Onsite -->
-                            <td class="text-center <?= $row['non_reserve_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                            <td class="text-center bg-onsite col-data-width <?= $row['non_reserve_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
                                 <?= fmt_qty($row['non_reserve_onsite']) ?>
                             </td>
                             <!-- Non-Reserve HC -->
-                            <td class="text-center <?= $row['non_reserve_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                            <td class="text-center bg-hc col-data-width <?= $row['non_reserve_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
                                 <?= fmt_qty($row['non_reserve_hc']) ?>
                             </td>
-
+                
                             <!-- Reserve Sold Onsite -->
-                            <td class="text-center <?= $row['reserve_sold_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                            <td class="text-center bg-onsite col-data-width <?= $row['reserve_sold_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
                                 <?= fmt_qty($row['reserve_sold_onsite']) ?>
                             </td>
                             <!-- Reserve Sold HC -->
-                            <td class="text-center <?= $row['reserve_sold_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                            <td class="text-center bg-hc col-data-width <?= $row['reserve_sold_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
                                 <?= fmt_qty($row['reserve_sold_hc']) ?>
                             </td>
-
+                
                             <!-- Reserve Booked Onsite -->
-                            <td class="text-center bg-reference <?= $row['reserve_booked_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                            <td class="text-center bg-reference-onsite col-data-width <?= $row['reserve_booked_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
                                 <?= fmt_qty($row['reserve_booked_onsite']) ?>
                             </td>
                             <!-- Reserve Booked HC -->
-                            <td class="text-center bg-reference <?= $row['reserve_booked_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                            <td class="text-center bg-reference-hc col-data-width <?= $row['reserve_booked_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
                                 <?= fmt_qty($row['reserve_booked_hc']) ?>
                             </td>
                         </tr>
@@ -612,13 +647,8 @@ if (!empty($all_barang_ids)) {
     </div>
 </div>
 
-<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-<script>
-    // Custom library for styling if standard one doesn't support it
-    if (typeof XLSXStyle === 'undefined') {
-        window.XLSXStyle = XLSX;
-    }
-</script>
+<!-- Excel Export Library with Style Support -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
 $(document).ready(function() {
     // Initialise Select2 if available
@@ -708,12 +738,43 @@ $(document).ready(function() {
                 if (R <= 1) {
                     ws[cell_ref].s.fill = { fgColor: { rgb: "204EAB" } };
                     ws[cell_ref].s.font = { color: { rgb: "FFFFFF" }, bold: true, sz: 10 };
+                    
+                    // Specific sub-header colors (Row 1)
+                    if (R === 1) {
+                        // Total
+                        if (C === 3) ws[cell_ref].s.fill = { fgColor: { rgb: "64748B" } }; // Soft Grey
+                        // Onsite
+                        if ([4, 6, 8, 10].includes(C)) ws[cell_ref].s.fill = { fgColor: { rgb: "166534" } }; // Soft Green
+                        // HC
+                        if ([5, 7, 9, 11].includes(C)) ws[cell_ref].s.fill = { fgColor: { rgb: "9A3412" } }; // Soft Orange
+                    }
                 }
 
-                // Reserve-Booked column highlight (Column 10 and 11)
-                if (C >= 10 && R > 1) {
-                    ws[cell_ref].s.fill = { fgColor: { rgb: "E0F2FE" } };
-                    ws[cell_ref].s.font.color = { rgb: "0369A1" };
+                // Color coding for data rows (R > 1)
+                if (R > 1) {
+                    // Total Column
+                    if (C === 3) ws[cell_ref].s.fill = { fgColor: { rgb: "F8FAFC" } };
+                    
+                    // Onsite Columns (Non-reference)
+                    if ([4, 6, 8].includes(C)) ws[cell_ref].s.fill = { fgColor: { rgb: "F0FDF4" } };
+                    
+                    // HC Columns (Non-reference)
+                    if ([5, 7, 9].includes(C)) ws[cell_ref].s.fill = { fgColor: { rgb: "FFF7ED" } };
+
+                    // Reserve-Booked (Reference) Columns
+                    if (C === 10) ws[cell_ref].s.fill = { fgColor: { rgb: "E0F2FE" } }; // Onsite Reference
+                    if (C === 11) ws[cell_ref].s.fill = { fgColor: { rgb: "DBEAFE" } }; // HC Reference
+                    
+                    // Font colors for nonzero values
+                    const val = ws[cell_ref].v;
+                    if (C >= 3 && typeof val === 'number' && val > 0) {
+                        ws[cell_ref].s.font.bold = true;
+                        if ([4, 6, 8, 10].includes(C)) ws[cell_ref].s.font.color = { rgb: "166534" }; // Onsite Text
+                        if ([5, 7, 9, 11].includes(C)) ws[cell_ref].s.font.color = { rgb: "9A3412" }; // HC Text
+                        if (C >= 10) ws[cell_ref].s.font.color = { rgb: "0369A1" }; // Reference Text
+                    } else if (C >= 3) {
+                        ws[cell_ref].s.font.color = { rgb: "94A3B8" }; // Zero Text
+                    }
                 }
 
                 // Align Nama Barang to left
@@ -743,12 +804,8 @@ $(document).ready(function() {
         XLSX.utils.book_append_sheet(wb, ws, "Monthly Summary");
         const fileName = "Monthly_Summary_<?= str_replace(' ', '_', $mtd_label) ?>_<?= date('His') ?>.xlsx";
         
-        // Use XLSXStyle if available, else fallback to standard XLSX
-        if (typeof XLSXStyle !== 'undefined' && XLSXStyle.writeFile) {
-            XLSXStyle.writeFile(wb, fileName);
-        } else {
-            XLSX.writeFile(wb, fileName);
-        }
+        // Use the XLSX object from xlsx-js-style library which supports .s (style)
+        XLSX.writeFile(wb, fileName);
     });
 });
 </script>
