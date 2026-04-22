@@ -343,10 +343,94 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                         </div>
                     </div>
                 </div>
+                <div class="col-12">
+                    <div class="card border-0 shadow-sm border-start border-danger border-4">
+                        <div class="card-body">
+                            <div class="fw-bold text-danger mb-2"><i class="fas fa-exclamation-triangle me-2"></i>Zona Bahaya</div>
+                            <p class="small text-muted mb-3">Gunakan fitur ini untuk menghapus seluruh data transaksi (Booking, BHP, Request, HC, dll) dan mereset sistem ke kondisi awal (Master Data tetap ada).</p>
+                            <button type="button" class="btn btn-danger w-100 fw-bold" onclick="confirmTruncateData()">
+                                <i class="fas fa-trash-alt me-2"></i>Hapus Semua Data Transaksi
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+async function confirmTruncateData() {
+    const { value: confirmed } = await Swal.fire({
+        title: 'Hapus Semua Data?',
+        text: "Seluruh data Booking, BHP, Request, HC, dan Riwayat Stok akan DIHAPUS PERMANEN. Master Data (User, Barang, Klinik) tetap aman.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Ya, Hapus Semua!',
+        cancelButtonText: 'Batal',
+        reverseButtons: true
+    });
+
+    if (confirmed) {
+        const { value: password } = await Swal.fire({
+            title: 'Konfirmasi Keamanan',
+            text: 'Ketik "HAPUS" untuk mengonfirmasi tindakan ini:',
+            input: 'text',
+            inputPlaceholder: 'HAPUS',
+            showCancelButton: true,
+            confirmButtonText: 'Eksekusi',
+            cancelButtonText: 'Batal',
+            inputValidator: (value) => {
+                if (value !== 'HAPUS') {
+                    return 'Anda harus mengetik "HAPUS"!'
+                }
+            }
+        });
+
+        if (password === 'HAPUS') {
+            executeTruncate();
+        }
+    }
+}
+
+async function executeTruncate() {
+    Swal.fire({
+        title: 'Sedang Menghapus...',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    try {
+        const fd = new FormData();
+        fd.append('_csrf', <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>);
+        
+        const res = await fetch('actions/process_truncate_data.php', {
+            method: 'POST',
+            body: fd
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            Swal.fire({
+                title: 'Berhasil!',
+                text: data.message,
+                icon: 'success'
+            }).then(() => {
+                location.reload();
+            });
+        } else {
+            Swal.fire('Gagal!', data.message, 'error');
+        }
+    } catch (e) {
+        Swal.fire('Error!', e.message, 'error');
+    }
+}
+</script>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {

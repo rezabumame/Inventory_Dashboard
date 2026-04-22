@@ -684,7 +684,7 @@ try {
         $stmt->execute();
 
         $level = ($jenis_pemakaian === 'hc') ? 'hc' : 'klinik';
-        $level_id = (int)$klinik_id;
+        $level_id = ($level === 'hc') ? (int)$user_hc_id : (int)$klinik_id;
         $eff = stock_effective($conn, (int)$klinik_id, $level === 'hc', (int)$barang_id);
         $qty_before = $eff['ok'] ? (float)($eff['on_hand'] ?? 0) : 0.0;
         $qty_after = (float)$qty_before - (float)$qty;

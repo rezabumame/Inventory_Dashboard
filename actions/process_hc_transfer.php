@@ -187,7 +187,7 @@ try {
             (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
             VALUES (?, 'hc', ?, 'in', ?, ?, ?, 'hc_petugas_transfer', ?, ?, ?, NOW())
         ");
-        $stmt->bind_param("iidddisi", $barang_id, $klinik_id, $qty_oper, $hc_before, $qty_after_hc, $transfer_id, $cat, $created_by);
+        $stmt->bind_param("iidddisi", $barang_id, $user_hc_id, $qty_oper, $hc_before, $qty_after_hc, $transfer_id, $cat, $created_by);
         $stmt->execute();
     }
 

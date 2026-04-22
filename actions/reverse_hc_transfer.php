@@ -145,7 +145,7 @@ try {
         (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
         VALUES (?, 'hc', ?, 'out', ?, ?, ?, 'hc_petugas_transfer', ?, ?, ?, NOW())
     ");
-    $stmt->bind_param("iidddisi", $barang_id, $klinik_id, $qty, $effective_hc, $qty_after_hc, $transfer_id, $cat_detail, $created_by);
+    $stmt->bind_param("iidddisi", $barang_id, $user_hc_id, $qty, $effective_hc, $qty_after_hc, $transfer_id, $cat_detail, $created_by);
     $stmt->execute();
 
     $conn->commit();

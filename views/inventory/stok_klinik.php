@@ -274,7 +274,7 @@ if ($active_tab == 'stok') {
                         $last_update_time = date('H:i:s', strtotime($last_update_general));
                         // Task Fix: Bookings are always local and never synced to Odoo.
                         // We should subtract ALL active bookings for the current period, regardless of Odoo sync time.
-                        $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($month_start) . "'";
+                        $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($today_date) . "'";
                         
                         // Sellout (Pemakaian) should only subtract what's NOT in Odoo yet.
                         // We use a 5-minute buffer to account for the sync duration (race condition).
