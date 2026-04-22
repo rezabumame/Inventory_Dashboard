@@ -78,7 +78,7 @@ try {
 
     if (!empty($prefixes_to_reset)) {
         $prefix_list = "'" . implode("','", array_map([$conn, 'real_escape_string'], $prefixes_to_reset)) . "'";
-        $conn->query("DELETE FROM inventory_app_counters WHERE prefix IN ($prefix_list)");
+        $conn->query("DELETE FROM inventory_app_counters WHERE k IN ($prefix_list)");
     }
 
     $conn->query("SET FOREIGN_KEY_CHECKS = 1");
