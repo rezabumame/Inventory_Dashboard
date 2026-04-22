@@ -902,7 +902,7 @@ if ($default_modal_klinik_id) {
                                     <label class="form-label fw-semibold small mb-1">
                                         <i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal Pemakaian BHP <span class="text-danger">*</span>
                                     </label>
-                                    <input type="date" name="tanggal" id="modalTambahTanggal" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                                    <input type="date" name="tanggal" id="modalTambahTanggal" class="form-control" value="" required>
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label fw-semibold small mb-1">
