@@ -77,7 +77,12 @@ try {
             $is_hc = (stripos($booking['status_booking'], 'HC') !== false);
             $jenis_pemakaian = $is_hc ? 'hc' : 'klinik';
             $created_by = (int)$_SESSION['user_id'];
-            $nomor_pemakaian = 'BHP-AUTO-' . time() . '-' . $id;
+            
+            // Perbaikan format nomor BHP agar menggunakan YYMMDD (6 digit)
+            $date_ymd = date('ymd', strtotime($booking['tanggal_pemeriksaan'] ?? date('Y-m-d')));
+            require_once __DIR__ . '/../lib/counter.php';
+            $seq = next_sequence($conn, 'BHP', $date_ymd);
+            $nomor_pemakaian = 'BHP-' . $date_ymd . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
             // 2. Hitung total qty per barang_id dari Master Pemeriksaan (Core & Support)
             $items_to_deduct = [];

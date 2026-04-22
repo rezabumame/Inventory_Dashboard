@@ -73,7 +73,7 @@ if ($active_tab == 'list') {
             pb.*,
             k.nama_klinik,
             u_created.nama_lengkap as created_by_name,
-            (SELECT COUNT(*) FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = pb.id) as total_items
+            (SELECT COUNT(*) FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = pb.id) as total_items_detail
         FROM inventory_pemakaian_bhp pb
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
@@ -274,7 +274,7 @@ if ($default_modal_klinik_id) {
             </nav>
         </div>
         <div class="col-auto">
-            <button type="button" class="btn shadow-sm text-white px-4 me-2" style="background-color: #204EAB;" data-bs-toggle="modal" data-bs-target="#modalTambah" data-bs-focus="false">
+            <button type="button" class="btn shadow-sm text-white px-4 me-2" style="background-color: #204EAB;" data-bs-toggle="modal" data-bs-target="#modalTambah">
                 <i class="fas fa-plus me-2"></i>Tambah Pemakaian
             </button>
             <?php if (in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)): ?>
@@ -429,6 +429,15 @@ if ($default_modal_klinik_id) {
                         <?php while ($row = $result->fetch_assoc()): 
                             $status = $row['status'] ?? 'active';
                             $row_class = ($status === 'rejected') ? 'table-secondary opacity-75' : '';
+                            
+                            // Hitung total item (dari detail DB atau dari JSON pending_data)
+                            $total_items = (int)($row['total_items_detail'] ?? 0);
+                            if ($status === 'pending_add' && !empty($row['pending_data'])) {
+                                $p_data = json_decode($row['pending_data'], true);
+                                if (isset($p_data['items']) && is_array($p_data['items'])) {
+                                    $total_items = count($p_data['items']);
+                                }
+                            }
                         ?>
                         <tr class="<?= $row_class ?>">
                             <td>
@@ -446,7 +455,7 @@ if ($default_modal_klinik_id) {
                                 <?php endif; ?>
                             </td>
                             <td><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
-                            <td><?= $row['total_items'] ?> item</td>
+                            <td><?= $total_items ?> item</td>
                             <td><?= date('d/m/Y H:i', strtotime($row['created_at'])) ?></td>
                             <td>
                                 <div class="btn-group">
@@ -458,9 +467,14 @@ if ($default_modal_klinik_id) {
                                     $created_date = date('Y-m-d', strtotime($row['created_at']));
                                     $today = date('Y-m-d');
                                     $yesterday = date('Y-m-d', strtotime('-1 day'));
+                                    $two_days_ago = date('Y-m-d', strtotime('-2 days'));
                                     
                                     // H-0 and H-1 are considered within grace period (no approval needed)
                                     $is_today = ($created_date === $today || $created_date === $yesterday);
+                                    
+                                    // Rule: If > 2 days, DELETE is NOT allowed (only edit/request edit)
+                                    // Stricter: Only H-0 (today) and H-1 (yesterday) are allowed to delete/request delete
+                                    $is_over_2_days = !($created_date === $today || $created_date === $yesterday);
                                     
                                     $is_creator = $row['created_by'] == $_SESSION['user_id'];
                                     $is_admin_klinik = $user_role === 'admin_klinik';
@@ -492,16 +506,18 @@ if ($default_modal_klinik_id) {
                                                     data-id="<?= $row['id'] ?>" 
                                                     data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
                                                     title="Edit"
-                                                    data-bs-toggle="modal" data-bs-target="#modalEdit" data-bs-focus="false">
+                                                    data-bs-toggle="modal" data-bs-target="#modalEdit">
                                                 <i class="fas fa-edit"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-danger delete-pemakaian" 
-                                                    data-id="<?= $row['id'] ?>" 
-                                                    data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>" 
-                                                    data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
-                                                    title="Hapus">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
+                                            <?php if (!$is_over_2_days): ?>
+                                                <button class="btn btn-sm btn-danger delete-pemakaian" 
+                                                        data-id="<?= $row['id'] ?>" 
+                                                        data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>" 
+                                                        data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
+                                                        title="Hapus">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            <?php endif; ?>
                                         <?php elseif ($can_request_edit): ?>
                                             <button class="btn btn-sm btn-outline-warning edit-pemakaian" 
                                                     data-id="<?= $row['id'] ?>" 
@@ -510,13 +526,15 @@ if ($default_modal_klinik_id) {
                                                     data-bs-toggle="modal" data-bs-target="#modalEdit">
                                                 <i class="fas fa-edit"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-outline-danger request-delete" 
-                                                    data-id="<?= $row['id'] ?>" 
-                                                    data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>" 
-                                                    data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
-                                                    title="Request Hapus (Lewat Hari)">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
+                                            <?php if (!$is_over_2_days): ?>
+                                                <button class="btn btn-sm btn-outline-danger request-delete" 
+                                                        data-id="<?= $row['id'] ?>" 
+                                                        data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>" 
+                                                        data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
+                                                        title="Request Hapus (Lewat Hari)">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            <?php endif; ?>
                                         <?php endif; ?>
                                     <?php elseif ($is_pending): ?>
                                         <div class="d-flex align-items-center">
@@ -744,7 +762,7 @@ if ($default_modal_klinik_id) {
 </div>
 
 <!-- Modal Edit Pemakaian -->
-<div class="modal fade" id="modalEdit" aria-labelledby="modalEditLabel" aria-hidden="true">
+<div class="modal fade" id="modalEdit" tabindex="-1" aria-labelledby="modalEditLabel" aria-hidden="true" data-bs-keyboard="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content border-0 shadow">
             <div class="modal-header border-0 py-3 text-white" style="background-color: #204EAB;">
@@ -1205,7 +1223,8 @@ $(document).ready(function() {
             width: '100%',
             placeholder: '-- Pilih Barang --',
             allowClear: true,
-            minimumResultsForSearch: 0
+            minimumResultsForSearch: 0,
+            dropdownParent: $modal.length ? $modal : $(document.body)
         };
         
         $select.select2(opts);

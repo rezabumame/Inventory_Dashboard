@@ -118,7 +118,7 @@ while ($row = $res->fetch_assoc()) {
     
     if (!isset($grouped_data[$key])) {
         $grouped_data[$key] = [
-            'ID' => $id,
+            'ID' => $row['ID'],
             'NAMA_BARANG' => $row['NAMA_BARANG'],
             'NAMA_BAGIAN' => $row['NAMA_BAGIAN'] ?? '',
             'PENYESUAIAN' => 0,

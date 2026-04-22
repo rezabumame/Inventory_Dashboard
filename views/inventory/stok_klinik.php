@@ -523,6 +523,31 @@ if ($active_tab == 'stok') {
     .text-sellout-hc { color: #dc3545 !important; }
     .text-reserve-onsite { color: #0891b2 !important; }
     .text-reserve-hc { color: #0891b2 !important; }
+    
+    /* Soft borders for datatable-stok */
+    .datatable-stok {
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 8px !important;
+        overflow: hidden !important;
+    }
+    .datatable-stok th,
+    .datatable-stok td {
+        border: 1px solid #f1f5f9 !important;
+        padding: 12px 10px !important;
+        vertical-align: middle !important;
+    }
+    .datatable-stok thead th {
+        background-color: #204EAB !important;
+        color: white !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.025em;
+    }
+    .datatable-stok tbody tr:hover {
+        background-color: #f8fafc !important;
+    }
 </style>
 
 <!-- TAB CONTENT: STOK KLINIK -->

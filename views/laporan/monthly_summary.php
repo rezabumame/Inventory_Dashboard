@@ -44,18 +44,20 @@ if ($can_filter_klinik) {
 }
 
 // Data Fetching
-$where_pb = "pb.status = 'active' AND pb.created_at BETWEEN '$first_day 00:00:00' AND '$last_day 23:59:59'";
-$where_bp = "bp.status = 'completed' AND bp.tanggal_pemeriksaan BETWEEN '$first_day' AND '$last_day'";
+$where_pb = "pb.status = 'active' AND pb.tanggal BETWEEN '$first_day' AND '$last_day'";
+$where_bp_completed = "bp.status = 'completed' AND bp.tanggal_pemeriksaan BETWEEN '$first_day' AND '$last_day'";
+$where_bp_all_status = "bp.tanggal_pemeriksaan BETWEEN '$first_day' AND '$last_day'";
 
 if ($selected_klinik && $selected_klinik !== 'all') {
     $kid = (int)$selected_klinik;
     $where_pb .= " AND pb.klinik_id = $kid";
-    $where_bp .= " AND bp.klinik_id = $kid";
+    $where_bp_completed .= " AND bp.klinik_id = $kid";
+    $where_bp_all_status .= " AND bp.klinik_id = $kid";
 }
 
 // 1. Sellout Data
 $sellout_query = "
-    SELECT 
+    SELECT
         pbd.barang_id,
         SUM(CASE WHEN pb.jenis_pemakaian = 'klinik' THEN pbd.qty ELSE 0 END) as onsite,
         SUM(CASE WHEN pb.jenis_pemakaian = 'hc' THEN pbd.qty ELSE 0 END) as hc
@@ -70,31 +72,50 @@ while ($row = $res_sellout->fetch_assoc()) {
     $sellout_data[$row['barang_id']] = $row;
 }
 
-// 2. Reserve Data
-$reserve_query = "
-    SELECT 
+// 2. Reserve Sold Data (status completed)
+$reserve_sold_query = "
+    SELECT
         bd.barang_id,
         SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE (CASE WHEN bp.status_booking NOT LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as onsite,
         SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE (CASE WHEN bp.status_booking LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as hc
     FROM inventory_booking_detail bd
     JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
-    WHERE $where_bp
+    WHERE $where_bp_completed
     GROUP BY bd.barang_id
 ";
-$res_reserve = $conn->query($reserve_query);
-$reserve_data = [];
-while ($row = $res_reserve->fetch_assoc()) {
-    $reserve_data[$row['barang_id']] = $row;
+$res_reserve_sold = $conn->query($reserve_sold_query);
+$reserve_sold_data = [];
+while ($row = $res_reserve_sold->fetch_assoc()) {
+    $reserve_sold_data[$row['barang_id']] = $row;
 }
 
-// 3. Combine Data with Barang Master
-$all_barang_ids = array_unique(array_merge(array_keys($sellout_data), array_keys($reserve_data)));
+// 3. Reserve Booked Data (all statuses)
+$reserve_booked_query = "
+    SELECT
+        bd.barang_id,
+        SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE (CASE WHEN bp.status_booking NOT LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as onsite,
+        SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE (CASE WHEN bp.status_booking LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as hc
+    FROM inventory_booking_detail bd
+    JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
+    WHERE $where_bp_all_status
+    GROUP BY bd.barang_id
+";
+$res_reserve_booked = $conn->query($reserve_booked_query);
+$reserve_booked_data = [];
+while ($row = $res_reserve_booked->fetch_assoc()) {
+    $reserve_booked_data[$row['barang_id']] = $row;
+}
+
+// 4. Combine Data with Barang Master
+$all_barang_ids = array_unique(array_merge(array_keys($sellout_data), array_keys($reserve_sold_data), array_keys($reserve_booked_data)));
 $final_data = [];
 $summary = [
     'sellout_onsite' => 0,
     'sellout_hc' => 0,
-    'reserve_onsite' => 0,
-    'reserve_hc' => 0
+    'reserve_onsite' => 0, // This will be reserve_sold_onsite
+    'reserve_hc' => 0,     // This will be reserve_sold_hc
+    'reserve_booked_onsite' => 0,
+    'reserve_booked_hc' => 0
 ];
 
 if (!empty($all_barang_ids)) {
@@ -104,23 +125,45 @@ if (!empty($all_barang_ids)) {
         $bid = $b['id'];
         $s_onsite = (float)($sellout_data[$bid]['onsite'] ?? 0);
         $s_hc = (float)($sellout_data[$bid]['hc'] ?? 0);
-        $r_onsite = (float)($reserve_data[$bid]['onsite'] ?? 0);
-        $r_hc = (float)($reserve_data[$bid]['hc'] ?? 0);
+
+        $rs_onsite = (float)($reserve_sold_data[$bid]['onsite'] ?? 0);
+        $rs_hc = (float)($reserve_sold_data[$bid]['hc'] ?? 0);
+
+        // Ensure sellout is at least equal to reserve_sold to avoid negative Non-Reserve values
+        // If sellout is less than reserve_sold, it means the BHP record might be missing or date mismatch
+        if ($s_onsite < $rs_onsite) $s_onsite = $rs_onsite;
+        if ($s_hc < $rs_hc) $s_hc = $rs_hc;
+
+        $s_total = $s_onsite + $s_hc;
+
+        $rb_onsite = (float)($reserve_booked_data[$bid]['onsite'] ?? 0);
+        $rb_hc = (float)($reserve_booked_data[$bid]['hc'] ?? 0);
+
+        // Non-Reserve (Incl. Adjustment) = total sellout - Reserve-Sold
+        $nr_onsite = $s_onsite - $rs_onsite;
+        $nr_hc = $s_hc - $rs_hc;
 
         $final_data[] = [
             'kode_barang' => $b['kode_barang'],
             'nama_barang' => $b['nama_barang'],
             'satuan' => $b['satuan'],
+            'sellout_total' => $s_total,
             'sellout_onsite' => $s_onsite,
             'sellout_hc' => $s_hc,
-            'reserve_onsite' => $r_onsite,
-            'reserve_hc' => $r_hc
+            'non_reserve_onsite' => $nr_onsite,
+            'non_reserve_hc' => $nr_hc,
+            'reserve_sold_onsite' => $rs_onsite,
+            'reserve_sold_hc' => $rs_hc,
+            'reserve_booked_onsite' => $rb_onsite,
+            'reserve_booked_hc' => $rb_hc
         ];
 
         $summary['sellout_onsite'] += $s_onsite;
         $summary['sellout_hc'] += $s_hc;
-        $summary['reserve_onsite'] += $r_onsite;
-        $summary['reserve_hc'] += $r_hc;
+        $summary['reserve_onsite'] += $rs_onsite; // This is now reserve_sold_onsite
+        $summary['reserve_hc'] += $rs_hc;     // This is now reserve_sold_hc
+        $summary['reserve_booked_onsite'] += $rb_onsite;
+        $summary['reserve_booked_hc'] += $rb_hc;
     }
 }
 ?>
@@ -158,41 +201,108 @@ if (!empty($all_barang_ids)) {
 
     /* Stat Cards */
     .stat-card {
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 0.85rem 1rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-        background: #fff;
+        border: none;
+        border-radius: 16px;
+        padding: 1.25rem;
+        background: #ffffff;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
         height: 100%;
         display: flex;
         flex-direction: column;
-        justify-content: flex-start; /* Push content to top */
+        transition: transform 0.2s, box-shadow 0.2s;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 4px;
+        height: 100%;
+        background: var(--primary-color);
+        opacity: 0.5;
+    }
+
+    .stat-card.bg-reference::before {
+        background: #0369a1;
     }
 
     .stat-card .stat-label {
-        font-size: 0.65rem;
-        font-weight: 700;
+        font-size: 0.75rem;
+        font-weight: 600;
         text-transform: uppercase;
         color: #64748b;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.75rem;
+        letter-spacing: 0.025em;
     }
 
     .stat-card .stat-value {
-        font-size: 1.75rem; /* Larger font size */
-        font-weight: 700;
+        font-size: 2rem;
+        font-weight: 800;
         line-height: 1;
+        color: #1e293b;
+        margin-top: auto;
+    }
+
+    /* Enhanced Info Badges */
+    .stat-info-badge {
+        background: #ffffff;
+        padding: 0.75rem 1.25rem;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+        transition: all 0.2s;
+    }
+
+    .stat-info-badge:hover {
+        border-color: var(--primary-color);
+        box-shadow: 0 4px 6px rgba(32, 78, 171, 0.1);
+    }
+
+    .stat-info-label {
+        font-size: 0.7rem;
+        font-weight: 800;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .stat-info-value {
+        font-size: 1.15rem;
+        font-weight: 800;
         color: #1e293b;
     }
 
-    .stat-card .stat-icon {
-        font-size: 1.1rem;
-        opacity: 0.4;
+    .stat-info-badge i {
+        font-size: 1.25rem;
         color: var(--primary-color);
+        background: #f0f4ff;
+        padding: 0.5rem;
+        border-radius: 8px;
+    }
+
+    .stat-card .stat-icon {
+        font-size: 1.5rem;
+        opacity: 0.2;
+        color: var(--primary-color);
+        position: absolute;
+        right: 1.25rem;
+        top: 1.25rem;
     }
 
     /* Table Styling */
     .table-recap-container {
-        border: 1px solid #e2e8f0;
+        border: 1px solid #cbd5e1;
         border-radius: 12px;
         overflow: hidden;
         background: #fff;
@@ -205,22 +315,37 @@ if (!empty($all_barang_ids)) {
         text-transform: uppercase;
         font-size: 0.75rem;
         letter-spacing: 0.05em;
-        border: none;
+        border: 1px solid rgba(255,255,255,0.2); /* Clearer border for header */
         padding: 0.85rem 1rem;
     }
 
     .table-recap tbody tr:hover {
-        background-color: #f8fafc;
+        background-color: #f1f5f9;
     }
 
     .table-recap td {
         padding: 0.85rem 1rem;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid #cbd5e1;
+        border-right: 1px solid #cbd5e1; /* Darker vertical line */
         vertical-align: middle;
         font-size: 0.9rem;
     }
 
-    .val-zero { color: #cbd5e1; font-weight: 400; }
+    .table-recap td:first-child {
+        border-left: 1px solid #cbd5e1;
+    }
+
+    .bg-reference {
+        background-color: #e0f2fe !important; /* Light blue for reference */
+        color: #0369a1 !important; /* Dark blue text for data rows */
+    }
+
+    .table-recap thead th.bg-reference {
+        color: #ffffff !important; /* White text for header to match others */
+        border: 1px solid rgba(255,255,255,0.2) !important;
+    }
+
+    .val-zero { color: #94a3b8; font-weight: 400; }
     .val-nonzero { font-weight: 700; color: #1e293b; }
 
     .btn-refresh-odoo {
@@ -307,11 +432,24 @@ if (!empty($all_barang_ids)) {
                         </div>
                     </form>
                 </div>
-                <div class="col-auto text-end">
-                    <button type="button" class="btn btn-refresh-odoo px-4 py-2 mb-1" onclick="location.reload()">
-                        <i class="fas fa-sync-alt me-2"></i>Refresh Data
-                    </button>
-                    <div class="small text-muted" style="font-size: 0.7rem;">Terakhir update: <?= date('d M Y H:i') ?></div>
+                <div class="col-auto d-flex gap-3">
+                    <div class="stat-info-badge">
+                        <i class="fas fa-hourglass-half"></i>
+                        <div>
+                            <div class="stat-info-label">Time Gone</div>
+                            <div class="d-flex align-items-baseline gap-2">
+                                <span class="stat-info-value"><?= $time_gone_percent ?>%</span>
+                                <span class="text-muted" style="font-size: 0.75rem; font-weight: 500;"><?= $days_passed ?> / <?= $total_days ?> days</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-info-badge">
+                        <i class="fas fa-calendar-check"></i>
+                        <div>
+                            <div class="stat-info-label">Current Date (MTD)</div>
+                            <div class="stat-info-value"><?= $mtd_date ?></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -319,27 +457,6 @@ if (!empty($all_barang_ids)) {
 
     <!-- Stat Totals -->
     <div class="row g-2 mb-4">
-        <!-- Time Gone -->
-        <div class="col">
-            <div class="stat-card">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div class="stat-label">Time Gone</div>
-                    <i class="fas fa-hourglass-half stat-icon"></i>
-                </div>
-                <div class="stat-value"><?= $time_gone_percent ?>%</div>
-                <div class="small text-muted mt-1" style="font-size: 0.75rem;"><?= $time_gone_days ?></div>
-            </div>
-        </div>
-        <!-- MTD -->
-        <div class="col">
-            <div class="stat-card">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div class="stat-label">MTD (Month To Date)</div>
-                    <i class="fas fa-calendar-check stat-icon"></i>
-                </div>
-                <div class="stat-value"><?= $mtd_date ?></div>
-            </div>
-        </div>
         <!-- Total Sellout Onsite -->
         <div class="col">
             <div class="stat-card">
@@ -360,24 +477,44 @@ if (!empty($all_barang_ids)) {
                 <div class="stat-value"><?= fmt_qty($summary['sellout_hc']) ?></div>
             </div>
         </div>
-        <!-- Total Reserve Onsite -->
+        <!-- Total Reserve Sold Onsite -->
         <div class="col">
             <div class="stat-card">
                 <div class="d-flex justify-content-between align-items-start">
-                    <div class="stat-label">Reserve Onsite</div>
+                    <div class="stat-label">Reserve Sold Onsite</div>
                     <i class="fas fa-city stat-icon"></i>
                 </div>
                 <div class="stat-value"><?= fmt_qty($summary['reserve_onsite']) ?></div>
             </div>
         </div>
-        <!-- Total Reserve HC -->
+        <!-- Total Reserve Sold HC -->
         <div class="col">
             <div class="stat-card">
                 <div class="d-flex justify-content-between align-items-start">
-                    <div class="stat-label">Reserve HC</div>
+                    <div class="stat-label">Reserve Sold HC</div>
                     <i class="fas fa-user-nurse stat-icon"></i>
                 </div>
                 <div class="stat-value"><?= fmt_qty($summary['reserve_hc']) ?></div>
+            </div>
+        </div>
+        <!-- Total Reserve Booked Onsite -->
+        <div class="col">
+            <div class="stat-card bg-reference" style="border-color: #bae6fd;">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="stat-label">Reserve Booked Onsite</div>
+                    <i class="fas fa-calendar-alt stat-icon" style="color: #0369a1;"></i>
+                </div>
+                <div class="stat-value" style="color: #0369a1;"><?= fmt_qty($summary['reserve_booked_onsite']) ?></div>
+            </div>
+        </div>
+        <!-- Total Reserve Booked HC -->
+        <div class="col">
+            <div class="stat-card bg-reference" style="border-color: #bae6fd;">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="stat-label">Reserve Booked HC</div>
+                    <i class="fas fa-calendar-check stat-icon" style="color: #0369a1;"></i>
+                </div>
+                <div class="stat-value" style="color: #0369a1;"><?= fmt_qty($summary['reserve_booked_hc']) ?></div>
             </div>
         </div>
     </div>
@@ -400,13 +537,24 @@ if (!empty($all_barang_ids)) {
                 <table class="table table-recap mb-0" id="tableSummary">
                     <thead>
                         <tr>
-                            <th style="width: 100px;">Kode Barang</th>
-                            <th>Nama Barang</th>
-                            <th class="text-center">Satuan</th>
-                            <th class="text-center">Sellout Onsite</th>
-                            <th class="text-center">Sellout HC</th>
-                            <th class="text-center">Reserve Onsite</th>
-                            <th class="text-center">Reserve HC</th>
+                            <th rowspan="2" style="width: 100px;">Kode Barang</th>
+                            <th rowspan="2">Nama Barang</th>
+                            <th rowspan="2" class="text-center">Satuan</th>
+                            <th colspan="3" class="text-center">Sellout</th>
+                            <th colspan="2" class="text-center">Non-Reserve (Incl. Adjustment)</th>
+                            <th colspan="2" class="text-center">Reserve-Sold</th>
+                            <th colspan="2" class="text-center bg-reference">Reserve-Booked</th>
+                        </tr>
+                        <tr>
+                            <th class="text-center">Total</th>
+                            <th class="text-center">Onsite</th>
+                            <th class="text-center">HC</th>
+                            <th class="text-center">Onsite</th>
+                            <th class="text-center">HC</th>
+                            <th class="text-center">Onsite</th>
+                            <th class="text-center">HC</th>
+                            <th class="text-center bg-reference">Onsite</th>
+                            <th class="text-center bg-reference">HC</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -416,25 +564,45 @@ if (!empty($all_barang_ids)) {
                             <td class="fw-semibold text-dark"><?= htmlspecialchars($row['nama_barang']) ?></td>
                             <td class="text-center small text-muted"><?= htmlspecialchars($row['satuan']) ?></td>
                             
+                            <!-- Sellout Total -->
+                            <td class="text-center <?= $row['sellout_total'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                                <?= fmt_qty($row['sellout_total']) ?>
+                            </td>
                             <!-- Sellout Onsite -->
                             <td class="text-center <?= $row['sellout_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
                                 <?= fmt_qty($row['sellout_onsite']) ?>
                             </td>
-                            
                             <!-- Sellout HC -->
                             <td class="text-center <?= $row['sellout_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
                                 <?= fmt_qty($row['sellout_hc']) ?>
                             </td>
                             
-                            <!-- Reserve Onsite -->
-                        <td class="text-center <?= $row['reserve_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
-                            <?= fmt_qty($row['reserve_onsite']) ?>
-                        </td>
-                        
-                        <!-- Reserve HC -->
-                        <td class="text-center <?= $row['reserve_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
-                            <?= fmt_qty($row['reserve_hc']) ?>
-                        </td>
+                            <!-- Non-Reserve Onsite -->
+                            <td class="text-center <?= $row['non_reserve_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                                <?= fmt_qty($row['non_reserve_onsite']) ?>
+                            </td>
+                            <!-- Non-Reserve HC -->
+                            <td class="text-center <?= $row['non_reserve_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                                <?= fmt_qty($row['non_reserve_hc']) ?>
+                            </td>
+
+                            <!-- Reserve Sold Onsite -->
+                            <td class="text-center <?= $row['reserve_sold_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                                <?= fmt_qty($row['reserve_sold_onsite']) ?>
+                            </td>
+                            <!-- Reserve Sold HC -->
+                            <td class="text-center <?= $row['reserve_sold_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                                <?= fmt_qty($row['reserve_sold_hc']) ?>
+                            </td>
+
+                            <!-- Reserve Booked Onsite -->
+                            <td class="text-center bg-reference <?= $row['reserve_booked_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                                <?= fmt_qty($row['reserve_booked_onsite']) ?>
+                            </td>
+                            <!-- Reserve Booked HC -->
+                            <td class="text-center bg-reference <?= $row['reserve_booked_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>">
+                                <?= fmt_qty($row['reserve_booked_hc']) ?>
+                            </td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -446,6 +614,12 @@ if (!empty($all_barang_ids)) {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script>
+    // Custom library for styling if standard one doesn't support it
+    if (typeof XLSXStyle === 'undefined') {
+        window.XLSXStyle = XLSX;
+    }
+</script>
+<script>
 $(document).ready(function() {
     // Initialise Select2 if available
     if ($.fn.select2) {
@@ -456,12 +630,125 @@ $(document).ready(function() {
     }
 
     $('#btnExportExcel').on('click', function() {
-        const table = document.getElementById("tableSummary");
+        const data = <?= json_encode($final_data) ?>;
+        const ws_data = [];
+
+        // Add main header row
+        ws_data.push([
+            "Kode Barang", "Nama Barang", "Satuan",
+            "Sellout", "", "", // Sellout (Total, Onsite, HC)
+            "Non-Reserve (Incl. Adjustment)", "", // Non-Reserve (Onsite, HC)
+            "Reserve-Sold", "", // Reserve-Sold (Onsite, HC)
+            "Reserve-Booked", "" // Reserve-Booked (Onsite, HC)
+        ]);
+
+        // Add sub-header row
+        ws_data.push([
+            "", "", "",
+            "Total", "Onsite", "HC",
+            "Onsite", "HC",
+            "Onsite", "HC",
+            "Onsite", "HC"
+        ]);
+
+        // Add data rows
+        data.forEach(row => {
+            ws_data.push([
+                row.kode_barang,
+                row.nama_barang,
+                row.satuan,
+                row.sellout_total,
+                row.sellout_onsite,
+                row.sellout_hc,
+                row.non_reserve_onsite,
+                row.non_reserve_hc,
+                row.reserve_sold_onsite,
+                row.reserve_sold_hc,
+                row.reserve_booked_onsite,
+                row.reserve_booked_hc
+            ]);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(ws_data);
+
+        // Styling and formatting
+        const range = XLSX.utils.decode_range(ws['!ref']);
         
-        // Custom transformation for export to keep it clean
-        const wb = XLSX.utils.table_to_book(table, { sheet: "Monthly Summary" });
+        // Merge cells for header
+        ws['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } }, // Kode Barang
+            { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } }, // Nama Barang
+            { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } }, // Satuan
+            { s: { r: 0, c: 3 }, e: { r: 0, c: 5 } }, // Sellout
+            { s: { r: 0, c: 6 }, e: { r: 0, c: 7 } }, // Non-Reserve
+            { s: { r: 0, c: 8 }, e: { r: 0, c: 9 } }, // Reserve-Sold
+            { s: { r: 0, c: 10 }, e: { r: 0, c: 11 } } // Reserve-Booked
+        ];
+
+        // Apply styles to all cells
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+            for (let C = range.s.c; C <= range.e.c; ++C) {
+                const cell_address = { c: C, r: R };
+                const cell_ref = XLSX.utils.encode_cell(cell_address);
+                if (!ws[cell_ref]) continue;
+
+                // Default style
+                ws[cell_ref].s = {
+                    font: { name: "Arial", sz: 10 },
+                    alignment: { vertical: "center", horizontal: "center" },
+                    border: {
+                        top: { style: "thin", color: { rgb: "cbd5e1" } },
+                        bottom: { style: "thin", color: { rgb: "cbd5e1" } },
+                        left: { style: "thin", color: { rgb: "cbd5e1" } },
+                        right: { style: "thin", color: { rgb: "cbd5e1" } }
+                    }
+                };
+
+                // Header styles (Row 0 and 1)
+                if (R <= 1) {
+                    ws[cell_ref].s.fill = { fgColor: { rgb: "204EAB" } };
+                    ws[cell_ref].s.font = { color: { rgb: "FFFFFF" }, bold: true, sz: 10 };
+                }
+
+                // Reserve-Booked column highlight (Column 10 and 11)
+                if (C >= 10 && R > 1) {
+                    ws[cell_ref].s.fill = { fgColor: { rgb: "E0F2FE" } };
+                    ws[cell_ref].s.font.color = { rgb: "0369A1" };
+                }
+
+                // Align Nama Barang to left
+                if (C === 1 && R > 1) {
+                    ws[cell_ref].s.alignment.horizontal = "left";
+                }
+            }
+        }
+
+        // Set column widths
+        ws['!cols'] = [
+            { wch: 15 }, // Kode Barang
+            { wch: 40 }, // Nama Barang
+            { wch: 10 }, // Satuan
+            { wch: 10 }, // Sellout Total
+            { wch: 10 }, // Sellout Onsite
+            { wch: 10 }, // Sellout HC
+            { wch: 15 }, // Non-Reserve Onsite
+            { wch: 15 }, // Non-Reserve HC
+            { wch: 15 }, // Reserve-Sold Onsite
+            { wch: 15 }, // Reserve-Sold HC
+            { wch: 15 }, // Reserve-Booked Onsite
+            { wch: 15 }  // Reserve-Booked HC
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Monthly Summary");
         const fileName = "Monthly_Summary_<?= str_replace(' ', '_', $mtd_label) ?>_<?= date('His') ?>.xlsx";
-        XLSX.writeFile(wb, fileName);
+        
+        // Use XLSXStyle if available, else fallback to standard XLSX
+        if (typeof XLSXStyle !== 'undefined' && XLSXStyle.writeFile) {
+            XLSXStyle.writeFile(wb, fileName);
+        } else {
+            XLSX.writeFile(wb, fileName);
+        }
     });
 });
 </script>

@@ -47,9 +47,15 @@ try {
     $created_date = date('Y-m-d', strtotime($header['created_at']));
     $today = date('Y-m-d');
     $yesterday = date('Y-m-d', strtotime('-1 day'));
+    $two_days_ago = date('Y-m-d', strtotime('-2 days'));
     
     // H-0 and H-1 are considered within grace period (no approval needed)
     $is_today = ($created_date === $today || $created_date === $yesterday);
+    $is_over_2_days = !$is_today;
+
+    if ($is_over_2_days) {
+        throw new Exception("Data yang sudah lewat 2 hari tidak dapat dihapus, hanya diperbolehkan untuk edit.");
+    }
     
     $is_creator = $header['created_by'] == $user_id;
     $is_admin_klinik = $_SESSION['role'] === 'admin_klinik';

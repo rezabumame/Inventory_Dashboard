@@ -568,6 +568,7 @@ try {
         $prefix = 'BHP-' . $date . '-';
         
         // Loop to prevent duplicate nomor_pemakaian
+        require_once __DIR__ . '/../lib/counter.php';
         $max_retries = 10;
         $nomor_pemakaian = '';
         for ($i = 0; $i < $max_retries; $i++) {

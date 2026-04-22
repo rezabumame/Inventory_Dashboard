@@ -533,6 +533,27 @@ if ($bulk_cancel) {
                 color: white !important;
                 box-shadow: 0 4px 6px rgba(32, 78, 171, 0.2);
             }
+            /* Soft borders for tables */
+            .table {
+                border-collapse: separate;
+                border-spacing: 0;
+                border: 1px solid #f1f5f9 !important;
+                border-radius: 8px;
+                overflow: hidden;
+            }
+            .table th, .table td {
+                border: 1px solid #f1f5f9 !important;
+                padding: 10px 12px !important;
+            }
+            .table thead th {
+                background-color: #f8fafc !important;
+                color: #475569 !important;
+                font-weight: 600;
+                text-transform: uppercase;
+                font-size: 0.7rem;
+                letter-spacing: 0.025em;
+                border-bottom: 2px solid #e2e8f0 !important;
+            }
         </style>
 
         <div class="tab-content">
