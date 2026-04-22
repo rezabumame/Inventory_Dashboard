@@ -347,9 +347,41 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                     <div class="card border-0 shadow-sm border-start border-danger border-4">
                         <div class="card-body">
                             <div class="fw-bold text-danger mb-2"><i class="fas fa-exclamation-triangle me-2"></i>Zona Bahaya</div>
-                            <p class="small text-muted mb-3">Gunakan fitur ini untuk menghapus seluruh data transaksi (Booking, BHP, Request, HC, dll) dan mereset sistem ke kondisi awal (Master Data tetap ada).</p>
+                            <p class="small text-muted mb-3">Pilih data transaksi yang ingin dihapus (Master Data tetap aman):</p>
+                            
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input truncate-check" type="checkbox" value="booking" id="check_booking" checked>
+                                        <label class="form-check-label small" for="check_booking">Booking & Stok Pending</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input truncate-check" type="checkbox" value="request" id="check_request" checked>
+                                        <label class="form-check-label small" for="check_request">Request Barang</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input truncate-check" type="checkbox" value="bhp" id="check_bhp" checked>
+                                        <label class="form-check-label small" for="check_bhp">Pemakaian BHP</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input truncate-check" type="checkbox" value="hc" id="check_hc" checked>
+                                        <label class="form-check-label small" for="check_hc">Stok Petugas HC</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input truncate-check" type="checkbox" value="history" id="check_history" checked>
+                                        <label class="form-check-label small" for="check_history">Riwayat Transaksi Stok</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="check_all" checked onchange="$('.truncate-check').prop('checked', this.checked)">
+                                        <label class="form-check-label small fw-bold" for="check_all">Pilih Semua</label>
+                                    </div>
+                                </div>
+                            </div>
+
                             <button type="button" class="btn btn-danger w-100 fw-bold" onclick="confirmTruncateData()">
-                                <i class="fas fa-trash-alt me-2"></i>Hapus Semua Data Transaksi
+                                <i class="fas fa-trash-alt me-2"></i>Hapus Data Terpilih
                             </button>
                         </div>
                     </div>
@@ -361,14 +393,24 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
 
 <script>
 async function confirmTruncateData() {
+    const selected = [];
+    $('.truncate-check:checked').each(function() {
+        selected.push($(this).val());
+    });
+
+    if (selected.length === 0) {
+        Swal.fire('Peringatan', 'Pilih minimal satu kategori data yang ingin dihapus.', 'warning');
+        return;
+    }
+
     const { value: confirmed } = await Swal.fire({
-        title: 'Hapus Semua Data?',
-        text: "Seluruh data Booking, BHP, Request, HC, dan Riwayat Stok akan DIHAPUS PERMANEN. Master Data (User, Barang, Klinik) tetap aman.",
+        title: 'Hapus Data Terpilih?',
+        text: "Data yang dipilih akan DIHAPUS PERMANEN. Master Data (User, Barang, Klinik) tetap aman.",
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#d33',
         cancelButtonColor: '#3085d6',
-        confirmButtonText: 'Ya, Hapus Semua!',
+        confirmButtonText: 'Ya, Lanjutkan',
         cancelButtonText: 'Batal',
         reverseButtons: true
     });
@@ -390,12 +432,12 @@ async function confirmTruncateData() {
         });
 
         if (password === 'HAPUS') {
-            executeTruncate();
+            executeTruncate(selected);
         }
     }
 }
 
-async function executeTruncate() {
+async function executeTruncate(modules) {
     Swal.fire({
         title: 'Sedang Menghapus...',
         allowOutsideClick: false,
@@ -407,6 +449,7 @@ async function executeTruncate() {
     try {
         const fd = new FormData();
         fd.append('_csrf', <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>);
+        modules.forEach(m => fd.append('modules[]', m));
         
         const res = await fetch('actions/process_truncate_data.php', {
             method: 'POST',

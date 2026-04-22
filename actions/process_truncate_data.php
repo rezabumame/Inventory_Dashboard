@@ -21,51 +21,70 @@ require_csrf();
 try {
     $conn->begin_transaction();
 
-    // Tables to truncate/clear
-    $tables = [
-        // Booking & Stok Pending
-        'inventory_booking_detail',
-        'inventory_booking_pasien',
-        'inventory_booking_pemeriksaan',
-        'inventory_booking_request_dedup',
-        
-        // Request Barang
-        'inventory_request_barang_detail',
-        'inventory_request_barang_dokumen',
-        'inventory_request_barang',
-        
-        // Pemakaian BHP
-        'inventory_pemakaian_bhp_detail',
-        'inventory_pemakaian_bhp',
-        
-        // Stok Petugas HC
-        'inventory_stok_tas_hc',
-        'inventory_hc_petugas_transfer',
-        'inventory_hc_tas_allocation',
-        
-        // Riwayat Transaksi Stok
-        'inventory_transaksi_stok',
+    $requested_modules = $_POST['modules'] ?? [];
+    if (!is_array($requested_modules) || empty($requested_modules)) {
+        throw new Exception("Tidak ada modul yang dipilih.");
+    }
 
-        // Upload Logs
-        'inventory_upload_logs'
+    // Mapping module to tables
+    $module_map = [
+        'booking' => [
+            'inventory_booking_detail',
+            'inventory_booking_pasien',
+            'inventory_booking_pemeriksaan',
+            'inventory_booking_request_dedup'
+        ],
+        'request' => [
+            'inventory_request_barang_detail',
+            'inventory_request_barang_dokumen',
+            'inventory_request_barang'
+        ],
+        'bhp' => [
+            'inventory_pemakaian_bhp_detail',
+            'inventory_pemakaian_bhp'
+        ],
+        'hc' => [
+            'inventory_stok_tas_hc',
+            'inventory_hc_petugas_transfer',
+            'inventory_hc_tas_allocation'
+        ],
+        'history' => [
+            'inventory_transaksi_stok',
+            'inventory_upload_logs'
+        ]
     ];
 
-    // Disable foreign key checks temporarily if needed, 
-    // but here we just delete in order of dependencies (details first)
+    $tables_to_delete = [];
+    $prefixes_to_reset = [];
+
+    foreach ($requested_modules as $mod) {
+        if (isset($module_map[$mod])) {
+            $tables_to_delete = array_merge($tables_to_delete, $module_map[$mod]);
+            if ($mod === 'booking') $prefixes_to_reset[] = 'BK';
+            if ($mod === 'request') $prefixes_to_reset[] = 'REQ';
+            if ($mod === 'bhp') $prefixes_to_reset[] = 'BHP';
+            if ($mod === 'hc') $prefixes_to_reset[] = 'TRF';
+        }
+    }
+
+    $tables_to_delete = array_unique($tables_to_delete);
+
     $conn->query("SET FOREIGN_KEY_CHECKS = 0");
 
-    foreach ($tables as $table) {
+    foreach ($tables_to_delete as $table) {
         $conn->query("DELETE FROM $table");
         $conn->query("ALTER TABLE $table AUTO_INCREMENT = 1");
     }
 
-    // Reset counters if any
-    $conn->query("DELETE FROM inventory_app_counters WHERE prefix IN ('BHP', 'BK', 'REQ', 'TRF')");
+    if (!empty($prefixes_to_reset)) {
+        $prefix_list = "'" . implode("','", array_map([$conn, 'real_escape_string'], $prefixes_to_reset)) . "'";
+        $conn->query("DELETE FROM inventory_app_counters WHERE prefix IN ($prefix_list)");
+    }
 
     $conn->query("SET FOREIGN_KEY_CHECKS = 1");
 
     $conn->commit();
-    echo json_encode(['success' => true, 'message' => 'Semua data transaksi telah berhasil dihapus.']);
+    echo json_encode(['success' => true, 'message' => 'Data terpilih telah berhasil dihapus.']);
 
 } catch (Exception $e) {
     $conn->rollback();
