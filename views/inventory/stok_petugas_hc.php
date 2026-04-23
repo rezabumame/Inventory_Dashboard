@@ -408,40 +408,27 @@ if ($bulk_cancel) {
         </div>
     </div>
 
+    <?php if (in_array($role, ['super_admin', 'admin_gudang'], true)): ?>
     <div class="card shadow-sm mb-3">
         <div class="card-body">
             <form method="GET" class="row g-2 align-items-end">
                 <input type="hidden" name="page" value="stok_petugas_hc">
                 <input type="hidden" name="tab" value="<?= htmlspecialchars($active_tab) ?>">
-                <?php if (in_array($role, ['super_admin', 'admin_gudang'], true)): ?>
-                    <div class="col-md-5">
-                        <label class="form-label fw-bold small text-muted mb-1">Klinik</label>
-                        <select class="form-select" name="klinik_id" onchange="this.form.submit()">
-                            <option value="0">- Pilih Klinik -</option>
-                            <?php foreach ($kliniks as $k): ?>
-                                <option value="<?= (int)$k['id'] ?>" <?= (int)$selected_klinik === (int)$k['id'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($k['nama_klinik']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                <?php endif; ?>
-                <?php if ($role !== 'petugas_hc'): ?>
-                    <div class="col-md-5">
-                        <label class="form-label fw-bold small text-muted mb-1">Petugas</label>
-                        <select class="form-select" name="petugas_user_id" onchange="this.form.submit()">
-                            <option value="0">- Pilih Petugas -</option>
-                            <?php foreach ($petugas_list as $p): ?>
-                                <option value="<?= (int)$p['id'] ?>" <?= (int)$petugas_user_id === (int)$p['id'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($p['nama_lengkap']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                <?php endif; ?>
+                <div class="col-md-12">
+                    <label class="form-label fw-bold small text-muted mb-1">Klinik</label>
+                    <select class="form-select" name="klinik_id" onchange="this.form.submit()">
+                        <option value="0">- Pilih Klinik -</option>
+                        <?php foreach ($kliniks as $k): ?>
+                            <option value="<?= (int)$k['id'] ?>" <?= (int)$selected_klinik === (int)$k['id'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($k['nama_klinik']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
             </form>
         </div>
     </div>
+    <?php endif; ?>
 
     <?php if (!$klinik_row || $selected_klinik <= 0): ?>
         <div class="alert alert-info">
@@ -478,18 +465,27 @@ if ($bulk_cancel) {
             </div>
             <?php if (in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik'], true) && $role !== 'petugas_hc'): ?>
             <div class="col-md-auto">
-                <div class="d-flex gap-2">
-                    <?php if (in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik'], true)): ?>
-                        <button type="button" class="btn btn-outline-primary shadow-sm h-100" onclick="openMassAllocationSO()">
-                            <i class="fas fa-redo me-2"></i>Alokasi Ulang (Mass/All)
+                <div class="d-flex gap-3">
+                    <!-- Column 1: Alokasi & Upload -->
+                    <div class="d-flex flex-column gap-2">
+                        <?php if (in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik'], true)): ?>
+                            <button type="button" class="btn btn-outline-primary btn-sm shadow-sm" onclick="openMassAllocationSO()">
+                                <i class="fas fa-redo me-2"></i>Alokasi Ulang (Mass/All)
+                            </button>
+                        <?php endif; ?>
+                        <button type="button" class="btn btn-outline-primary btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#modalUploadAlokasiMirrorHC">
+                            <i class="fas fa-file-excel me-2"></i>Upload Alokasi
                         </button>
-                    <?php endif; ?>
-                    <button type="button" class="btn btn-outline-primary shadow-sm h-100" data-bs-toggle="modal" data-bs-target="#modalUploadAlokasiMirrorHC">
-                        <i class="fas fa-file-excel me-2"></i>Upload Alokasi
-                    </button>
-                    <button type="button" class="btn btn-primary shadow-sm h-100" data-bs-toggle="modal" data-bs-target="#modalTransferHC">
-                        <i class="fas fa-exchange-alt me-2"></i>Transfer Onsite → Petugas
-                    </button>
+                    </div>
+                    <!-- Column 2: Transfer & Return -->
+                    <div class="d-flex flex-column gap-2">
+                        <button type="button" class="btn btn-primary btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#modalTransferHC">
+                            <i class="fas fa-exchange-alt me-2"></i>Transfer Onsite → Petugas
+                        </button>
+                        <button type="button" class="btn btn-warning btn-sm shadow-sm text-white" data-bs-toggle="modal" data-bs-target="#modalReturnHC">
+                            <i class="fas fa-undo me-2"></i>Return Petugas → Onsite
+                        </button>
+                    </div>
                 </div>
             </div>
             <?php endif; ?>
@@ -569,6 +565,7 @@ if ($bulk_cancel) {
                                     </div>
                                 </div>
 
+
                                 <?php if (!$petugas_row && $role !== 'petugas_hc'): ?>
                                     <div class="alert alert-info mb-0"><i class="fas fa-info-circle"></i> Pilih petugas untuk melihat item stok tas.</div>
                                 <?php else: ?>
@@ -632,9 +629,11 @@ if ($bulk_cancel) {
                     </div>
 
                     <div class="col-lg-4">
-                        <div class="card shadow-sm">
-                            <div class="card-body">
-                                <div class="fw-semibold mb-2">Rekap Petugas</div>
+                        <div class="card shadow-sm border-0">
+                            <div class="card-header bg-white py-2 border-0">
+                                <div class="fw-bold text-muted small uppercase">Rekap Petugas</div>
+                            </div>
+                            <div class="card-body p-0">
                                 <?php if ($role === 'petugas_hc'): ?>
                                     <div class="text-muted small">Role petugas HC bersifat read-only.</div>
                                 <?php else: ?>
@@ -650,14 +649,21 @@ if ($bulk_cancel) {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    <?php foreach ($petugas_summary as $ps): ?>
+                                                    <?php foreach ($petugas_summary as $ps): 
+                                                        $is_active = ((int)$petugas_user_id === (int)$ps['id']);
+                                                        $td_style = $is_active ? 'background-color:#204EAB !important; color:white !important;' : '';
+                                                        $link_style = $is_active ? 'color:white !important; font-weight:bold;' : 'color:#204EAB !important;';
+                                                    ?>
                                                         <tr>
-                                                            <td>
-                                                                <a class="text-decoration-none" href="index.php?page=stok_petugas_hc&klinik_id=<?= (int)$selected_klinik ?>&petugas_user_id=<?= (int)$ps['id'] ?>">
+                                                            <td style="<?= $td_style ?>">
+                                                                <a class="text-decoration-none" style="<?= $link_style ?>" 
+                                                                   href="index.php?page=stok_petugas_hc&klinik_id=<?= (int)$selected_klinik ?>&petugas_user_id=<?= (int)$ps['id'] ?>#tabpane-stok">
                                                                     <?= htmlspecialchars($ps['nama_lengkap'] ?? '-') ?>
                                                                 </a>
                                                             </td>
-                                                            <td class="text-end fw-semibold"><?= fmt_qty($ps['total_qty'] ?? 0) ?></td>
+                                                            <td class="text-end fw-semibold" style="<?= $td_style ?>">
+                                                                <?= fmt_qty($ps['total_qty'] ?? 0) ?>
+                                                            </td>
                                                         </tr>
                                                     <?php endforeach; ?>
                                                 </tbody>
@@ -1605,7 +1611,7 @@ function fmtQty(v) {
                             <select name="user_hc_id" id="massAllocPetugas" class="form-select form-select-sm" required onchange="fetchPetugasStockForSO()">
                                 <option value="">- Pilih Petugas -</option>
                                 <?php foreach ($petugas_list as $p): ?>
-                                    <option value="<?= (int)$p['id'] ?>" <?= (int)$petugas_user_id === (int)$p['id'] ? 'selected' : '' ?>><?= htmlspecialchars($p['nama_lengkap']) ?></option>
+                                    <option value="<?= (int)$p['id'] ?>"><?= htmlspecialchars($p['nama_lengkap']) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -1681,7 +1687,7 @@ function fmtQty(v) {
                     <div class="small">Download template sesuai klinik/petugas, isi kolom Qty Baru pada setiap baris (boleh 0), lalu upload kembali.</div>
                 </div>
 
-                <?php if ($petugas_user_id <= 0 && !empty($petugas_list)): ?>
+                <?php if (!empty($petugas_list)): ?>
                     <div class="mb-3 border rounded p-3 bg-white">
                         <label class="form-label fw-bold small text-muted mb-2">Pilih Petugas untuk Download Template:</label>
                         <div class="form-check mb-2">
@@ -1705,7 +1711,7 @@ function fmtQty(v) {
 
                 <div class="d-flex flex-wrap gap-2 mb-3">
                     <a class="btn btn-outline-primary" id="btnDownloadTemplateHC"
-                       href="api/download_template_alokasi_mirror_hc.php?klinik_id=<?= (int)$selected_klinik ?>&petugas_user_id=<?= (int)$petugas_user_id ?>"
+                       href="api/download_template_alokasi_mirror_hc.php?klinik_id=<?= (int)$selected_klinik ?>"
                        target="_blank">
                         <i class="fas fa-download me-2"></i>Download Template Alokasi
                     </a>
@@ -1713,7 +1719,7 @@ function fmtQty(v) {
                 <form method="POST" action="actions/process_hc_bulk_upload.php" enctype="multipart/form-data">
                     <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                     <input type="hidden" name="klinik_id" value="<?= (int)$selected_klinik ?>">
-                    <input type="hidden" name="petugas_user_id" value="<?= (int)$petugas_user_id ?>">
+                    <input type="hidden" name="petugas_user_id" value="0">
                     <div class="mb-3">
                         <label class="form-label fw-bold">File Excel <span class="text-danger">*</span></label>
                         <input type="file" name="file" class="form-control" accept=".xlsx" required>
@@ -1910,6 +1916,124 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 <?php endif; ?>
 
+<?php if (in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik'], true) && $role !== 'petugas_hc' && $selected_klinik > 0): ?>
+<div class="modal fade" id="modalReturnHC" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-0 text-white" style="background-color:#f39c12;">
+                <h5 class="modal-title fw-bold text-white"><i class="fas fa-undo me-2"></i>Return Petugas HC → Onsite</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="actions/process_hc_return.php" class="modal-body bg-light" id="formReturnHC">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
+                <input type="hidden" name="klinik_id" value="<?= (int)$selected_klinik ?>">
+                <input type="hidden" name="is_ajax" value="1">
+                
+                <div id="returnErrorContainer" class="alert alert-danger d-none mb-3"></div>
+                
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold small">Petugas HC</label>
+                        <select name="user_hc_id" id="returnPetugasHC" class="form-select" required onchange="fetchPetugasStockForReturn()">
+                            <option value="">- Pilih Petugas -</option>
+                            <?php foreach ($petugas_list as $p): ?>
+                                <option value="<?= (int)$p['id'] ?>"><?= htmlspecialchars($p['nama_lengkap']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+                                <div class="fw-semibold">Daftar Item Return</div>
+                                <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-outline-warning btn-sm" id="returnAllBtn">
+                                        <i class="fas fa-check-double me-1"></i>Balikkan Semua
+                                    </button>
+                                    <button type="button" class="btn btn-success btn-sm" id="returnAddRowBtn">
+                                        <i class="fas fa-plus-circle me-1"></i>Tambah Item
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-hover align-middle mb-0">
+                                        <thead class="bg-light">
+                                            <tr>
+                                                <th>Barang</th>
+                                                <th class="text-end" style="width:100px;">Stok Tas</th>
+                                                <th class="text-end" style="width:120px;">Qty Return</th>
+                                                <th class="text-center" style="width:120px;">UOM</th>
+                                                <th class="text-center" style="width:50px;">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="returnItemBody">
+                                            <tr class="return-item-row">
+                                                <td class="p-1 ps-2">
+                                                    <select name="barang_id[]" class="form-select form-select-sm return-barang-select" required>
+                                                        <option value="">- Pilih Barang -</option>
+                                                        <?php
+                                                            $res_br = $conn->query("
+                                                                SELECT
+                                                                    b.id,
+                                                                    b.kode_barang,
+                                                                    b.nama_barang,
+                                                                    COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom_oper,
+                                                                    COALESCE(NULLIF(uc.from_uom,''), '') AS uom_odoo,
+                                                                    COALESCE(uc.multiplier, 1) AS uom_ratio
+                                                                FROM inventory_barang b
+                                                                LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+                                                                ORDER BY b.nama_barang ASC
+                                                            ");
+                                                            while ($res_br && ($bb = $res_br->fetch_assoc())):
+                                                        ?>
+                                                            <option value="<?= (int)$bb['id'] ?>"
+                                                                    data-uom-oper="<?= htmlspecialchars((string)($bb['uom_oper'] ?? ''), ENT_QUOTES) ?>"
+                                                                    data-uom-odoo="<?= htmlspecialchars((string)($bb['uom_odoo'] ?? ''), ENT_QUOTES) ?>"
+                                                                    data-uom-ratio="<?= htmlspecialchars((string)($bb['uom_ratio'] ?? '1'), ENT_QUOTES) ?>">
+                                                                    <?= htmlspecialchars(($bb['kode_barang'] ?? '-') . ' - ' . ($bb['nama_barang'] ?? '-')) ?>
+                                                            </option>
+                                                        <?php endwhile; ?>
+                                                    </select>
+                                                </td>
+                                                <td class="p-1 text-end fw-bold text-muted small">
+                                                    <span class="return-stok-lama-text">-</span>
+                                                    <input type="hidden" class="max-qty" value="0">
+                                                </td>
+                                                <td class="p-1">
+                                                    <input type="number" name="qty[]" class="form-control form-control-sm text-end return-qty-input fw-bold" min="0" step="0.0001" placeholder="0">
+                                                </td>
+                                                <td class="p-1">
+                                                    <select name="uom_mode[]" class="form-select form-select-sm return-uom-select small" required>
+                                                        <option value="oper">-</option>
+                                                    </select>
+                                                </td>
+                                                <td class="p-1 text-center">
+                                                    <button type="button" class="btn btn-sm btn-link text-danger p-0 return-remove-row">
+                                                        <i class="fas fa-trash-alt"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-bold small">Catatan</label>
+                        <input type="text" name="catatan" class="form-control" placeholder="opsional">
+                    </div>
+                </div>
+                <div class="modal-footer border-0 px-0 pb-0">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-warning text-white">Simpan Pengembalian</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
 (function() {
     if (!window.jQuery) return;
@@ -2016,6 +2140,10 @@ document.addEventListener('DOMContentLoaded', function() {
         updateAllocateRemoveButtons();
     }
 
+    $(document).on('click', '#allocateAddRowBtn', function() {
+        addAllocateRow();
+    });
+
     $(document).on('shown.bs.modal', '#modalTransferHC', function() {
         initTransferModalSelects();
     });
@@ -2025,10 +2153,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     $(document).on('click', '#transferAddRowBtn', function() {
         addTransferRow();
-    });
-
-    $(document).on('click', '#allocateAddRowBtn', function() {
-        addAllocateRow();
     });
 
     $(document).on('click', '.allocate-remove-row', function() {
@@ -2054,8 +2178,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function refreshUom($row, kind) {
-        var $barangSel = (kind === 'allocate') ? $row.find('select.allocate-barang-select') : $row.find('select.transfer-barang-select');
-        var $uomSel = (kind === 'allocate') ? $row.find('select.allocate-uom-select') : $row.find('select.transfer-uom-select');
+        var $barangSel = $row.find('select.' + kind + '-barang-select');
+        var $uomSel = $row.find('select.' + kind + '-uom-select');
         if (!$barangSel.length || !$uomSel.length) return;
         var $opt = $barangSel.find('option:selected');
         var oper = String($opt.attr('data-uom-oper') || '').trim();
@@ -2180,6 +2304,173 @@ document.addEventListener('DOMContentLoaded', function() {
             error: function() {
                 $err.removeClass('d-none').text('Terjadi kesalahan sistem. Silakan coba lagi.');
                 $btn.prop('disabled', false).html('Simpan Allocasi');
+            }
+        });
+    });
+
+    // Return HC logic
+    function updateReturnRemoveButtons() {
+        var $rows = $('#returnItemBody .return-item-row');
+        $rows.find('.return-remove-row').prop('disabled', $rows.length === 1);
+    }
+
+    function initReturnModalSelects() {
+        var $modal = $('#modalReturnHC');
+        if (!$modal.length) return;
+        initSelect2($modal.find('select[name="user_hc_id"]'), $modal, { placeholder: '- Pilih Petugas -', allowClear: true });
+        $modal.find('.return-barang-select').each(function() {
+            initSelect2($(this), $modal, { placeholder: '- Pilih Barang -', allowClear: true, minimumInputLength: 2 });
+        });
+        $modal.find('#returnItemBody tr.return-item-row').each(function() { refreshUom($(this), 'return'); });
+        updateReturnRemoveButtons();
+    }
+
+    window.fetchPetugasStockForReturn = function() {
+        var $modal = $('#modalReturnHC');
+        var petugasId = $modal.find('#returnPetugasHC').val();
+        var klinikId = <?= (int)$selected_klinik ?>;
+        var $tbody = $('#returnItemBody');
+        
+        if (!petugasId) {
+            $tbody.html('<tr class="return-item-row"><td colspan="4" class="text-center text-muted py-3">Pilih petugas HC dahulu</td></tr>');
+            return;
+        }
+
+        $tbody.html('<tr><td colspan="4" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin me-2"></i>Memuat stok tas...</td></tr>');
+
+        $.getJSON('api/ajax_hc_petugas_stock.php', { klinik_id: klinikId, user_hc_id: petugasId }, function(res) {
+            if (!res.success) {
+                $tbody.html('<tr><td colspan="4" class="text-center text-danger py-3">' + (res.message || 'Gagal memuat stok') + '</td></tr>');
+                return;
+            }
+            
+            $tbody.empty();
+            var hasStock = false;
+            if (res.items && res.items.length > 0) {
+                res.items.forEach(function(it) {
+                    if (parseFloat(it.qty_lama) > 0.000001) {
+                        addReturnRow(it);
+                        hasStock = true;
+                    }
+                });
+            }
+
+            if (!hasStock) {
+                $tbody.html('<tr><td colspan="4" class="text-center text-muted py-3">Petugas tidak memiliki stok di tas.</td></tr>');
+            }
+        }).fail(function() {
+            $tbody.html('<tr><td colspan="4" class="text-center text-danger py-3">Terjadi kesalahan koneksi.</td></tr>');
+        });
+    };
+
+    function addReturnRow(data) {
+        var $modal = $('#modalReturnHC');
+        var $tbody = $('#returnItemBody');
+        if (!$modal.length || !$tbody.length) return;
+        
+        // Remove empty state if exists
+        $tbody.find('tr:not(.return-item-row)').remove();
+
+        var isAuto = !!(data && data.barang_id);
+        
+        // Template row
+        var rowHtml = `
+            <tr class="return-item-row">
+                <td class="p-1 ps-2">
+                    <select name="barang_id[]" class="form-select form-select-sm return-barang-select" required>
+                        <option value="">- Pilih Barang -</option>
+                        ${(window.BARANG_OPTIONS_SO || []).map(opt => `<option value="${opt.id}" ${isAuto && opt.id == data.barang_id ? 'selected' : ''} data-uom-oper="${escapeAttr(opt.uom_oper)}" data-uom-odoo="${escapeAttr(opt.uom_odoo)}" data-uom-ratio="${opt.uom_ratio}">${escapeHtml(opt.text)}</option>`).join('')}
+                    </select>
+                </td>
+                <td class="p-1 text-end fw-bold text-muted small">
+                    <span class="return-stok-lama-text">${isAuto ? fmtQty(data.qty_lama) : '-'}</span>
+                    <input type="hidden" class="max-qty" value="${isAuto ? data.qty_lama : 0}">
+                </td>
+                <td class="p-1">
+                    <input type="number" name="qty[]" class="form-control form-control-sm text-end return-qty-input fw-bold" min="0" step="0.0001" placeholder="0">
+                </td>
+                <td class="p-1">
+                    <select name="uom_mode[]" class="form-select form-select-sm return-uom-select small" required>
+                        <option value="oper">-</option>
+                    </select>
+                </td>
+                <td class="p-1 text-center">
+                    <button type="button" class="btn btn-sm btn-link text-danger p-0 return-remove-row">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+        
+        var $row = $(rowHtml);
+        $tbody.append($row);
+        
+        var $sel = $row.find('select.return-barang-select');
+        initSelect2($sel, $modal, { placeholder: '- Pilih Barang -', allowClear: true, minimumInputLength: 2 });
+        refreshUom($row, 'return');
+        updateReturnRemoveButtons();
+    }
+
+    $(document).on('shown.bs.modal', '#modalReturnHC', function() {
+        initReturnModalSelects();
+    });
+
+    $(document).on('click', '#returnAddRowBtn', function() {
+        addReturnRow();
+    });
+
+    $(document).on('click', '#returnAllBtn', function() {
+        $('#returnItemBody .return-item-row').each(function() {
+            var $row = $(this);
+            var max = parseFloat($row.find('.max-qty').val()) || 0;
+            if (max > 0) {
+                $row.find('.return-qty-input').val(max);
+            }
+        });
+    });
+
+    $(document).on('click', '.return-remove-row', function() {
+        var $tbody = $('#returnItemBody');
+        var $rows = $tbody.find('tr.return-item-row');
+        if ($rows.length <= 1) return;
+        var $row = $(this).closest('tr');
+        var $sel = $row.find('select.return-barang-select');
+        if ($sel.hasClass('select2-hidden-accessible')) $sel.select2('destroy');
+        $row.remove();
+        updateReturnRemoveButtons();
+    });
+
+    $(document).on('change', '.return-barang-select', function() { refreshUom($(this).closest('tr'), 'return'); });
+
+    $(document).on('submit', '#formReturnHC', function(e) {
+        e.preventDefault();
+        var $form = $(this);
+        var $btn = $form.find('button[type="submit"]');
+        var $err = $('#returnErrorContainer');
+        
+        $err.addClass('d-none').text('');
+        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...');
+
+        $.ajax({
+            url: $form.attr('action'),
+            method: 'POST',
+            data: $form.serialize(),
+            dataType: 'json',
+            success: function(res) {
+                if (res.success) {
+                    if (res.redirect) {
+                        window.location.href = res.redirect;
+                    } else {
+                        window.location.reload();
+                    }
+                } else {
+                    $err.removeClass('d-none').text(res.message || 'Gagal menyimpan pengembalian.');
+                    $btn.prop('disabled', false).html('Simpan Pengembalian');
+                }
+            },
+            error: function() {
+                $err.removeClass('d-none').text('Terjadi kesalahan sistem. Silakan coba lagi.');
+                $btn.prop('disabled', false).html('Simpan Pengembalian');
             }
         });
     });
