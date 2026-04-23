@@ -479,12 +479,12 @@ if ($active_tab === 'rekap') {
     <!-- Tab Navigation -->
     <ul class="nav nav-tabs mb-4">
         <li class="nav-item">
-            <a class="nav-link <?= $active_tab === 'stok' ? 'active' : '' ?>" href="?token=<?= $token ?>&tab=stok&klinik_id=<?= $selected_klinik ?>">
+            <a class="nav-link <?= $active_tab === 'stok' ? 'active' : '' ?>" href="?page=stok_klinik_publik&token=<?= $token ?>&tab=stok&klinik_id=<?= $selected_klinik ?>">
                 <i class="fas fa-cubes me-2"></i>Monitor Stok
             </a>
         </li>
         <li class="nav-item">
-            <a class="nav-link <?= $active_tab === 'rekap' ? 'active' : '' ?>" href="?token=<?= $token ?>&tab=rekap&klinik_id=<?= $selected_klinik ?>">
+            <a class="nav-link <?= $active_tab === 'rekap' ? 'active' : '' ?>" href="?page=stok_klinik_publik&token=<?= $token ?>&tab=rekap&klinik_id=<?= $selected_klinik ?>">
                 <i class="fas fa-chart-line me-2"></i>Rekapitulasi Aktivitas Bulanan
             </a>
         </li>
@@ -498,6 +498,7 @@ if ($active_tab === 'rekap') {
                 <div class="col-md-4">
                     <label class="form-label fw-bold small mb-1"><i class="fas fa-hospital text-primary me-1"></i>Klinik</label>
                     <form method="GET">
+                        <input type="hidden" name="page" value="stok_klinik_publik">
                         <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>"><input type="hidden" name="tab" value="stok">
                         <select name="klinik_id" class="form-select" onchange="this.form.submit()">
                             <option value="all" <?= $selected_klinik === 'all' ? 'selected' : '' ?>>Semua Klinik</option>
@@ -513,6 +514,7 @@ if ($active_tab === 'rekap') {
                 <div class="col-md-3">
                     <label class="form-label fw-bold small mb-1"><i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal</label>
                     <form method="GET">
+                        <input type="hidden" name="page" value="stok_klinik_publik">
                         <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>"><input type="hidden" name="tab" value="stok">
                         <input type="hidden" name="klinik_id" value="<?= htmlspecialchars($selected_klinik) ?>">
                         <input type="date" name="tanggal" class="form-control" value="<?= htmlspecialchars($filter_date) ?>" min="<?= htmlspecialchars($min_filter_date) ?>" max="<?= htmlspecialchars($today_date) ?>" onchange="this.form.submit()">
@@ -585,6 +587,7 @@ if ($active_tab === 'rekap') {
     <?php if ($active_tab === 'rekap'): ?>
     <div class="card mb-4"><div class="card-body p-4"><div class="row align-items-center">
         <div class="col"><form class="row g-3 align-items-end" method="GET">
+            <input type="hidden" name="page" value="stok_klinik_publik">
             <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>"><input type="hidden" name="tab" value="rekap">
             <div class="col-md-5"><label class="form-label small fw-bold text-muted mb-1">Klinik</label><select name="klinik_id" class="form-select border-1"><option value="all" <?= $selected_klinik === 'all' ? 'selected' : '' ?>>Semua Klinik</option><?php foreach ($kliniks as $k): ?><option value="<?= $k['id'] ?>" <?= $selected_klinik == $k['id'] ? 'selected' : '' ?>><?= $k['nama_klinik'] ?></option><?php endforeach; ?></select></div>
             <div class="col-md-3"><label class="form-label small fw-bold text-muted mb-1">Bulan</label><select name="month" class="form-select border-1"><?php for ($m = 1; $m <= 12; $m++): ?><option value="<?= $m ?>" <?= $selected_month == $m ? 'selected' : '' ?>><?= date('F', mktime(0, 0, 0, $m, 1)) ?></option><?php endfor; ?></select></div>
