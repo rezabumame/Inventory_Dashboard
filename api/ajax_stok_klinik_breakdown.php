@@ -5,13 +5,21 @@ require_once __DIR__ . '/../config/settings.php';
 
 header('Content-Type: application/json');
 
+$role = (string)($_SESSION['role'] ?? '');
+$token = $_POST['token'] ?? '';
+$is_public = false;
+
 if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'message' => 'Unauthorized'], JSON_UNESCAPED_UNICODE);
-    exit;
+    if ($token !== '' && $token === get_setting('public_stok_token')) {
+        $is_public = true;
+        $role = 'super_admin'; // Treat as super_admin for logic compatibility
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Unauthorized'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
 }
 
-$role = (string)($_SESSION['role'] ?? '');
-if (!in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'cs', 'petugas_hc'], true)) {
+if (!$is_public && !in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'cs', 'petugas_hc'], true)) {
     echo json_encode(['success' => false, 'message' => 'Access denied'], JSON_UNESCAPED_UNICODE);
     exit;
 }

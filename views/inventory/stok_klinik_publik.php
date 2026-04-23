@@ -9,10 +9,10 @@ if ($token === '' || $token !== $saved_token) {
     die("Access Denied: Invalid Token");
 }
 
-// Mock session for logic compatibility
+// Mock permissions for public view
 $can_filter_klinik = true;
 $is_cs = false;
-$can_view_monitoring = false;
+$can_view_monitoring = true;
 $active_tab = 'stok';
 
 $selected_klinik = '';
@@ -63,350 +63,343 @@ if ($selected_klinik === 'all') {
     }
 }
 
-// Normal View for others (Item List)
-$rows = [];
-$summary_stok = [
-    'total_items' => 0,
-    'total_qty' => 0,
-    'total_qty_hc' => 0,
-    'total_pending' => 0,
-    'reserve_onsite' => 0,
-    'reserve_hc' => 0,
-    'total_sellout_klinik' => 0,
-    'total_sellout_hc' => 0
-];
+// Fetch Pemeriksaan List (For Filter)
+$pemeriksaan_list = [];
+$res_pem = $conn->query("SELECT * FROM inventory_pemeriksaan_grup ORDER BY nama_pemeriksaan");
+while($row = $res_pem->fetch_assoc()) $pemeriksaan_list[] = $row;
 
-if ($selected_klinik) {
-    if ($selected_klinik === 'all') {
-        $selected_klinik_id_sql = "0";
-        $selected_klinik_row = ['nama_klinik' => 'Semua Klinik', 'kode_klinik' => '', 'kode_homecare' => ''];
-        $active_ids = array_map(function($k){return (int)$k['id'];}, $kliniks);
-        $ids_str = implode(',', $active_ids);
-        
-        $active_codes = [];
-        $active_hc_codes = [];
-        foreach ($kliniks as $k) {
-            if (!empty($k['kode_klinik'])) $active_codes[] = "'" . $conn->real_escape_string(trim($k['kode_klinik'])) . "'";
-            if (!empty($k['kode_homecare'])) $active_hc_codes[] = "'" . $conn->real_escape_string(trim($k['kode_homecare'])) . "'";
-        }
-        
-        if ($include_gudang) {
-            $gudang_loc = trim((string)get_setting('odoo_location_gudang_utama', ''));
-            if ($gudang_loc !== '') {
-                $active_codes[] = "'" . $conn->real_escape_string($gudang_loc) . "'";
+// TAB STOK KLINIK
+if ($active_tab == 'stok') {
+    $rows = [];
+    $summary_stok = [
+        'total_items' => 0,
+        'total_qty' => 0,
+        'total_qty_hc' => 0,
+        'total_pending' => 0,
+        'reserve_onsite' => 0,
+        'reserve_hc' => 0,
+        'total_sellout_klinik' => 0,
+        'total_sellout_hc' => 0
+    ];
+
+    if ($selected_klinik) {
+        if ($selected_klinik === 'all') {
+            $selected_klinik_id_sql = "0";
+            $selected_klinik_row = ['nama_klinik' => 'Semua Klinik', 'kode_klinik' => '', 'kode_homecare' => ''];
+            $active_ids = array_map(function($k){return (int)$k['id'];}, $kliniks);
+            $ids_str = implode(',', $active_ids);
+            
+            $active_codes = [];
+            $active_hc_codes = [];
+            foreach ($kliniks as $k) {
+                if (!empty($k['kode_klinik'])) $active_codes[] = "'" . $conn->real_escape_string(trim($k['kode_klinik'])) . "'";
+                if (!empty($k['kode_homecare'])) $active_hc_codes[] = "'" . $conn->real_escape_string(trim($k['kode_homecare'])) . "'";
             }
-        }
-        
-        $codes_str = implode(',', $active_codes);
-        $hc_codes_str = !empty($active_hc_codes) ? implode(',', $active_hc_codes) : "''";
-        
-        $klinik_filter_sql = "IN ($ids_str)";
-        $loc_filter_sql = "IN ($codes_str)";
-        $hc_loc_filter_sql = "IN ($hc_codes_str)";
-        
-        $kode_klinik = '';
-        $kode_homecare = '';
-        $kode_klinik_esc = '';
-        $kode_homecare_esc = '';
-    } elseif ($selected_klinik === 'gudang_utama') {
-        $selected_klinik_id_sql = "0";
-        $selected_klinik_row = ['nama_klinik' => 'Gudang Utama', 'kode_klinik' => $gudang_utama_loc, 'kode_homecare' => ''];
-        $kode_klinik = $gudang_utama_loc;
-        $kode_homecare = '';
-        $kode_klinik_esc = $conn->real_escape_string($kode_klinik);
-        $kode_homecare_esc = '';
-        
-        $klinik_filter_sql = "= 0"; // No numeric ID for main warehouse
-        $loc_filter_sql = "= '$kode_klinik_esc'";
-        $hc_loc_filter_sql = "= ''";
-    } else {
-        $selected_klinik_id = (int)$selected_klinik;
-        $selected_klinik_id_sql = (string)$selected_klinik_id;
-        $selected_klinik_row = null;
-        foreach ($kliniks as $k) {
-            if ((int)$k['id'] === $selected_klinik_id) {
-                $selected_klinik_row = $k;
-                break;
+            
+            if ($include_gudang) {
+                $gudang_loc = trim((string)get_setting('odoo_location_gudang_utama', ''));
+                if ($gudang_loc !== '') {
+                    $active_codes[] = "'" . $conn->real_escape_string($gudang_loc) . "'";
+                }
             }
-        }
-        if (!$selected_klinik_row) {
-            $res_one = $conn->query("SELECT * FROM inventory_klinik WHERE id = $selected_klinik_id LIMIT 1");
-            if ($res_one && $res_one->num_rows > 0) $selected_klinik_row = $res_one->fetch_assoc();
-        }
-
-        $kode_klinik = trim((string)($selected_klinik_row['kode_klinik'] ?? ''));
-        $kode_homecare = trim((string)($selected_klinik_row['kode_homecare'] ?? ''));
-        $kode_klinik_esc = $conn->real_escape_string($kode_klinik);
-        $kode_homecare_esc = $conn->real_escape_string($kode_homecare);
-        
-        $klinik_filter_sql = "= $selected_klinik_id";
-        $loc_filter_sql = "= '$kode_klinik_esc'";
-        $hc_loc_filter_sql = "= '$kode_homecare_esc'";
-    }
-
-    $last_update_text = '-';
-    $last_update_general = '';
-    
-    // Get MAX update across all relevant locations
-    $locs_esc_list = [];
-    if ($selected_klinik === 'all') {
-        $locs_esc_list[] = $codes_str;
-        if ($show_hc && $hc_codes_str !== "''") $locs_esc_list[] = $hc_codes_str;
-    } else {
-        if ($kode_klinik !== '') $locs_esc_list[] = "'$kode_klinik_esc'";
-        if ($show_hc && $kode_homecare !== '') $locs_esc_list[] = "'$kode_homecare_esc'";
-    }
-    
-    if (!empty($locs_esc_list)) {
-        $locs_str = implode(',', $locs_esc_list);
-        $res_u = $conn->query("SELECT MAX(updated_at) as last_update FROM inventory_stock_mirror WHERE TRIM(location_code) IN ($locs_str)");
-        if ($res_u && $res_u->num_rows > 0) {
-            $urow = $res_u->fetch_assoc();
-            if (!empty($urow['last_update'])) $last_update_general = (string)$urow['last_update'];
-        }
-    }
-
-    // If mirror is empty, try global sync setting
-    if ($last_update_general === '') {
-        $res_gs = $conn->query("SELECT v FROM inventory_app_settings WHERE k = 'odoo_sync_last_run' LIMIT 1");
-        if ($res_gs && ($gs = $res_gs->fetch_assoc())) {
-            $last_update_general = date('Y-m-d H:i:s', (int)$gs['v']);
-        }
-    }
-
-    if ($last_update_general !== '') $last_update_text = date('d M Y H:i', strtotime($last_update_general));
-
-    if ($selected_klinik === 'all' || $kode_klinik !== '') {
-        $last_update_date = $last_update_general !== '' ? date('Y-m-d', strtotime($last_update_general)) : '';
-
-        if ($is_history_date) {
-            $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_date) . "' AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'";
-            $filter_bp_hc = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_date) . "' AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'";
-            $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.tanggal <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
-            $filter_pb_hc = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.tanggal <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
-            $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at <= '" . $conn->real_escape_string($filter_end_ts) . "'";
-            $filter_ts_hc = $filter_ts_klinik;
+            
+            $codes_str = implode(',', $active_codes);
+            $hc_codes_str = !empty($active_hc_codes) ? implode(',', $active_hc_codes) : "''";
+            
+            $klinik_filter_sql = "IN ($ids_str)";
+            $loc_filter_sql = "IN ($codes_str)";
+            $hc_loc_filter_sql = "IN ($hc_codes_str)";
+            
+            $kode_klinik = '';
+            $kode_homecare = '';
+            $kode_klinik_esc = '';
+            $kode_homecare_esc = '';
+        } elseif ($selected_klinik === 'gudang_utama') {
+            $selected_klinik_id_sql = "0";
+            $selected_klinik_row = ['nama_klinik' => 'Gudang Utama', 'kode_klinik' => $gudang_utama_loc, 'kode_homecare' => ''];
+            $kode_klinik = $gudang_utama_loc;
+            $kode_homecare = '';
+            $kode_klinik_esc = $conn->real_escape_string($kode_klinik);
+            $kode_homecare_esc = '';
+            
+            $klinik_filter_sql = "= 0"; // No numeric ID for main warehouse
+            $loc_filter_sql = "= '$kode_klinik_esc'";
+            $hc_loc_filter_sql = "= ''";
         } else {
-            if ($last_update_general !== '') {
-                $last_update_time = date('H:i:s', strtotime($last_update_general));
-                $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($month_start) . "' 
-                    AND (
-                        bp.created_at > '" . $conn->real_escape_string($last_update_general) . "' 
-                        OR bp.tanggal_pemeriksaan > '" . $conn->real_escape_string($last_update_date) . "'
-                        OR (bp.tanggal_pemeriksaan = '" . $conn->real_escape_string($last_update_date) . "' AND bp.jam_layanan >= '$last_update_time')
-                    )";
-                $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "' AND pb.created_at > '" . $conn->real_escape_string($last_update_general) . "'";
-                $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at > '" . $conn->real_escape_string($last_update_general) . "'";
-                
-                $filter_bp_hc = $filter_bp_onsite;
-                $filter_pb_hc = $filter_pb_klinik;
+            $selected_klinik_id = (int)$selected_klinik;
+            $selected_klinik_id_sql = (string)$selected_klinik_id;
+            $selected_klinik_row = null;
+            foreach ($kliniks as $k) {
+                if ((int)$k['id'] === $selected_klinik_id) {
+                    $selected_klinik_row = $k;
+                    break;
+                }
+            }
+            if (!$selected_klinik_row) {
+                $res_one = $conn->query("SELECT * FROM inventory_klinik WHERE id = $selected_klinik_id LIMIT 1");
+                if ($res_one && $res_one->num_rows > 0) $selected_klinik_row = $res_one->fetch_assoc();
+            }
+
+            $kode_klinik = trim((string)($selected_klinik_row['kode_klinik'] ?? ''));
+            $kode_homecare = trim((string)($selected_klinik_row['kode_homecare'] ?? ''));
+            $kode_klinik_esc = $conn->real_escape_string($kode_klinik);
+            $kode_homecare_esc = $conn->real_escape_string($kode_homecare);
+            
+            $klinik_filter_sql = "= $selected_klinik_id";
+            $loc_filter_sql = "= '$kode_klinik_esc'";
+            $hc_loc_filter_sql = "= '$kode_homecare_esc'";
+        }
+
+        $last_update_text = '-';
+        $last_update_general = '';
+        
+        // Get MAX update across all relevant locations
+        $locs_esc_list = [];
+        if ($selected_klinik === 'all') {
+            $locs_esc_list[] = $codes_str;
+            if ($show_hc && $hc_codes_str !== "''") $locs_esc_list[] = $hc_codes_str;
+        } else {
+            if ($kode_klinik !== '') $locs_esc_list[] = "'$kode_klinik_esc'";
+            if ($show_hc && $kode_homecare !== '') $locs_esc_list[] = "'$kode_homecare_esc'";
+        }
+        
+        if (!empty($locs_esc_list)) {
+            $locs_str = implode(',', $locs_esc_list);
+            $res_u = $conn->query("SELECT MAX(updated_at) as last_update FROM inventory_stock_mirror WHERE TRIM(location_code) IN ($locs_str)");
+            if ($res_u && $res_u->num_rows > 0) {
+                $urow = $res_u->fetch_assoc();
+                if (!empty($urow['last_update'])) $last_update_general = (string)$urow['last_update'];
+            }
+        }
+
+        // If mirror is empty, try global sync setting
+        if ($last_update_general === '') {
+            $res_gs = $conn->query("SELECT v FROM inventory_app_settings WHERE k = 'odoo_sync_last_run' LIMIT 1");
+            if ($res_gs && ($gs = $res_gs->fetch_assoc())) {
+                $last_update_general = date('Y-m-d H:i:s', (int)$gs['v']);
+            }
+        }
+
+        if ($last_update_general !== '') $last_update_text = date('d M Y H:i', strtotime($last_update_general));
+
+        if ($selected_klinik === 'all' || $kode_klinik !== '') {
+            $last_update_date = $last_update_general !== '' ? date('Y-m-d', strtotime($last_update_general)) : '';
+
+            if ($is_history_date) {
+                $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_date) . "' AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'";
+                $filter_bp_hc = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_date) . "' AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'";
+                $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.created_at <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
+                $filter_pb_hc = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.created_at <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
+                $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at <= '" . $conn->real_escape_string($filter_end_ts) . "'";
                 $filter_ts_hc = $filter_ts_klinik;
             } else {
-                $filter_bp_onsite = " AND 1=0";
-                $filter_pb_klinik = " AND 1=0";
-                $filter_ts_klinik = " AND 1=0";
-                $filter_bp_hc = " AND 1=0";
-                $filter_pb_hc = " AND 1=0";
-                $filter_ts_hc = " AND 1=0";
+                if ($last_update_general !== '') {
+                    $last_update_time = date('H:i:s', strtotime($last_update_general));
+                    $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($today_date) . "'";
+                    $sync_buffer_ts = date('Y-m-d H:i:s', strtotime($last_update_general));
+                    $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "' AND pb.created_at > '" . $conn->real_escape_string($sync_buffer_ts) . "'";
+                    $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at > '" . $conn->real_escape_string($sync_buffer_ts) . "'";
+                    
+                    $filter_bp_hc = $filter_bp_onsite;
+                    $filter_pb_hc = $filter_pb_klinik;
+                    $filter_ts_hc = $filter_ts_klinik;
+                } else {
+                    $filter_bp_onsite = " AND 1=0";
+                    $filter_pb_klinik = " AND 1=0";
+                    $filter_ts_klinik = " AND 1=0";
+                    $filter_bp_hc = " AND 1=0";
+                    $filter_pb_hc = " AND 1=0";
+                    $filter_ts_hc = " AND 1=0";
+                }
             }
-        }
 
-        $filter_pb2_klinik = str_replace("pb.", "pb2.", $filter_pb_klinik);
-        $filter_pb2_hc = str_replace("pb.", "pb2.", $filter_pb_hc);
+            $filter_pb2_klinik = str_replace("pb.", "pb2.", $filter_pb_klinik);
+            $filter_pb2_hc = str_replace("pb.", "pb2.", $filter_pb_hc);
 
-        $rb_in_transfer_sql = "0";
-        $rb_out_transfer_sql = "0";
-        $rb_in_transfer_hc_sql = "0";
-        $rb_out_transfer_hc_sql = "0";
-        $rb_sellout_klinik_sql = "0";
-        $rb_sellout_hc_sql = "0";
-        $hc_user_filter_sql = "EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id $klinik_filter_sql)";
-        
-        // Siapkan timestamp untuk subquery rollback (selalu siapkan jika mode history)
-        $rb_ts_start = $conn->real_escape_string($filter_end_ts);
-        $rb_ts_min = $conn->real_escape_string($month_start_ts);
-        
-        if ($is_history_date) {
-            // General Rollback SQL using last_update_general
-            $rb_ts_end = $last_update_general !== '' ? $conn->real_escape_string($last_update_general) : $conn->real_escape_string(date('Y-m-d H:i:s'));
+            $rb_in_transfer_sql = "0";
+            $rb_out_transfer_sql = "0";
+            $rb_in_transfer_hc_sql = "0";
+            $rb_out_transfer_hc_sql = "0";
+            $rb_sellout_klinik_sql = "0";
+            $rb_sellout_hc_sql = "0";
+            $hc_user_filter_sql = "EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id $klinik_filter_sql)";
             
-            $rb_level_filter = "((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (ts.level = 'gudang_utama')" : "") . ")";
-            $rb_pb_filter = "(pb.klinik_id $klinik_filter_sql" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (pb.jenis_pemakaian = 'gudang_utama')" : "") . ")"; // assuming jenis_pemakaian exists for gudang
+            $rb_ts_start = $conn->real_escape_string($filter_end_ts);
+            $rb_ts_min = $conn->real_escape_string($month_start_ts);
+            
+            if ($is_history_date) {
+                $rb_ts_end = $last_update_general !== '' ? $conn->real_escape_string($last_update_general) : $conn->real_escape_string(date('Y-m-d H:i:s'));
+                $rb_level_filter = "((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (ts.level = 'gudang_utama')" : "") . ")";
+                $rb_pb_filter = "(pb.klinik_id $klinik_filter_sql" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (pb.jenis_pemakaian = 'gudang_utama')" : "") . ")"; 
 
-            $rb_in_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND $rb_level_filter AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-            $rb_out_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND $rb_level_filter AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-            $rb_sellout_klinik_sql = "(SELECT COALESCE(SUM(pbd.qty), 0) FROM inventory_pemakaian_bhp_detail pbd JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id WHERE pbd.barang_id = b.id AND $rb_pb_filter AND TRIM(pb.jenis_pemakaian) != 'hc' AND pb.tanggal > '$rb_ts_start' AND pb.tanggal <= '$rb_ts_end' AND pb.tanggal >= '$rb_ts_min')";
+                $rb_in_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND $rb_level_filter AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
+                $rb_out_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND $rb_level_filter AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
+                $rb_sellout_klinik_sql = "(SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0) FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id WHERE ts.barang_id = b.id AND ts.referensi_tipe = 'pemakaian_bhp' AND $rb_pb_filter AND TRIM(pb.jenis_pemakaian) != 'hc' AND pb.status = 'active' AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
 
-            $rb_in_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-            $rb_out_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-            $rb_sellout_hc_sql = "(SELECT COALESCE(SUM(pbd.qty), 0) FROM inventory_pemakaian_bhp_detail pbd JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id WHERE pbd.barang_id = b.id AND pb.klinik_id $klinik_filter_sql AND TRIM(pb.jenis_pemakaian) = 'hc' AND pb.tanggal > '$rb_ts_start' AND pb.tanggal <= '$rb_ts_end' AND pb.tanggal >= '$rb_ts_min')";
-        }
+                $rb_in_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
+                $rb_out_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
+                $rb_sellout_hc_sql = "(SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0) FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id WHERE ts.barang_id = b.id AND ts.referensi_tipe = 'pemakaian_bhp' AND pb.klinik_id $klinik_filter_sql AND TRIM(pb.jenis_pemakaian) = 'hc' AND pb.status = 'active' AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
+            }
 
-        $union_sql = "SELECT odoo_product_id, kode_barang FROM inventory_stock_mirror WHERE TRIM(location_code) $loc_filter_sql";
-        if ($show_hc && ($selected_klinik === 'all' ? $hc_codes_str !== "''" : $kode_homecare !== '')) {
-            $union_sql .= " UNION SELECT odoo_product_id, kode_barang FROM inventory_stock_mirror WHERE TRIM(location_code) $hc_loc_filter_sql";
-        }
+            $union_sql = "SELECT odoo_product_id, kode_barang FROM inventory_stock_mirror WHERE TRIM(location_code) $loc_filter_sql";
+            if ($show_hc && ($selected_klinik === 'all' ? $hc_codes_str !== "''" : $kode_homecare !== '')) {
+                $union_sql .= " UNION SELECT odoo_product_id, kode_barang FROM inventory_stock_mirror WHERE TRIM(location_code) $hc_loc_filter_sql";
+            }
 
-        $query = "SELECT 
-                    $selected_klinik_id_sql as klinik_id,
-                    '$kode_klinik_esc' as kode_klinik,
-                    '$kode_homecare_esc' as kode_homecare,
-                    " . ($selected_klinik === 'all' ? "'Semua Klinik' as nama_klinik," : ($selected_klinik === 'gudang_utama' ? "'Gudang Utama' as nama_klinik," : "k.nama_klinik,")) . "
-                    p.odoo_product_id,
-                    p.kode_barang,
-                    b.id as barang_id,
-                    b.kode_barang as kode_barang_master,
-                    COALESCE(b.nama_barang, p.kode_barang) as nama_barang,
-                    COALESCE(uc.to_uom, b.satuan) as satuan,
-                    COALESCE(uc.from_uom, '') as uom_odoo,
-                    COALESCE(uc.multiplier, 1) as uom_multiplier,
-                    COALESCE(sm_k.qty, 0) / NULLIF(COALESCE(uc.multiplier, 1), 0) as qty,
-                    COALESCE(sm_h.qty, 0) / NULLIF(COALESCE(uc.multiplier, 1), 0) as stok_hc,
-                    (SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END), 0)
-                     FROM inventory_booking_detail bd 
-                     JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id 
-                     WHERE bd.barang_id = b.id 
-                     AND bp.klinik_id $klinik_filter_sql
-                     AND bp.status = 'booked'
-                     AND bp.status_booking LIKE '%Clinic%'$filter_bp_onsite) as reserve_onsite,
-                    (SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END), 0)
-                     FROM inventory_booking_detail bd
-                     JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
-                     WHERE bd.barang_id = b.id
-                     AND bp.klinik_id $klinik_filter_sql
-                     AND bp.status = 'booked'
-                     AND bp.status_booking LIKE '%HC%'$filter_bp_hc) as reserve_hc,
-                    COALESCE(
-                        NULLIF(
-                            (SELECT COALESCE(SUM(pbd.qty), 0) 
-                             FROM inventory_pemakaian_bhp_detail pbd 
-                             JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id 
-                             WHERE pbd.barang_id = b.id AND pb.klinik_id $klinik_filter_sql AND pb.jenis_pemakaian != 'hc'$filter_pb_klinik),
-                            0
-                        ),
+            $query = "SELECT 
+                        $selected_klinik_id_sql as klinik_id,
+                        '$kode_klinik_esc' as kode_klinik,
+                        '$kode_homecare_esc' as kode_homecare,
+                        " . ($selected_klinik === 'all' ? "'Semua Klinik' as nama_klinik," : ($selected_klinik === 'gudang_utama' ? "'Gudang Utama' as nama_klinik," : "k.nama_klinik,")) . "
+                        p.odoo_product_id,
+                        p.kode_barang,
+                        b.id as barang_id,
+                        b.kode_barang as kode_barang_master,
+                        COALESCE(b.nama_barang, p.kode_barang) as nama_barang,
+                        COALESCE(uc.to_uom, b.satuan) as satuan,
+                        COALESCE(uc.from_uom, '') as uom_odoo,
+                        COALESCE(uc.multiplier, 1) as uom_multiplier,
+                        COALESCE(sm_k.qty, 0) / NULLIF(COALESCE(uc.multiplier, 1), 0) as qty,
+                        COALESCE(sm_h.qty, 0) / NULLIF(COALESCE(uc.multiplier, 1), 0) as stok_hc,
+                        (SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END), 0)
+                         FROM inventory_booking_detail bd 
+                         JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id 
+                         WHERE bd.barang_id = b.id 
+                         AND bp.klinik_id $klinik_filter_sql
+                         AND bp.status = 'booked'
+                         AND bp.status_booking LIKE '%Clinic%'$filter_bp_onsite) as reserve_onsite,
+                        (SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END), 0)
+                         FROM inventory_booking_detail bd
+                         JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
+                         WHERE bd.barang_id = b.id
+                         AND bp.klinik_id $klinik_filter_sql
+                         AND bp.status = 'booked'
+                         AND bp.status_booking LIKE '%HC%'$filter_bp_hc) as reserve_hc,
+                        (SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0)
+                             FROM inventory_transaksi_stok ts
+                             JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id
+                             WHERE ts.barang_id = b.id
+                             AND ts.level = 'klinik'
+                             AND ts.level_id $klinik_filter_sql
+                             AND ts.referensi_tipe = 'pemakaian_bhp'
+                             AND pb2.klinik_id $klinik_filter_sql
+                             AND pb2.jenis_pemakaian != 'hc'$filter_pb2_klinik
+                             AND pb2.status = 'active') as sellout_klinik,
+                        (SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0)
+                             FROM inventory_transaksi_stok ts
+                             JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id
+                             WHERE ts.barang_id = b.id
+                             AND ts.level = 'hc'
+                             AND $hc_user_filter_sql
+                             AND ts.referensi_tipe = 'pemakaian_bhp'
+                             AND pb2.klinik_id $klinik_filter_sql
+                             AND pb2.jenis_pemakaian = 'hc'$filter_pb2_hc
+                             AND pb2.status = 'active') as sellout_hc,
                         (SELECT COALESCE(SUM(ts.qty), 0)
                          FROM inventory_transaksi_stok ts
-                         JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id
                          WHERE ts.barang_id = b.id
-                         AND ts.level = 'klinik'
-                         AND ts.level_id $klinik_filter_sql
-                         AND ts.tipe_transaksi = 'out'
-                         AND ts.referensi_tipe = 'pemakaian_bhp'
-                         AND pb2.klinik_id $klinik_filter_sql
-                         AND pb2.jenis_pemakaian != 'hc'$filter_pb2_klinik),
-                        0
-                    ) as sellout_klinik,
-                    COALESCE(
-                        NULLIF(
-                            (SELECT COALESCE(SUM(pbd.qty), 0) 
-                             FROM inventory_pemakaian_bhp_detail pbd 
-                             JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id 
-                             WHERE pbd.barang_id = b.id AND pb.klinik_id $klinik_filter_sql AND pb.jenis_pemakaian = 'hc'$filter_pb_hc),
-                            0
-                        ),
+                         AND ((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (ts.level = 'gudang_utama')" : "") . ")
+                         AND ts.tipe_transaksi = 'in'
+                         AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')$filter_ts_klinik) as in_transfer,
                         (SELECT COALESCE(SUM(ts.qty), 0)
                          FROM inventory_transaksi_stok ts
-                         JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id
+                         WHERE ts.barang_id = b.id
+                         AND ((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (ts.level = 'gudang_utama')" : "") . ")
+                         AND ts.tipe_transaksi = 'out'
+                         AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')$filter_ts_klinik) as out_transfer,
+                        (SELECT COALESCE(SUM(ts.qty), 0)
+                         FROM inventory_transaksi_stok ts
+                         WHERE ts.barang_id = b.id
+                         AND ts.level = 'hc'
+                         AND $hc_user_filter_sql
+                         AND ts.tipe_transaksi = 'in'
+                         AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc) as in_transfer_hc,
+                        (SELECT COALESCE(SUM(ts.qty), 0)
+                         FROM inventory_transaksi_stok ts
                          WHERE ts.barang_id = b.id
                          AND ts.level = 'hc'
                          AND $hc_user_filter_sql
                          AND ts.tipe_transaksi = 'out'
-                         AND ts.referensi_tipe = 'pemakaian_bhp'
-                         AND pb2.klinik_id $klinik_filter_sql
-                         AND pb2.jenis_pemakaian = 'hc'$filter_pb2_hc),
-                        0
-                    ) as sellout_hc,
-                    (SELECT COALESCE(SUM(ts.qty), 0)
-                     FROM inventory_transaksi_stok ts
-                     WHERE ts.barang_id = b.id
-                     AND ((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (ts.level = 'gudang_utama')" : "") . ")
-                     AND ts.tipe_transaksi = 'in'
-                     AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')$filter_ts_klinik) as in_transfer,
-                    (SELECT COALESCE(SUM(ts.qty), 0)
-                     FROM inventory_transaksi_stok ts
-                     WHERE ts.barang_id = b.id
-                     AND ((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (ts.level = 'gudang_utama')" : "") . ")
-                     AND ts.tipe_transaksi = 'out'
-                     AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')$filter_ts_klinik) as out_transfer,
-                    (SELECT COALESCE(SUM(ts.qty), 0)
-                     FROM inventory_transaksi_stok ts
-                     WHERE ts.barang_id = b.id
-                     AND ts.level = 'hc'
-                     AND $hc_user_filter_sql
-                     AND ts.tipe_transaksi = 'in'
-                     AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc) as in_transfer_hc,
-                    (SELECT COALESCE(SUM(ts.qty), 0)
-                     FROM inventory_transaksi_stok ts
-                     WHERE ts.barang_id = b.id
-                     AND ts.level = 'hc'
-                     AND $hc_user_filter_sql
-                     AND ts.tipe_transaksi = 'out'
-                     AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc) as out_transfer_hc,
-                    $rb_in_transfer_sql as rb_in_transfer,
-                    $rb_out_transfer_sql as rb_out_transfer,
-                    $rb_in_transfer_hc_sql as rb_in_transfer_hc,
-                    $rb_out_transfer_hc_sql as rb_out_transfer_hc,
-                    $rb_sellout_klinik_sql as rb_sellout_klinik,
-                    $rb_sellout_hc_sql as rb_sellout_hc
-                  FROM ($union_sql) p
-                  LEFT JOIN (
-                    SELECT sm1.odoo_product_id, SUM(sm1.qty) as qty
-                    FROM inventory_stock_mirror sm1
-                    JOIN (
-                        SELECT odoo_product_id, TRIM(location_code) AS loc, MAX(updated_at) AS max_updated
-                        FROM inventory_stock_mirror
-                        WHERE TRIM(location_code) $loc_filter_sql
-                        GROUP BY odoo_product_id, TRIM(location_code)
-                    ) last_sm ON last_sm.odoo_product_id = sm1.odoo_product_id AND last_sm.loc = TRIM(sm1.location_code) AND last_sm.max_updated = sm1.updated_at
-                    WHERE TRIM(sm1.location_code) $loc_filter_sql
-                    GROUP BY sm1.odoo_product_id
-                  ) sm_k ON sm_k.odoo_product_id = p.odoo_product_id
-                  LEFT JOIN (
-                    SELECT sm1.odoo_product_id, SUM(sm1.qty) as qty
-                    FROM inventory_stock_mirror sm1
-                    JOIN (
-                        SELECT odoo_product_id, TRIM(location_code) AS loc, MAX(updated_at) AS max_updated
-                        FROM inventory_stock_mirror
-                        WHERE TRIM(location_code) $hc_loc_filter_sql
-                        GROUP BY odoo_product_id, TRIM(location_code)
-                    ) last_sm ON last_sm.odoo_product_id = sm1.odoo_product_id AND last_sm.loc = TRIM(sm1.location_code) AND last_sm.max_updated = sm1.updated_at
-                    WHERE TRIM(sm1.location_code) $hc_loc_filter_sql
-                    GROUP BY sm1.odoo_product_id
-                  ) sm_h ON sm_h.odoo_product_id = p.odoo_product_id
-                  LEFT JOIN inventory_barang b ON (b.odoo_product_id = p.odoo_product_id OR b.kode_barang = p.kode_barang)
-                  LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-                  " . (($selected_klinik === 'all' || $selected_klinik === 'gudang_utama') ? "" : "JOIN inventory_klinik k ON k.id = $selected_klinik_id") . "
-                  WHERE 1=1";
+                         AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc) as out_transfer_hc,
+                        $rb_in_transfer_sql as rb_in_transfer,
+                        $rb_out_transfer_sql as rb_out_transfer,
+                        $rb_in_transfer_hc_sql as rb_in_transfer_hc,
+                        $rb_out_transfer_hc_sql as rb_out_transfer_hc,
+                        $rb_sellout_klinik_sql as rb_sellout_klinik,
+                        $rb_sellout_hc_sql as rb_sellout_hc
+                      FROM ($union_sql) p
+                      LEFT JOIN (
+                        SELECT sm1.odoo_product_id, SUM(sm1.qty) as qty
+                        FROM inventory_stock_mirror sm1
+                        JOIN (
+                            SELECT odoo_product_id, TRIM(location_code) AS loc, MAX(updated_at) AS max_updated
+                            FROM inventory_stock_mirror
+                            WHERE TRIM(location_code) $loc_filter_sql
+                            GROUP BY odoo_product_id, TRIM(location_code)
+                        ) last_sm ON last_sm.odoo_product_id = sm1.odoo_product_id AND last_sm.loc = TRIM(sm1.location_code) AND last_sm.max_updated = sm1.updated_at
+                        WHERE TRIM(sm1.location_code) $loc_filter_sql
+                        GROUP BY sm1.odoo_product_id
+                      ) sm_k ON sm_k.odoo_product_id = p.odoo_product_id
+                      LEFT JOIN (
+                        SELECT sm1.odoo_product_id, SUM(sm1.qty) as qty
+                        FROM inventory_stock_mirror sm1
+                        JOIN (
+                            SELECT odoo_product_id, TRIM(location_code) AS loc, MAX(updated_at) AS max_updated
+                            FROM inventory_stock_mirror
+                            WHERE TRIM(location_code) $hc_loc_filter_sql
+                            GROUP BY odoo_product_id, TRIM(location_code)
+                        ) last_sm ON last_sm.odoo_product_id = sm1.odoo_product_id AND last_sm.loc = TRIM(sm1.location_code) AND last_sm.max_updated = sm1.updated_at
+                        WHERE TRIM(sm1.location_code) $hc_loc_filter_sql
+                        GROUP BY sm1.odoo_product_id
+                      ) sm_h ON sm_h.odoo_product_id = p.odoo_product_id
+                      LEFT JOIN inventory_barang b ON (b.odoo_product_id = p.odoo_product_id OR b.kode_barang = p.kode_barang)
+                      LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+                      " . (($selected_klinik === 'all' || $selected_klinik === 'gudang_utama') ? "" : "JOIN inventory_klinik k ON k.id = $selected_klinik_id") . "
+                      WHERE 1=1";
 
-        $query .= " ORDER BY kode_barang_master ASC, nama_barang ASC";
-        try {
-            $conn->query("SET SQL_BIG_SELECTS=1");
-            $result = $conn->query($query);
-            while ($r = $result->fetch_assoc()) {
-                $rows[] = $r;
-                $summary_stok['total_items']++;
-                if ($is_history_date) {
-                    $adj_qty = (float)($r['qty'] ?? 0) + (float)($r['rb_out_transfer'] ?? 0) - (float)($r['rb_in_transfer'] ?? 0) + (float)($r['rb_sellout_klinik'] ?? 0);
-                    $adj_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['rb_out_transfer_hc'] ?? 0) - (float)($r['rb_in_transfer_hc'] ?? 0) + (float)($r['rb_sellout_hc'] ?? 0);
-                    $summary_stok['total_qty'] += $adj_qty;
-                    $summary_stok['total_qty_hc'] += $adj_hc;
+            if ($selected_pemeriksaan) {
+                $item_ids = [];
+                $res_ids = $conn->query("SELECT barang_id FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = " . (int)$selected_pemeriksaan);
+                while($r = $res_ids->fetch_assoc()) $item_ids[] = (int)$r['barang_id'];
+                if (!empty($item_ids)) {
+                    $ids_str = implode(',', $item_ids);
+                    $query .= " AND (b.id IN ($ids_str))";
                 } else {
-                    $eff_qty = (float)($r['qty'] ?? 0) + (float)($r['in_transfer'] ?? 0) - (float)($r['out_transfer'] ?? 0);
-                    $eff_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['in_transfer_hc'] ?? 0) - (float)($r['out_transfer_hc'] ?? 0);
-                    $summary_stok['total_qty'] += $eff_qty;
-                    $summary_stok['total_qty_hc'] += $eff_hc;
+                    $query .= " AND 1=0";
                 }
-                $summary_stok['reserve_onsite'] += (float)($r['reserve_onsite'] ?? 0);
-                $summary_stok['reserve_hc'] += (float)($r['reserve_hc'] ?? 0);
-                $summary_stok['total_sellout_klinik'] += (float)($r['sellout_klinik'] ?? 0);
-                $summary_stok['total_sellout_hc'] += (float)($r['sellout_hc'] ?? 0);
             }
-        } catch (Exception $e) {
-            die("Query Error: " . $e->getMessage());
+
+            $query .= " ORDER BY kode_barang_master ASC, nama_barang ASC";
+            try {
+                $conn->query("SET SQL_BIG_SELECTS=1");
+                $result = $conn->query($query);
+                while ($r = $result->fetch_assoc()) {
+                    $rows[] = $r;
+                    $summary_stok['total_items']++;
+                    if ($is_history_date) {
+                        $adj_qty = (float)($r['qty'] ?? 0) + (float)($r['rb_out_transfer'] ?? 0) - (float)($r['rb_in_transfer'] ?? 0) + (float)($r['rb_sellout_klinik'] ?? 0);
+                        $adj_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['rb_out_transfer_hc'] ?? 0) - (float)($r['rb_in_transfer_hc'] ?? 0) + (float)($r['rb_sellout_hc'] ?? 0);
+                        $summary_stok['total_qty'] += $adj_qty;
+                        $summary_stok['total_qty_hc'] += $adj_hc;
+                    } else {
+                        $eff_qty = (float)($r['qty'] ?? 0) + (float)($r['in_transfer'] ?? 0) - (float)($r['out_transfer'] ?? 0);
+                        $eff_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['in_transfer_hc'] ?? 0) - (float)($r['out_transfer_hc'] ?? 0);
+                        $summary_stok['total_qty'] += $eff_qty;
+                        $summary_stok['total_qty_hc'] += $eff_hc;
+                    }
+                    $summary_stok['reserve_onsite'] += (float)($r['reserve_onsite'] ?? 0);
+                    $summary_stok['reserve_hc'] += (float)($r['reserve_hc'] ?? 0);
+                    $summary_stok['total_sellout_klinik'] += (float)($r['sellout_klinik'] ?? 0);
+                    $summary_stok['total_sellout_hc'] += (float)($r['sellout_hc'] ?? 0);
+                }
+            } catch (Exception $e) {
+                die("Query Error: " . $e->getMessage());
+            }
         }
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -423,7 +416,6 @@ if ($selected_klinik) {
         .text-primary-custom { color: #204EAB; }
         .card { border: none; box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075); border-radius: 12px; }
         .breadcrumb-item + .breadcrumb-item::before { content: "/"; }
-        .breadcrumb-item active { color: #6c757d; }
         .last-update { font-size: 0.875rem; color: #6c757d; }
         .card-summary { border: 1px solid #eef0f2; transition: all 0.2s; }
         .card-summary:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
@@ -471,7 +463,6 @@ if ($selected_klinik) {
                 <div class="col-md-4">
                     <label class="form-label fw-bold small mb-1"><i class="fas fa-hospital text-primary me-1"></i>Klinik <span class="text-danger">*</span></label>
                     <form method="GET">
-                        <input type="hidden" name="page" value="stok_klinik_publik">
                         <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
                         <select name="klinik_id" class="form-select" onchange="this.form.submit()">
                             <option value="all" <?= $selected_klinik === 'all' ? 'selected' : '' ?>>Semua Klinik</option>
@@ -489,7 +480,6 @@ if ($selected_klinik) {
                 <div class="col-md-3">
                     <label class="form-label fw-bold small mb-1"><i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal</label>
                     <form method="GET">
-                        <input type="hidden" name="page" value="stok_klinik_publik">
                         <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
                         <input type="hidden" name="klinik_id" value="<?= htmlspecialchars($selected_klinik) ?>">
                         <input type="date" name="tanggal" class="form-control" value="<?= htmlspecialchars($filter_date) ?>" min="<?= htmlspecialchars($min_filter_date) ?>" max="<?= htmlspecialchars($today_date) ?>" onchange="this.form.submit()">
@@ -501,6 +491,16 @@ if ($selected_klinik) {
             </div>
         </div>
     </div>
+
+    <?php if ($selected_klinik && $is_history_date): ?>
+        <div class="alert alert-warning mb-4 d-flex align-items-start gap-2">
+            <i class="fas fa-history mt-1"></i>
+            <div>
+                <div class="fw-semibold">Mode Rekonstruksi Stok (Per Tanggal)</div>
+                <div class="small">Menampilkan estimasi stok per tanggal <?= htmlspecialchars(date('d M Y', strtotime($filter_date))) ?>.</div>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <div class="row mb-4 g-3">
         <div class="col">
@@ -525,6 +525,7 @@ if ($selected_klinik) {
                 </div>
             </div>
         </div>
+        <?php if ($show_hc): ?>
         <div class="col">
             <div class="card card-summary h-100">
                 <div class="card-body p-3 d-flex justify-content-between align-items-start">
@@ -536,6 +537,7 @@ if ($selected_klinik) {
                 </div>
             </div>
         </div>
+        <?php endif; ?>
         <div class="col">
             <div class="card card-summary h-100">
                 <div class="card-body p-3 d-flex justify-content-between align-items-start">
@@ -555,28 +557,6 @@ if ($selected_klinik) {
                         <div class="summary-value"><?= fmt_qty($summary_stok['reserve_onsite'] ?? 0) ?></div>
                     </div>
                     <i class="fas fa-hospital summary-icon text-primary-custom"></i>
-                </div>
-            </div>
-        </div>
-        <div class="col">
-            <div class="card card-summary h-100">
-                <div class="card-body p-3 d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="summary-label">Sellout HC</div>
-                        <div class="summary-value"><?= fmt_qty($summary_stok['total_sellout_hc'] ?? 0) ?></div>
-                    </div>
-                    <i class="fas fa-user-nurse summary-icon text-primary-custom"></i>
-                </div>
-            </div>
-        </div>
-        <div class="col">
-            <div class="card card-summary h-100">
-                <div class="card-body p-3 d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="summary-label">Reserve HC</div>
-                        <div class="summary-value"><?= fmt_qty($summary_stok['reserve_hc'] ?? 0) ?></div>
-                    </div>
-                    <i class="fas fa-user-nurse summary-icon text-primary-custom"></i>
                 </div>
             </div>
         </div>
@@ -622,7 +602,6 @@ if ($selected_klinik) {
                                 $stok_hc = $stok_hc + $in_transfer_hc - $out_transfer_hc;
                             }
                             
-                            // Sellout always reduces On Hand, including history date mode.
                             $on_hand = ((float)$stok_onsite + ($show_hc ? (float)$stok_hc : 0.0)) - ((float)$sellout + ($show_hc ? (float)$sellout_hc : 0.0));
                             $available = (float)$on_hand - ((float)$reserve + ($show_hc ? (float)$reserve_hc : 0.0));
                         ?>
@@ -634,8 +613,7 @@ if ($selected_klinik) {
                             <?php if ($show_hc): ?>
                             <td>
                                 <?php if ($stok_hc != 0): ?>
-                                    <?php $hc_class = $stok_hc < 0 ? 'text-danger fw-bold' : 'text-primary fw-bold'; ?>
-                                    <a href="javascript:void(0)" class="<?= $hc_class ?> text-decoration-none"
+                                    <a href="javascript:void(0)" class="text-primary fw-bold text-decoration-none"
                                        onclick="loadHCDetail(<?= $row['barang_id'] ?>, <?= $selected_klinik === 'all' ? 0 : $selected_klinik ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>'); return false;">
                                         <?= fmt_qty($stok_hc) ?> <i class="fas fa-user-nurse"></i>
                                     </a>
@@ -646,7 +624,15 @@ if ($selected_klinik) {
                             <?php endif; ?>
                             <td class="<?= $sellout > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sellout) ?></td>
                             <?php if ($show_hc): ?><td class="<?= $sellout_hc > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sellout_hc) ?></td><?php endif; ?>
-                            <td class="<?= $reserve > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>"><?= fmt_qty($reserve) ?></td>
+                            <td class="<?= $reserve > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>">
+                                <?php if ($reserve > 0 && $selected_klinik !== 'all' && $selected_klinik !== 'gudang_utama'): ?>
+                                    <a href="javascript:void(0)" class="text-warning fw-bold text-decoration-none" onclick="openStokBreakdown(<?= $row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>')">
+                                        <?= fmt_qty($reserve) ?>
+                                    </a>
+                                <?php else: ?>
+                                    <?= fmt_qty($reserve) ?>
+                                <?php endif; ?>
+                            </td>
                             <?php if ($show_hc): ?><td class="<?= $reserve_hc > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>"><?= fmt_qty($reserve_hc) ?></td><?php endif; ?>
                             <td class="<?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>"><?= fmt_qty($on_hand) ?></td>
                             <td class="<?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>"><?= fmt_qty($available) ?></td>
@@ -660,30 +646,31 @@ if ($selected_klinik) {
 </div>
 
 <!-- Modal HC Detail -->
-<div class="modal fade" id="modalHCDetail" tabindex="-1" aria-labelledby="modalHCDetailLabel" aria-hidden="true">
+<div class="modal fade" id="modalHCDetail" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header" style="background-color: #204EAB;">
-                <h5 class="modal-title text-white" id="modalHCDetailLabel">
+                <h5 class="modal-title text-white">
                     <i class="fas fa-briefcase-medical"></i> Detail Stok Petugas HC
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-0">
-                <div class="p-3 bg-light border-bottom">
-                    <h6 class="mb-0 text-primary">
-                        <i class="fas fa-box"></i> <span id="modalBarangName" class="fw-bold"></span>
-                    </h6>
-                </div>
-                <div id="hcDetailContent" class="p-3">
-                    <div class="text-center py-4">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <p class="text-muted mt-2">Memuat data...</p>
-                    </div>
-                </div>
+                <div id="hcDetailContent" class="p-3"></div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Stok Breakdown -->
+<div class="modal fade" id="modalStokBreakdown" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="fas fa-info-circle me-2 text-primary-custom"></i>Detail Rekonstruksi Stok</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="stokBreakdownBody"></div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
             </div>
@@ -699,46 +686,93 @@ if ($selected_klinik) {
 $(document).ready(function() {
     $('.datatable-stok').DataTable({
         "order": [[ 0, "asc" ]],
-        "pageLength": 10,
-        "language": {
-            "search": "Cari:",
-            "searchPlaceholder": "Cari...",
-            "lengthMenu": "Tampilkan _MENU_ data",
-            "info": "Menampilkan _START_ sampai _END_ dari _TOTAL_ data",
-            "paginate": {
-                "first": "Pertama",
-                "last": "Terakhir",
-                "next": "<i class='fas fa-chevron-right'></i>",
-                "previous": "<i class='fas fa-chevron-left'></i>"
-            }
-        }
+        "pageLength": 10
     });
 });
 
 function loadHCDetail(barangId, klinikId, namaBarang) {
-    $('#modalBarangName').text(namaBarang);
-    $('#hcDetailContent').html('<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div><p class="text-muted mt-2">Memuat data...</p></div>');
-    
-    var modalEl = document.getElementById('modalHCDetail');
-    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    $('#hcDetailContent').html('<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></div>');
+    var modal = new bootstrap.Modal(document.getElementById('modalHCDetail'));
     modal.show();
     
     $.ajax({
         url: 'api/ajax_hc_detail.php',
         method: 'POST',
-        data: {
-            barang_id: barangId,
-            klinik_id: klinikId,
-            token: '<?= $token ?>'
-        },
-        success: function(response) {
-            $('#hcDetailContent').html(response);
-        },
-        error: function() {
-            $('#hcDetailContent').html('<div class="alert alert-danger mb-0">Gagal memuat data.</div>');
-        }
+        data: { barang_id: barangId, klinik_id: klinikId, token: '<?= $token ?>' },
+        success: function(response) { $('#hcDetailContent').html(response); }
     });
-    return false;
+}
+
+function openStokBreakdown(barangId, namaBarang) {
+    var modalEl = document.getElementById('modalStokBreakdown');
+    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+    var body = document.getElementById('stokBreakdownBody');
+    body.innerHTML = '<div class="text-muted">Memuat...</div>';
+
+    $.ajax({
+        url: 'api/ajax_stok_klinik_breakdown.php',
+        method: 'POST',
+        dataType: 'json',
+        data: { 
+            klinik_id: <?= (int)$selected_klinik ?>, 
+            barang_id: barangId, 
+            tanggal: "<?= $filter_date ?>",
+            token: "<?= $token ?>"
+        }
+    }).then(function(res) {
+        if (!res || !res.success) {
+            body.innerHTML = '<div class="alert alert-danger mb-0">Gagal memuat detail.</div>';
+            return;
+        }
+        var b = res.barang || {};
+        var lastU = (res.last_update && res.last_update.text) ? res.last_update.text : '-';
+        var baseOn = (res.baseline && res.baseline.onsite) ? res.baseline.onsite : 0;
+        var rb = res.rollback || {};
+        var rbe = rb.events || {};
+        var pem = Array.isArray(rbe.pemakaian) ? rbe.pemakaian : [];
+        var trf = Array.isArray(rbe.transfers) ? rbe.transfers : [];
+        var reserve = res.reserve || {};
+        var result = res.result || {};
+
+        var html = '<div class="mb-4 pb-3 border-bottom"><h5 class="fw-bold text-primary-custom mb-1">' + b.nama_barang + '</h5><div class="small text-muted">Kode: ' + b.kode_barang + ' | Satuan: ' + b.satuan + '</div></div>';
+        
+        html += '<div class="row g-3 mb-4">';
+        html += '<div class="col-md-6"><div class="p-3 bg-light rounded-3 h-100 border-start border-primary border-4"><div class="x-small text-muted text-uppercase fw-bold mb-1">Mirror Odoo (' + lastU + ')</div><div class="h3 mb-0 fw-bold">' + fmtNum(baseOn) + '</div></div></div>';
+        html += '<div class="col-md-6"><div class="p-3 bg-primary text-white rounded-3 h-100"><div class="x-small text-white-50 text-uppercase fw-bold mb-1">Rekonstruksi Stok (' + "<?= $filter_date_label ?>" + ')</div><div class="h3 mb-0 fw-bold">' + fmtNum(result.stock_onsite) + '</div></div></div>';
+        html += '</div>';
+
+        if (rb.range) {
+            html += '<div class="mb-4"><h6><i class="fas fa-history me-2 text-warning"></i>Rollback Transaksi (History Mode)</h6><div class="table-responsive"><table class="table table-sm x-small"><thead><tr><th>Kategori</th><th class="text-end">Qty</th></tr></thead><tbody>';
+            html += '<tr><td>Sellout (Klinik)</td><td class="text-end text-success fw-bold">+' + fmtNum(rb.sellout_klinik) + '</td></tr>';
+            html += '<tr><td>Transfer OUT</td><td class="text-end text-success fw-bold">+' + fmtNum(rb.out_transfer) + '</td></tr>';
+            html += '<tr><td>Transfer IN</td><td class="text-end text-danger fw-bold">-' + fmtNum(rb.in_transfer) + '</td></tr>';
+            html += '</tbody></table></div></div>';
+        }
+
+        html += '<div class="mb-0"><h6><i class="fas fa-calendar-check me-2 text-info"></i>Reservasi Booking Aktif</h6><div class="table-responsive"><table class="table table-sm x-small"><thead><tr><th>No. Booking</th><th>Tgl Layanan</th><th class="text-end">Qty</th></tr></thead><tbody>';
+        if (reserve.events && reserve.events.length) {
+            reserve.events.forEach(function(ev) {
+                html += '<tr><td>' + ev.nomor_booking + '</td><td>' + ev.tanggal_pemeriksaan + '</td><td class="text-end fw-bold">-' + fmtNum(ev.qty) + '</td></tr>';
+            });
+        } else {
+            html += '<tr><td colspan="3" class="text-center text-muted">Tidak ada reservasi</td></tr>';
+        }
+        html += '</tbody><tfoot><tr class="table-info"><td colspan="2" class="fw-bold">Total Reservasi</td><td class="text-end fw-bold">-' + fmtNum(reserve.onsite) + '</td></tr></tfoot></table></div></div>';
+        
+        html += '<div class="mt-4 p-3 bg-primary bg-opacity-10 rounded-3 border-start border-primary border-4 d-flex justify-content-between align-items-center"><div class="fw-bold text-primary-custom">ESTIMASI STOK TERSEDIA</div><div class="h3 mb-0 fw-bold text-primary-custom">' + fmtNum(result.tersedia) + '</div></div>';
+
+        body.innerHTML = html;
+    }).fail(function() {
+        body.innerHTML = '<div class="alert alert-danger mb-0">Terjadi kesalahan saat memuat data.</div>';
+    });
+}
+
+function fmtNum(v) {
+    var n = parseFloat(v || 0);
+    if (Math.abs(n - Math.round(n)) < 0.00005) return Math.round(n).toString();
+    var s = n.toFixed(4).replace(/\.?0+$/, "");
+    return s === "" ? "0" : s;
 }
 </script>
 </body>
