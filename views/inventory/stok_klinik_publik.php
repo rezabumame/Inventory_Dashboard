@@ -568,12 +568,27 @@ if ($active_tab == 'rekap') {
         .card { border: none; box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075); border-radius: 12px; }
         .breadcrumb-item + .breadcrumb-item::before { content: "/"; }
         .breadcrumb-item active { color: #6c757d; }
-        .last-update { font-size: 0.875rem; color: #6c757d; }
-        .card-summary { border: 1px solid #eef0f2; transition: all 0.2s; }
-        .card-summary:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        .summary-label { font-size: 0.7rem; font-weight: 700; color: #6c757d; text-transform: uppercase; letter-spacing: 0.5px; }
-        .summary-value { font-size: 1.5rem; font-weight: 700; color: #333; }
-        .summary-icon { opacity: 0.4; font-size: 1.25rem; }
+        .stat-card-public {
+            border: none;
+            border-radius: 12px;
+            padding: 0.85rem 1.1rem;
+            background: #fff;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+            border-left: 4px solid #204EAB;
+        }
+        .stat-card-public:hover { transform: translateY(-3px); box-shadow: 0 6px 15px rgba(0, 0, 0, 0.08); }
+        .stat-card-public .stat-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px; letter-spacing: 0.4px; }
+        .stat-card-public .stat-value { font-size: 1.3rem; font-weight: 800; color: #1e293b; margin-top: auto; line-height: 1.2; }
+        .stat-card-public .stat-icon { font-size: 1.2rem; opacity: 0.15; position: absolute; right: 0.9rem; top: 0.9rem; color: #204EAB; }
+        .stat-card-public.stat-blue { border-left-color: #bae6fd; }
+        .stat-card-public.stat-blue .stat-label, .stat-card-public.stat-blue .stat-value, .stat-card-public.stat-blue .stat-icon { color: #0369a1; }
+
         .table thead th { background-color: #204EAB; color: white; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; border: 1px solid rgba(255,255,255,0.1); vertical-align: middle; white-space: nowrap; }
         .table td { vertical-align: middle; border: 1px solid #f1f5f9; }
 
@@ -603,25 +618,6 @@ if ($active_tab == 'rekap') {
             --bg-reference: #e0f2fe;
             --text-reference: #0369a1;
         }
-        .stat-card-rekap {
-            border: none;
-            border-radius: 16px;
-            padding: 1.25rem;
-            background: #fff;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            transition: all 0.2s;
-            position: relative;
-            overflow: hidden;
-            border-left: 4px solid var(--primary-rekap);
-        }
-        .stat-card-rekap:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        .stat-card-rekap .stat-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: #64748b; margin-bottom: 0.5rem; }
-        .stat-card-rekap .stat-value { font-size: 1.75rem; font-weight: 800; color: #1e293b; margin-top: auto; }
-        .stat-card-rekap .stat-icon { font-size: 1.5rem; opacity: 0.1; position: absolute; right: 1rem; top: 1rem; color: var(--primary-rekap); }
-        
         .stat-info-badge { background: #fff; padding: 0.6rem 1rem; border-radius: 12px; display: inline-flex; align-items: center; gap: 0.75rem; border: 1px solid #e2e8f0; }
         .stat-info-label { font-size: 0.65rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; }
         .stat-info-value { font-size: 1rem; font-weight: 800; color: #1e293b; }
@@ -638,8 +634,8 @@ if ($active_tab == 'rekap') {
 </head>
 <body>
 
-<div class="container-fluid py-3 px-4">
-    <div class="row mb-3 align-items-center">
+<div class="container-fluid py-2 px-4">
+    <div class="row mb-2 align-items-center">
         <div class="col">
             <h1 class="h3 mb-1 fw-bold text-primary-custom">
                 <i class="fas fa-hospital me-2"></i>Inventory Klinik
@@ -654,7 +650,7 @@ if ($active_tab == 'rekap') {
     </div>
 
     <!-- Tabs Navigation -->
-    <ul class="nav nav-pills mb-4 gap-2" id="stokKlinikTabs">
+    <ul class="nav nav-pills mb-3 gap-2" id="stokKlinikTabs">
         <li class="nav-item">
             <a class="nav-link <?= $active_tab == 'stok' ? 'active-blue' : 'bg-white text-dark border' ?> fw-bold px-4 py-2 rounded-pill" href="?page=stok_klinik_publik&token=<?= $token ?>&tab=stok<?= $selected_klinik ? '&klinik_id='.$selected_klinik : '' ?><?= $filter_date ? '&tanggal='.$filter_date : '' ?>">
                 <i class="fas fa-boxes me-2"></i>Stok Barang
@@ -670,8 +666,8 @@ if ($active_tab == 'rekap') {
     <!-- TAB CONTENT: STOK BARANG -->
     <?php if ($active_tab == 'stok'): ?>
 
-    <div class="card mb-4 border-0 shadow-sm">
-        <div class="card-body p-4">
+    <div class="card mb-3 border-0 shadow-sm">
+        <div class="card-body p-3">
             <form method="GET" class="row g-3 align-items-end">
                 <input type="hidden" name="page" value="stok_klinik_publik">
                 <input type="hidden" name="tab" value="stok">
@@ -704,82 +700,54 @@ if ($active_tab == 'rekap') {
         </div>
     </div>
 
-    <div class="row mb-4 g-3">
+    <div class="row mb-3 g-2">
         <div class="col">
-            <div class="card card-summary h-100">
-                <div class="card-body p-3 d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="summary-label">Jenis Barang</div>
-                        <div class="summary-value"><?= $summary_stok['total_items'] ?></div>
-                    </div>
-                    <i class="fas fa-boxes summary-icon text-primary-custom"></i>
-                </div>
+            <div class="stat-card-public">
+                <div class="stat-label">Jenis Barang</div>
+                <i class="fas fa-boxes stat-icon"></i>
+                <div class="stat-value"><?= $summary_stok['total_items'] ?></div>
             </div>
         </div>
         <div class="col">
-            <div class="card card-summary h-100">
-                <div class="card-body p-3 d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="summary-label">Stok On Site</div>
-                        <div class="summary-value"><?= fmt_qty($summary_stok['total_qty'] ?? 0) ?></div>
-                    </div>
-                    <i class="fas fa-cubes summary-icon text-primary-custom"></i>
-                </div>
+            <div class="stat-card-public">
+                <div class="stat-label">Stok On Site</div>
+                <i class="fas fa-cubes stat-icon"></i>
+                <div class="stat-value"><?= fmt_qty($summary_stok['total_qty'] ?? 0) ?></div>
             </div>
         </div>
         <div class="col">
-            <div class="card card-summary h-100">
-                <div class="card-body p-3 d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="summary-label">Stok HC</div>
-                        <div class="summary-value"><?= fmt_qty($summary_stok['total_qty_hc'] ?? 0) ?></div>
-                    </div>
-                    <i class="fas fa-user-nurse summary-icon text-primary-custom"></i>
-                </div>
+            <div class="stat-card-public">
+                <div class="stat-label">Stok HC</div>
+                <i class="fas fa-user-nurse stat-icon"></i>
+                <div class="stat-value"><?= fmt_qty($summary_stok['total_qty_hc'] ?? 0) ?></div>
             </div>
         </div>
         <div class="col">
-            <div class="card card-summary h-100">
-                <div class="card-body p-3 d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="summary-label">Sellout Onsite</div>
-                        <div class="summary-value"><?= fmt_qty($summary_stok['total_sellout_klinik'] ?? 0) ?></div>
-                    </div>
-                    <i class="fas fa-history summary-icon text-primary-custom"></i>
-                </div>
+            <div class="stat-card-public">
+                <div class="stat-label">Sellout Onsite</div>
+                <i class="fas fa-history stat-icon"></i>
+                <div class="stat-value"><?= fmt_qty($summary_stok['total_sellout_klinik'] ?? 0) ?></div>
             </div>
         </div>
         <div class="col">
-            <div class="card card-summary h-100">
-                <div class="card-body p-3 d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="summary-label">Reserve Onsite</div>
-                        <div class="summary-value"><?= fmt_qty($summary_stok['reserve_onsite'] ?? 0) ?></div>
-                    </div>
-                    <i class="fas fa-hospital summary-icon text-primary-custom"></i>
-                </div>
+            <div class="stat-card-public">
+                <div class="stat-label">Reserve Onsite</div>
+                <i class="fas fa-hospital stat-icon"></i>
+                <div class="stat-value"><?= fmt_qty($summary_stok['reserve_onsite'] ?? 0) ?></div>
             </div>
         </div>
         <div class="col">
-            <div class="card card-summary h-100">
-                <div class="card-body p-3 d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="summary-label">Sellout HC</div>
-                        <div class="summary-value"><?= fmt_qty($summary_stok['total_sellout_hc'] ?? 0) ?></div>
-                    </div>
-                    <i class="fas fa-user-nurse summary-icon text-primary-custom"></i>
-                </div>
+            <div class="stat-card-public">
+                <div class="stat-label">Sellout HC</div>
+                <i class="fas fa-user-nurse stat-icon"></i>
+                <div class="stat-value"><?= fmt_qty($summary_stok['total_sellout_hc'] ?? 0) ?></div>
             </div>
         </div>
         <div class="col">
-            <div class="card card-summary h-100">
-                <div class="card-body p-3 d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="summary-label">Reserve HC</div>
-                        <div class="summary-value"><?= fmt_qty($summary_stok['reserve_hc'] ?? 0) ?></div>
-                    </div>
-                    <i class="fas fa-user-nurse summary-icon text-primary-custom"></i>
-                </div>
+            <div class="stat-card-public">
+                <div class="stat-label">Reserve HC</div>
+                <i class="fas fa-user-nurse stat-icon"></i>
+                <div class="stat-value"><?= fmt_qty($summary_stok['reserve_hc'] ?? 0) ?></div>
             </div>
         </div>
     </div>
@@ -892,8 +860,8 @@ if ($active_tab == 'rekap') {
     <!-- TAB CONTENT: REKAPITULASI AKTIVITAS BULANAN -->
     <?php if ($active_tab == 'rekap'): ?>
     <div class="rekap-tab-content">
-        <div class="card mb-4 border-0 shadow-sm">
-            <div class="card-body p-4">
+        <div class="card mb-3 border-0 shadow-sm">
+            <div class="card-body p-3">
                 <div class="row align-items-center">
                     <div class="col">
                         <form action="" method="GET" class="row g-3 align-items-end">
@@ -951,47 +919,47 @@ if ($active_tab == 'rekap') {
         </div>
 
         <!-- Stat Recap -->
-        <div class="row g-2 mb-4">
+        <div class="row g-2 mb-3">
             <div class="col">
-                <div class="stat-card-rekap">
+                <div class="stat-card-public">
                     <div class="stat-label">Sellout Onsite</div>
                     <i class="fas fa-history stat-icon"></i>
                     <div class="stat-value"><?= fmt_qty($summary_rekap['sellout_onsite']) ?></div>
                 </div>
             </div>
             <div class="col">
-                <div class="stat-card-rekap">
+                <div class="stat-card-public">
                     <div class="stat-label">Sellout HC</div>
                     <i class="fas fa-user-md stat-icon"></i>
                     <div class="stat-value"><?= fmt_qty($summary_rekap['sellout_hc']) ?></div>
                 </div>
             </div>
             <div class="col">
-                <div class="stat-card-rekap">
+                <div class="stat-card-public">
                     <div class="stat-label">Reserve Sold Onsite</div>
                     <i class="fas fa-city stat-icon"></i>
                     <div class="stat-value"><?= fmt_qty($summary_rekap['reserve_onsite']) ?></div>
                 </div>
             </div>
             <div class="col">
-                <div class="stat-card-rekap">
+                <div class="stat-card-public">
                     <div class="stat-label">Reserve Sold HC</div>
                     <i class="fas fa-user-nurse stat-icon"></i>
                     <div class="stat-value"><?= fmt_qty($summary_rekap['reserve_hc']) ?></div>
                 </div>
             </div>
             <div class="col">
-                <div class="stat-card-rekap" style="border-left-color: #bae6fd;">
-                    <div class="stat-label" style="color: #0369a1;">Booked Onsite</div>
-                    <i class="fas fa-calendar-alt stat-icon" style="color: #0369a1;"></i>
-                    <div class="stat-value" style="color: #0369a1;"><?= fmt_qty($summary_rekap['reserve_booked_onsite']) ?></div>
+                <div class="stat-card-public stat-blue">
+                    <div class="stat-label">Booked Onsite</div>
+                    <i class="fas fa-calendar-alt stat-icon"></i>
+                    <div class="stat-value"><?= fmt_qty($summary_rekap['reserve_booked_onsite']) ?></div>
                 </div>
             </div>
             <div class="col">
-                <div class="stat-card-rekap" style="border-left-color: #bae6fd;">
-                    <div class="stat-label" style="color: #0369a1;">Booked HC</div>
-                    <i class="fas fa-calendar-check stat-icon" style="color: #0369a1;"></i>
-                    <div class="stat-value" style="color: #0369a1;"><?= fmt_qty($summary_rekap['reserve_booked_hc']) ?></div>
+                <div class="stat-card-public stat-blue">
+                    <div class="stat-label">Booked HC</div>
+                    <i class="fas fa-calendar-check stat-icon"></i>
+                    <div class="stat-value"><?= fmt_qty($summary_rekap['reserve_booked_hc']) ?></div>
                 </div>
             </div>
         </div>
