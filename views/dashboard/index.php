@@ -247,8 +247,8 @@ if ($role === 'super_admin') {
     </div>
     <div class="col-auto">
         <div class="d-flex flex-wrap gap-2">
-            <?php if (in_array($role, ['cs', 'admin_klinik'], true)): ?>
-                <a href="index.php?page=booking_create" class="btn btn-primary">
+            <?php if (in_array($role, ['cs', 'super_admin'], true)): ?>
+                <a href="index.php?page=booking&trigger=new" class="btn btn-primary">
                     <i class="fas fa-plus-circle me-2"></i>Booking
                 </a>
             <?php endif; ?>

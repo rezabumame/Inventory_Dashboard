@@ -1747,6 +1747,18 @@ window.toggleActionDrawer = function(btn) {
     $drawer.toggleClass('open');
     $btn.toggleClass('active');
 };
+
+// Auto-trigger new booking modal if URL contains trigger=new
+$(document).ready(function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('trigger') === 'new') {
+        const modalEl = document.getElementById('modalBookingBaru');
+        if (modalEl) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+        }
+    }
+});
 </script>
 
 <!-- Action Hub Modal -->
