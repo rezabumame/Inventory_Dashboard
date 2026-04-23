@@ -752,9 +752,19 @@ if ($active_tab == 'rekap') {
         </div>
     </div>
 
-    <div class="card">
-        <div class="card-body">
-            <div class="table-responsive">
+    <div class="card border-0 shadow-sm p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <button class="btn btn-success btn-sm rounded-pill px-3 fw-bold" id="btnExportExcelStok">
+                    <i class="fas fa-file-excel me-1"></i> Export Excel
+                </button>
+            </div>
+            <div class="d-flex align-items-center">
+                <label class="fw-bold me-2 mb-0" style="color: #1d2939; font-size: 0.9rem;">Cari:</label>
+                <input type="text" id="customSearchStok" class="form-control form-control-sm shadow-sm" style="width: 200px; border-radius: 8px;">
+            </div>
+        </div>
+        <div class="table-responsive">
                 <table class="table table-hover mb-0 datatable-stok">
                     <thead>
                         <tr>
@@ -973,8 +983,8 @@ if ($active_tab == 'rekap') {
                     </button>
                 </div>
                 <div class="d-flex align-items-center">
-                    <label class="small fw-bold text-muted me-2 mb-0">Cari:</label>
-                    <input type="text" id="customSearchRekap" class="form-control form-control-sm" style="width: 180px;">
+                    <label class="fw-bold me-2 mb-0" style="color: #1d2939; font-size: 0.9rem;">Cari:</label>
+                    <input type="text" id="customSearchRekap" class="form-control form-control-sm shadow-sm" style="width: 200px; border-radius: 8px;">
                 </div>
             </div>
             <div class="table-recap-container">
@@ -1066,24 +1076,21 @@ if ($active_tab == 'rekap') {
 <script src="https://cdn.datatables.net/1.13.5/js/dataTables.bootstrap5.min.js"></script>
 <script>
 $(document).ready(function() {
-    if ($.fn.DataTable.isDataTable('.datatable-stok')) {
-        $('.datatable-stok').DataTable().destroy();
-    }
-    $('.datatable-stok').DataTable({
+    var tableStok = $('.datatable-stok').DataTable({
         "order": [[ 0, "asc" ]],
         "pageLength": 10,
-        "dom": "frtip",
+        "dom": "rtip",
         "language": {
-            "search": "Cari:",
-            "searchPlaceholder": "Cari...",
             "info": "Menampilkan _START_ sampai _END_ dari _TOTAL_ data",
             "paginate": {
-                "first": "Pertama",
-                "last": "Terakhir",
                 "next": "<i class='fas fa-chevron-right'></i>",
                 "previous": "<i class='fas fa-chevron-left'></i>"
             }
         }
+    });
+
+    $('#customSearchStok').on('keyup', function() {
+        tableStok.search(this.value).draw();
     });
 
     var tableRekap = $('#tableSummaryRekap').DataTable({
