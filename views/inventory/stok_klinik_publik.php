@@ -569,25 +569,25 @@ if ($active_tab == 'rekap') {
         .breadcrumb-item + .breadcrumb-item::before { content: "/"; }
         .breadcrumb-item active { color: #6c757d; }
         .stat-card-public {
-            border: none;
+            border: 1px solid #eef0f2;
             border-radius: 12px;
-            padding: 0.85rem 1.1rem;
+            padding: 0.85rem 1rem;
             background: #fff;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
             height: 100%;
             display: flex;
             flex-direction: column;
             transition: all 0.2s ease;
             position: relative;
             overflow: hidden;
-            border-left: 4px solid #204EAB;
         }
-        .stat-card-public:hover { transform: translateY(-3px); box-shadow: 0 6px 15px rgba(0, 0, 0, 0.08); }
-        .stat-card-public .stat-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px; letter-spacing: 0.4px; }
-        .stat-card-public .stat-value { font-size: 1.3rem; font-weight: 800; color: #1e293b; margin-top: auto; line-height: 1.2; }
-        .stat-card-public .stat-icon { font-size: 1.2rem; opacity: 0.15; position: absolute; right: 0.9rem; top: 0.9rem; color: #204EAB; }
-        .stat-card-public.stat-blue { border-left-color: #bae6fd; }
-        .stat-card-public.stat-blue .stat-label, .stat-card-public.stat-blue .stat-value, .stat-card-public.stat-blue .stat-icon { color: #0369a1; }
+        .stat-card-public:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); }
+        .stat-card-public .stat-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: #6c757d; margin-bottom: 2px; letter-spacing: 0.5px; }
+        .stat-card-public .stat-value { font-size: 1.4rem; font-weight: 800; color: #1d2939; margin-top: auto; }
+        .stat-card-public .stat-icon { font-size: 1.25rem; opacity: 0.35; position: absolute; right: 1rem; top: 1rem; color: #204EAB; }
+        
+        .stat-card-public.stat-blue .stat-icon { color: #0369a1; }
+        .stat-card-public.stat-blue .stat-value { color: #0369a1; }
 
         .table thead th { background-color: #204EAB; color: white; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; border: 1px solid rgba(255,255,255,0.1); vertical-align: middle; white-space: nowrap; }
         .table td { vertical-align: middle; border: 1px solid #f1f5f9; }
