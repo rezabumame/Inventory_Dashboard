@@ -226,6 +226,11 @@ try {
                 $jumlah_pax = $pending_data['jumlah_pax'];
                 $patients = $pending_data['patients'];
 
+                $butuh_fu = (int)($booking['butuh_fu'] ?? 0);
+                if ($tanggal !== ($booking['tanggal_pemeriksaan'] ?? '') || $jam_layanan !== ($booking['jam_layanan'] ?? '')) {
+                    $butuh_fu = 0;
+                }
+
                 // Re-calculate OOS for the new data
                 $total_needed = [];
                 foreach ($patients as $p) {
@@ -259,14 +264,14 @@ try {
                 $stmt_u = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET 
                     nama_pemesan = ?, nomor_tlp = ?, tanggal_lahir = ?, tanggal_pemeriksaan = ?, 
                     booking_type = ?, jam_layanan = ?, jotform_submitted = ?, status = 'booked', 
-                    klinik_id = ?, status_booking = ?, jumlah_pax = ?, is_out_of_stock = ?, 
+                    butuh_fu = ?, klinik_id = ?, status_booking = ?, jumlah_pax = ?, is_out_of_stock = ?, 
                     out_of_stock_items = ?, spv_approved_by = ?, spv_approved_at = NOW(), 
                     pending_data = NULL 
                     WHERE id = ?");
-                $stmt_u->bind_param("ssssssisiisiisi", 
+                $stmt_u->bind_param("ssssssiiisiisi", 
                     $nama_pemesan, $nomor_tlp, $tanggal_lahir, $tanggal, 
                     $booking_type, $jam_layanan, $jotform_submitted, 
-                    $target_klinik_id, $target_status_booking, $jumlah_pax, $is_oos, 
+                    $butuh_fu, $target_klinik_id, $target_status_booking, $jumlah_pax, $is_oos, 
                     $oos_str, $_SESSION['user_id'], $id);
                 $stmt_u->execute();
 

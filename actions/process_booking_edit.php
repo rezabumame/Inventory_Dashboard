@@ -148,7 +148,13 @@ try {
 
 
     $new_status = ($booking_type === 'cancel') ? 'cancelled' : 'booked';
-    $butuh_fu = ($new_status === 'cancelled') ? 0 : (int)($booking['butuh_fu'] ?? 0);
+    $butuh_fu = (int)($booking['butuh_fu'] ?? 0);
+    if ($new_status === 'cancelled') {
+        $butuh_fu = 0;
+    } elseif ($tanggal !== $booking['tanggal_pemeriksaan'] || $jam_layanan !== $booking['jam_layanan']) {
+        // If schedule changed, clear FU Jadwal Kedatangan status
+        $butuh_fu = 0;
+    }
 
     if ($new_status === 'cancelled') {
         $stmt_u = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET nama_pemesan = ?, nomor_tlp = ?, tanggal_lahir = ?, tanggal_pemeriksaan = ?, booking_type = ?, jam_layanan = ?, jotform_submitted = ?, status = ?, butuh_fu = ?, klinik_id = ?, status_booking = ?, jumlah_pax = ? WHERE id = ?");
