@@ -3,9 +3,13 @@ session_start();
 require_once __DIR__ . '/../config/database.php';
 
 if (!isset($_SESSION['user_id'])) {
-    header('Content-Type: application/json');
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-    exit;
+    $token = $_POST['token'] ?? '';
+    $saved_token = get_setting('public_stok_token');
+    if ($token === '' || $token !== $saved_token) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+        exit;
+    }
 }
 
 $barang_id = (int)($_POST['barang_id'] ?? 0);

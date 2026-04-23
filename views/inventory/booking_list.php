@@ -1011,15 +1011,21 @@ window.addPatientExamRow = function(patientIdx, selectedId = '') {
     $list.append(row);
     var $select = $list.find('.exam-row').last().find('select');
     if (typeof $select.select2 === 'function') {
-        var $modal = $('#modalBookingBaru');
+        var $modal = $list.closest('.modal');
         if ($select.hasClass('select2-hidden-accessible')) $select.select2('destroy');
-        $select.select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: ($modal.length ? $modal : $(document.body)) });
+        $select.select2({ 
+            theme: 'bootstrap-5', 
+            width: '100%', 
+            dropdownParent: ($modal.length ? $modal : $(document.body)),
+            templateResult: formatExamOption,
+            templateSelection: formatExamOption
+        });
     }
     if (selectedId) {
-        $select.val(selectedId);
+        $select.val(selectedId).trigger('change');
     } else if (patientIdx > 0 && rowIdx === 0) {
         var firstExam = $(`.patient-exams-list[data-patient-idx="0"] .patient-exam-select`).first().val();
-        if (firstExam) $select.val(firstExam);
+        if (firstExam) $select.val(firstExam).trigger('change');
     }
 };
 
@@ -1069,7 +1075,7 @@ window.updateAllExamSelects = function() {
         $(this).html(examOptionsModal);
         if (currentVal) $(this).val(currentVal);
         if (typeof $(this).select2 === 'function') {
-            var $modal = $('#modalBookingBaru');
+            var $modal = $(this).closest('.modal');
             if ($(this).hasClass('select2-hidden-accessible')) {
                 $(this).trigger('change.select2');
             } else {
@@ -1638,7 +1644,7 @@ window.addAdditionalExamRow = function(pIdx, selectedId = '') {
     var row = `
         <div class="row g-2 mb-1 additional-exam-row">
             <div class="col">
-                <select name="additional_patients[${pIdx}][exams][]" class="form-select form-select-sm" required>
+                <select name="additional_patients[${pIdx}][exams][]" class="form-select form-select-sm patient-exam-select" required>
                     ${examOptionsModal}
                 </select>
             </div>
@@ -1649,8 +1655,21 @@ window.addAdditionalExamRow = function(pIdx, selectedId = '') {
             </div>
         </div>`;
     $list.append(row);
+    var $select = $list.find('.additional-exam-row').last().find('select');
+    
+    if (typeof $select.select2 === 'function') {
+        var $modal = $list.closest('.modal');
+        $select.select2({ 
+            theme: 'bootstrap-5', 
+            width: '100%', 
+            dropdownParent: ($modal.length ? $modal : $(document.body)),
+            templateResult: formatExamOption,
+            templateSelection: formatExamOption 
+        });
+    }
+
     if (selectedId) {
-        $list.find('.additional-exam-row').last().find('select').val(selectedId);
+        $select.val(selectedId).trigger('change');
     }
 };
 
@@ -1713,6 +1732,15 @@ window.submitAdjust = function() {
     .booking-pasien-content .fw-semibold {
         font-size: 1.05rem;
         color: #1d2939;
+    }
+    
+    /* Limit Select2 Dropdown Height */
+    .select2-container--bootstrap-5 .select2-results__options {
+        max-height: 250px !important;
+    }
+    .select2-container--bootstrap-5 .select2-dropdown {
+        border-color: #dee2e6;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
     }
     .booking-pasien-content .small.text-success {
         font-size: .95rem;
