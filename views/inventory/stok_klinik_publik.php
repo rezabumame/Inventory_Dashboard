@@ -614,8 +614,8 @@ if ($active_tab === 'rekap') {
         <div class="d-flex align-items-center"><label class="small fw-bold text-muted me-2 mb-0">Cari:</label><input type="text" id="customSearch" class="form-control form-control-sm" style="width: 200px;"></div>
     </div><div class="table-responsive"><table class="table table-bordered mb-0" id="tableSummary" style="font-size:0.85rem">
         <thead>
-            <tr><th rowspan="2" class="text-center">Kode</th><th rowspan="2">Nama Barang</th><th rowspan="2" class="text-center">Satuan</th><th colspan="3" class="text-center">Sellout</th><th colspan="2" class="text-center">Non-Reserve</th><th colspan="2" class="text-center">Reserve-Sold</th><th colspan="2" class="text-center bg-reference">Reserve-Booked</th></tr>
-            <tr><th class="text-center bg-total">Total</th><th class="text-center bg-onsite">Onsite</th><th class="text-center bg-hc">HC</th><th class="text-center bg-onsite">Onsite</th><th class="text-center bg-hc">HC</th><th class="text-center bg-onsite">Onsite</th><th class="text-center bg-hc">HC</th><th class="text-center bg-reference-onsite">Onsite</th><th class="text-center bg-reference-hc">HC</th></tr>
+            <tr><th rowspan="2" class="text-center">Kode</th><th rowspan="2">Nama Barang</th><th rowspan="2" class="text-center">Satuan</th><th colspan="3" class="text-center">Sellout</th><th colspan="2" class="text-center">Non-Reserve</th><th colspan="2" class="text-center">Reserve-Sold</th><th colspan="2" class="text-center">Reserve-Booked</th></tr>
+            <tr><th class="text-center">Total</th><th class="text-center">Onsite</th><th class="text-center">HC</th><th class="text-center">Onsite</th><th class="text-center">HC</th><th class="text-center">Onsite</th><th class="text-center">HC</th><th class="text-center">Onsite</th><th class="text-center">HC</th></tr>
         </thead>
         <tbody>
             <?php foreach ($final_data as $row): ?>
