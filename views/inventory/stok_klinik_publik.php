@@ -648,11 +648,11 @@ if ($active_tab === 'rekap') {
 <script>
 $(document).ready(function() {
     <?php if ($active_tab === 'stok'): ?>
-    $('.datatable-stok').DataTable({ "order": [[ 0, "asc" ]], "pageLength": 10, "language": { "search": "Cari:", "paginate": { "next": '<i class="fas fa-chevron-right"></i>', "previous": '<i class="fas fa-chevron-left"></i>' } } });
+    $('.datatable-stok').DataTable({ "order": [[ 0, "asc" ]], "pageLength": 10, "lengthChange": false, "language": { "search": "Cari:", "paginate": { "next": '<i class="fas fa-chevron-right"></i>', "previous": '<i class="fas fa-chevron-left"></i>' } } });
     <?php endif; ?>
 
     <?php if ($active_tab === 'rekap'): ?>
-    var table = $('#tableSummary').DataTable({ "dom": 'rtp', "pageLength": -1, "ordering": false });
+    var table = $('#tableSummary').DataTable({ "dom": 'rtp', "pageLength": 10, "lengthChange": false, "ordering": false, "language": { "paginate": { "next": '<i class="fas fa-chevron-right"></i>', "previous": '<i class="fas fa-chevron-left"></i>' } } });
     $('#customSearch').on('keyup', function() { table.search(this.value).draw(); });
     $('#btnExportExcel').on('click', function() {
         const data = <?= json_encode($final_data ?? []) ?>;
