@@ -422,8 +422,9 @@ if ($active_tab == 'stok') {
         .summary-label { font-size: 0.7rem; font-weight: 700; color: #6c757d; text-transform: uppercase; letter-spacing: 0.5px; }
         .summary-value { font-size: 1.5rem; font-weight: 700; color: #333; }
         .summary-icon { opacity: 0.4; font-size: 1.25rem; }
-        .table thead th { background-color: #204EAB; color: white; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; border: none; vertical-align: middle; white-space: nowrap; }
-        .table td { vertical-align: middle; }
+        .table thead th { background-color: #204EAB; color: white; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; border: 1px solid rgba(255,255,255,0.1); vertical-align: middle; white-space: nowrap; }
+        .table td { vertical-align: middle; border: 1px solid #f0f0f0; }
+        .table-bordered { border: 1px solid #f0f0f0 !important; }
 
         /* Pagination Circular Styling */
         .dataTables_wrapper .dataTables_paginate { padding-top: 1.25rem !important; }
@@ -565,20 +566,20 @@ if ($active_tab == 'stok') {
     <div class="card">
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0 datatable-stok">
+                <table class="table table-hover table-bordered mb-0 datatable-stok">
                     <thead>
                         <tr>
-                            <th>Kode Barang</th>
-                            <th>Nama Barang</th>
-                            <th>Satuan</th>
-                            <th>Stock On Site</th>
-                            <?php if ($show_hc): ?><th>Stok HC</th><?php endif; ?>
-                            <th>Sellout Onsite</th>
-                            <?php if ($show_hc): ?><th>Sellout HC</th><?php endif; ?>
-                            <th>Reserve Onsite</th>
-                            <?php if ($show_hc): ?><th>Reserve HC</th><?php endif; ?>
-                            <th>On Hand Stok</th>
-                            <th>Available Stok</th>
+                            <th class="text-center">Kode Barang</th>
+                            <th class="text-center">Nama Barang</th>
+                            <th class="text-center">Satuan</th>
+                            <th class="text-center">Stock On Site</th>
+                            <?php if ($show_hc): ?><th class="text-center">Stok HC</th><?php endif; ?>
+                            <th class="text-center">Sellout</th>
+                            <?php if ($show_hc): ?><th class="text-center">Sellout HC</th><?php endif; ?>
+                            <th class="text-center">Reserve</th>
+                            <?php if ($show_hc): ?><th class="text-center">Reserve HC</th><?php endif; ?>
+                            <th class="text-center">On Hand</th>
+                            <th class="text-center">Available Stok</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -602,29 +603,35 @@ if ($active_tab == 'stok') {
                                 $stok_hc = $stok_hc + $in_transfer_hc - $out_transfer_hc;
                             }
                             
-                            $on_hand = ((float)$stok_onsite + ($show_hc ? (float)$stok_hc : 0.0)) - ((float)$sellout + ($show_hc ? (float)$sellout_hc : 0.0));
+                            $total_stok = $stok_onsite + ($show_hc ? $stok_hc : 0);
+                            $total_sellout = $sellout + ($show_hc ? $sellout_hc : 0);
+                            if ($is_history_date) {
+                                $on_hand = $total_stok;
+                            } else {
+                                $on_hand = $total_stok - $total_sellout;
+                            }
                             $available = (float)$on_hand - ((float)$reserve + ($show_hc ? (float)$reserve_hc : 0.0));
                         ?>
                         <tr>
-                            <td class="small text-muted"><?= htmlspecialchars(!empty($row['kode_barang_master']) ? $row['kode_barang_master'] : ($row['kode_barang'] ?? '-')) ?></td>
+                            <td class="small text-muted text-center"><?= htmlspecialchars(!empty($row['kode_barang_master']) ? $row['kode_barang_master'] : ($row['kode_barang'] ?? '-')) ?></td>
                             <td class="small fw-medium"><?= htmlspecialchars($row['nama_barang']) ?></td>
-                            <td class="small text-muted"><?= htmlspecialchars($row['satuan']) ?></td>
-                            <td class="fw-bold"><?= fmt_qty($stok_onsite) ?></td>
+                            <td class="small text-muted text-center"><?= htmlspecialchars($row['satuan']) ?></td>
+                            <td class="fw-bold text-center"><?= fmt_qty($stok_onsite) ?></td>
                             <?php if ($show_hc): ?>
-                            <td>
+                            <td class="text-center">
                                 <?php if ($stok_hc != 0): ?>
                                     <a href="javascript:void(0)" class="text-primary fw-bold text-decoration-none"
                                        onclick="loadHCDetail(<?= $row['barang_id'] ?>, <?= $selected_klinik === 'all' ? 0 : $selected_klinik ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>'); return false;">
-                                        <?= fmt_qty($stok_hc) ?> <i class="fas fa-user-nurse"></i>
+                                        <?= fmt_qty($stok_hc) ?>
                                     </a>
                                 <?php else: ?>
                                     <span class="text-muted small">0</span>
                                 <?php endif; ?>
                             </td>
                             <?php endif; ?>
-                            <td class="<?= $sellout > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sellout) ?></td>
-                            <?php if ($show_hc): ?><td class="<?= $sellout_hc > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sellout_hc) ?></td><?php endif; ?>
-                            <td class="<?= $reserve > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>">
+                            <td class="text-center <?= $sellout > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sellout) ?></td>
+                            <?php if ($show_hc): ?><td class="text-center <?= $sellout_hc > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sellout_hc) ?></td><?php endif; ?>
+                            <td class="text-center <?= $reserve > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>">
                                 <?php if ($reserve > 0 && $selected_klinik !== 'all' && $selected_klinik !== 'gudang_utama'): ?>
                                     <a href="javascript:void(0)" class="text-warning fw-bold text-decoration-none" onclick="openStokBreakdown(<?= $row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>')">
                                         <?= fmt_qty($reserve) ?>
@@ -633,9 +640,9 @@ if ($active_tab == 'stok') {
                                     <?= fmt_qty($reserve) ?>
                                 <?php endif; ?>
                             </td>
-                            <?php if ($show_hc): ?><td class="<?= $reserve_hc > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>"><?= fmt_qty($reserve_hc) ?></td><?php endif; ?>
-                            <td class="<?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>"><?= fmt_qty($on_hand) ?></td>
-                            <td class="<?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>"><?= fmt_qty($available) ?></td>
+                            <?php if ($show_hc): ?><td class="text-center <?= $reserve_hc > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>"><?= fmt_qty($reserve_hc) ?></td><?php endif; ?>
+                            <td class="text-center <?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>"><?= fmt_qty($on_hand) ?></td>
+                            <td class="text-center <?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>"><?= fmt_qty($available) ?></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -643,6 +650,7 @@ if ($active_tab == 'stok') {
             </div>
         </div>
     </div>
+</div>
 </div>
 
 <!-- Modal HC Detail -->
@@ -686,7 +694,19 @@ if ($active_tab == 'stok') {
 $(document).ready(function() {
     $('.datatable-stok').DataTable({
         "order": [[ 0, "asc" ]],
-        "pageLength": 10
+        "pageLength": 10,
+        "language": {
+            "search": "Cari:",
+            "searchPlaceholder": "Cari...",
+            "lengthMenu": "Tampilkan _MENU_ data",
+            "info": "Menampilkan _START_ sampai _END_ dari _TOTAL_ data",
+            "paginate": {
+                "first": "Pertama",
+                "last": "Terakhir",
+                "next": '<i class="fas fa-chevron-right"></i>',
+                "previous": '<i class="fas fa-chevron-left"></i>'
+            }
+        }
     });
 });
 
