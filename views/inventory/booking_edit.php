@@ -242,7 +242,7 @@ if ($can_cs_edit) {
             });
         }
 
-        var inheritExamId = (existingData[0] && existingData[0].exams && existingData[0].exams.length > 0) ? existingData[0].exams[0] : '';
+        var inheritExams = (existingData[0] && existingData[0].exams) ? existingData[0].exams : [];
 
         $wrapper.empty();
         for (var i = 0; i < paxCount; i++) {
@@ -283,8 +283,10 @@ if ($can_cs_edit) {
             
             if (data.exams && data.exams.length > 0) {
                 data.exams.forEach(function(examId) { addPatientExamRowEdit(i, examId); });
+            } else if (i > 0 && inheritExams.length > 0) {
+                inheritExams.forEach(function(examId) { addPatientExamRowEdit(i, examId); });
             } else {
-                addPatientExamRowEdit(i, (i > 0 ? inheritExamId : ''));
+                addPatientExamRowEdit(i, '');
             }
         }
     }
@@ -307,7 +309,6 @@ if ($can_cs_edit) {
             </div>`;
         $list.append(row);
         var $select = $list.find('.exam-row').last().find('select');
-        if (selectedId) $select.val(selectedId);
         if (typeof $select.select2 === 'function') {
             var $modal = $('#modalEditBookingReal');
             if ($select.hasClass('select2-hidden-accessible')) $select.select2('destroy');
@@ -318,7 +319,9 @@ if ($can_cs_edit) {
                 templateResult: formatExamOptionEdit,
                 templateSelection: formatExamOptionEdit
             });
-            if (selectedId) $select.trigger('change');
+        }
+        if (selectedId) {
+            $select.val(selectedId).trigger('change');
         }
         checkEditSelectedStock();
     }
@@ -413,7 +416,7 @@ if ($can_cs_edit) {
                     if (typeof $(this).select2 === 'function') {
                         var $modal = $('#modalEditBookingReal');
                         if ($(this).hasClass('select2-hidden-accessible')) {
-                            $(this).trigger('change.select2');
+                            $(this).trigger('change');
                         } else {
                             $(this).select2({ 
                                 theme: 'bootstrap-5', 
