@@ -1094,7 +1094,7 @@ $(document).ready(function() {
     });
 
     var tableRekap = $('#tableSummaryRekap').DataTable({
-        "order": [[ 1, "asc" ]],
+        "order": [[ 0, "asc" ]],
         "pageLength": 10,
         "dom": "rtip", // Hide default search box
         "language": {
