@@ -482,6 +482,14 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
 <script>
 const PEMERIKSAAN_CSRF = <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>;
 const CAN_EDIT = <?= json_encode($can_edit) ?>;
+
+function fmtNum(v) {
+    var n = parseFloat(v || 0);
+    if (Math.abs(n - Math.round(n)) < 0.00005) return Math.round(n).toString();
+    var s = n.toFixed(4).replace(/\.?0+$/, "");
+    return s === "" ? "0" : s;
+}
+
 function getRowByGrupId(grupId) {
     return $('#examTable tbody tr[data-grup-id="' + grupId + '"]');
 }
@@ -524,7 +532,7 @@ function loadDetail(grupId) {
                             '<td class="small">' + (d.nama_layanan || '-') + '</td>' +
                             '<td class="fw-semibold">' + $('<div>').text(itemText).html() + '</td>' +
                             '<td class="text-center">' + badge + '</td>' +
-                            '<td class="text-center fw-semibold">' + d.qty_per_pemeriksaan + '</td>' +
+                            '<td class="text-center fw-semibold">' + fmtNum(d.qty_per_pemeriksaan) + '</td>' +
                             deleteBtn +
                         '</tr>'
                     );
@@ -579,7 +587,7 @@ function loadView(grupId, container) {
                             '<td>' + (d.nama_layanan || '-') + '</td>' +
                             '<td class="fw-bold text-primary">' + code + '</td>' +
                             '<td class="fw-semibold">' + d.nama_barang + '</td>' +
-                            '<td class="text-center">' + d.qty_per_pemeriksaan + '</td>' +
+                            '<td class="text-center">' + fmtNum(d.qty_per_pemeriksaan) + '</td>' +
                             '<td class="text-center">' + (d.satuan || '-') + '</td>' +
                             '</tr>';
                 });
