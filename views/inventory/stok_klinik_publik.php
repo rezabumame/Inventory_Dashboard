@@ -585,28 +585,27 @@ if ($active_tab === 'rekap') {
 
     <!-- --- TAB CONTENT: REKAP --- -->
     <?php if ($active_tab === 'rekap'): ?>
-    <div class="card mb-4"><div class="card-body p-4"><div class="row align-items-center">
-        <div class="col"><form class="row g-3 align-items-end" method="GET">
+    <div class="card mb-4"><div class="card-body py-3">
+        <form class="row g-3 align-items-end" method="GET">
             <input type="hidden" name="page" value="stok_klinik_publik">
             <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>"><input type="hidden" name="tab" value="rekap">
-            <div class="col-md-5"><label class="form-label small fw-bold text-muted mb-1">Klinik</label><select name="klinik_id" class="form-select border-1"><option value="all" <?= $selected_klinik === 'all' ? 'selected' : '' ?>>Semua Klinik</option><?php foreach ($kliniks as $k): ?><option value="<?= $k['id'] ?>" <?= $selected_klinik == $k['id'] ? 'selected' : '' ?>><?= $k['nama_klinik'] ?></option><?php endforeach; ?></select></div>
-            <div class="col-md-3"><label class="form-label small fw-bold text-muted mb-1">Bulan</label><select name="month" class="form-select border-1"><?php for ($m = 1; $m <= 12; $m++): ?><option value="<?= $m ?>" <?= $selected_month == $m ? 'selected' : '' ?>><?= date('F', mktime(0, 0, 0, $m, 1)) ?></option><?php endfor; ?></select></div>
-            <div class="col-md-2"><label class="form-label small fw-bold text-muted mb-1">Tahun</label><select name="year" class="form-select border-1"><?php for ($y = date('Y'); $y >= 2024; $y--): ?><option value="<?= $y ?>" <?= $selected_year == $y ? 'selected' : '' ?>><?= $y ?></option><?php endfor; ?></select></div>
-            <div class="col-md-auto"><button type="submit" class="btn btn-primary px-4 fw-bold"><i class="fas fa-filter me-2"></i>Filter</button></div>
-        </form></div>
-        <div class="col-auto d-flex gap-2">
-            <div class="stat-info-badge"><i class="fas fa-hourglass-half text-primary"></i><div><div class="stat-info-label">Time Gone</div><div class="stat-info-value"><?= $time_gone_percent ?>%</div></div></div>
-            <div class="stat-info-badge"><i class="fas fa-calendar-check text-primary"></i><div><div class="stat-info-label">Date MTD</div><div class="stat-info-value"><?= $mtd_date ?></div></div></div>
-        </div>
-    </div></div></div>
+            <div class="col-md-4"><label class="form-label small fw-bold text-muted mb-1">Klinik</label><select name="klinik_id" class="form-select" onchange="this.form.submit()"><option value="all" <?= $selected_klinik === 'all' ? 'selected' : '' ?>>Semua Klinik</option><?php foreach ($kliniks as $k): ?><option value="<?= $k['id'] ?>" <?= $selected_klinik == $k['id'] ? 'selected' : '' ?>><?= $k['nama_klinik'] ?></option><?php endforeach; ?></select></div>
+            <div class="col-md-3"><label class="form-label small fw-bold text-muted mb-1">Bulan</label><select name="month" class="form-select" onchange="this.form.submit()"><?php for ($m = 1; $m <= 12; $m++): ?><option value="<?= $m ?>" <?= $selected_month == $m ? 'selected' : '' ?>><?= date('F', mktime(0, 0, 0, $m, 1)) ?></option><?php endfor; ?></select></div>
+            <div class="col-md-2"><label class="form-label small fw-bold text-muted mb-1">Tahun</label><select name="year" class="form-select" onchange="this.form.submit()"><?php for ($y = date('Y'); $y >= 2024; $y--): ?><option value="<?= $y ?>" <?= $selected_year == $y ? 'selected' : '' ?>><?= $y ?></option><?php endfor; ?></select></div>
+            <div class="col-md-3 text-end">
+                <div class="stat-info-badge me-2"><i class="fas fa-hourglass-half text-primary"></i><div><div class="stat-info-label">Time Gone</div><div class="stat-info-value" style="font-size:0.8rem"><?= $time_gone_percent ?>%</div></div></div>
+                <div class="stat-info-badge"><i class="fas fa-calendar-check text-primary"></i><div><div class="stat-info-label">MTD</div><div class="stat-info-value" style="font-size:0.8rem"><?= $mtd_date ?></div></div></div>
+            </div>
+        </form>
+    </div></div>
 
-    <div class="row g-2 mb-4">
-        <div class="col"><div class="stat-card"><div class="stat-label">Sellout Onsite</div><div class="stat-value"><?= fmt_qty($summary_rekap['sellout_onsite']) ?></div></div></div>
-        <div class="col"><div class="stat-card"><div class="stat-label">Sellout HC</div><div class="stat-value"><?= fmt_qty($summary_rekap['sellout_hc']) ?></div></div></div>
-        <div class="col"><div class="stat-card"><div class="stat-label">Reserve Sold Onsite</div><div class="stat-value"><?= fmt_qty($summary_rekap['reserve_onsite']) ?></div></div></div>
-        <div class="col"><div class="stat-card"><div class="stat-label">Reserve Sold HC</div><div class="stat-value"><?= fmt_qty($summary_rekap['reserve_hc']) ?></div></div></div>
-        <div class="col"><div class="stat-card bg-reference"><div class="stat-label" style="color:#0369a1">Booked Onsite</div><div class="stat-value" style="color:#0369a1"><?= fmt_qty($summary_rekap['reserve_booked_onsite']) ?></div></div></div>
-        <div class="col"><div class="stat-card bg-reference"><div class="stat-label" style="color:#0369a1">Booked HC</div><div class="stat-value" style="color:#0369a1"><?= fmt_qty($summary_rekap['reserve_booked_hc']) ?></div></div></div>
+    <div class="row g-3 mb-4">
+        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Sellout Onsite</div><div class="summary-value"><?= fmt_qty($summary_rekap['sellout_onsite']) ?></div></div><i class="fas fa-hospital summary-icon text-primary-custom"></i></div></div></div>
+        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Sellout HC</div><div class="summary-value"><?= fmt_qty($summary_rekap['sellout_hc']) ?></div></div><i class="fas fa-user-nurse summary-icon text-primary-custom"></i></div></div></div>
+        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Res-Sold Onsite</div><div class="summary-value"><?= fmt_qty($summary_rekap['reserve_onsite']) ?></div></div><i class="fas fa-check-circle summary-icon text-primary-custom"></i></div></div></div>
+        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Res-Sold HC</div><div class="summary-value"><?= fmt_qty($summary_rekap['reserve_hc']) ?></div></div><i class="fas fa-check-double summary-icon text-primary-custom"></i></div></div></div>
+        <div class="col"><div class="card card-summary" style="background-color: #f0f9ff;"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Booked Onsite</div><div class="summary-value" style="color:#0369a1"><?= fmt_qty($summary_rekap['reserve_booked_onsite']) ?></div></div><i class="fas fa-calendar-alt summary-icon text-info"></i></div></div></div>
+        <div class="col"><div class="card card-summary" style="background-color: #f0f9ff;"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Booked HC</div><div class="summary-value" style="color:#0369a1"><?= fmt_qty($summary_rekap['reserve_booked_hc']) ?></div></div><i class="fas fa-calendar-check summary-icon text-info"></i></div></div></div>
     </div>
 
     <div class="card border-0 shadow-sm p-3"><div class="d-flex justify-content-between align-items-center mb-3">
