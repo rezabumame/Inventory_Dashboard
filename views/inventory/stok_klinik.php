@@ -6,7 +6,7 @@ check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'cs', 'petugas_hc']);
 $can_filter_klinik = in_array($_SESSION['role'], ['super_admin', 'admin_gudang', 'cs']);
 $is_cs = ($_SESSION['role'] == 'cs');
 $can_view_monitoring = in_array($_SESSION['role'], ['super_admin', 'admin_gudang', 'admin_klinik']);
-$active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'stok';
+$active_tab = 'stok'; // Set default tab
 
 $selected_klinik = '';
 $include_gudang = isset($_GET['include_gudang']) && $_GET['include_gudang'] == '1';
@@ -72,8 +72,8 @@ while($row = $res_pem->fetch_assoc()) $pemeriksaan_list[] = $row;
 
 // TAB STOK KLINIK
 if ($active_tab == 'stok') {
-    // IF CS and Klinik selected (or view mode changed), show Exam Availability
-    if ($is_cs && $selected_klinik) {
+    // IF CS and Klinik selected (or view mode changed), show Exam Availability (REMOVED: CS now uses standard view)
+    if (false) {
         // 1. Fetch Stock for this clinic (Efficient Bulk Query)
         $stok_map = [];
         if ($selected_klinik === 'all') {
@@ -138,15 +138,11 @@ if ($active_tab == 'stok') {
                     }
                 }
             }
-
-            // User request: "hanya menampilkan jenis pemeriksaan yang available"
-            if ($is_ready && $max_possible > 0) {
-                $ex['max_qty'] = $max_possible;
-                $exams[] = $ex;
-            }
         }
-    } elseif (!$is_cs) {
-        // Normal View for others (Item List)
+    }
+    
+    // Normal View for all roles (including CS)
+    if (true) {
         $rows = [];
         $summary_stok = [
             'total_items' => 0,
@@ -486,149 +482,7 @@ if ($active_tab == 'stok') {
                 }
             }
         }
-    }
-}
-
-// TAB REKAPITULASI (Monthly Summary)
-if ($active_tab == 'rekap') {
-    $selected_month = isset($_GET['month']) ? (int)$_GET['month'] : (int)date('n');
-    $selected_year = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
-
-    // Date Calculations
-    $first_day = "$selected_year-" . str_pad($selected_month, 2, '0', STR_PAD_LEFT) . "-01";
-    $last_day = date('Y-m-t', strtotime($first_day));
-    $total_days = (int)date('t', strtotime($first_day));
-
-    $today_y = date('Y-m-d');
-    $current_month = (int)date('n');
-    $current_year = (int)date('Y');
-
-    if ($selected_year < $current_year || ($selected_year == $current_year && $selected_month < $current_month)) {
-        $days_passed = $total_days;
-    } elseif ($selected_year == $current_year && $selected_month == $current_month) {
-        $days_passed = (int)date('j');
-    } else {
-        $days_passed = 0;
-    }
-
-    $time_gone_percent = round(($days_passed / $total_days) * 100, 1);
-    $mtd_date = date('d M', strtotime("$selected_year-$selected_month-" . ($days_passed ?: 1)));
-    $mtd_label = date('M Y', strtotime($first_day));
-
-    // Data Fetching
-    $where_pb = "pb.status = 'active' AND pb.tanggal BETWEEN '$first_day' AND '$last_day'";
-    $where_bp_completed = "bp.status = 'completed' AND bp.tanggal_pemeriksaan BETWEEN '$first_day' AND '$last_day'";
-    $where_bp_all_status = "bp.tanggal_pemeriksaan BETWEEN '$first_day' AND '$last_day'";
-
-    if ($selected_klinik && $selected_klinik !== 'all' && $selected_klinik !== 'gudang_utama') {
-        $kid = (int)$selected_klinik;
-        $where_pb .= " AND pb.klinik_id = $kid";
-        $where_bp_completed .= " AND bp.klinik_id = $kid";
-        $where_bp_all_status .= " AND bp.klinik_id = $kid";
-    }
-
-    // 1. Sellout Data
-    $sellout_query = "
-        SELECT
-            pbd.barang_id,
-            SUM(CASE WHEN pb.jenis_pemakaian = 'klinik' THEN pbd.qty ELSE 0 END) as onsite,
-            SUM(CASE WHEN pb.jenis_pemakaian = 'hc' THEN pbd.qty ELSE 0 END) as hc
-        FROM inventory_pemakaian_bhp_detail pbd
-        JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
-        WHERE $where_pb
-        GROUP BY pbd.barang_id
-    ";
-    $res_sellout = $conn->query($sellout_query);
-    $sellout_data = [];
-    while ($row = $res_sellout->fetch_assoc()) {
-        $sellout_data[$row['barang_id']] = $row;
-    }
-
-    // 2. Reserve Sold Data (status completed)
-    $reserve_sold_query = "
-        SELECT
-            bd.barang_id,
-            SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE (CASE WHEN bp.status_booking NOT LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as onsite,
-            SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE (CASE WHEN bp.status_booking LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as hc
-        FROM inventory_booking_detail bd
-        JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
-        WHERE $where_bp_completed
-        GROUP BY bd.barang_id
-    ";
-    $res_reserve_sold = $conn->query($reserve_sold_query);
-    $reserve_sold_data = [];
-    while ($row = $res_reserve_sold->fetch_assoc()) {
-        $reserve_sold_data[$row['barang_id']] = $row;
-    }
-
-    // 3. Reserve Booked Data (all statuses)
-    $reserve_booked_query = "
-        SELECT
-            bd.barang_id,
-            SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE (CASE WHEN bp.status_booking NOT LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as onsite,
-            SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE (CASE WHEN bp.status_booking LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as hc
-        FROM inventory_booking_detail bd
-        JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
-        WHERE $where_bp_all_status
-        GROUP BY bd.barang_id
-    ";
-    $res_reserve_booked = $conn->query($reserve_booked_query);
-    $reserve_booked_data = [];
-    while ($row = $res_reserve_booked->fetch_assoc()) {
-        $reserve_booked_data[$row['barang_id']] = $row;
-    }
-
-    // 4. Combine Data with Barang Master
-    $all_barang_ids = array_unique(array_merge(array_keys($sellout_data), array_keys($reserve_sold_data), array_keys($reserve_booked_data)));
-    $final_data = [];
-    $summary_rekap = [
-        'sellout_onsite' => 0,
-        'sellout_hc' => 0,
-        'reserve_onsite' => 0,
-        'reserve_hc' => 0,
-        'reserve_booked_onsite' => 0,
-        'reserve_booked_hc' => 0
-    ];
-
-    if (!empty($all_barang_ids)) {
-        $ids_str = implode(',', $all_barang_ids);
-        $res_b = $conn->query("SELECT id, kode_barang, nama_barang, satuan FROM inventory_barang WHERE id IN ($ids_str) ORDER BY nama_barang");
-        while ($b = $res_b->fetch_assoc()) {
-            $bid = $b['id'];
-            $s_onsite = (float)($sellout_data[$bid]['onsite'] ?? 0);
-            $s_hc = (float)($sellout_data[$bid]['hc'] ?? 0);
-            $rs_onsite = (float)($reserve_sold_data[$bid]['onsite'] ?? 0);
-            $rs_hc = (float)($reserve_sold_data[$bid]['hc'] ?? 0);
-            if ($s_onsite < $rs_onsite) $s_onsite = $rs_onsite;
-            if ($s_hc < $rs_hc) $s_hc = $rs_hc;
-            $s_total = $s_onsite + $s_hc;
-            $rb_onsite = (float)($reserve_booked_data[$bid]['onsite'] ?? 0);
-            $rb_hc = (float)($reserve_booked_data[$bid]['hc'] ?? 0);
-            $nr_onsite = $s_onsite - $rs_onsite;
-            $nr_hc = $s_hc - $rs_hc;
-
-            $final_data[] = [
-                'kode_barang' => $b['kode_barang'],
-                'nama_barang' => $b['nama_barang'],
-                'satuan' => $b['satuan'],
-                'sellout_total' => $s_total,
-                'sellout_onsite' => $s_onsite,
-                'sellout_hc' => $s_hc,
-                'non_reserve_onsite' => $nr_onsite,
-                'non_reserve_hc' => $nr_hc,
-                'reserve_sold_onsite' => $rs_onsite,
-                'reserve_sold_hc' => $rs_hc,
-                'reserve_booked_onsite' => $rb_onsite,
-                'reserve_booked_hc' => $rb_hc
-            ];
-
-            $summary_rekap['sellout_onsite'] += $s_onsite;
-            $summary_rekap['sellout_hc'] += $s_hc;
-            $summary_rekap['reserve_onsite'] += $rs_onsite;
-            $summary_rekap['reserve_hc'] += $rs_hc;
-            $summary_rekap['reserve_booked_onsite'] += $rb_onsite;
-            $summary_rekap['reserve_booked_hc'] += $rb_hc;
-        }
+        
     }
 }
 
@@ -639,7 +493,7 @@ if ($active_tab == 'rekap') {
     <div class="row mb-2 align-items-center">
         <div class="col">
             <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
-                <i class="fas fa-hospital me-2"></i><?= $is_cs ? 'Ketersediaan Pemeriksaan' : 'Inventory Klinik' ?>
+                <i class="fas fa-hospital me-2"></i>Inventory Klinik
             </h1>
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-0">
@@ -649,20 +503,6 @@ if ($active_tab == 'rekap') {
             </nav>
         </div>
     </div>
-
-    <!-- Tabs Navigation -->
-    <ul class="nav nav-pills mb-3 gap-2" id="stokKlinikTabs">
-        <li class="nav-item">
-            <a class="nav-link <?= $active_tab == 'stok' ? 'active-blue' : 'bg-white text-dark border' ?> fw-bold px-4 py-2 rounded-pill" href="index.php?page=stok_klinik&tab=stok<?= $selected_klinik ? '&klinik_id='.$selected_klinik : '' ?><?= $filter_date ? '&tanggal='.$filter_date : '' ?>">
-                <i class="fas fa-boxes me-2"></i>Stok Barang
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link <?= $active_tab == 'rekap' ? 'active-blue' : 'bg-white text-dark border' ?> fw-bold px-4 py-2 rounded-pill" href="index.php?page=stok_klinik&tab=rekap<?= $selected_klinik ? '&klinik_id='.$selected_klinik : '' ?>">
-                <i class="fas fa-history me-2"></i>Rekapitulasi Aktivitas Bulanan
-            </a>
-        </li>
-    </ul>
 
 <!-- Tabs Navigation removed: only Stok Barang is shown -->
 <style>
@@ -774,7 +614,7 @@ if ($active_tab == 'rekap') {
 </div>
 
 <!-- Summary Cards for Stok Barang -->
-<?php if (!$is_cs && $selected_klinik): ?>
+<?php if ($selected_klinik): ?>
 <div class="row mb-3 g-2">
     <div class="col-md">
         <div class="card h-100">
@@ -1109,43 +949,12 @@ function openStokBreakdown(barangId, namaBarang) {
 
 <div class="card">
     <div class="card-body">
-        <?php if ($is_cs): ?>
-            <?php if (!$selected_klinik): ?>
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle"></i> Silakan pilih klinik terlebih dahulu untuk melihat ketersediaan pemeriksaan.
-                </div>
-            <?php else: ?>
-                <div class="table-responsive">
-                    <table class="table table-hover datatable">
-                        <thead>
-                            <tr>
-                                <th>Nama Pemeriksaan</th>
-                                <th>Keterangan</th>
-                                <th>Status</th>
-                                <th>Kapasitas (Pasien)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($exams as $ex): ?>
-                            <tr>
-                                <td><?= htmlspecialchars((string)($ex['nama_pemeriksaan'] ?? '')) ?></td>
-                                <td><?= htmlspecialchars((string)($ex['keterangan'] ?? '')) ?></td>
-                                <td><span class="badge bg-success">Available</span></td>
-                                <td class="fw-bold fs-5"><?= (string)($ex['max_qty'] ?? 0) ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            <?php endif; ?>
-        
+        <?php if (!$selected_klinik): ?>
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i> Silakan pilih klinik terlebih dahulu untuk melihat data stok.
+            </div>
         <?php else: ?>
-            <!-- Normal Table for Non-CS -->
-            <?php if (!$selected_klinik): ?>
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle"></i> Silakan pilih klinik terlebih dahulu untuk melihat data stok.
-                </div>
-            <?php else: ?>
+            <!-- Normal Table for All Roles -->
             <?php if (empty($rows)): ?>
                 <div class="alert alert-info">
                     <i class="fas fa-info-circle"></i> Data stok dari Odoo belum tersedia. Klik <b>Refresh dari Odoo</b> untuk menarik data.
@@ -1301,203 +1110,11 @@ function openStokBreakdown(barangId, namaBarang) {
                 </table>
             </div>
             <?php endif; ?>
-            <?php endif; ?>
         <?php endif; ?>
     </div>
 </div>
 
 <?php endif; // End TAB STOK ?>
-
-<!-- TAB CONTENT: REKAPITULASI AKTIVITAS BULANAN -->
-<?php if ($active_tab == 'rekap'): ?>
-
-<style>
-    :root {
-        --rekap-primary: #204EAB;
-        --rekap-onsite: #166534;
-        --rekap-hc: #9A3412;
-        --rekap-reserve: #0369A1;
-    }
-    .stat-card-rekap {
-        border: none;
-        border-radius: 12px;
-        padding: 1rem;
-        background: #fff;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        height: 100%;
-        border-left: 4px solid var(--rekap-primary);
-    }
-    .stat-card-rekap .stat-label { font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 0.5rem; }
-    .stat-card-rekap .stat-value { font-size: 1.5rem; font-weight: 800; color: #1e293b; }
-    
-    .table-recap-container { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; }
-    .table-recap thead th { background-color: var(--rekap-primary); color: #fff; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; border: 1px solid rgba(255,255,255,0.1); padding: 0.75rem; vertical-align: middle; }
-    .table-recap td { padding: 0.75rem; border: 1px solid #f1f5f9; font-size: 0.85rem; vertical-align: middle; }
-    
-    .bg-onsite-subtle { background-color: #f0fdf4 !important; }
-    .bg-hc-subtle { background-color: #fff7ed !important; }
-    .bg-reserve-subtle { background-color: #e0f2fe !important; }
-    .val-nonzero { font-weight: 700; color: #1e293b; }
-    .val-zero { color: #cbd5e1; }
-</style>
-
-<!-- Filter Section for Rekap -->
-<div class="card mb-3">
-    <div class="card-body py-3">
-        <div class="row align-items-center">
-            <div class="col">
-                <form action="index.php" method="GET" class="row g-2 align-items-end">
-                    <input type="hidden" name="page" value="stok_klinik">
-                    <input type="hidden" name="tab" value="rekap">
-                    
-                    <?php if ($can_filter_klinik): ?>
-                    <div class="col-md-4">
-                        <label class="form-label small fw-bold mb-1">Klinik</label>
-                        <select name="klinik_id" class="form-select form-select-sm" onchange="this.form.submit()">
-                            <option value="all" <?= $selected_klinik === 'all' ? 'selected' : '' ?>>Semua Klinik</option>
-                            <?php foreach ($kliniks as $k): ?>
-                                <option value="<?= $k['id'] ?>" <?= $selected_klinik == $k['id'] ? 'selected' : '' ?>><?= htmlspecialchars($k['nama_klinik']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <?php endif; ?>
-
-                    <div class="col-md-2">
-                        <label class="form-label small fw-bold mb-1">Bulan</label>
-                        <select name="month" class="form-select form-select-sm" onchange="this.form.submit()">
-                            <?php for ($m = 1; $m <= 12; $m++): ?>
-                                <option value="<?= $m ?>" <?= $selected_month == $m ? 'selected' : '' ?>><?= date('F', mktime(0, 0, 0, $m, 1)) ?></option>
-                            <?php endfor; ?>
-                        </select>
-                    </div>
-
-                    <div class="col-md-2">
-                        <label class="form-label small fw-bold mb-1">Tahun</label>
-                        <select name="year" class="form-select form-select-sm" onchange="this.form.submit()">
-                            <?php for ($y = date('Y'); $y >= 2024; $y--): ?>
-                                <option value="<?= $y ?>" <?= $selected_year == $y ? 'selected' : '' ?>><?= $y ?></option>
-                            <?php endfor; ?>
-                        </select>
-                    </div>
-                </form>
-            </div>
-            <div class="col-auto d-flex gap-2">
-                <div class="p-2 border rounded bg-light text-center" style="min-width: 80px;">
-                    <div class="x-small fw-bold text-muted text-uppercase">Time Gone</div>
-                    <div class="small fw-bold text-primary"><?= $time_gone_percent ?>%</div>
-                </div>
-                <div class="p-2 border rounded bg-light text-center" style="min-width: 80px;">
-                    <div class="x-small fw-bold text-muted text-uppercase">MTD</div>
-                    <div class="small fw-bold text-primary"><?= $mtd_date ?></div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Stat Recap -->
-<div class="row g-2 mb-3">
-    <div class="col-md">
-        <div class="stat-card-rekap" style="border-left-color: var(--rekap-onsite);">
-            <div class="stat-label">Sellout Onsite</div>
-            <div class="stat-value"><?= fmt_qty($summary_rekap['sellout_onsite']) ?></div>
-        </div>
-    </div>
-    <div class="col-md">
-        <div class="stat-card-rekap" style="border-left-color: var(--rekap-hc);">
-            <div class="stat-label">Sellout HC</div>
-            <div class="stat-value"><?= fmt_qty($summary_rekap['sellout_hc']) ?></div>
-        </div>
-    </div>
-    <div class="col-md">
-        <div class="stat-card-rekap" style="border-left-color: var(--rekap-reserve);">
-            <div class="stat-label">Reserve Sold</div>
-            <div class="stat-value"><?= fmt_qty($summary_rekap['reserve_onsite'] + $summary_rekap['reserve_hc']) ?></div>
-        </div>
-    </div>
-    <div class="col-md">
-        <div class="stat-card-rekap" style="border-left-color: #bae6fd;">
-            <div class="stat-label text-info">Booked Onsite</div>
-            <div class="stat-value text-info"><?= fmt_qty($summary_rekap['reserve_booked_onsite']) ?></div>
-        </div>
-    </div>
-    <div class="col-md">
-        <div class="stat-card-rekap" style="border-left-color: #bae6fd;">
-            <div class="stat-label text-info">Booked HC</div>
-            <div class="stat-value text-info"><?= fmt_qty($summary_rekap['reserve_booked_hc']) ?></div>
-        </div>
-    </div>
-</div>
-
-<!-- Table Recap -->
-<div class="card border-0 shadow-sm">
-    <div class="card-body p-0">
-        <div class="table-recap-container">
-            <div class="table-responsive">
-                <table class="table table-recap mb-0" id="tableSummaryRekap">
-                    <thead>
-                        <tr>
-                            <th rowspan="2" style="width: 100px;">Kode</th>
-                            <th rowspan="2">Nama Barang</th>
-                            <th rowspan="2" class="text-center">Satuan</th>
-                            <th colspan="3" class="text-center">Sellout</th>
-                            <th colspan="2" class="text-center">Reserve-Sold</th>
-                            <th colspan="2" class="text-center" style="background-color: #0369a1;">Reserve-Booked</th>
-                        </tr>
-                        <tr>
-                            <th class="text-center" style="background-color: #64748b;">Total</th>
-                            <th class="text-center" style="background-color: var(--rekap-onsite);">Onsite</th>
-                            <th class="text-center" style="background-color: var(--rekap-hc);">HC</th>
-                            <th class="text-center" style="background-color: var(--rekap-onsite);">Onsite</th>
-                            <th class="text-center" style="background-color: var(--rekap-hc);">HC</th>
-                            <th class="text-center" style="background-color: #0c4a6e;">Onsite</th>
-                            <th class="text-center" style="background-color: #0c4a6e;">HC</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($final_data as $row): ?>
-                        <tr>
-                            <td class="small text-muted"><?= htmlspecialchars($row['kode_barang']) ?></td>
-                            <td class="fw-bold"><?= htmlspecialchars($row['nama_barang']) ?></td>
-                            <td class="text-center small"><?= htmlspecialchars($row['satuan']) ?></td>
-                            <td class="text-center bg-light fw-bold"><?= fmt_qty($row['sellout_total']) ?></td>
-                            <td class="text-center bg-onsite-subtle <?= $row['sellout_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>"><?= fmt_qty($row['sellout_onsite']) ?></td>
-                            <td class="text-center bg-hc-subtle <?= $row['sellout_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>"><?= fmt_qty($row['sellout_hc']) ?></td>
-                            <td class="text-center bg-onsite-subtle <?= $row['reserve_sold_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>"><?= fmt_qty($row['reserve_sold_onsite']) ?></td>
-                            <td class="text-center bg-hc-subtle <?= $row['reserve_sold_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>"><?= fmt_qty($row['reserve_sold_hc']) ?></td>
-                            <td class="text-center bg-reserve-subtle <?= $row['reserve_booked_onsite'] > 0 ? 'val-nonzero' : 'val-zero' ?>"><?= fmt_qty($row['reserve_booked_onsite']) ?></td>
-                            <td class="text-center bg-reserve-subtle <?= $row['reserve_booked_hc'] > 0 ? 'val-nonzero' : 'val-zero' ?>"><?= fmt_qty($row['reserve_booked_hc']) ?></td>
-                        </tr>
-                        <?php endforeach; ?>
-                        <?php if (empty($final_data)): ?>
-                        <tr>
-                            <td colspan="10" class="text-center py-4 text-muted">Tidak ada data aktivitas untuk periode ini.</td>
-                        </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-$(document).ready(function() {
-    if ($.fn.DataTable.isDataTable('#tableSummaryRekap')) {
-        $('#tableSummaryRekap').DataTable().destroy();
-    }
-    $('#tableSummaryRekap').DataTable({
-        "order": [[ 1, "asc" ]],
-        "pageLength": 25,
-        "language": {
-            "search": "Cari Barang:",
-            "lengthMenu": "Tampilkan _MENU_ data"
-        }
-    });
-});
-</script>
-
-<?php endif; // End TAB REKAP ?>
 
 <!-- Monitoring HC tab content removed by request -->
 
