@@ -519,7 +519,7 @@ try {
         if ($is_request_approval) {
             $reason = $_POST['reason'] ?? '';
             $reason_code = $_POST['reason_code'] ?? '';
-            $change_source = $_POST['change_source'] ?? '';
+            $change_source = trim((string)($_POST['change_source'] ?? ''));
             $change_actor_user_id = isset($_POST['change_actor_user_id']) && (int)$_POST['change_actor_user_id'] > 0 ? (int)$_POST['change_actor_user_id'] : null;
             $change_actor_name = $_POST['change_actor_name'] ?? '';
 

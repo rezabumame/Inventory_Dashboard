@@ -475,6 +475,7 @@ try {
     
     run_migration_task("Update: inventory_transfer_barang_detail qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transfer_barang_detail MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_pemakaian_bhp status enum", function() use ($conn) { return $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN status ENUM('active','pending_add','pending_edit','pending_delete','rejected','revised','pending_approval_spv') DEFAULT 'active'") ? "Updated" : "Failed"; });
+    run_migration_task("Update: inventory_pemakaian_bhp change_source to VARCHAR(64)", function() use ($conn) { return $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN change_source VARCHAR(64) NULL") ? "Updated" : "Failed"; });
 
     run_migration_task("Table: inventory_booking_request_dedup", function() use ($conn) { return m_ensure_table($conn, "inventory_booking_request_dedup", "CREATE TABLE IF NOT EXISTS inventory_booking_request_dedup (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -527,7 +528,7 @@ try {
         ['inventory_pemakaian_bhp', 'spv_approved_by', "INT NULL"],
         ['inventory_pemakaian_bhp', 'spv_approved_at', "DATETIME NULL"],
         ['inventory_pemakaian_bhp', 'pending_data', "LONGTEXT NULL"],
-        ['inventory_pemakaian_bhp', 'change_source', "ENUM('admin_logistik','nakes','sistem_integrasi') NULL"],
+        ['inventory_pemakaian_bhp', 'change_source', "VARCHAR(64) NULL"],
         ['inventory_pemakaian_bhp', 'change_actor_user_id', "INT NULL"],
         ['inventory_pemakaian_bhp', 'change_actor_name', "VARCHAR(255) NULL"],
         ['inventory_pemakaian_bhp', 'change_reason_code', "VARCHAR(64) NULL"],
