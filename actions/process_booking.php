@@ -6,6 +6,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/settings.php';
 require_once __DIR__ . '/../lib/stock.php';
 require_once __DIR__ . '/../lib/webhooks.php';
+require_once __DIR__ . '/../includes/history_helper.php';
 
 header('Content-Type: application/json');
 
@@ -62,8 +63,8 @@ try {
     $nomor_tlp = !empty($patients[0]['nomor_tlp']) ? trim((string)$patients[0]['nomor_tlp']) : null;
     $tanggal_lahir = !empty($patients[0]['tanggal_lahir']) ? (string)$patients[0]['tanggal_lahir'] : null;
 
-    if (empty($status_booking) || empty($klinik_id) || empty($tanggal) || empty($nama_pemesan)) {
-        throw new Exception('Data tidak lengkap!');
+    if (empty($status_booking) || empty($klinik_id) || empty($tanggal) || empty($nama_pemesan) || empty($jam_layanan)) {
+        throw new Exception('Data tidak lengkap (Nama, Tanggal, dan Jam wajib diisi)!');
     }
 
     $is_hc = (stripos((string)$status_booking, 'HC') !== false);
@@ -172,6 +173,7 @@ try {
     }
 
     $conn->commit();
+    logBookingHistory($conn, $book_id, 'create', [], 'Booking dibuat pertama kali');
 
     // Notify Google Sheets
     notify_gsheet_booking($conn, $book_id, 'booking_created');

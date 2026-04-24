@@ -6,6 +6,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../lib/stock.php';
 require_once __DIR__ . '/../config/settings.php';
 require_once __DIR__ . '/../lib/webhooks.php';
+require_once __DIR__ . '/../includes/history_helper.php';
 
 header('Content-Type: application/json');
 
@@ -64,6 +65,7 @@ try {
             }
             $setType = ($role === 'cs') ? ", booking_type = 'cancel'" : "";
             $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'cancelled', butuh_fu = 0 $setType WHERE id = $id");
+            logBookingHistory($conn, $id, 'cancel', [], 'Booking dibatalkan');
             $msg = "Booking dibatalkan.";
             break;
         
@@ -175,8 +177,9 @@ try {
                 }
             }
 
-            $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'completed', butuh_fu = 0 WHERE id = $id");
-            $msg = "Booking selesai dan pemakaian BHP otomatis tercatat (sementara).";
+            $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'completed' WHERE id = $id");
+            logBookingHistory($conn, $id, 'complete', [], 'Pemeriksaan Selesai (BHP Created: ' . $nomor_pemakaian . ')');
+            $msg = "Booking selesai dan stok telah dipotong ($nomor_pemakaian).";
             break;
 
         case 'fu':
@@ -188,19 +191,12 @@ try {
             break;
             
         case 'request_delete':
-            if ($role !== 'admin_klinik') {
-                throw new Exception('Hanya Admin Klinik yang dapat mengajukan penghapusan lewat hari');
-            }
-            $reason = trim((string)($_POST['reason'] ?? ''));
-            if (empty($reason)) throw new Exception('Alasan wajib diisi!');
-            
-            $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'pending_delete', approval_reason = '" . $conn->real_escape_string($reason) . "' WHERE id = $id");
-            $msg = "Permintaan penghapusan telah dikirim ke SPV Klinik.";
+            throw new Exception('Akses pengajuan penghapusan dinonaktifkan untuk Admin Klinik.');
             break;
 
         case 'approve_request':
-            if (!in_array($role, ['spv_klinik', 'super_admin'], true)) {
-                throw new Exception('Hanya SPV Klinik atau Super Admin yang dapat memberikan approval');
+            if ($role !== 'super_admin') {
+                throw new Exception('Hanya Super Admin yang dapat memberikan approval');
             }
             
             if ($booking['status'] === 'pending_delete') {
@@ -314,8 +310,8 @@ try {
             break;
 
         case 'reject_request':
-            if (!in_array($role, ['spv_klinik', 'super_admin'], true)) {
-                throw new Exception('Hanya SPV Klinik atau Super Admin yang dapat menolak request');
+            if ($role !== 'super_admin') {
+                throw new Exception('Hanya Super Admin yang dapat menolak request');
             }
             $reason = trim((string)($_POST['reason'] ?? ''));
             if (empty($reason)) throw new Exception('Alasan penolakan wajib diisi!');

@@ -486,6 +486,21 @@ try {
         UNIQUE KEY uniq_client (client_request_id, created_by)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
 
+    run_migration_task("Table: inventory_booking_history", function() use ($conn) { 
+        return m_ensure_table($conn, "inventory_booking_history", "CREATE TABLE IF NOT EXISTS inventory_booking_history (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            booking_id INT NOT NULL,
+            user_id INT NOT NULL,
+            user_name VARCHAR(255),
+            action VARCHAR(100),
+            changes JSON,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX (booking_id),
+            INDEX (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+    });
+
     // Columns
     run_migration_task("Update: inventory_pemeriksaan_grup id to VARCHAR", function() use ($conn) {
         $conn->query("ALTER TABLE inventory_pemeriksaan_grup MODIFY id VARCHAR(50) NOT NULL");

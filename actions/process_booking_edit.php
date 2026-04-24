@@ -5,6 +5,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../lib/stock.php';
 require_once __DIR__ . '/../config/settings.php';
 require_once __DIR__ . '/../lib/webhooks.php';
+require_once __DIR__ . '/../includes/history_helper.php';
 
 header('Content-Type: application/json');
 
@@ -15,7 +16,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $role = (string)($_SESSION['role'] ?? '');
-if (!in_array($role, ['cs', 'super_admin', 'admin_klinik'], true)) {
+if (!in_array($role, ['cs', 'super_admin'], true)) {
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }
@@ -48,8 +49,8 @@ $nama_pemesan = trim((string)($patients[0]['nama'] ?? ''));
 $nomor_tlp = !empty($patients[0]['nomor_tlp']) ? trim((string)$patients[0]['nomor_tlp']) : null;
 $tanggal_lahir = !empty($patients[0]['tanggal_lahir']) ? (string)$patients[0]['tanggal_lahir'] : null;
 
-if ($nama_pemesan === '' || $tanggal === '') {
-    echo json_encode(['success' => false, 'message' => 'Data tidak lengkap (Nama Pasien Utama & Tanggal wajib diisi)']);
+if ($nama_pemesan === '' || $tanggal === '' || empty($jam_layanan)) {
+    echo json_encode(['success' => false, 'message' => 'Data tidak lengkap (Nama, Tanggal & Jam wajib diisi)']);
     exit;
 }
 
@@ -58,8 +59,8 @@ $today = date('Y-m-d');
 $is_backdate = ($tanggal < $today);
 $is_backtime = ($tanggal === $today && !empty($jam_layanan) && $jam_layanan < date('H:i'));
 
-if (($is_backdate || $is_backtime) && !in_array($role, ['super_admin', 'cs'], true) && empty($request_reason)) {
-    echo json_encode(['success' => false, 'message' => 'Perubahan lewat hari/waktu wajib menyertakan alasan untuk approval SPV!']);
+if (($is_backdate || $is_backtime) && !in_array($role, ['super_admin', 'cs'], true)) {
+    echo json_encode(['success' => false, 'message' => 'Perubahan lewat hari/waktu hanya dapat dilakukan oleh Super Admin atau CS!']);
     exit;
 }
 if (!in_array($booking_type, ['keep', 'fixed', 'cancel'], true)) {
@@ -80,35 +81,22 @@ try {
     if (!$booking || !in_array($booking['status'], ['booked', 'pending_edit', 'rejected'])) {
         throw new Exception('Booking tidak ditemukan atau status tidak valid');
     }
+
+    // Fetch old exams summary for history
+    $old_exams_res = $conn->query("
+        SELECT GROUP_CONCAT(DISTINCT pg.nama_pemeriksaan ORDER BY pg.nama_pemeriksaan SEPARATOR ', ') as exams
+        FROM inventory_booking_pasien bp
+        JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
+        WHERE bp.booking_id = $booking_id
+    ");
+    $old_exams_row = $old_exams_res->fetch_assoc();
+    $old_exams_str = $old_exams_row['exams'] ?? '';
     
     $is_past_day = date('Y-m-d', strtotime($booking['tanggal_pemeriksaan'])) < $today;
-    $is_admin_klinik = ($role === 'admin_klinik');
-    $is_request = ($is_admin_klinik && ($is_past_day || !empty($request_reason)));
-
-    if ($is_request) {
-        // Just save to pending_data and update status
-        $pending_payload = [
-            'nama_pemesan' => $nama_pemesan,
-            'nomor_tlp' => $nomor_tlp,
-            'tanggal_lahir' => $tanggal_lahir,
-            'tanggal' => $tanggal,
-            'booking_type' => $booking_type,
-            'jam_layanan' => $jam_layanan,
-            'jotform_submitted' => $jotform_submitted,
-            'klinik_id' => $new_klinik_id ?: $booking['klinik_id'],
-            'status_booking' => $new_status_booking ?: $booking['status_booking'],
-            'jumlah_pax' => $jumlah_pax,
-            'patients' => $patients
-        ];
-
-        $stmt_req = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET status = 'pending_edit', approval_reason = ?, pending_data = ? WHERE id = ?");
-        $json_data = json_encode($pending_payload);
-        $stmt_req->bind_param("ssi", $request_reason, $json_data, $booking_id);
-        $stmt_req->execute();
-        
-        $conn->commit();
-        echo json_encode(['success' => true, 'message' => 'Permintaan perubahan telah dikirim ke SPV Klinik']);
-        exit;
+    
+    // Admin Klinik and SPV Klinik are no longer allowed to edit or request edit.
+    if ($role === 'admin_klinik' || $role === 'spv_klinik') {
+        throw new Exception('Akses edit booking dinonaktifkan untuk role Anda.');
     }
 
     $klinik_id = (int)($booking['klinik_id'] ?? 0);
@@ -164,6 +152,8 @@ try {
         $conn->query("DELETE FROM inventory_booking_detail WHERE booking_id = $booking_id");
         $conn->query("DELETE FROM inventory_booking_pasien WHERE booking_id = $booking_id");
 
+        logBookingHistory($conn, $booking_id, 'cancel', [], 'Dibatalkan oleh CS');
+
         $conn->commit();
         $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
         notify_gsheet_booking($conn, $booking_id, 'booking_updated');
@@ -209,11 +199,13 @@ try {
         }
     }
 
+    $catatan = trim((string)($_POST['catatan'] ?? ''));
+
     $is_out_of_stock = !empty($out_of_stock_items) ? 1 : 0;
     $out_of_stock_str = !empty($out_of_stock_items) ? implode(", ", $out_of_stock_items) : null;
 
-    $stmt_u = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET nama_pemesan = ?, nomor_tlp = ?, tanggal_lahir = ?, tanggal_pemeriksaan = ?, booking_type = ?, jam_layanan = ?, jotform_submitted = ?, status = ?, butuh_fu = ?, klinik_id = ?, status_booking = ?, jumlah_pax = ?, is_out_of_stock = ?, out_of_stock_items = ? WHERE id = ?");
-    $stmt_u->bind_param("ssssssisiisiisi", $nama_pemesan, $nomor_tlp, $tanggal_lahir, $tanggal, $booking_type, $jam_layanan, $jotform_submitted, $new_status, $butuh_fu, $target_klinik_id, $target_status_booking, $jumlah_pax, $is_out_of_stock, $out_of_stock_str, $booking_id);
+    $stmt_u = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET nama_pemesan = ?, nomor_tlp = ?, tanggal_lahir = ?, tanggal_pemeriksaan = ?, booking_type = ?, jam_layanan = ?, jotform_submitted = ?, status = ?, butuh_fu = ?, klinik_id = ?, status_booking = ?, jumlah_pax = ?, is_out_of_stock = ?, out_of_stock_items = ?, catatan = ? WHERE id = ?");
+    $stmt_u->bind_param("ssssssisiisiissi", $nama_pemesan, $nomor_tlp, $tanggal_lahir, $tanggal, $booking_type, $jam_layanan, $jotform_submitted, $new_status, $butuh_fu, $target_klinik_id, $target_status_booking, $jumlah_pax, $is_out_of_stock, $out_of_stock_str, $catatan, $booking_id);
     $stmt_u->execute();
 
     // Clear existing details
@@ -259,11 +251,62 @@ try {
             }
         }
     }
+
+    // Log changes
+    $changes = [];
+    $notes_parts = [];
+    if ($booking['nama_pemesan'] != $nama_pemesan) {
+        $changes['nama'] = ['old' => $booking['nama_pemesan'], 'new' => $nama_pemesan];
+        $notes_parts[] = "Mengubah nama";
+    }
+    if ($booking['tanggal_pemeriksaan'] != $tanggal) {
+        $changes['tanggal'] = ['old' => $booking['tanggal_pemeriksaan'], 'new' => $tanggal];
+        $notes_parts[] = "Mengubah tanggal";
+    }
+    if ($booking['jam_layanan'] != $jam_layanan) {
+        $changes['jam'] = ['old' => $booking['jam_layanan'], 'new' => $jam_layanan];
+        $notes_parts[] = "Mengubah jam";
+    }
+    if ($booking['jumlah_pax'] != $jumlah_pax) {
+        $changes['pax'] = ['old' => $booking['jumlah_pax'], 'new' => $jumlah_pax];
+        $notes_parts[] = "Mengubah jumlah pax (" . $booking['jumlah_pax'] . " -> " . $jumlah_pax . ")";
+    }
+    if ($booking['klinik_id'] != $target_klinik_id) {
+        $old_k = $conn->query("SELECT nama_klinik FROM inventory_klinik WHERE id = " . $booking['klinik_id'])->fetch_assoc();
+        $new_k = $conn->query("SELECT nama_klinik FROM inventory_klinik WHERE id = " . $target_klinik_id)->fetch_assoc();
+        $changes['lokasi'] = ['old' => ($old_k['nama_klinik'] ?? $booking['klinik_id']), 'new' => ($new_k['nama_klinik'] ?? $target_klinik_id)];
+        $notes_parts[] = "Pindah lokasi";
+    }
+    if ($booking['status_booking'] != $target_status_booking) {
+        $changes['type'] = ['old' => $booking['status_booking'], 'new' => $target_status_booking];
+        $notes_parts[] = "Ubah layanan jadi " . $target_status_booking;
+    }
+    
+    // Fetch new exams summary
+    $new_exams_res = $conn->query("
+        SELECT GROUP_CONCAT(DISTINCT pg.nama_pemeriksaan ORDER BY pg.nama_pemeriksaan SEPARATOR ', ') as exams
+        FROM inventory_booking_pasien bp
+        JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
+        WHERE bp.booking_id = $booking_id
+    ");
+    $new_exams_row = $new_exams_res->fetch_assoc();
+    $new_exams_str = $new_exams_row['exams'] ?? '';
+
+    if ($old_exams_str !== $new_exams_str) {
+        $changes['pemeriksaan'] = ['old' => $old_exams_str, 'new' => $new_exams_str];
+        $notes_parts[] = "Update jenis pemeriksaan";
+    }
+    
+    if (empty($notes_parts)) {
+        $notes_parts[] = "Pembaruan data pasien/pemeriksaan";
+    }
+    
+    logBookingHistory($conn, $booking_id, 'edit', $changes, $request_reason ?: implode(", ", $notes_parts));
     
     $conn->commit();
     $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
     notify_gsheet_booking($conn, $booking_id, 'booking_updated');
-    echo json_encode(['success' => true, 'message' => 'Pemeriksaan berhasil diperbarui']);
+    echo json_encode(['success' => true, 'message' => 'Pemeriksaan berhasil diperbarui', 'booking_id' => $booking_id]);
 } catch (Exception $e) {
     if (isset($lock_esc) && $lock_esc !== '') {
         $conn->query("SELECT RELEASE_LOCK('$lock_esc')");

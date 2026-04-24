@@ -343,7 +343,7 @@ if (!empty($booking_ids)) {
                     <label class="btn-segmented px-1" for="filter_status_booked">Booked</label>
                     
                     <input type="radio" class="btn-check" name="status" id="filter_status_completed" value="completed" <?= $filter_status === 'completed' ? 'checked' : '' ?>>
-                    <label class="btn-segmented px-1" for="filter_status_completed">Done</label>
+                    <label class="btn-segmented px-1" for="filter_status_completed">Completed</label>
                     
                     <input type="radio" class="btn-check" name="status" id="filter_status_cancelled" value="cancelled" <?= $filter_status === 'cancelled' ? 'checked' : '' ?>>
                     <label class="btn-segmented px-1" for="filter_status_cancelled">Cancel</label>
@@ -361,10 +361,6 @@ if (!empty($booking_ids)) {
                     <input type="radio" class="btn-check" name="tipe" id="filter_tipe_fixed" value="fixed" <?= $filter_tipe === 'fixed' ? 'checked' : '' ?>>
                     <label class="btn-segmented px-1" for="filter_tipe_fixed">Fixed</label>
                     
-                    <?php if (in_array($_SESSION['role'] ?? '', ['cs', 'super_admin'], true)): ?>
-                    <input type="radio" class="btn-check" name="tipe" id="filter_tipe_cancel" value="cancel" <?= $filter_tipe === 'cancel' ? 'checked' : '' ?>>
-                    <label class="btn-segmented px-1" for="filter_tipe_cancel">Dibatalkan</label>
-                    <?php endif; ?>
                 </div>
             </div>
             <div class="col-xl-3 col-lg-6 col-md-6">
@@ -451,9 +447,9 @@ if (!empty($booking_ids)) {
                         <th>Tipe</th>
                         <th>Pasien</th>
                         <th>Jenis Pemeriksaan</th>
-                        <th>Klinik</th>
+                        <th>Tujuan</th>
                         <th>Jadwal</th>
-                        <th>Tujuan / Jotform</th>
+                        <th>CS Info</th>
                         <th>Status</th>
                         <th>Aksi</th>
                     </tr>
@@ -473,9 +469,19 @@ if (!empty($booking_ids)) {
                                 $bt_label = 'Dibatalkan (CS)';
                                 $bt_badge = 'bg-secondary';
                             }
+                            $jf = (int)($row['jotform_submitted'] ?? 0);
                             ?>
-                            <span class="badge <?= $bt_badge ?>"><?= $bt_label ?></span>
-                            <div class="x-small text-muted mt-1">#<?= htmlspecialchars($row['nomor_booking'] ?? '-') ?></div>
+                            <div class="mb-1">
+                                <span class="badge <?= $bt_badge ?>"><?= $bt_label ?></span>
+                            </div>
+                            <div class="mb-1">
+                                <?php if ($jf === 1): ?>
+                                    <span class="badge bg-success x-small"><i class="fas fa-check me-1"></i>Jotform</span>
+                                <?php else: ?>
+                                    <span class="badge bg-danger x-small"><i class="fas fa-times me-1"></i>Jotform</span>
+                                <?php endif; ?>
+                            </div>
+                            <div class="x-small text-muted">#<?= htmlspecialchars($row['nomor_booking'] ?? '-') ?></div>
                         </td>
                         <td>
                             <div class="fw-semibold">
@@ -502,46 +508,41 @@ if (!empty($booking_ids)) {
                             <?php if (!empty($row['nomor_tlp'])): ?>
                                 <div class="booking-muted"><i class="fas fa-phone me-1"></i><?= htmlspecialchars($row['nomor_tlp']) ?></div>
                             <?php endif; ?>
-                            <?php if (!empty($row['tanggal_lahir'])): ?>
-                                <div class="booking-muted"><i class="fas fa-birthday-cake me-1"></i><?= htmlspecialchars(date('d M Y', strtotime($row['tanggal_lahir']))) ?></div>
-                            <?php endif; ?>
-                            <div class="booking-muted"><i class="fas fa-users me-1"></i>Pax: <?= (int)($row['jumlah_pax'] ?? 1) ?> <span class="mx-1">•</span> Items: <?= (int)($row['total_items'] ?? 0) ?></div>
+                            <div class="booking-muted"><i class="fas fa-users me-1"></i>Pax: <?= (int)($row['jumlah_pax'] ?? 1) ?></div>
                         </td>
                         <td><small class="text-muted"><?= htmlspecialchars($row['jenis_pemeriksaan'] ?? '-') ?></small></td>
                         <td>
-                            <div class="fw-semibold"><?= htmlspecialchars($row['nama_klinik']) ?></div>
-                            <div class="booking-muted"><i class="fas fa-user me-1"></i><span class="small">CS: </span><?= htmlspecialchars($row['cs_name'] ?? '-') ?></div>
+                            <?php 
+                            $status_booking = $row['status_booking'] ?? 'Reserved - Clinic';
+                            $is_hc = (strpos($status_booking, 'HC') !== false);
+                            ?>
+                            <div class="mb-1">
+                                <?php if ($is_hc): ?>
+                                    <span class="badge bg-info x-small"><i class="fas fa-home me-1"></i>HC</span>
+                                <?php else: ?>
+                                    <span class="badge bg-primary x-small"><i class="fas fa-hospital me-1"></i>Klinik</span>
+                                <?php endif; ?>
+                            </div>
+                            <div class="fw-semibold text-dark" style="font-size: 0.9rem;"><?= htmlspecialchars($row['nama_klinik']) ?></div>
                         </td>
                         <td>
                             <div class="fw-semibold"><?= date('d M Y', strtotime($row['tanggal_pemeriksaan'])) ?></div>
                             <div class="booking-muted"><i class="fas fa-clock me-1"></i><?= htmlspecialchars($row['jam_layanan'] ?? '-') ?></div>
                         </td>
                         <td>
-                            <?php 
-                            $status_booking = $row['status_booking'] ?? 'Reserved - Clinic';
-                            $is_hc = (strpos($status_booking, 'HC') !== false);
-                            $jf = (int)($row['jotform_submitted'] ?? 0);
-                            ?>
-                            <div class="d-flex flex-wrap gap-2">
-                                <?php if ($is_hc): ?>
-                                    <span class="badge bg-info"><i class="fas fa-home me-1"></i>HC</span>
-                                <?php else: ?>
-                                    <span class="badge bg-primary"><i class="fas fa-hospital me-1"></i>Klinik</span>
-                                <?php endif; ?>
-                                <?php if ($jf === 1): ?>
-                                    <span class="badge bg-success"><i class="fas fa-check me-1"></i>Jotform</span>
-                                <?php else: ?>
-                                    <span class="badge bg-secondary"><i class="fas fa-minus me-1"></i>Belum</span>
-                                <?php endif; ?>
+                            <div class="booking-muted" style="font-size: 0.8rem;">
+                                <div class="fw-bold text-dark"><i class="fas fa-user-edit me-1"></i><?= htmlspecialchars($row['cs_name'] ?? '-') ?></div>
+                                <div class="text-muted small mt-1"><i class="fas fa-clock me-1"></i><?= date('d/m/y H:i', strtotime($row['created_at'])) ?></div>
                             </div>
                         </td>
+
                         <td>
                             <?php
                             $badge = 'bg-secondary';
                             $status_label = ucfirst($row['status']);
                             if ($row['status'] == 'booked' && (int)($row['butuh_fu'] ?? 0) === 1) {
                                 $badge = 'bg-danger';
-                                $status_label = 'FU Jadwal Kedatangan';
+                                $status_label = 'FU Jadwal<br>Kedatangan';
                             } elseif ($row['status'] == 'booked') {
                                 $badge = 'bg-warning';
                             } elseif ($row['status'] == 'completed') {
@@ -597,12 +598,8 @@ if (!empty($booking_ids)) {
                                             </button>
                                         <?php endif; ?>
 
-                                        <?php if ($is_super_admin || $is_cs || ($is_admin_klinik && $is_today)): ?>
+                                        <?php if ($is_super_admin || $is_cs): ?>
                                             <button type="button" class="btn-drawer-icon text-warning" title="Edit" onclick="openEditBooking(<?= (int)$row['id'] ?>)">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                        <?php elseif ($is_admin_klinik && $is_past): ?>
-                                            <button type="button" class="btn-drawer-icon text-warning" title="Request Edit (Lewat Hari)" onclick="requestEditBooking(<?= (int)$row['id'] ?>)">
                                                 <i class="fas fa-edit"></i>
                                             </button>
                                         <?php endif; ?>
@@ -618,17 +615,13 @@ if (!empty($booking_ids)) {
                                             </button>
                                         <?php endif; ?>
 
-                                        <?php if ($is_super_admin || $is_cs || ($is_admin_klinik && $is_today)): ?>
+                                        <?php if ($is_super_admin || $is_cs): ?>
                                             <button type="button" class="btn-drawer-icon text-danger" title="Cancel" onclick="return confirmCancel(<?= (int)$row['id'] ?>);">
                                                 <i class="fas fa-times"></i>
                                             </button>
-                                        <?php elseif ($is_admin_klinik && $is_past): ?>
-                                            <button type="button" class="btn-drawer-icon text-danger" title="Request Hapus (Lewat Hari)" onclick="requestDeleteBooking(<?= (int)$row['id'] ?>, '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>')">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
                                         <?php endif; ?>
                                     <?php elseif (strpos($row['status'], 'pending') !== false): ?>
-                                        <?php if ($is_spv_klinik || $is_super_admin): ?>
+                                        <?php if ($is_super_admin): ?>
                                             <button type="button" class="btn-drawer-icon text-success" title="Approve" onclick="approveBookingRequest(<?= (int)$row['id'] ?>, '<?= $row['status'] ?>')">
                                                 <i class="fas fa-check"></i>
                                             </button>
@@ -714,7 +707,7 @@ if (!empty($booking_ids)) {
                                             <label class="form-label fw-semibold">Jadwal Pemeriksaan <span class="text-danger">*</span></label>
                                             <div class="input-group">
                                                 <input type="date" name="tanggal" id="booking_tanggal" class="form-control" value="<?= date('Y-m-d') ?>" min="<?= date('Y-m-d') ?>" required title="Tanggal">
-                                                <input type="time" name="jam_layanan" id="booking_jam" class="form-control" title="Jam Layanan">
+                                                <input type="time" name="jam_layanan" id="booking_jam" class="form-control" title="Jam Layanan" required>
                                             </div>
                                         </div>
                                         <div class="col-md-4">
@@ -728,7 +721,7 @@ if (!empty($booking_ids)) {
                                             </div>
                                         </div>
                                         <div class="col-md-4">
-                                            <label class="form-label fw-semibold">Jotform Submitted <span class="text-danger">*</span></label>
+                                            <label class="form-label fw-semibold">Jotform Submitted</label>
                                             <div class="segmented-control">
                                                 <input type="radio" class="btn-check" name="jotform_submitted" id="jotform_no" value="0" checked>
                                                 <label class="btn-segmented" for="jotform_no">Belum</label>
@@ -862,15 +855,28 @@ $(document).ready(function() {
     });
 
     $(document).on('change', '.patient-exam-select[data-patient-idx="0"]', function() {
-        var firstPatientExamId = $(this).val();
-        var paxCount = parseInt($('#jumlah_pax').val()) || 1;
+        var $this = $(this);
+        var changedRowIdx = $this.closest('.exam-row').data('row-idx');
+        
+        // Hanya sinkronkan jika baris pertama pasien 0 yang diubah
+        if (changedRowIdx !== 0) return;
+
+        var firstPatientExamId = $this.val();
+        
+        // Cari modal aktif dan ambil jumlah pax dari modal tersebut
+        var $modal = $this.closest('.modal');
+        var paxCount = parseInt($modal.find('input[name="jumlah_pax"]').val()) || 1;
         
         if (paxCount > 1) {
-            $('.patient-exam-select').not(this).each(function() {
+            // Hanya sinkronkan elemen di dalam modal yang sama
+            $modal.find('.patient-exam-select').not(this).each(function() {
                 var $select = $(this);
+                var patientIdx = parseInt($select.attr('data-patient-idx') || $select.data('patient-idx'));
                 var rowIdx = $select.closest('.exam-row').data('row-idx');
-                if (rowIdx === 0) {
-                    $select.val(firstPatientExamId);
+                
+                // Hanya sinkronkan ke baris pertama pasien LAIN (patientIdx > 0)
+                if (rowIdx === 0 && patientIdx > 0) {
+                    $select.val(firstPatientExamId).trigger('change');
                 }
             });
         }
@@ -909,7 +915,26 @@ $(document).ready(function() {
             dataType: 'json',
             success: function(response) {
                 if (response.success) {
-                    showSuccessRedirect('Booking berhasil dibuat!', 'index.php?page=booking');
+                    $('#modalBookingBaru').modal('hide');
+                    
+                    // Reset form
+                    $('#formBooking')[0].reset();
+                    renderPaxSections(1);
+
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Berhasil!',
+                        text: response.message,
+                        timer: 1500,
+                        showConfirmButton: false
+                    }).then(() => {
+                        // Redirect with trigger_detail to show detail after reload
+                        if (response.booking_id) {
+                            location.href = 'index.php?page=booking&trigger_detail=' + response.booking_id;
+                        } else {
+                            location.reload();
+                        }
+                    });
                 } else {
                     showError(response.message);
                     $btn.prop('disabled', false).html('<i class="fas fa-save"></i> Simpan Booking');
@@ -1020,7 +1045,8 @@ window.addPatientExamRow = function(patientIdx, selectedId = '') {
     if (selectedId) {
         $select.val(selectedId).trigger('change');
     } else if (patientIdx > 0 && rowIdx === 0) {
-        var firstExam = $(`.patient-exams-list[data-patient-idx="0"] .patient-exam-select`).first().val();
+        var $modal = $list.closest('.modal');
+        var firstExam = $modal.find(`.patient-exams-list[data-patient-idx="0"] .patient-exam-select`).first().val();
         if (firstExam) $select.val(firstExam).trigger('change');
     }
 };
@@ -1393,9 +1419,18 @@ window.confirmButuhFU = function(id) {
 
 window.openBookingDetail = function(id) {
     $('#bookingDetailBody').html('<div class="text-center text-muted py-3">Memuat...</div>');
-    const mEl = document.getElementById('modalBookingDetail');
-    const m = bootstrap.Modal.getOrCreateInstance(mEl);
+    var $modalDetail = $('#modalBookingDetail');
+    // Reset to Info Tab
+    $modalDetail.find('#info-tab').tab('show');
+    $('#bookingHistoryBody').html('<div class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin d-block h4 mb-2"></i><span>Memuat riwayat...</span></div>');
+    
+    // Show modal
+    var m = bootstrap.Modal.getOrCreateInstance($modalDetail[0]);
     m.show();
+
+    // Store current booking ID globally for history loader
+    window.currentDetailBookingId = id;
+
     $.ajax({
         url: 'api/ajax_booking_detail.php',
         method: 'POST',
@@ -1452,21 +1487,35 @@ window.openBookingDetail = function(id) {
                 var needed = parseFloat(it.qty || 0);
                 var current = parseFloat(it.current_available || 0);
                 var isShort = current < needed;
-                var stockInfo = `<span class="badge ${isShort ? 'bg-danger' : 'bg-success'} ms-2">Stok: ${fmtQtyJs(current)}</span>`;
+                var stockInfo = `<span class="badge ${isShort ? 'bg-danger' : 'bg-success'} ms-2" style="font-size: 0.65rem;">Stok: ${fmtQtyJs(current)}</span>`;
                 
-                return `<tr>
-                    <td>${esc(it.kode_barang + ' - ' + it.nama_barang)} ${stockInfo}</td>
-                    <td class="text-end fw-semibold">${fmtQtyJs(it.qty)}</td>
+                return `<tr style="font-size: 0.85rem;">
+                    <td class="py-2">${esc(it.kode_barang + ' - ' + it.nama_barang)} ${stockInfo}</td>
+                    <td class="text-end fw-bold py-2 pe-3">${fmtQtyJs(it.qty)}</td>
                 </tr>`;
             }).join('') : '<tr><td colspan="2" class="text-center text-muted py-2">Tidak ada item</td></tr>';
 
             var pasienHtml = pasienList.length ? pasienList.map(function(p, i) {
-                return `<div class="${i > 0 ? 'mt-2 pt-2 border-top' : ''}">
-                    <div class="fw-semibold">${esc(p.nama_pasien)}</div>
-                    <div class="small text-muted">Tlp: ${esc(p.nomor_tlp || '-')} · Lahir: ${esc(p.tanggal_lahir || '-')}</div>
-                    <div class="small text-success fw-bold mt-1">Pemeriksaan: ${esc(p.exams || '-')}</div>
+                return `
+                <div class="p-3 mb-3 border rounded-3 bg-white">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="fw-bold text-dark fs-6"><i class="fas fa-user-circle me-2 text-primary"></i>${esc(p.nama_pasien)}</div>
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle x-small px-2">Pasien ${i+1}</span>
+                    </div>
+                    <div class="row g-2 small text-muted mb-3 border-bottom pb-2">
+                        <div class="col-6 d-flex align-items-center"><i class="fas fa-phone-alt me-2 opacity-50"></i>${esc(p.nomor_tlp || '-')}</div>
+                        <div class="col-6 d-flex align-items-center"><i class="fas fa-birthday-cake me-2 opacity-50"></i>${esc(fmtDateIdShort(p.tanggal_lahir) || '-')}</div>
+                    </div>
+                    <div class="p-2 rounded bg-light border-start border-primary border-3">
+                        <div class="x-small fw-bold text-muted text-uppercase" style="letter-spacing: 0.05em;">Layanan Pemeriksaan</div>
+                        <div class="small fw-bold text-dark mt-1">${esc(p.exams || '-')}</div>
+                    </div>
                 </div>`;
-            }).join('') : `<div class="fw-semibold">${esc(h.nama_pemesan || '-')}</div><div class="small text-muted">Tlp: ${esc(h.nomor_tlp || '-')} · Lahir: ${esc(h.tanggal_lahir || '-')}</div>`;
+            }).join('') : `
+            <div class="text-center py-5 text-muted">
+                <i class="fas fa-user-slash d-block h3 mb-2 opacity-25"></i>
+                Data pasien tidak ditemukan.
+            </div>`;
 
             $('#bookingDetailTitle').text('Detail: ' + (h.nomor_booking || ''));
             var stockWarningHtml = '';
@@ -1488,35 +1537,106 @@ window.openBookingDetail = function(id) {
             $('#bookingDetailBody').html(`
                 <div class="row g-3">
                     ${stockWarningHtml}
-                    <div class="col-12"><div class="d-flex flex-wrap gap-2">
-                        <span class="badge bg-light text-dark border">Booking: ${esc(h.booking_type || 'keep')}</span>
-                        <span class="badge bg-light text-dark border">Jotform: ${parseInt(h.jotform_submitted) === 1 ? 'Sudah' : 'Belum'}</span>
-                        <span class="badge bg-light text-dark border">Status: ${esc(h.status_booking || '-')}</span>
-                    </div></div>
-                    <div class="col-md-4"><div class="booking-detail-card p-3 h-100">
-                        <div class="booking-detail-label">Tanggal/Jam</div>
-                        <div class="booking-detail-value">${esc(fmtDateIdShort(h.tanggal_pemeriksaan))} <span class="booking-detail-sep">/</span> ${esc(h.jam_layanan || '-')}</div>
-                    </div></div>
-                    <div class="col-md-4"><div class="booking-detail-card p-3 h-100">
-                        <div class="booking-detail-label">Klinik/CS</div>
-                        <div class="booking-detail-value">${esc(h.nama_klinik)} <span class="booking-detail-sep">/</span> ${esc(h.cs_name || '-')}</div>
-                    </div></div>
-                    <div class="col-md-4"><div class="booking-detail-card p-3 h-100">
-                        <div class="booking-detail-label">Pasien (${esc(h.jumlah_pax || 1)} pax)</div>
-                        <div class="booking-pasien-content">${pasienHtml}</div>
-                    </div></div>
-                    <div class="col-12"><div class="booking-detail-card p-3">
-                        <div class="booking-detail-label">Pemeriksaan</div>
-                        <div class="booking-detail-value text-success-emphasis">${esc(res.jenis_pemeriksaan || '-')}</div>
-                    </div></div>
-                    <div class="col-12"><div class="border rounded-3 overflow-hidden">
-                        <div class="px-3 py-2 bg-light d-flex justify-content-between"><strong>Detail Item</strong><small>Qty per item</small></div>
-                        <div class="table-responsive"><table class="table table-sm mb-0">
-                            <thead class="table-light"><tr><th>Item</th><th class="text-end">Qty</th></tr></thead>
-                            <tbody>${rows}</tbody>
-                        </table></div>
-                    </div></div>
+                    
+                    <!-- Header Info Bar -->
+                    <div class="col-12">
+                        <div class="d-flex flex-wrap align-items-start justify-content-between p-3 bg-light rounded-3 border">
+                            <!-- Column 1: Klinik -->
+                            <div class="d-flex align-items-center" style="flex: 1; min-width: 200px;">
+                                <div class="bg-white rounded-circle d-flex align-items-center justify-content-center shadow-sm me-3 flex-shrink-0" style="width: 42px; height: 42px;">
+                                    <i class="fas fa-hospital text-primary"></i>
+                                </div>
+                                <div>
+                                    <div class="x-small text-muted text-uppercase fw-bold" style="font-size: 0.65rem;">Klinik Tujuan</div>
+                                    <div class="fw-bold text-dark">${esc(h.nama_klinik)}</div>
+                                    <div class="x-small text-muted">${esc(h.status_booking)}</div>
+                                </div>
+                            </div>
+
+                            <!-- Column 2: Jadwal -->
+                            <div class="d-flex align-items-center" style="flex: 1.2; min-width: 250px; border-left: 1px solid #dee2e6; padding-left: 20px;">
+                                <div class="bg-white rounded-circle d-flex align-items-center justify-content-center shadow-sm me-3 flex-shrink-0" style="width: 42px; height: 42px;">
+                                    <i class="fas fa-calendar-alt text-success"></i>
+                                </div>
+                                <div>
+                                    <div class="x-small text-muted text-uppercase fw-bold" style="font-size: 0.65rem;">Jadwal Pemeriksaan</div>
+                                    <div class="fw-bold text-dark">${esc(fmtDateIdShort(h.tanggal_pemeriksaan))} <span class="mx-1 opacity-50">|</span> ${esc(h.jam_layanan || '-')}</div>
+                                    <div class="x-small text-muted d-flex align-items-center gap-2">
+                                        <span>Tipe: <span class="text-capitalize fw-bold text-dark">${esc(h.booking_type)}</span></span>
+                                        <span class="opacity-50">|</span>
+                                        <span class="d-flex align-items-center">
+                                            Jotform: ${parseInt(h.jotform_submitted) === 1 ? '<span class="text-success fw-bold ms-1"><i class="fas fa-check-circle me-1"></i>Sudah</span>' : '<span class="text-danger fw-bold ms-1"><i class="fas fa-times-circle me-1"></i>Belum</span>'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Column 3: Status -->
+                            <div class="d-flex align-items-center" style="flex: 1; min-width: 180px; border-left: 1px solid #dee2e6; padding-left: 20px;">
+                                <div class="bg-white rounded-circle d-flex align-items-center justify-content-center shadow-sm me-3 flex-shrink-0" style="width: 42px; height: 42px;">
+                                    <i class="fas fa-info-circle text-info"></i>
+                                </div>
+                                <div>
+                                    <div class="x-small text-muted text-uppercase fw-bold" style="font-size: 0.65rem;">Status Booking</div>
+                                    <div class="fw-bold text-dark text-capitalize">${esc(h.status || h.status_booking)}</div>
+                                    <div class="x-small text-muted">ID: #${esc(h.nomor_booking)}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Left: Patients -->
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow-sm h-100">
+                            <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center border-bottom">
+                                <span class="fw-bold text-dark"><i class="fas fa-users me-2 text-primary"></i>Daftar Pasien (${esc(h.jumlah_pax || 1)} Pax)</span>
+                            </div>
+                            <div class="card-body p-3" style="max-height: 500px; overflow-y: auto;">
+                                ${pasienHtml}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Inventory & Notes -->
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow-sm mb-3">
+                            <div class="card-header bg-white py-2 border-bottom">
+                                <span class="fw-bold text-dark"><i class="fas fa-boxes me-2 text-primary"></i>Kebutuhan Stok</span>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th class="ps-3 py-2 x-small text-uppercase">Item / Barang</th>
+                                                <th class="text-end pe-3 py-2 x-small text-uppercase">Qty</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>${rows}</tbody>
+                                    </table>
+                                </div>
+                                <div class="p-3 border-top bg-light-subtle">
+                                    <div class="x-small text-muted text-uppercase fw-bold mb-1" style="font-size: 0.65rem;">Paket Pemeriksaan</div>
+                                    <div class="small fw-bold text-primary">${esc(res.jenis_pemeriksaan || '-')}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        ${h.catatan ? `
+                        <div class="card border-0 shadow-sm" style="background-color: #fffbeb; border-left: 4px solid #f59e0b !important;">
+                            <div class="card-body p-3">
+                                <div class="x-small text-warning text-uppercase fw-bold mb-1" style="font-size: 0.65rem;"><i class="fas fa-sticky-note me-1"></i>Catatan Internal</div>
+                                <div class="small text-dark fw-semibold" style="line-height: 1.4;">${esc(h.catatan)}</div>
+                            </div>
+                        </div>` : ''}
+                    </div>
                 </div>`);
+
+            $('#bookingDetailCSBadge').html(`
+                <div class="d-flex align-items-center text-white-50 x-small fw-bold bg-black bg-opacity-10 px-3 py-1 rounded-pill">
+                    <i class="fas fa-user-edit me-1"></i>CS: <span class="text-white ms-1">${esc(h.cs_name || '-')}</span>
+                </div>
+            `);
         },
         error: function() { $('#bookingDetailBody').html('<div class="alert alert-danger mb-0">Gagal memuat</div>'); }
     });
@@ -1750,6 +1870,60 @@ window.toggleActionDrawer = function(btn) {
     $btn.toggleClass('active');
 };
 
+window.loadBookingHistory = function() {
+    var id = window.currentDetailBookingId;
+    if (!id) return;
+
+    var $body = $('#bookingHistoryBody');
+    $body.html('<div class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin d-block h4 mb-2"></i><span>Memuat riwayat...</span></div>');
+
+    $.ajax({
+        url: 'actions/get_booking_history.php',
+        method: 'GET',
+        data: { id: id },
+        dataType: 'json',
+        success: function(res) {
+            if (!res.success) {
+                $body.html('<div class="alert alert-danger mx-2">' + res.message + '</div>');
+                return;
+            }
+            if (!res.data || res.data.length === 0) {
+                $body.html('<div class="text-center py-5 text-muted"><i class="fas fa-history d-block h3 mb-2 opacity-50"></i>Belum ada riwayat perubahan.</div>');
+                return;
+            }
+
+            var html = '<div class="px-2 pt-2">';
+            res.data.forEach(function(item) {
+                var changesHtml = '';
+                if (item.changes) {
+                    changesHtml = '<div class="mt-1 d-flex flex-wrap gap-1">';
+                    for (var key in item.changes) {
+                        var change = item.changes[key];
+                        var oldVal = change.old || '-';
+                        var newVal = change.new || '-';
+                        changesHtml += `<span class="change-badge"><i class="fas fa-edit me-1"></i>${key}: <span class="text-muted text-decoration-line-through x-small">${oldVal}</span> <i class="fas fa-long-arrow-alt-right mx-1 text-primary"></i> <strong>${newVal}</strong></span>`;
+                    }
+                    changesHtml += '</div>';
+                }
+
+                html += `
+                <div class="history-item">
+                    <div class="history-dot active"></div>
+                    <div class="history-time">${item.created_at}</div>
+                    <div class="history-user">${item.user_name} <span class="badge bg-light text-dark fw-normal border ms-1 x-small">${item.action}</span></div>
+                    <div class="history-action">${item.notes || ''}</div>
+                    ${changesHtml}
+                </div>`;
+            });
+            html += '</div>';
+            $body.html(html);
+        },
+        error: function() {
+            $body.html('<div class="alert alert-danger mx-2">Gagal memuat riwayat.</div>');
+        }
+    });
+};
+
 // Auto-trigger new booking modal if URL contains trigger=new
 $(document).ready(function() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -1759,6 +1933,11 @@ $(document).ready(function() {
             const modal = new bootstrap.Modal(modalEl);
             modal.show();
         }
+    }
+    
+    const triggerDetail = urlParams.get('trigger_detail');
+    if (triggerDetail) {
+        openBookingDetail(triggerDetail);
     }
 });
 </script>
@@ -1879,15 +2058,48 @@ window.openActionHub = function(data) {
 
 <!-- Modal Booking Detail -->
 <div class="modal fade" id="modalBookingDetail" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold" id="bookingDetailTitle">
-                    <i class="fas fa-list me-2 text-primary-custom"></i>Detail Booking
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content border-0">
+            <div class="modal-header pb-0 border-0" style="background-color: #204EAB !important;">
+                <div class="d-flex flex-column w-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                        <h5 class="modal-title fw-bold text-white" id="bookingDetailTitle">
+                            <i class="fas fa-list me-2"></i>Detail Booking
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-end px-2" style="margin-bottom: -1px; padding-top: 8px;">
+                        <ul class="nav nav-tabs border-0" id="bookingDetailTabs" role="tablist" style="gap: 4px;">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active py-2 px-4 fw-bold border-0 rounded-top" id="info-tab" data-bs-toggle="tab" data-bs-target="#info-pane" type="button" role="tab" style="font-size: 0.85rem; transition: all 0.2s;">
+                                    <i class="fas fa-info-circle me-1"></i>Informasi
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link py-2 px-4 fw-bold border-0 rounded-top" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-pane" type="button" role="tab" style="font-size: 0.85rem; transition: all 0.2s;" onclick="loadBookingHistory()">
+                                    <i class="fas fa-history me-1"></i>History
+                                </button>
+                            </li>
+                        </ul>
+                        <div id="bookingDetailCSBadge" class="mb-1"></div>
+                    </div>
+                </div>
             </div>
-            <div class="modal-body" id="bookingDetailBody"></div>
+            <div class="modal-body p-0">
+                <div class="tab-content" id="bookingDetailTabContent">
+                    <div class="tab-pane fade show active p-3" id="info-pane" role="tabpanel">
+                        <div id="bookingDetailBody"></div>
+                    </div>
+                    <div class="tab-pane fade p-3" id="history-pane" role="tabpanel">
+                        <div id="bookingHistoryBody">
+                            <div class="text-center py-5 text-muted">
+                                <i class="fas fa-spinner fa-spin d-block h4 mb-2"></i>
+                                <span>Memuat riwayat...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                     Tutup
@@ -1896,6 +2108,47 @@ window.openActionHub = function(data) {
         </div>
     </div>
 </div>
+
+<style>
+    #bookingDetailTabs .nav-link { 
+        color: rgba(255,255,255,0.7); 
+        background: rgba(0,0,0,0.15);
+        border: none !important;
+        margin-bottom: 0;
+    }
+    #bookingDetailTabs .nav-link:hover {
+        background: rgba(255,255,255,0.1);
+        color: #fff;
+    }
+    #bookingDetailTabs .nav-link.active { 
+        color: #204EAB !important; 
+        background: #ffffff !important;
+        box-shadow: none;
+    }
+    .bg-light-subtle { background-color: #f8fafc !important; }
+    .history-item { 
+        position: relative; 
+        padding-left: 25px; 
+        padding-bottom: 20px; 
+        border-left: 2px solid #e2e8f0; 
+    }
+    .history-item:last-child { border-left-color: transparent; }
+    .history-dot { 
+        position: absolute; 
+        left: -7px; 
+        top: 0; 
+        width: 12px; 
+        height: 12px; 
+        border-radius: 50%; 
+        background: #cbd5e1; 
+        border: 2px solid #fff; 
+    }
+    .history-dot.active { background: #204EAB; }
+    .history-time { font-size: 0.75rem; color: #94a3b8; margin-bottom: 2px; }
+    .history-user { font-size: 0.85rem; font-weight: 700; color: #334155; }
+    .history-action { font-size: 0.85rem; color: #64748b; }
+    .change-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: #f1f5f9; color: #475569; }
+</style>
 
 <!-- Modal Move -->
 <div class="modal fade" id="modalMove" tabindex="-1">

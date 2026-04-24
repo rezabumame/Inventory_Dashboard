@@ -253,7 +253,11 @@ if ($can_cs_edit) {
                 <div class="card border-0 shadow-sm mb-3 pax-section-card" data-patient-idx="${i}">
                     <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center py-2">
                         <span class="small"><i class="fas fa-user me-2 text-primary"></i>Pasien ${num} ${i === 0 ? '(Utama)' : ''}</span>
-                        ${i > 0 ? '<span class="badge bg-light text-muted fw-normal x-small border">Opsional</span>' : ''}
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-outline-danger btn-sm border-0 py-0 btn-remove-patient" data-patient-idx="${i}" title="Hapus Pasien ini">
+                                <i class="fas fa-trash-alt me-1"></i><span class="x-small">Hapus</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body py-2">
                         <div class="row g-2 mb-2">
@@ -322,6 +326,10 @@ if ($can_cs_edit) {
         }
         if (selectedId) {
             $select.val(selectedId).trigger('change');
+        } else if (patientIdx > 0 && rowIdx === 0) {
+            var $modal = $list.closest('.modal');
+            var firstExam = $modal.find(`.patient-exams-list[data-patient-idx="0"] .patient-exam-select`).first().val();
+            if (firstExam) $select.val(firstExam).trigger('change');
         }
         checkEditSelectedStock();
     }
@@ -488,6 +496,34 @@ if ($can_cs_edit) {
             else showWarning('Minimal 1 pemeriksaan!');
         });
 
+        $modalEl.on('click', '.btn-remove-patient', function() {
+            var $card = $(this).closest('.pax-section-card');
+            var totalPax = $('.pax-section-card').length;
+            
+            if (totalPax <= 1) {
+                showWarning('Booking minimal harus memiliki 1 pasien!');
+                return;
+            }
+
+            Swal.fire({
+                title: 'Hapus Pasien?',
+                text: "Data pasien ini akan dihapus dari daftar.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                confirmButtonText: 'Ya, Hapus',
+                cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    $card.remove();
+                    var newCount = $('.pax-section-card').length;
+                    $('#edit_jumlah_pax').val(newCount);
+                    // Re-render to cleanup numbering, labels (Utama), and indices
+                    renderPaxSectionsEdit(newCount);
+                }
+            });
+        });
+
         $modalEl.find('#formEditBookingReal').on('submit', function(e) {
             e.preventDefault();
             var $btn = $('#btnSubmitEditBooking');
@@ -500,7 +536,7 @@ if ($can_cs_edit) {
                 dataType: 'json',
                 success: function(res) {
                     if (res.success) {
-                        showSuccessRedirect(res.message || 'Berhasil diupdate', 'index.php?page=booking');
+                        showSuccessRedirect(res.message || 'Berhasil diupdate', 'index.php?page=booking&trigger_detail=' + (res.booking_id || ''));
                     } else {
                         showError(res.message);
                         $btn.prop('disabled', false).html('<i class="fas fa-save me-1"></i> Simpan Perubahan');

@@ -374,6 +374,10 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                                         <label class="form-check-label small" for="check_history">Riwayat Transaksi Stok</label>
                                     </div>
                                     <div class="form-check">
+                                        <input class="form-check-input truncate-check" type="checkbox" value="booking_history" id="check_booking_history" checked>
+                                        <label class="form-check-label small" for="check_booking_history">Riwayat Edit Booking</label>
+                                    </div>
+                                    <div class="form-check">
                                         <input class="form-check-input" type="checkbox" id="check_all" checked onchange="$('.truncate-check').prop('checked', this.checked)">
                                         <label class="form-check-label small fw-bold" for="check_all">Pilih Semua</label>
                                     </div>

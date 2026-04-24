@@ -2,6 +2,16 @@
 require_once __DIR__ . '/../../config/settings.php';
 require_once __DIR__ . '/../../lib/stock.php';
 check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'cs', 'petugas_hc']);
+try {
+    $conn->query("
+        INSERT INTO inventory_barang (odoo_product_id, kode_barang, nama_barang, satuan, stok_minimum, kategori)
+        SELECT DISTINCT sm.odoo_product_id, sm.kode_barang, sm.kode_barang, 'Unit', 0, 'Odoo'
+        FROM inventory_stock_mirror sm
+        LEFT JOIN inventory_barang b ON b.odoo_product_id = sm.odoo_product_id
+        WHERE sm.odoo_product_id IS NOT NULL AND sm.odoo_product_id <> ''
+          AND b.id IS NULL
+    ");
+} catch (Exception $e) {}
 
 $can_filter_klinik = in_array($_SESSION['role'], ['super_admin', 'admin_gudang', 'cs']);
 $is_cs = ($_SESSION['role'] == 'cs');
@@ -322,21 +332,16 @@ if ($active_tab == 'stok') {
                     $rb_sellout_hc_sql = "(SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0) FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id WHERE ts.barang_id = b.id AND ts.referensi_tipe = 'pemakaian_bhp' AND pb.klinik_id $klinik_filter_sql AND TRIM(pb.jenis_pemakaian) = 'hc' AND pb.status = 'active' AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
                 }
 
-                $union_sql = "SELECT odoo_product_id, kode_barang FROM inventory_stock_mirror WHERE TRIM(location_code) $loc_filter_sql";
-                if ($show_hc && ($selected_klinik === 'all' ? $hc_codes_str !== "''" : $kode_homecare !== '')) {
-                    $union_sql .= " UNION SELECT odoo_product_id, kode_barang FROM inventory_stock_mirror WHERE TRIM(location_code) $hc_loc_filter_sql";
-                }
-
                 $query = "SELECT 
                             $selected_klinik_id_sql as klinik_id,
                             '$kode_klinik_esc' as kode_klinik,
                             '$kode_homecare_esc' as kode_homecare,
                             " . ($selected_klinik === 'all' ? "'Semua Klinik' as nama_klinik," : ($selected_klinik === 'gudang_utama' ? "'Gudang Utama' as nama_klinik," : "k.nama_klinik,")) . "
-                            p.odoo_product_id,
-                            p.kode_barang,
+                            b.odoo_product_id,
+                            b.kode_barang,
                             b.id as barang_id,
                             b.kode_barang as kode_barang_master,
-                            COALESCE(b.nama_barang, p.kode_barang) as nama_barang,
+                            b.nama_barang,
                             COALESCE(uc.to_uom, b.satuan) as satuan,
                             COALESCE(uc.from_uom, '') as uom_odoo,
                             COALESCE(uc.multiplier, 1) as uom_multiplier,
@@ -408,7 +413,7 @@ if ($active_tab == 'stok') {
                             $rb_out_transfer_hc_sql as rb_out_transfer_hc,
                             $rb_sellout_klinik_sql as rb_sellout_klinik,
                             $rb_sellout_hc_sql as rb_sellout_hc
-                          FROM ($union_sql) p
+                          FROM inventory_barang b
                           LEFT JOIN (
                             SELECT sm1.odoo_product_id, SUM(sm1.qty) as qty
                             FROM inventory_stock_mirror sm1
@@ -420,7 +425,7 @@ if ($active_tab == 'stok') {
                             ) last_sm ON last_sm.odoo_product_id = sm1.odoo_product_id AND last_sm.loc = TRIM(sm1.location_code) AND last_sm.max_updated = sm1.updated_at
                             WHERE TRIM(sm1.location_code) $loc_filter_sql
                             GROUP BY sm1.odoo_product_id
-                          ) sm_k ON sm_k.odoo_product_id = p.odoo_product_id
+                          ) sm_k ON sm_k.odoo_product_id = b.odoo_product_id
                           LEFT JOIN (
                             SELECT sm1.odoo_product_id, SUM(sm1.qty) as qty
                             FROM inventory_stock_mirror sm1
@@ -432,8 +437,7 @@ if ($active_tab == 'stok') {
                             ) last_sm ON last_sm.odoo_product_id = sm1.odoo_product_id AND last_sm.loc = TRIM(sm1.location_code) AND last_sm.max_updated = sm1.updated_at
                             WHERE TRIM(sm1.location_code) $hc_loc_filter_sql
                             GROUP BY sm1.odoo_product_id
-                          ) sm_h ON sm_h.odoo_product_id = p.odoo_product_id
-                          LEFT JOIN inventory_barang b ON (b.odoo_product_id = p.odoo_product_id OR b.kode_barang = p.kode_barang)
+                          ) sm_h ON sm_h.odoo_product_id = b.odoo_product_id
                           LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
                           " . (($selected_klinik === 'all' || $selected_klinik === 'gudang_utama') ? "" : "JOIN inventory_klinik k ON k.id = $selected_klinik_id") . "
                           WHERE 1=1";

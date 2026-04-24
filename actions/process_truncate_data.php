@@ -51,6 +51,9 @@ try {
         'history' => [
             'inventory_transaksi_stok',
             'inventory_upload_logs'
+        ],
+        'booking_history' => [
+            'inventory_booking_history'
         ]
     ];
 
