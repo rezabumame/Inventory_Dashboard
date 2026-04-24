@@ -968,7 +968,7 @@ function openStokBreakdown(barangId, namaBarang) {
                 <table class="table table-hover datatable-stok">
                     <thead>
                         <tr>
-                            <th>Kode Barang</th>
+                            <th style="width: 110px;">Kode Barang</th>
                             <th>Nama Barang</th>
                             <th>Satuan</th>
                             <th class="text-center">Stock On Site</th>
@@ -1017,7 +1017,11 @@ function openStokBreakdown(barangId, namaBarang) {
                             $available = $on_hand - $reserve_total;
                         ?>
                         <tr>
-                            <td><?= htmlspecialchars(!empty($row['kode_barang_master']) ? $row['kode_barang_master'] : ($row['kode_barang'] ?? '-')) ?></td>
+                            <td>
+                                <div class="text-truncate" style="max-width: 110px;" title="<?= htmlspecialchars(!empty($row['kode_barang_master']) ? $row['kode_barang_master'] : ($row['kode_barang'] ?? '-')) ?>">
+                                    <?= htmlspecialchars(!empty($row['kode_barang_master']) ? $row['kode_barang_master'] : ($row['kode_barang'] ?? '-')) ?>
+                                </div>
+                            </td>
                             <td><?= htmlspecialchars($row['nama_barang']) ?></td>
                             <td class="small">
                                 <div><?= htmlspecialchars($row['satuan']) ?></div>
