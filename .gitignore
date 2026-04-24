@@ -1,7 +1,25 @@
 # Database and sensitive configs
 .env
+*.sql
+!database_schema.sql
+
+# Dependencies
+node_modules/
+vendor/
+package-lock.json
+composer.lock
+skills-lock.json
+
+# AI Agent & Tools
+.agents/
+.kiro/
+.trae/
+.gemini/
+JOURNEY.md
+GEMINI.md
 
 # Temporary and debug files
+scratch/
 *.log
 tmp/
 temp/
@@ -9,6 +27,8 @@ debug_users_table.php
 delete_manual_hc_stock.php
 seed_dummy_accounts.php
 tmp_check_db.php
+*.php.bak
+*.tmp
 
 # OS files
 .DS_Store
@@ -17,3 +37,7 @@ Thumbs.db
 # IDE files
 .vscode/
 .idea/
+.project
+.settings/
+*.sublime-project
+*.sublime-workspace

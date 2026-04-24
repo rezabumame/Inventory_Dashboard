@@ -475,6 +475,7 @@ try {
     
     run_migration_task("Update: inventory_transfer_barang_detail qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transfer_barang_detail MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_pemakaian_bhp status enum", function() use ($conn) { return $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN status ENUM('active','pending_add','pending_edit','pending_delete','rejected','revised','pending_approval_spv') DEFAULT 'active'") ? "Updated" : "Failed"; });
+    run_migration_task("Update: inventory_booking_pemeriksaan status enum", function() use ($conn) { return $conn->query("ALTER TABLE inventory_booking_pemeriksaan MODIFY COLUMN status ENUM('booked','completed','cancelled','pending_edit','pending_delete','rejected','rescheduled') DEFAULT 'booked'") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_pemakaian_bhp change_source to VARCHAR(64)", function() use ($conn) { return $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN change_source VARCHAR(64) NULL") ? "Updated" : "Failed"; });
 
     run_migration_task("Table: inventory_booking_request_dedup", function() use ($conn) { return m_ensure_table($conn, "inventory_booking_request_dedup", "CREATE TABLE IF NOT EXISTS inventory_booking_request_dedup (
@@ -561,6 +562,10 @@ try {
         ['inventory_pemeriksaan_grup_detail', 'nama_layanan', "VARCHAR(255) DEFAULT NULL AFTER id_biosys"],
         ['inventory_pemeriksaan_grup', 'created_at', "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"],
         ['inventory_pemakaian_bhp', 'user_hc_id', "INT NULL AFTER klinik_id"],
+        ['inventory_booking_pemeriksaan', 'reschedule_reason', "TEXT NULL AFTER out_of_stock_items"],
+        ['inventory_booking_pasien', 'status', "ENUM('booked', 'done', 'rescheduled', 'cancelled') DEFAULT 'booked' AFTER tanggal_lahir"],
+        ['inventory_booking_pasien', 'remark', "TEXT NULL AFTER status"],
+        ['inventory_booking_pasien', 'done_at', "DATETIME NULL AFTER remark"],
     ];
 
     foreach ($cols as $c) {

@@ -1,85 +1,80 @@
-# Bumame Inventory Management System
+# 🩺 Bumame Inventory Dashboard (Pro Version)
 
-A comprehensive web-based inventory and booking management system designed for healthcare operations, featuring multi-role access control, automated stock synchronization, and professional reporting.
+A high-performance, premium web-based inventory and booking management system tailored for healthcare operations. Built with **Native PHP 8.x**, this system ensures precise stock tracking, automated ERP synchronization, and seamless team collaboration via Lark.
 
-## 🚀 Key Features
+---
+
+## ✨ What's New (Premium Update)
+The system has been upgraded with a **Modern Premium UI** featuring:
+- **Outfit Typography**: Sleek and modern font for enhanced readability.
+- **Bumame Blue Branding**: Consistent corporate identity (#204EAB).
+- **Soft UI Components**: Elegant cards, refined badges (IN/OUT), and smooth hover effects.
+- **Responsive Layout**: Optimized for both desktop and tablet monitoring.
+
+---
+
+## 🚀 Key Modules & Features
 
 ### 👤 Role-Based Access Control (RBAC)
-- **Super Admin**: Full system access, including configuration and user management.
-- **Admin Gudang**: Manages the Main Warehouse, approves inventory requests, and monitors Odoo synchronization.
-- **Admin & SPV Klinik**: Manages stock and requests at the clinic level.
-- **Petugas HC (Home Care)**: Manages personal bag stock for home visits and field operations.
-- **CS (Customer Service)**: Handles patient bookings and views stock availability.
+| Role | Access Level | Responsibilities |
+| :--- | :--- | :--- |
+| **Super Admin** | Full | System config, user management, and security settings. |
+| **Admin Gudang** | Warehouse | Odoo sync management, stock approval, and main storage tracking. |
+| **Admin & SPV** | Clinic | Local stock management, request items, and BHP tracking. |
+| **Petugas HC** | Personal Bag | Field operation stock, transfers, and inventory returns. |
+| **CS** | Operational | Patient booking, inventory reservation, and follow-up tagging. |
 
-### 📦 Inventory & Stock Management
-- **Main Warehouse**: Synchronized with **Odoo ERP** for real-time stock accuracy.
-- **Clinic Stock**: Real-time visibility and management of items across different clinic locations.
-- **HC Personal Bag**: Specialized tracking for items carried by field officers.
-- **Request & Transfer**: Automated workflow for requesting items (HC -> Klinik -> Gudang) with instant stock movement upon approval.
-- **UoM Conversion**: Built-in tools for converting units (e.g., Box to Pieces) to maintain accurate counts.
+### 📦 Smart Inventory System
+- **Odoo ERP Sync**: Seamlessly sync main warehouse stock using JSON-RPC. Supports manual, interval, daily, or weekly schedules.
+- **Dual-POV Monitoring**: View stock from both Warehouse (Odoo) and Local Clinic perspective.
+- **Reservation -> Deduction**: Automatic stock reservation upon booking and final deduction upon completion.
+- **Public Stock View**: Generate a **Read-Only Public Token** to share real-time stock visibility with external teams without needing a login.
 
-### 📅 Booking & Healthcare Workflow
-- **Booking Management**: Create and track patient bookings for various medical examinations.
-- **Stock Reservation**: Automatically reserves stock needed for upcoming bookings to ensure availability.
-- **Pemakaian BHP (Bahan Habis Pakai)**: Track the actual consumption of medical supplies, automatically deducting stock upon use.
+### 💬 Lark Integration & Automation
+- **Custom Bot Webhook**: Automated reports sent directly to Lark Groups.
+- **Smart Mentions**: System tags staff (e.g., `@Reza Mahendra`) for items needing follow-up (FU), ensuring no request is missed.
+- **Sync Reporting**: Real-time notification if Odoo sync fails or succeeds.
 
-### 🔗 Integrations
-- **Odoo (RPC/JSON-RPC)**: Automated and manual synchronization of stock levels and warehouse data.
-- **Lark/Feishu Webhook**: Real-time notifications for synchronization success or failure reports.
-- **Google Sheets**: Integration via Web Apps Script for real-time reporting of booking data.
-
----
-
-## 🛠️ System Architecture & Modules
-
-### Master Data
-- **Users**: Manage credentials and roles.
-- **Klinik**: Database of clinic locations.
-- **Barang (Products)**: Detailed catalog with UoM management.
-- **Pemeriksaan (Examinations)**: List of medical services and their associated items.
-- **Petugas HC**: Profile management for field staff.
-
-### Inventory Modules
-- **Stok Klinik / Stok HC**: Location-specific stock monitoring.
-- **Permintaan Barang**: End-to-end request lifecycle with QR code verification.
-- **Pemakaian BHP**: Operational usage tracking.
-- **Booking List**: Integrated scheduling and stock allocation.
-
-### Configuration
-- **Pengaturan Sistem**: RPC settings, scheduler (Interval, Daily, Weekly), and location mapping.
-- **Webhook Settings**: Lark and Google Sheets endpoint configuration.
+### 📅 Booking Workflow
+- **Granular Completion**: Complete patient bookings per-patient to maintain accurate inventory movement.
+- **BHP Mapping**: Automatic calculation of medical supplies needed per-examination.
 
 ---
 
-## 💻 Technology Stack
-- **Backend**: Native PHP 8.x
+## ⚙️ System Configuration
+
+### Environment Setup
+1.  **Database**: Import `database_schema.sql` (MySQL/TiDB).
+2.  **Config**: Update `.env` with your credentials:
+    - `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME`
+    - `DB_SSL=true` (Required for TiDB Cloud)
+    - `LARK_WEBHOOK_URL` (For notifications)
+
+### Settings Menu
+Navigate to **Pengaturan Sistem** to configure:
+- **RPC Odoo**: Server URL, Database, and User credentials.
+- **Scheduler**: Set the frequency of auto-sync (e.g., every 15 mins).
+- **Danger Zone**: One-click cleanup for transaction data (Master data remains safe).
+
+---
+
+## 🛠️ Technology Stack
+- **Backend**: Native PHP 8.2+
 - **Database**: MySQL / TiDB
-- **Frontend**: Bootstrap 5, DataTables (jQuery), FontAwesome 6
-- **Integrations**: XML-RPC (Odoo), Webhooks (Lark, Google Sheets)
-- **Reports**: FPDF, PHPQRCode
+- **Frontend**: Bootstrap 5, Outfit Google Font, FontAwesome 6, DataTables.
+- **Integrations**: Lark API (Custom Bot), Odoo XML-RPC, Google Sheets Apps Script.
+- **Security**: CSRF Protection, Password Hashing (Bcrypt), Token-based Public Access.
 
 ---
 
-## ⚙️ Setup Instructions
-
-1.  **Database**: Import `database_schema.sql` into your MySQL/TiDB database.
-2.  **Environment Variables**: Configure the following in your environment:
-    - `DB_HOST`: Database host
-    - `DB_USER`: Database user
-    - `DB_PASS`: Database password
-    - `DB_NAME`: Database name
-    - `DB_SSL`: `true` for secure connections (required for TiDB Cloud)
-3.  **Permissions**: Ensure the `assets/uploads/` directory is writable.
-
----
-
-## 🔑 Default Credentials
+## 🔑 Access Cheat Sheet
 **Standard password for all accounts: `123456`**
 
-| Role | Username Example |
-| :--- | :--- |
-| **Super Admin** | `superadmin` |
-| **Admin Gudang** | `admingudang` |
-| **Admin Klinik** | `admin_[namaklinik]` |
-| **SPV Klinik** | `spv_[namaklinik]` |
-| **Petugas HC** | `[username_hc]` |
+- **Super Admin**: `superadmin`
+- **Admin Gudang**: `admingudang`
+- **Admin Klinik**: `admin_[klinik_name]`
+- **CS**: `cs_pusat`
+
+---
+
+*Developed with ❤️ for Bumame Health Operations.*

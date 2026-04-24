@@ -88,155 +88,290 @@ if ($can_filter_klinik) {
 }
 ?>
 
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
 <style>
-    .trans-container {
-        font-family: 'Poppins', sans-serif;
+    :root {
+        --bumame-blue: #204EAB;
+        --bumame-blue-soft: rgba(32, 78, 171, 0.08);
+        --slate-50: #f8fafc;
+        --slate-100: #f1f5f9;
+        --slate-200: #e2e8f0;
+        --slate-600: #475569;
+        --slate-900: #0f172a;
+        --success-soft: rgba(16, 185, 129, 0.1);
+        --danger-soft: rgba(239, 68, 68, 0.1);
     }
-    .text-primary-custom { color: #204EAB; }
+
+    .trans-container {
+        font-family: 'Outfit', sans-serif;
+        background-color: var(--slate-50);
+        min-height: 100vh;
+    }
+
+    .page-header {
+        background: white;
+        padding: 1.5rem 2rem;
+        border-radius: 16px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        margin-bottom: 2rem;
+        border-left: 6px solid var(--bumame-blue);
+    }
+
+    .filter-card {
+        background: white;
+        border-radius: 16px;
+        border: 1px solid var(--slate-200);
+        transition: all 0.3s ease;
+    }
+
+    .filter-card:hover {
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+    }
+
+    .table-card {
+        background: white;
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid var(--slate-200);
+    }
+
     .table-custom thead th {
-        background-color: #204EAB;
-        color: #ffffff;
-        font-weight: 600;
+        background-color: var(--slate-50);
+        color: var(--slate-600);
+        font-weight: 700;
         text-transform: uppercase;
+        font-size: 0.7rem;
+        letter-spacing: 0.05em;
+        padding: 1.2rem 1rem;
+        border-bottom: 2px solid var(--slate-100);
+    }
+
+    .table-custom tbody tr {
+        transition: all 0.2s ease;
+    }
+
+    .table-custom tbody tr:hover {
+        background-color: var(--bumame-blue-soft);
+        transform: scale(1.002);
+    }
+
+    .table-custom td {
+        padding: 1rem;
+        border-bottom: 1px solid var(--slate-100);
+        vertical-align: middle;
+        color: var(--slate-900);
+    }
+
+    /* Modern Badges */
+    .badge-modern {
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-weight: 700;
         font-size: 0.75rem;
-        padding: 0.85rem 1rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .badge-in { 
+        background-color: var(--success-soft); 
+        color: #059669; 
+        border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+    
+    .badge-out { 
+        background-color: var(--danger-soft); 
+        color: #dc2626; 
+        border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    .qty-text {
+        font-family: 'Monaco', 'Consolas', monospace;
+        font-size: 1rem;
+    }
+
+    .unit-pill {
+        background: var(--slate-100);
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        color: var(--slate-600);
+        display: inline-block;
+    }
+
+    /* Custom Form Controls */
+    .form-control, .form-select {
+        border-radius: 10px;
+        border: 1px solid var(--slate-200);
+        padding: 0.6rem 1rem;
+        font-size: 0.9rem;
+    }
+
+    .form-control:focus, .form-select:focus {
+        border-color: var(--bumame-blue);
+        box-shadow: 0 0 0 4px var(--bumame-blue-soft);
+    }
+
+    .btn-primary {
+        background-color: var(--bumame-blue);
+        border: none;
+        border-radius: 10px;
+        padding: 0.6rem 1.5rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .btn-primary:hover {
+        background-color: #1a3e8a;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(32, 78, 171, 0.3);
+    }
+
+    .btn-excel {
+        background-color: #10B981;
+        color: white;
+        border-radius: 10px;
+        padding: 0.6rem 1rem;
         border: none;
     }
-    .table-custom tbody tr:hover {
-        background-color: #f8fafc;
-    }
-    .table-custom td {
-        font-size: 0.9rem;
-        vertical-align: middle;
-    }
-    .badge-in { background-color: rgba(16, 185, 129, 0.1); color: #059669; font-weight: 700; border: 1px solid #059669; }
-    .badge-out { background-color: rgba(239, 68, 68, 0.1); color: #dc2626; font-weight: 700; border: 1px solid #dc2626; }
+
+    /* Font Weight Utilities */
+    .fw-500 { font-weight: 500; }
+    .fw-600 { font-weight: 600; }
+    .fw-700 { font-weight: 700; }
+    .fw-800 { font-weight: 800; }
 </style>
 
-<div class="container-fluid trans-container py-3">
-    <div class="row mb-3 align-items-start">
-        <div class="col">
-            <h1 class="h3 mb-0 fw-bold text-primary-custom">
-                <i class="fas fa-history me-2"></i>Riwayat Transaksi Stok
+<div class="container-fluid trans-container py-4">
+    <!-- Header Section -->
+    <div class="page-header d-flex justify-content-between align-items-center">
+        <div>
+            <h1 class="h3 mb-1 fw-800" style="color: var(--bumame-blue); letter-spacing: -0.02em;">
+                Riwayat Transaksi Stok
             </h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0" style="font-size: 0.85rem;">
-                    <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
-                    <li class="breadcrumb-item active">Riwayat Transaksi</li>
-                </ol>
-            </nav>
+            <p class="text-muted mb-0 small fw-500">Monitor arus masuk dan keluar barang secara real-time</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-excel shadow-sm" onclick="exportExcel()">
+                <i class="fas fa-file-excel me-2"></i>Export Excel
+            </button>
         </div>
     </div>
 
-    <!-- Filter Card -->
-    <div class="card mb-4 border-0 shadow-sm">
-        <div class="card-body p-4">
-            <form method="GET" class="row g-3 align-items-end">
-                <input type="hidden" name="page" value="laporan_transaksi">
-                
-                <?php if ($can_filter_klinik): ?>
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold text-muted">Klinik</label>
-                    <select name="klinik_id" class="form-select select2-filter">
-                        <option value="all" <?= $selected_klinik === 'all' ? 'selected' : '' ?>>Semua Klinik</option>
-                        <?php foreach ($cliniks as $k): ?>
-                            <option value="<?= $k['id'] ?>" <?= $selected_klinik == $k['id'] ? 'selected' : '' ?>><?= htmlspecialchars($k['nama_klinik']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <?php endif; ?>
-
-                <div class="col-md-2">
-                    <label class="form-label small fw-bold text-muted">Dari Tanggal</label>
-                    <input type="date" name="start_date" class="form-control" value="<?= $start_date ?>">
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label small fw-bold text-muted">Sampai Tanggal</label>
-                    <input type="date" name="end_date" class="form-control" value="<?= $end_date ?>">
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label small fw-bold text-muted">Barang</label>
-                    <select name="barang_id" class="form-select select2-filter">
-                        <option value="">- Semua Barang -</option>
-                        <?php while($b = $barang_list->fetch_assoc()): ?>
-                            <option value="<?= $b['id'] ?>" <?= $barang_id == $b['id'] ? 'selected' : '' ?>>
-                                <?= $b['kode_barang'] ?> - <?= $b['nama_barang'] ?>
-                            </option>
-                        <?php endwhile; ?>
-                    </select>
-                </div>
-                <div class="col-md-1">
-                    <label class="form-label small fw-bold text-muted">Tipe</label>
-                    <select name="tipe" class="form-select">
-                        <option value="">Semua</option>
-                        <option value="in" <?= $tipe == 'in' ? 'selected' : '' ?>>Masuk</option>
-                        <option value="out" <?= $tipe == 'out' ? 'selected' : '' ?>>Keluar</option>
-                    </select>
-                </div>
-                <div class="col-md-auto">
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary px-4 fw-bold"><i class="fas fa-search me-1"></i> Filter</button>
-                        <button type="button" class="btn btn-success" onclick="exportExcel()" title="Download Excel"><i class="fas fa-file-excel"></i></button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Data Table -->
-    <div class="card border-0 shadow-sm">
-        <div class="card-body p-3">
-            <div class="table-responsive">
-                <table class="table table-custom datatable mb-0" id="transTable">
-                    <thead>
-                        <tr>
-                            <th>TANGGAL & WAKTU</th>
-                            <th>NAMA BARANG</th>
-                            <th>UNIT / PETUGAS</th>
-                            <th class="text-center">TIPE</th>
-                            <th class="text-center">QTY</th>
-                            <th class="text-center">STOK AWAL</th>
-                            <th class="text-center">STOK AKHIR</th>
-                            <th>REFERENSI</th>
-                            <th>USER</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php while ($row = $result->fetch_assoc()): ?>
-                        <tr>
-                            <td class="small"><?= date('d/m/y H:i', strtotime($row['created_at'])) ?></td>
-                            <td>
-                                <div class="fw-bold text-dark"><?= $row['nama_barang'] ?></div>
-                                <div class="small text-muted"><?= $row['kode_barang'] ?></div>
-                            </td>
-                            <td>
-                                <div class="small fw-semibold"><?= $row['unit_name'] ?></div>
-                                <div class="text-muted" style="font-size: 0.75rem;"><?= ucfirst(str_replace('_', ' ', $row['level'])) ?></div>
-                            </td>
-                            <td class="text-center">
-                                <?php if ($row['tipe_transaksi'] == 'in'): ?>
-                                    <span class="badge badge-in px-2 py-1">IN</span>
-                                <?php else: ?>
-                                    <span class="badge badge-out px-2 py-1">OUT</span>
-                                <?php endif; ?>
-                            </td>
-                            <td class="text-center fw-bold <?= $row['tipe_transaksi'] == 'in' ? 'text-success' : 'text-danger' ?>">
-                                <?= $row['tipe_transaksi'] == 'in' ? '+' : '-' ?><?= fmt_qty(abs($row['qty'])) ?>
-                            </td>
-                            <td class="text-center text-muted"><?= fmt_qty($row['qty_sebelum']) ?></td>
-                            <td class="text-center fw-bold text-dark"><?= fmt_qty($row['qty_sesudah']) ?></td>
-                            <td>
-                                <div class="small text-dark fw-semibold"><?= $row['referensi_tipe'] ?></div>
-                                <div class="text-muted" style="font-size: 0.75rem;">ID: <?= $row['referensi_id'] ?></div>
-                            </td>
-                            <td class="small"><?= $row['user_name'] ?></td>
-                        </tr>
-                        <?php endwhile; ?>
-                    </tbody>
-                </table>
+    <!-- Filter Section -->
+    <div class="filter-card p-4 mb-4">
+        <form method="GET" class="row g-3 align-items-end">
+            <input type="hidden" name="page" value="laporan_transaksi">
+            
+            <?php if ($can_filter_klinik): ?>
+            <div class="col-md-3">
+                <label class="form-label small fw-700 text-uppercase text-muted" style="font-size: 0.65rem;">Unit Klinik</label>
+                <select name="klinik_id" class="form-select select2-filter">
+                    <option value="all" <?= $selected_klinik === 'all' ? 'selected' : '' ?>>Semua Unit</option>
+                    <?php foreach ($cliniks as $k): ?>
+                        <option value="<?= $k['id'] ?>" <?= $selected_klinik == $k['id'] ? 'selected' : '' ?>><?= htmlspecialchars($k['nama_klinik']) ?></option>
+                    <?php endforeach; ?>
+                </select>
             </div>
+            <?php endif; ?>
+
+            <div class="col-md-2">
+                <label class="form-label small fw-700 text-uppercase text-muted" style="font-size: 0.65rem;">Periode Mulai</label>
+                <input type="date" name="start_date" class="form-control" value="<?= $start_date ?>">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-700 text-uppercase text-muted" style="font-size: 0.65rem;">Periode Selesai</label>
+                <input type="date" name="end_date" class="form-control" value="<?= $end_date ?>">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-700 text-uppercase text-muted" style="font-size: 0.65rem;">Pencarian Barang</label>
+                <select name="barang_id" class="form-select select2-filter">
+                    <option value="">Semua Barang</option>
+                    <?php while($b = $barang_list->fetch_assoc()): ?>
+                        <option value="<?= $b['id'] ?>" <?= $barang_id == $b['id'] ? 'selected' : '' ?>>
+                            <?= $b['kode_barang'] ?> - <?= $b['nama_barang'] ?>
+                        </option>
+                    <?php endwhile; ?>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small fw-700 text-uppercase text-muted" style="font-size: 0.65rem;">Tipe</label>
+                <select name="tipe" class="form-select">
+                    <option value="">Semua</option>
+                    <option value="in" <?= $tipe == 'in' ? 'selected' : '' ?>>IN</option>
+                    <option value="out" <?= $tipe == 'out' ? 'selected' : '' ?>>OUT</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-filter"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Table Section -->
+    <div class="table-card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-custom datatable mb-0" id="transTable">
+                <thead>
+                    <tr>
+                        <th>TANGGAL / WAKTU</th>
+                        <th>INFORMASI BARANG</th>
+                        <th>UNIT & LEVEL</th>
+                        <th class="text-center">TIPE</th>
+                        <th class="text-center">QTY</th>
+                        <th class="text-center">STOK AWAL</th>
+                        <th class="text-center">STOK AKHIR</th>
+                        <th>REF / USER</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php while ($row = $result->fetch_assoc()): ?>
+                    <tr>
+                        <td>
+                            <div class="fw-600 mb-0"><?= date('d M Y', strtotime($row['created_at'])) ?></div>
+                            <div class="text-muted small"><?= date('H:i', strtotime($row['created_at'])) ?> WIB</div>
+                        </td>
+                        <td>
+                            <div class="fw-700 text-dark" style="font-size: 0.95rem;"><?= $row['nama_barang'] ?></div>
+                            <div class="text-muted small fw-500"><?= $row['kode_barang'] ?></div>
+                        </td>
+                        <td>
+                            <div class="fw-600 text-dark"><?= $row['unit_name'] ?></div>
+                            <span class="unit-pill"><?= strtoupper(str_replace('_', ' ', $row['level'])) ?></span>
+                        </td>
+                        <td class="text-center">
+                            <?php if ($row['tipe_transaksi'] == 'in'): ?>
+                                <span class="badge-modern badge-in">
+                                    <i class="fas fa-arrow-down small"></i> IN
+                                </span>
+                            <?php else: ?>
+                                <span class="badge-modern badge-out">
+                                    <i class="fas fa-arrow-up small"></i> OUT
+                                </span>
+                            <?php endif; ?>
+                        </td>
+                        <td class="text-center">
+                            <span class="qty-text fw-800 <?= $row['tipe_transaksi'] == 'in' ? 'text-success' : 'text-danger' ?>">
+                                <?= $row['tipe_transaksi'] == 'in' ? '+' : '-' ?><?= fmt_qty(abs($row['qty'])) ?>
+                            </span>
+                        </td>
+                        <td class="text-center text-muted small fw-500">
+                            <?= fmt_qty($row['qty_sebelum']) ?>
+                        </td>
+                        <td class="text-center">
+                            <div class="qty-text fw-800 text-dark"><?= fmt_qty($row['qty_sesudah']) ?></div>
+                        </td>
+                        <td>
+                            <div class="fw-600 small"><?= $row['referensi_tipe'] ?> #<?= $row['referensi_id'] ?></div>
+                            <div class="text-muted" style="font-size: 0.7rem;"><i class="fas fa-user-circle me-1"></i><?= $row['user_name'] ?></div>
+                        </td>
+                    </tr>
+                    <?php endwhile; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

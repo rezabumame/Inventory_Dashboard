@@ -2,22 +2,6 @@
 check_role(['cs', 'super_admin', 'admin_klinik']);
 require_once __DIR__ . '/../../lib/stock.php';
 
-function ensure_booking_col($column, $definition) {
-    global $conn;
-    $c = $conn->real_escape_string($column);
-    $res = $conn->query("SHOW COLUMNS FROM `inventory_booking_pemeriksaan` LIKE '$c'");
-    if ($res && $res->num_rows === 0) {
-        $conn->query("ALTER TABLE `inventory_booking_pemeriksaan` ADD COLUMN `$column` $definition");
-    }
-}
-
-ensure_booking_col('booking_type', "VARCHAR(10) NULL");
-ensure_booking_col('jam_layanan', "VARCHAR(10) NULL");
-ensure_booking_col('jotform_submitted', "TINYINT(1) NOT NULL DEFAULT 0");
-ensure_booking_col('cs_name', "VARCHAR(100) NULL");
-ensure_booking_col('butuh_fu', "TINYINT(1) NOT NULL DEFAULT 0");
-ensure_booking_col('nomor_tlp', "VARCHAR(30) NULL");
-ensure_booking_col('tanggal_lahir', "DATE NULL");
 
 // Normalize nomor_booking to a shorter format (not critical identifier; ID is the primary key)
 $need_norm = 0;
@@ -555,6 +539,9 @@ if (!empty($booking_ids)) {
                             } elseif ($row['status'] == 'pending_delete') {
                                 $badge = 'bg-danger';
                                 $status_label = 'Pending Hapus (SPV)';
+                            } elseif ($row['status'] == 'rescheduled') {
+                                $badge = 'bg-warning text-dark';
+                                $status_label = 'Rescheduled';
                             } elseif ($row['status'] == 'rejected') {
                                 $badge = 'bg-dark';
                                 $status_label = 'Ditolak SPV';
@@ -610,7 +597,10 @@ if (!empty($booking_ids)) {
                                                     <i class="fas fa-phone"></i>
                                                 </button>
                                             <?php endif; ?>
-                                            <button type="button" class="btn-drawer-icon text-success" title="Done" onclick="return confirmComplete(<?= (int)$row['id'] ?>);">
+                                            <button type="button" class="btn-drawer-icon text-warning" title="Reschedule" onclick="openRescheduleModal(<?= (int)$row['id'] ?>, '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>', '<?= $row['tanggal_pemeriksaan'] ?>');">
+                                                <i class="fas fa-calendar-alt"></i>
+                                            </button>
+                                            <button type="button" class="btn-drawer-icon text-success" title="Done" onclick="return openCompletionModal(<?= (int)$row['id'] ?>, '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>');">
                                                 <i class="fas fa-check"></i>
                                             </button>
                                         <?php endif; ?>
@@ -1396,23 +1386,16 @@ window.rejectBookingRequest = function(id) {
     });
 };
 
-window.confirmCancel = function(id) {
-    showConfirm('Batalkan booking? Stok pending akan dilepas.', 'Konfirmasi Pembatalan', function() {
-        postBookingAction({ action: 'cancel', id: id });
-    });
-    return false;
-};
-
-window.confirmComplete = function(id) {
-    showConfirm('Tandai booking sebagai Completed?', 'Konfirmasi', function() {
-        postBookingAction({ action: 'done', id: id });
-    });
-    return false;
-};
-
 window.confirmButuhFU = function(id) {
     showConfirm('Tandai booking untuk FU jadwal kedatangan pasien (tanya mau datang kapan)?', 'Konfirmasi', function() {
         postBookingAction({ action: 'fu', id: id });
+    });
+    return false;
+};
+
+window.confirmCancel = function(id) {
+    showConfirm('Batalkan booking? Stok pending akan dilepas.', 'Konfirmasi Pembatalan', function() {
+        postBookingAction({ action: 'cancel', id: id });
     });
     return false;
 };
@@ -1443,7 +1426,6 @@ window.openBookingDetail = function(id) {
             }
             const h = res.header || {};
             const items = Array.isArray(res.items) ? res.items : [];
-            const pasienList = Array.isArray(res.pasien_list) ? res.pasien_list : [];
             const esc = function(v) { return $('<div>').text(v == null ? '' : String(v)).html(); };
             const fmtQtyJs = function(v) {
                 let n = parseFloat(v || 0);
@@ -1467,7 +1449,6 @@ window.openBookingDetail = function(id) {
             const formatOosItemsHtml = function(raw) {
                 const text = (raw || '').toString().trim();
                 if (!text) return '<div class="small mb-0">Beberapa item tidak tersedia saat booking.</div>';
-                // Keep each item intact: separator should be between items, not between "Sisa" and "Butuh".
                 const parts = text
                     .split(/\)\s*,\s*/g)
                     .map(function(p) {
@@ -1495,27 +1476,31 @@ window.openBookingDetail = function(id) {
                 </tr>`;
             }).join('') : '<tr><td colspan="2" class="text-center text-muted py-2">Tidak ada item</td></tr>';
 
-            var pasienHtml = pasienList.length ? pasienList.map(function(p, i) {
-                return `
-                <div class="p-3 mb-3 border rounded-3 bg-white">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div class="fw-bold text-dark fs-6"><i class="fas fa-user-circle me-2 text-primary"></i>${esc(p.nama_pasien)}</div>
-                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle x-small px-2">Pasien ${i+1}</span>
+            // Render Patient List
+            let paxHtml = '';
+            res.pasien_list.forEach((p, idx) => {
+                let statusBadge = '';
+                let rowStyle = '';
+                if (p.status === 'done') {
+                    statusBadge = '<span class="badge bg-light-success text-success x-small ms-2">Completed</span>';
+                } else if (p.status === 'rescheduled') {
+                    statusBadge = '<span class="badge bg-light-warning text-warning x-small ms-2">Rescheduled</span>';
+                } else if (p.status === 'cancelled') {
+                    statusBadge = `<span class="badge bg-light-danger text-danger x-small ms-2" title="Alasan: ${p.remark || '-'}">Cancelled</span>`;
+                    rowStyle = 'background-color: rgba(220, 53, 69, 0.05);';
+                }
+
+                paxHtml += `
+                    <div class="p-2 border-bottom d-flex justify-content-between align-items-center" style="${rowStyle}">
+                        <div>
+                            <div class="fw-bold text-dark">${idx + 1}. ${p.nama_pasien} ${statusBadge}</div>
+                            <div class="x-small text-muted">${p.exams}</div>
+                            ${p.remark && p.status !== 'cancelled' ? `<div class="x-small text-info mt-1"><i class="fas fa-info-circle me-1"></i>${p.remark}</div>` : ''}
+                        </div>
                     </div>
-                    <div class="row g-2 small text-muted mb-3 border-bottom pb-2">
-                        <div class="col-6 d-flex align-items-center"><i class="fas fa-phone-alt me-2 opacity-50"></i>${esc(p.nomor_tlp || '-')}</div>
-                        <div class="col-6 d-flex align-items-center"><i class="fas fa-birthday-cake me-2 opacity-50"></i>${esc(fmtDateIdShort(p.tanggal_lahir) || '-')}</div>
-                    </div>
-                    <div class="p-2 rounded bg-light border-start border-primary border-3">
-                        <div class="x-small fw-bold text-muted text-uppercase" style="letter-spacing: 0.05em;">Layanan Pemeriksaan</div>
-                        <div class="small fw-bold text-dark mt-1">${esc(p.exams || '-')}</div>
-                    </div>
-                </div>`;
-            }).join('') : `
-            <div class="text-center py-5 text-muted">
-                <i class="fas fa-user-slash d-block h3 mb-2 opacity-25"></i>
-                Data pasien tidak ditemukan.
-            </div>`;
+                `;
+            });
+            $('#detailPaxList').html(paxHtml);
 
             $('#bookingDetailTitle').text('Detail: ' + (h.nomor_booking || ''));
             var stockWarningHtml = '';
@@ -2020,17 +2005,30 @@ window.openActionHub = function(data) {
                         </div>
                     </a>`;
             }
+
             html += `
-                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); confirmComplete(${data.id}); return false;">
-                    <div class="action-hub-icon bg-light-success text-success"><i class="fas fa-check"></i></div>
+                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openCompletionModal(${data.id}, '${data.nomor_booking}'); return false;">
+                    <div class="action-hub-icon bg-light-success text-success"><i class="fas fa-check-double"></i></div>
                     <div class="action-hub-text">
-                        <span class="action-hub-label">Selesaikan Booking</span>
-                        <span class="action-hub-desc">Tandai sudah diproses</span>
+                        <span class="action-hub-label text-success">Selesaikan Booking</span>
+                        <span class="action-hub-desc">Pilih pasien yang selesai</span>
                     </div>
                 </a>`;
         }
 
-        // 5. Cancel (Super/CS)
+        // 5. Reschedule (Super/Admin Klinik/CS)
+        if (canSuperAdmin || canAdminKlinik || canCS) {
+            html += `
+                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openRescheduleModal(${data.id}, '${data.nomor_booking}', '${data.tanggal_pemeriksaan}'); return false;">
+                    <div class="action-hub-icon bg-light-warning text-warning"><i class="fas fa-calendar-alt"></i></div>
+                    <div class="action-hub-text">
+                        <span class="action-hub-label text-warning">Reschedule</span>
+                        <span class="action-hub-desc">Ubah tanggal & alasan</span>
+                    </div>
+                </a>`;
+        }
+
+        // 6. Cancel (Super/CS)
         if (canSuperAdmin || canCS) {
             html += `
                 <a href="#" class="action-hub-item text-danger" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); confirmCancel(${data.id}); return false;">
@@ -2228,3 +2226,240 @@ window.openActionHub = function(data) {
         </div>
     </div>
 </div>
+
+<!-- Modal Completion -->
+<div class="modal fade" id="modalCompletion" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-check-double me-2"></i>Selesaikan Booking</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="completionBookingId">
+                <div class="alert alert-info py-2 mb-3">
+                    <div class="fw-bold">Booking: <span id="completionNomorBooking"></span></div>
+                    <small>Pilih pasien yang benar-benar telah selesai melakukan pemeriksaan.</small>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="table table-bordered align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th width="50" class="text-center">
+                                    <input type="checkbox" class="form-check-input" id="checkAllPasien" checked>
+                                </th>
+                                <th>Nama Pasien</th>
+                                <th>Pemeriksaan</th>
+                                <th width="200">Status Akhir</th>
+                            </tr>
+                        </thead>
+                        <tbody id="completionPasienWrapper"></tbody>
+                    </table>
+                </div>
+
+                <div id="completionRescheduleSection" class="mt-3 p-3 border rounded bg-light" style="display:none;">
+                    <h6 class="fw-bold text-warning"><i class="fas fa-calendar-alt me-2"></i>Detail Reschedule</h6>
+                    <div class="row g-2">
+                        <div class="col-md-5">
+                            <label class="x-small fw-bold text-muted text-uppercase">Tanggal Baru</label>
+                            <input type="date" id="completionRescheduleDate" class="form-control form-control-sm" min="<?= date('Y-m-d') ?>">
+                        </div>
+                        <div class="col-md-7">
+                            <label class="x-small fw-bold text-muted text-uppercase">Alasan Reschedule</label>
+                            <input type="text" id="completionRescheduleReason" class="form-control form-control-sm" placeholder="Contoh: Tensi tinggi">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-success px-4" onclick="submitCompletion()">
+                    <i class="fas fa-check-circle me-1"></i> Proses Selesai
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Reschedule -->
+<div class="modal fade" id="modalReschedule" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="fas fa-calendar-alt me-2"></i>Reschedule Booking</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="rescheduleBookingId">
+                <div class="alert alert-warning py-2 mb-3">
+                    <div class="fw-bold">Booking: <span id="rescheduleNomorBooking"></span></div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Tanggal Pemeriksaan Baru</label>
+                    <input type="date" id="rescheduleDate" class="form-control" min="<?= date('Y-m-d') ?>">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Alasan Reschedule <span class="text-danger">*</span></label>
+                    <textarea id="rescheduleReason" class="form-control" rows="3" placeholder="Contoh: Kondisi pasien tidak memungkinkan (tensi tinggi), permintaan pasien, dsb."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-warning px-4" onclick="submitReschedule()">
+                    <i class="fas fa-save me-1"></i> Simpan Reschedule
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+window.openCompletionModal = function(id, nomorBooking) {
+    $('#completionBookingId').val(id);
+    $('#completionNomorBooking').text(nomorBooking);
+    $('#completionPasienWrapper').html('<tr><td colspan="4" class="text-center py-3"><i class="fas fa-spinner fa-spin me-2"></i>Memuat data pasien...</td></tr>');
+    $('#completionRescheduleSection').hide();
+    $('#completionRescheduleDate').val('');
+    $('#completionRescheduleReason').val('');
+    
+    $.post('api/ajax_booking_detail.php', { id: id }, function(res) {
+        if (res.success) {
+            let html = '';
+            res.pasien_list.forEach(function(p, i) {
+                html += `
+                <tr>
+                    <td class="text-center">
+                        <input type="checkbox" class="form-check-input cb-pasien-done" value="${p.id}" checked data-index="${i}">
+                    </td>
+                    <td><div class="fw-bold">${p.nama_pasien}</div></td>
+                    <td><div class="x-small text-muted">${p.exams}</div></td>
+                    <td>
+                        <select class="form-select form-select-sm sel-pasien-fallback" data-index="${i}" disabled>
+                            <option value="done" selected>Completed</option>
+                            <option value="reschedule">Reschedule</option>
+                            <option value="cancel">Cancel</option>
+                        </select>
+                    </td>
+                </tr>`;
+            });
+            $('#completionPasienWrapper').html(html);
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('modalCompletion')).show();
+        } else {
+            Swal.fire('Gagal', res.message, 'error');
+        }
+    });
+};
+
+$(document).on('change', '#checkAllPasien', function() {
+    $('.cb-pasien-done').prop('checked', $(this).prop('checked')).trigger('change');
+});
+
+$(document).on('change', '.cb-pasien-done', function() {
+    let idx = $(this).data('index');
+    let isChecked = $(this).is(':checked');
+    let $sel = $(`.sel-pasien-fallback[data-index="${idx}"]`);
+    
+    if (isChecked) {
+        $sel.val('done').prop('disabled', true);
+    } else {
+        $sel.val('reschedule').prop('disabled', false);
+    }
+    
+    checkNeedReschedule();
+});
+
+$(document).on('change', '.sel-pasien-fallback', function() {
+    checkNeedReschedule();
+});
+
+function checkNeedReschedule() {
+    let needReschedule = false;
+    $('.cb-pasien-done').each(function() {
+        if (!$(this).is(':checked')) {
+            let idx = $(this).data('index');
+            if ($(`.sel-pasien-fallback[data-index="${idx}"]`).val() === 'reschedule') {
+                needReschedule = true;
+            }
+        }
+    });
+    
+    if (needReschedule) $('#completionRescheduleSection').show();
+    else $('#completionRescheduleSection').hide();
+}
+
+window.submitCompletion = function() {
+    const id = $('#completionBookingId').val();
+    const doneIds = [];
+    const fallback = {};
+    
+    $('.cb-pasien-done:checked').each(function() {
+        doneIds.push($(this).val());
+    });
+    
+    $('.cb-pasien-done:not(:checked)').each(function() {
+        let idx = $(this).data('index');
+        fallback[$(this).val()] = $(`.sel-pasien-fallback[data-index="${idx}"]`).val();
+    });
+    
+    if (doneIds.length === 0 && Object.keys(fallback).length === 0) {
+        Swal.fire('Error', 'Pilih setidaknya satu tindakan untuk pasien.', 'error');
+        return;
+    }
+    
+    const rescheduleDate = $('#completionRescheduleDate').val();
+    const rescheduleReason = $('#completionRescheduleReason').val();
+    
+    // Validate reschedule
+    let needReschedule = false;
+    for (let pid in fallback) {
+        if (fallback[pid] === 'reschedule') needReschedule = true;
+    }
+    
+    if (needReschedule && (!rescheduleDate || !rescheduleReason)) {
+        Swal.fire('Error', 'Tanggal baru dan Alasan Reschedule wajib diisi.', 'warning');
+        return;
+    }
+
+    showConfirm('Proses status penyelesaian booking ini?', 'Konfirmasi', function() {
+        postBookingAction({
+            action: 'done_partial',
+            id: id,
+            done_ids: doneIds,
+            fallback: fallback,
+            reschedule_date: rescheduleDate,
+            reschedule_reason: rescheduleReason
+        });
+        bootstrap.Modal.getInstance(document.getElementById('modalCompletion')).hide();
+    });
+};
+
+window.openRescheduleModal = function(id, nomorBooking, currentDate) {
+    $('#rescheduleBookingId').val(id);
+    $('#rescheduleNomorBooking').text(nomorBooking);
+    $('#rescheduleDate').val(currentDate);
+    $('#rescheduleReason').val('');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalReschedule')).show();
+};
+
+window.submitReschedule = function() {
+    const id = $('#rescheduleBookingId').val();
+    const date = $('#rescheduleDate').val();
+    const reason = $('#rescheduleReason').val();
+    
+    if (!date || !reason) {
+        Swal.fire('Error', 'Tanggal dan Alasan Reschedule wajib diisi.', 'warning');
+        return;
+    }
+    
+    postBookingAction({
+        action: 'reschedule',
+        id: id,
+        new_date: date,
+        reason: reason
+    });
+    bootstrap.Modal.getInstance(document.getElementById('modalReschedule')).hide();
+};
+</script>

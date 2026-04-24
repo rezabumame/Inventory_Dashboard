@@ -96,6 +96,7 @@ $header['out_of_stock_items'] = !empty($re_evaluated_out_of_stock_items) ? implo
 // Fetch all pasien (utama + tambahan) with their exams
 $stmt = $conn->prepare("
     SELECT 
+        MIN(bp.id) as id,
         bp.nama_pasien, 
         bp.nomor_tlp, 
         bp.tanggal_lahir,

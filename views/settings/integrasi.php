@@ -116,280 +116,412 @@ function next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run) {
 $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run);
 ?>
 
-<div class="container-fluid">
-    <div class="row mb-2 align-items-center">
-        <div class="col">
-            <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
-                <i class="fas fa-cogs me-2"></i>Pengaturan Sistem
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+    :root {
+        --bumame-blue: #204EAB;
+        --bumame-blue-soft: rgba(32, 78, 171, 0.08);
+        --slate-50: #f8fafc;
+        --slate-100: #f1f5f9;
+        --slate-200: #e2e8f0;
+        --slate-600: #475569;
+        --slate-900: #0f172a;
+        --success: #10B981;
+        --danger: #EF4444;
+        --info: #3B82F6;
+    }
+
+    .settings-container {
+        font-family: 'Outfit', sans-serif;
+        background-color: var(--slate-50);
+        min-height: 100vh;
+        padding-bottom: 3rem;
+    }
+
+    .page-header {
+        background: white;
+        padding: 1rem 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        margin-bottom: 1.5rem;
+        border-left: 5px solid var(--bumame-blue);
+    }
+
+    .settings-card {
+        background: white;
+        border-radius: 12px;
+        border: 1px solid var(--slate-200);
+        padding: 1rem;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .settings-card:hover {
+        box-shadow: 0 8px 12px -3px rgba(0, 0, 0, 0.05);
+    }
+
+    .card-title-premium {
+        font-weight: 800;
+        color: var(--slate-900);
+        font-size: 1rem;
+        letter-spacing: -0.01em;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 1.25rem;
+    }
+
+    .card-title-premium i {
+        color: var(--bumame-blue);
+        background: var(--bumame-blue-soft);
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        font-size: 0.9rem;
+    }
+
+    /* Form Controls */
+    .form-label {
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+        color: var(--slate-600);
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+    }
+
+    .form-control, .form-select {
+        border-radius: 10px;
+        border: 1px solid var(--slate-200);
+        padding: 0.7rem 1rem;
+        font-size: 0.9rem;
+        background-color: var(--slate-50);
+    }
+
+    .form-control:focus, .form-select:focus {
+        background-color: white;
+        border-color: var(--bumame-blue);
+        box-shadow: 0 0 0 4px var(--bumame-blue-soft);
+    }
+
+    .form-text {
+        font-size: 0.75rem;
+        color: var(--slate-600);
+    }
+
+    .btn-premium {
+        border-radius: 10px;
+        padding: 0.7rem 1.5rem;
+        font-weight: 700;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+    }
+
+    .btn-save {
+        background-color: var(--bumame-blue);
+        color: white;
+        border: none;
+    }
+
+    .btn-save:hover {
+        background-color: #1a3e8a;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(32, 78, 171, 0.3);
+        color: white;
+    }
+
+    .btn-test {
+        background-color: white;
+        color: var(--bumame-blue);
+        border: 1px solid var(--bumame-blue);
+    }
+
+    .btn-test:hover {
+        background-color: var(--bumame-blue-soft);
+    }
+
+    /* Status Badges */
+    .status-pill {
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.7rem;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .danger-zone {
+        border: 2px solid rgba(239, 68, 68, 0.1);
+        background-color: rgba(239, 68, 68, 0.02);
+    }
+
+    .danger-zone .card-title-premium i {
+        color: var(--danger);
+        background: rgba(239, 68, 68, 0.1);
+    }
+
+    /* Info Stats */
+    .info-stat-card {
+        background: white;
+        padding: 1rem;
+        border-radius: 12px;
+        border: 1px solid var(--slate-200);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .info-stat-label {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--slate-600);
+        text-transform: uppercase;
+    }
+
+    .info-stat-value {
+        font-size: 1rem;
+        font-weight: 800;
+        color: var(--slate-900);
+    }
+
+    .fw-800 { font-weight: 800; }
+</style>
+
+<div class="container-fluid settings-container py-4">
+    <!-- Header Section -->
+    <div class="page-header d-flex justify-content-between align-items-center">
+        <div>
+            <h1 class="h3 mb-1 fw-800" style="color: var(--bumame-blue); letter-spacing: -0.02em;">
+                Pengaturan Sistem
             </h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
-                    <li class="breadcrumb-item active">Pengaturan Sistem</li>
-                </ol>
-            </nav>
+            <p class="text-muted mb-0 small fw-500">Konfigurasi integrasi Odoo, Webhook, dan Keamanan Sistem</p>
         </div>
     </div>
 
     <?= $msg ?>
 
-    <div class="row g-3">
+    <div class="row g-3 align-items-start">
+        <!-- Left Column: Primary Configurations -->
         <div class="col-lg-7">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <div class="fw-bold">Koneksi Odoo (RPC)</div>
-                        <span class="badge bg-primary">RPC</span>
-                    </div>
-                    <form method="POST" class="row g-3">
-                        <input type="hidden" name="form_type" value="rpc">
-                        <div class="col-12">
-                            <label class="form-label">Server URL</label>
-                            <input type="text" class="form-control" name="rpc_url" value="<?= htmlspecialchars($rpc_url) ?>" placeholder="http://46.250.225.199:8072" required>
-                            <div class="form-text">Masukkan base URL server Odoo (tanpa /web/...)</div>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Database</label>
-                            <input type="text" class="form-control" name="rpc_db" value="<?= htmlspecialchars($rpc_db) ?>" placeholder="Bumame_1701" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Email / Username</label>
-                            <input type="text" class="form-control" name="rpc_username" value="<?= htmlspecialchars($rpc_user) ?>" placeholder="user_test1@gmail.com" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Password</label>
-                            <input type="password" class="form-control" name="rpc_password" value="" placeholder="<?= $rpc_password_saved ? 'Tersimpan (kosongkan jika tidak diganti)' : '' ?>">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Metode Integrasi</label>
-                            <input type="text" class="form-control" value="RPC (JSON-RPC)" readonly>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Kode Lokasi Gudang Utama (Odoo)</label>
-                            <input type="text" class="form-control" name="gudang_location_code" value="<?= htmlspecialchars($gudang_location_code) ?>" placeholder="Contoh: WH/Stock">
-                            <div class="form-text">Digunakan untuk menampilkan stok Gudang Utama dari Odoo (termasuk ketersediaan di Request Barang).</div>
-                        </div>
-                        <div class="col-12 d-flex gap-2">
-                            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan Koneksi</button>
-                            <button type="button" class="btn btn-outline-secondary" onclick="testConn(this)"><i class="fas fa-plug"></i> Tes Koneksi</button>
-                            <small class="text-muted ms-2 align-self-center" id="connStatus"></small>
-                        </div>
-                    </form>
+            <!-- Odoo Connection -->
+            <div class="settings-card mb-3">
+                <div class="card-title-premium">
+                    <i class="fas fa-plug"></i>
+                    <span>Koneksi Odoo (RPC)</span>
+                    <span class="ms-auto status-pill bg-primary text-white">JSON-RPC</span>
                 </div>
+                <form method="POST" class="row g-3">
+                    <input type="hidden" name="form_type" value="rpc">
+                    <div class="col-12">
+                        <label class="form-label">Server URL</label>
+                        <input type="text" class="form-control" name="rpc_url" value="<?= htmlspecialchars($rpc_url) ?>" placeholder="http://46.250.225.199:8072" required>
+                        <div class="form-text">Base URL server Odoo (tanpa /web/...)</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Database Name</label>
+                        <input type="text" class="form-control" name="rpc_db" value="<?= htmlspecialchars($rpc_db) ?>" placeholder="Bumame_1701" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Username / Email</label>
+                        <input type="text" class="form-control" name="rpc_username" value="<?= htmlspecialchars($rpc_user) ?>" placeholder="user@bumame.com" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" name="rpc_password" value="" placeholder="<?= $rpc_password_saved ? '••••••••' : 'Masukkan password' ?>">
+                        <div class="form-text"><?= $rpc_password_saved ? 'Password tersimpan aman' : '' ?></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Odoo Stock Location</label>
+                        <input type="text" class="form-control" name="gudang_location_code" value="<?= htmlspecialchars($gudang_location_code) ?>" placeholder="WH/Stock">
+                        <div class="form-text">Source lokas gudang utama di Odoo</div>
+                    </div>
+                    <div class="col-12 pt-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-premium btn-save">
+                            <i class="fas fa-save me-2"></i>Simpan Koneksi
+                        </button>
+                        <button type="button" class="btn btn-premium btn-test" onclick="testConn(this)">
+                            <i class="fas fa-vial me-2"></i>Uji Koneksi
+                        </button>
+                        <div class="ms-2 align-self-center small fw-700" id="connStatus"></div>
+                    </div>
+                </form>
             </div>
 
-            <div class="card border-0 shadow-sm mt-3">
-                <div class="card-body">
-                    <form method="POST" class="row g-3">
-                        <input type="hidden" name="form_type" value="schedule">
-                        <div class="col-12 d-flex align-items-center justify-content-between">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="enabled" name="enabled" <?= $enabled ? 'checked' : '' ?>>
-                                <label class="form-check-label fw-semibold" for="enabled">Aktifkan sinkronisasi otomatis</label>
-                            </div>
-                            <span class="badge <?= $enabled ? 'bg-success' : 'bg-secondary' ?>"><?= $enabled ? 'Aktif' : 'Nonaktif' ?></span>
-                        </div>
-                        <div id="scheduleContainer" style="display: <?= $enabled ? 'block' : 'none' ?>;" class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label">Mode</label>
-                                <select class="form-select" name="mode" id="mode">
-                                    <option value="manual" <?= $mode === 'manual' ? 'selected' : '' ?>>Manual</option>
-                                    <option value="interval" <?= $mode === 'interval' ? 'selected' : '' ?>>Interval (menit)</option>
-                                    <option value="daily" <?= $mode === 'daily' ? 'selected' : '' ?>>Harian (jam)</option>
-                                    <option value="weekly" <?= $mode === 'weekly' ? 'selected' : '' ?>>Mingguan (hari & jam)</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6 mode-interval" style="display: <?= ($enabled && $mode === 'interval') ? 'block' : 'none' ?>;">
-                                <label class="form-label">Interval (menit)</label>
-                                <input type="number" class="form-control" id="interval_minutes" name="interval_minutes" value="<?= $interval ?>" min="1">
-                            </div>
-                            <div class="col-md-4 mode-weekly" style="display: <?= ($enabled && $mode === 'weekly') ? 'block' : 'none' ?>;">
-                                <label class="form-label">Hari</label>
-                                <select class="form-select" id="weekday" name="weekday">
-                                    <?php
-                                    $days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
-                                    for ($i=0; $i<7; $i++): ?>
-                                    <option value="<?= $i ?>" <?= $weekday === $i ? 'selected' : '' ?>><?= $days[$i] ?></option>
-                                    <?php endfor; ?>
-                                </select>
-                            </div>
-                            <div class="col-md-4 mode-time" style="display: <?= ($enabled && ($mode === 'weekly' || $mode === 'daily')) ? 'block' : 'none' ?>;">
-                                <label class="form-label">Jam</label>
-                                <input type="time" class="form-control" id="time" name="time" value="<?= htmlspecialchars($time) ?>">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">Token Scheduler (untuk Apps Script)</label>
-                                <input type="text" class="form-control" name="scheduler_token" value="<?= htmlspecialchars($scheduler_token_saved) ?>" placeholder="Contoh: bumame-sync-token">
-                                <div class="form-text">Token ini dipakai di URL: <span class="fw-semibold"><?= htmlspecialchars($schedule_hint_url) ?></span></div>
-                            </div>
-                        </div>
-                        <div class="col-12 d-flex gap-2">
-                            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
-                            <button type="button" class="btn btn-outline-primary" onclick="confirmSyncNow(this)"><i class="fas fa-sync-alt"></i> Jalankan Sekarang</button>
-                            <button type="button" class="btn btn-outline-secondary" onclick="testConn(this)"><i class="fas fa-plug"></i> Tes Koneksi</button>
-                            <small class="text-muted ms-2 align-self-center" id="runStatus"></small>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Public Inventory Token Section -->
-            <div class="card border-0 shadow-sm mt-3">
-                <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <div class="fw-bold">Akses Publik Inventory</div>
-                        <span class="badge bg-info">Read-Only</span>
+            <!-- Scheduler Configuration -->
+            <div class="settings-card mb-3">
+                <div class="card-title-premium">
+                    <i class="fas fa-calendar-alt"></i>
+                    <span>Sinkronisasi Otomatis</span>
+                    <div class="ms-auto form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="enabled" name="enabled" <?= $enabled ? 'checked' : '' ?> style="cursor: pointer;">
                     </div>
-                    <form method="POST" class="row g-3">
-                        <input type="hidden" name="form_type" value="public_access">
-                        <div class="col-12">
-                            <label class="form-label">Token Akses Publik</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" name="public_stok_token" id="public_stok_token" value="<?= htmlspecialchars($public_stok_token) ?>" required>
-                                <button class="btn btn-outline-secondary" type="button" onclick="generateToken()"><i class="fas fa-random"></i></button>
-                            </div>
-                            <div class="form-text">Gunakan token ini untuk memberikan akses stok tanpa login ke tim lain.</div>
-                        </div>
-                        <?php if ($public_stok_token !== ''): ?>
-                        <div class="col-12">
-                            <label class="form-label">Link Publik (Copy-Paste)</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" id="public_link" value="<?= base_url('index.php?page=stok_klinik_publik&token=' . urlencode($public_stok_token)) ?>" readonly>
-                                <button class="btn btn-outline-primary" type="button" onclick="copyPublicLink()"><i class="fas fa-copy"></i></button>
-                            </div>
-                        </div>
-                        <?php endif; ?>
-                        <div class="col-12">
-                            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan Token</button>
-                        </div>
-                    </form>
                 </div>
+                <form method="POST" class="row g-3">
+                    <input type="hidden" name="form_type" value="schedule">
+                    <input type="hidden" id="sync_enabled_hidden" name="enabled" value="<?= $enabled ? '1' : '0' ?>">
+                    
+                    <div id="scheduleContainer" style="display: <?= $enabled ? 'contents' : 'none' ?>;">
+                        <div class="col-md-5">
+                            <label class="form-label">Mode Sinkronisasi</label>
+                            <select class="form-select" name="mode" id="mode">
+                                <option value="manual" <?= $mode === 'manual' ? 'selected' : '' ?>>Manual Only</option>
+                                <option value="interval" <?= $mode === 'interval' ? 'selected' : '' ?>>Interval (Menit)</option>
+                                <option value="daily" <?= $mode === 'daily' ? 'selected' : '' ?>>Harian (Spesifik Jam)</option>
+                                <option value="weekly" <?= $mode === 'weekly' ? 'selected' : '' ?>>Mingguan (Hari & Jam)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-7 mode-interval" style="display: <?= $mode === 'interval' ? 'block' : 'none' ?>;">
+                            <label class="form-label">Interval Menit</label>
+                            <input type="number" class="form-control" name="interval_minutes" value="<?= $interval ?>" min="1">
+                        </div>
+                        <div class="col-md-4 mode-weekly" style="display: <?= $mode === 'weekly' ? 'block' : 'none' ?>;">
+                            <label class="form-label">Hari Eksekusi</label>
+                            <select class="form-select" name="weekday">
+                                <?php $days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+                                foreach ($days as $i => $d): ?>
+                                    <option value="<?= $i ?>" <?= $weekday == $i ? 'selected' : '' ?>><?= $d ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mode-time" style="display: <?= ($mode === 'weekly' || $mode === 'daily') ? 'block' : 'none' ?>;">
+                            <label class="form-label">Jam Eksekusi</label>
+                            <input type="time" class="form-control" name="time" value="<?= htmlspecialchars($time) ?>">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Scheduler Access Token</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" name="scheduler_token" value="<?= htmlspecialchars($scheduler_token_saved) ?>" placeholder="Contoh: token-keamanan-anda">
+                                <button class="btn btn-outline-secondary" type="button" onclick="this.previousElementSibling.value = Math.random().toString(36).substring(2, 15)"><i class="fas fa-redo"></i></button>
+                            </div>
+                            <div class="form-text mt-2">Gunakan URL ini di Apps Script / Cron Job: <br>
+                                <code class="bg-light p-1 rounded"><?= htmlspecialchars($schedule_hint_url) ?></code>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-12 pt-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-premium btn-save">
+                            <i class="fas fa-check-circle me-2"></i>Simpan Jadwal
+                        </button>
+                        <button type="button" class="btn btn-premium btn-test" onclick="confirmSyncNow(this)">
+                            <i class="fas fa-sync me-2"></i>Jalankan Sekarang
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
-        <div class="col-lg-5">
-            <div class="row g-3">
-                <div class="col-12">
-                    <div class="card border-0 shadow-sm">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between">
-                                <div>
-                                    <div class="text-muted small">Terakhir Jalan</div>
-                                    <div class="fw-bold fs-5"><?= $last_run_text ?></div>
-                                </div>
-                                <i class="fas fa-history fa-2x text-secondary opacity-25"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-12">
-                    <div class="card border-0 shadow-sm">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between">
-                                <div>
-                                    <div class="text-muted small">Jadwal Berikutnya</div>
-                                    <div class="fw-bold fs-5"><?= $next_due ?></div>
-                                </div>
-                                <i class="fas fa-clock fa-2x text-secondary opacity-25"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-12">
-                    <div class="card border-0 shadow-sm">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between">
-                                <div>
-                                    <div class="text-muted small">Status Konfigurasi</div>
-                                    <div>
-                                        <span class="badge bg-primary"><?= strtoupper(htmlspecialchars($integration_method)) ?></span>
-                                        <span class="badge <?= $rpc_url !== '' ? 'bg-success' : 'bg-secondary' ?>">RPC URL</span>
-                                        <span class="badge <?= $rpc_db !== '' ? 'bg-success' : 'bg-secondary' ?>">DB</span>
-                                        <span class="badge <?= $rpc_user !== '' ? 'bg-success' : 'bg-secondary' ?>">User</span>
-                                        <span class="badge <?= $rpc_password_saved ? 'bg-success' : 'bg-secondary' ?>">Password</span>
-                                    </div>
-                                </div>
-                                <i class="fas fa-sliders-h fa-2x text-secondary opacity-25"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-12">
-                    <div class="card border-0 shadow-sm">
-                        <div class="card-body">
-                            <div class="fw-bold mb-3"><i class="fas fa-bell me-2"></i>Notifikasi & Webhook</div>
-                            <form method="POST" class="row g-3">
-                                <input type="hidden" name="form_type" value="hooks">
-                                <div class="col-12">
-                                    <label class="form-label">Lark Webhook URL</label>
-                                    <input type="url" class="form-control" name="webhook_lark_url" value="<?= htmlspecialchars($lark_webhook) ?>" placeholder="https://open.larksuite.com/open-apis/bot/v2/hook/...">
-                                    <div class="form-text">Dipakai untuk kirim ringkasan hasil sync Odoo (sukses/gagal).</div>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label">Google Sheets Webhook (Booking)</label>
-                                    <input type="url" class="form-control" name="gsheet_booking_webhook_url" value="<?= htmlspecialchars($gsheet_webhook) ?>" placeholder="https://script.google.com/macros/s/....../exec">
-                                    <div class="form-text">Set Web App Apps Script (doPost) untuk menerima booking_created dan menulis ke Sheet.</div>
-                                </div>
-                                <div class="col-12 d-flex gap-2">
-                                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan Webhook</button>
-                                    <button type="button" class="btn btn-outline-primary" id="btnTestLark"><i class="fas fa-paper-plane"></i> Test Lark</button>
-                                    <div class="text-muted small align-self-center" id="larkTestStatus"></div>
-                                    <?php if ($schedule_hint_url !== ''): ?>
-                                        <a href="<?= htmlspecialchars($schedule_hint_url) ?>" target="_blank" class="btn btn-outline-secondary">
-                                            <i class="fas fa-link"></i> Cek Scheduler URL
-                                        </a>
-                                    <?php endif; ?>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-12">
-                    <div class="card border-0 shadow-sm border-start border-danger border-4">
-                        <div class="card-body">
-                            <div class="fw-bold text-danger mb-2"><i class="fas fa-exclamation-triangle me-2"></i>Zona Bahaya</div>
-                            <p class="small text-muted mb-3">Pilih data transaksi yang ingin dihapus (Master Data tetap aman):</p>
-                            
-                            <div class="row g-2 mb-3">
-                                <div class="col-md-6">
-                                    <div class="form-check">
-                                        <input class="form-check-input truncate-check" type="checkbox" value="booking" id="check_booking" checked>
-                                        <label class="form-check-label small" for="check_booking">Booking & Stok Pending</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input truncate-check" type="checkbox" value="request" id="check_request" checked>
-                                        <label class="form-check-label small" for="check_request">Request Barang</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input truncate-check" type="checkbox" value="bhp" id="check_bhp" checked>
-                                        <label class="form-check-label small" for="check_bhp">Pemakaian BHP</label>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-check">
-                                        <input class="form-check-input truncate-check" type="checkbox" value="hc" id="check_hc" checked>
-                                        <label class="form-check-label small" for="check_hc">Stok Petugas HC</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input truncate-check" type="checkbox" value="history" id="check_history" checked>
-                                        <label class="form-check-label small" for="check_history">Riwayat Transaksi Stok</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input truncate-check" type="checkbox" value="booking_history" id="check_booking_history" checked>
-                                        <label class="form-check-label small" for="check_booking_history">Riwayat Edit Booking</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="check_all" checked onchange="$('.truncate-check').prop('checked', this.checked)">
-                                        <label class="form-check-label small fw-bold" for="check_all">Pilih Semua</label>
-                                    </div>
-                                </div>
-                            </div>
 
-                            <button type="button" class="btn btn-danger w-100 fw-bold" onclick="confirmTruncateData()">
-                                <i class="fas fa-trash-alt me-2"></i>Hapus Data Terpilih
-                            </button>
+        <!-- Right Column: Security & Webhooks -->
+        <div class="col-lg-5">
+            <!-- Stats -->
+            <div class="row g-2 mb-3">
+                <div class="col-6">
+                    <div class="info-stat-card shadow-sm">
+                        <div>
+                            <div class="info-stat-label">Terakhir Sync</div>
+                            <div class="info-stat-value"><?= $last_run ? date('H:i', $last_run) : '--:--' ?></div>
+                            <div class="text-muted" style="font-size: 0.65rem;"><?= $last_run ? date('d M Y', $last_run) : 'Belum pernah' ?></div>
                         </div>
+                        <i class="fas fa-history text-primary opacity-25 fa-2x"></i>
                     </div>
                 </div>
+                <div class="col-6">
+                    <div class="info-stat-card shadow-sm">
+                        <div>
+                            <div class="info-stat-label">Berikutnya</div>
+                            <div class="info-stat-value"><?= $next_due !== '-' ? explode(' ', $next_due)[count(explode(' ', $next_due))-1] : '-' ?></div>
+                            <div class="text-muted" style="font-size: 0.65rem;"><?= $next_due !== '-' ? date('d M Y', strtotime($next_due)) : 'N/A' ?></div>
+                        </div>
+                        <i class="fas fa-hourglass-half text-warning opacity-25 fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lark & GSheet -->
+            <div class="settings-card mb-3">
+                <div class="card-title-premium">
+                    <i class="fas fa-share-alt"></i>
+                    <span>Integrasi Webhook</span>
+                </div>
+                <form method="POST" class="row g-3">
+                    <input type="hidden" name="form_type" value="hooks">
+                    <div class="col-12">
+                        <label class="form-label">Lark Webhook URL</label>
+                        <input type="url" class="form-control" name="webhook_lark_url" value="<?= htmlspecialchars($lark_webhook) ?>" placeholder="https://open.larksuite.com/...">
+                        <div class="form-text">Notifikasi ringkasan sinkronisasi Odoo</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">GSheets Webhook (Booking)</label>
+                        <input type="url" class="form-control" name="gsheet_booking_webhook_url" value="<?= htmlspecialchars($gsheet_webhook) ?>" placeholder="https://script.google.com/...">
+                        <div class="form-text">Sync otomatis data booking ke Google Sheets</div>
+                    </div>
+                    <div class="col-12 d-flex gap-2">
+                        <button type="submit" class="btn btn-premium btn-save w-100">
+                            <i class="fas fa-save me-2"></i>Update Webhook
+                        </button>
+                        <button type="button" class="btn btn-premium btn-test" id="btnTestLark">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Public Access -->
+            <div class="settings-card mb-3">
+                <div class="card-title-premium">
+                    <i class="fas fa-globe"></i>
+                    <span>Akses Stok Publik</span>
+                </div>
+                <form method="POST" class="row g-3">
+                    <input type="hidden" name="form_type" value="public_access">
+                    <div class="col-12">
+                        <label class="form-label">Public Access Token</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" name="public_stok_token" id="public_stok_token" value="<?= htmlspecialchars($public_stok_token) ?>" required>
+                            <button class="btn btn-outline-secondary" type="button" onclick="generateToken()"><i class="fas fa-magic"></i></button>
+                        </div>
+                    </div>
+                    <?php if ($public_stok_token !== ''): ?>
+                    <div class="col-12">
+                        <label class="form-label">Public Link (Read-Only)</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control form-control-sm" id="public_link" value="<?= base_url('index.php?page=stok_klinik_publik&token=' . urlencode($public_stok_token)) ?>" readonly>
+                            <button class="btn btn-outline-primary" type="button" onclick="copyPublicLink()"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-premium btn-save w-100">Simpan Token</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="settings-card danger-zone">
+                <div class="card-title-premium">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span class="text-danger">Zona Bahaya</span>
+                </div>
+                <p class="small text-muted mb-3 fw-500">Pilih data transaksi untuk dihapus secara permanen (Master Data Aman):</p>
+                
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="form-check small"><input class="form-check-input truncate-check" type="checkbox" value="booking" id="c_b" checked><label class="form-check-label" for="c_b">Booking</label></div>
+                        <div class="form-check small"><input class="form-check-input truncate-check" type="checkbox" value="request" id="c_r" checked><label class="form-check-label" for="c_r">Request</label></div>
+                        <div class="form-check small"><input class="form-check-input truncate-check" type="checkbox" value="bhp" id="c_bhp" checked><label class="form-check-label" for="c_bhp">BHP</label></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="form-check small"><input class="form-check-input truncate-check" type="checkbox" value="hc" id="c_hc" checked><label class="form-check-label" for="c_hc">Stok HC</label></div>
+                        <div class="form-check small"><input class="form-check-input truncate-check" type="checkbox" value="history" id="c_his" checked><label class="form-check-label" for="c_his">History Stok</label></div>
+                        <div class="form-check small"><input class="form-check-input" type="checkbox" id="c_all" checked onchange="$('.truncate-check').prop('checked', this.checked)"><label class="form-check-label fw-700" for="c_all">ALL</label></div>
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-danger w-100 btn-premium shadow-sm" onclick="confirmTruncateData()">
+                    <i class="fas fa-trash-alt me-2"></i>Kosongkan Data Terpilih
+                </button>
             </div>
         </div>
     </div>
@@ -483,54 +615,45 @@ async function executeTruncate(modules) {
 document.addEventListener('DOMContentLoaded', function() {
     function toggleFields() {
         const enabledEl = document.getElementById('enabled');
+        const hiddenEnabled = document.getElementById('sync_enabled_hidden');
         const schedule = document.getElementById('scheduleContainer');
         const modeEl = document.getElementById('mode');
-        const enabled = !!(enabledEl && enabledEl.checked);
-        if (schedule) schedule.style.display = enabled ? 'block' : 'none';
+        
+        const isEnabled = enabledEl && enabledEl.checked;
+        if (hiddenEnabled) hiddenEnabled.value = isEnabled ? '1' : '0';
+        if (schedule) schedule.style.display = isEnabled ? 'contents' : 'none';
+        
         const mode = modeEl ? modeEl.value : 'manual';
-        document.querySelectorAll('.mode-interval').forEach(el => el.style.display = (enabled && mode === 'interval') ? 'block' : 'none');
-        document.querySelectorAll('.mode-weekly').forEach(el => el.style.display = (enabled && mode === 'weekly') ? 'block' : 'none');
-        document.querySelectorAll('.mode-time').forEach(el => el.style.display = (enabled && (mode === 'weekly' || mode === 'daily')) ? 'block' : 'none');
-        const intervalInput = document.getElementById('interval_minutes');
-        const weekdaySelect = document.getElementById('weekday');
-        const timeInput = document.getElementById('time');
-        if (intervalInput) intervalInput.disabled = !(enabled && mode === 'interval');
-        if (weekdaySelect) weekdaySelect.disabled = !(enabled && mode === 'weekly');
-        if (timeInput) timeInput.disabled = !(enabled && (mode === 'weekly' || mode === 'daily'));
+        document.querySelectorAll('.mode-interval').forEach(el => el.style.display = (isEnabled && mode === 'interval') ? 'block' : 'none');
+        document.querySelectorAll('.mode-weekly').forEach(el => el.style.display = (isEnabled && mode === 'weekly') ? 'block' : 'none');
+        document.querySelectorAll('.mode-time').forEach(el => el.style.display = (isEnabled && (mode === 'weekly' || mode === 'daily')) ? 'block' : 'none');
     }
+
     const enabledEl = document.getElementById('enabled');
     const modeEl = document.getElementById('mode');
     if (enabledEl) enabledEl.addEventListener('change', toggleFields);
     if (modeEl) modeEl.addEventListener('change', toggleFields);
-    if (window.jQuery) {
-        window.jQuery(function() {
-            window.jQuery('#enabled').on('change', toggleFields);
-            window.jQuery('#mode').on('change', toggleFields);
-        });
-    }
+    
     toggleFields();
 
     window.confirmSyncNow = function(btn) {
         Swal.fire({
             title: 'Konfirmasi Sinkronisasi',
-            text: 'Apakah Anda yakin ingin menjalankan sinkronisasi Odoo sekarang?',
+            text: 'Jalankan sinkronisasi Odoo secara paksa sekarang?',
             icon: 'question',
             showCancelButton: true,
             confirmButtonColor: '#204EAB',
             cancelButtonColor: '#6c757d',
             confirmButtonText: 'Ya, Jalankan',
-            cancelButtonText: 'Batal',
-            reverseButtons: true
+            cancelButtonText: 'Batal'
         }).then((result) => {
-            if (result.isConfirmed) {
-                runSyncNow(btn);
-            }
+            if (result.isConfirmed) runSyncNow(btn);
         });
     }
 
     window.runSyncNow = async function(btn) {
-        const s = document.getElementById('runStatus');
-        s.textContent = 'Memproses...';
+        const s = document.getElementById('connStatus');
+        s.textContent = '⚡ Memproses...';
         btn.disabled = true;
         try {
             const fd = new FormData();
@@ -538,61 +661,51 @@ document.addEventListener('DOMContentLoaded', function() {
             const res = await fetch('api/sync_odoo.php', { method: 'POST', body: fd });
             const data = await res.json();
             if (data.success) {
-                Swal.fire({
-                    title: 'Berhasil!',
-                    text: 'Sinkronisasi Odoo telah selesai.',
-                    icon: 'success',
-                    timer: 2000,
-                    showConfirmButton: false
-                });
-                s.textContent = 'Selesai';
+                Swal.fire('Berhasil!', 'Sinkronisasi selesai.', 'success').then(() => location.reload());
             } else {
-                s.textContent = 'Gagal: ' + (data.message || 'Unknown');
+                s.textContent = '❌ Gagal: ' + (data.message || 'Unknown');
             }
         } catch (e) {
-            s.textContent = 'Gagal: ' + e.message;
+            s.textContent = '❌ Gagal: ' + e.message;
         } finally {
             btn.disabled = false;
         }
     }
+
     window.testConn = async function(btn) {
-        const s = document.getElementById('connStatus') || document.getElementById('runStatus');
-        if (s) s.textContent = 'Menguji koneksi...';
+        const s = document.getElementById('connStatus');
+        s.textContent = '🔍 Menguji...';
         btn.disabled = true;
         try {
             const res = await fetch('api/odoo_test.php');
             const data = await res.json();
             if (data.success) {
-                if (s) s.textContent = 'Koneksi OK';
+                s.textContent = '✅ Koneksi OK';
+                s.className = 'ms-2 align-self-center small fw-700 text-success';
             } else {
-                if (s) s.textContent = 'Gagal: ' + (data.message || 'Tidak dapat terhubung');
+                s.textContent = '❌ Gagal';
+                s.className = 'ms-2 align-self-center small fw-700 text-danger';
             }
         } catch (e) {
-            if (s) s.textContent = 'Gagal: ' + e.message;
+            s.textContent = '❌ Error';
         } finally {
             btn.disabled = false;
         }
     }
 
     const btnTestLark = document.getElementById('btnTestLark');
-    const larkStatus = document.getElementById('larkTestStatus');
     if (btnTestLark) {
         btnTestLark.addEventListener('click', async function() {
-            if (larkStatus) larkStatus.textContent = 'Mengirim test...';
             btnTestLark.disabled = true;
             try {
                 const fd = new FormData();
                 fd.append('_csrf', <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>);
                 const res = await fetch('api/test_lark_webhook.php', { method: 'POST', body: fd });
                 const data = await res.json();
-                if (!data || !data.success) {
-                    if (larkStatus) larkStatus.textContent = 'Gagal: ' + (data && data.message ? data.message : 'Unknown');
-                    return;
-                }
-                if (larkStatus) larkStatus.textContent = 'OK. Preferred: ' + (data.preferred || '-');
-                if (data.results) console.log('Lark test results', data.results);
+                if (data.success) Swal.fire('Terkirim!', 'Pesan tes Lark berhasil dikirim.', 'success');
+                else Swal.fire('Gagal', data.message, 'error');
             } catch (e) {
-                if (larkStatus) larkStatus.textContent = 'Gagal: ' + e.message;
+                Swal.fire('Error', e.message, 'error');
             } finally {
                 btnTestLark.disabled = false;
             }
@@ -601,11 +714,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function generateToken() {
-    const chars = '0123456789abcdef';
-    let token = '';
-    for (let i = 0; i < 32; i++) {
-        token += chars[Math.floor(Math.random() * chars.length)];
-    }
+    const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
     document.getElementById('public_stok_token').value = token;
 }
 
@@ -613,6 +722,6 @@ function copyPublicLink() {
     const link = document.getElementById('public_link');
     link.select();
     document.execCommand('copy');
-    alert('Link berhasil disalin ke clipboard!');
+    Swal.fire({ title: 'Tersalin!', text: 'Link publik sudah ada di clipboard.', icon: 'success', timer: 1500, showConfirmButton: false });
 }
 </script>
