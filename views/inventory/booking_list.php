@@ -1632,11 +1632,11 @@ window.openBookingDetail = function(id) {
                 let statusBadge = '';
                 let rowStyle = '';
                 if (p.status === 'done') {
-                    statusBadge = '<span class="badge bg-light-success text-success x-small ms-2">Completed</span>';
+                    statusBadge = '<span class="badge bg-success x-small ms-2">Completed</span>';
                 } else if (p.status === 'rescheduled') {
-                    statusBadge = '<span class="badge bg-light-warning text-warning x-small ms-2">Rescheduled</span>';
+                    statusBadge = '<span class="badge bg-info x-small ms-2">Rescheduled</span>';
                 } else if (p.status === 'cancelled') {
-                    statusBadge = `<span class="badge bg-light-danger text-danger x-small ms-2" title="Alasan: ${p.remark || '-'}">Cancelled</span>`;
+                    statusBadge = `<span class="badge bg-danger x-small ms-2" title="Alasan: ${p.remark || '-'}">Cancelled</span>`;
                     rowStyle = 'background-color: rgba(220, 53, 69, 0.05);';
                 }
 
