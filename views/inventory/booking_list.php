@@ -1633,6 +1633,8 @@ window.openBookingDetail = function(id) {
                 let rowStyle = '';
                 if (p.status === 'done') {
                     statusBadge = '<span class="badge bg-light-success text-success x-small ms-2">Completed</span>';
+                } else if (p.status === 'partial') {
+                    statusBadge = '<span class="badge bg-light-info text-info x-small ms-2">Partial</span>';
                 } else if (p.status === 'rescheduled') {
                     statusBadge = '<span class="badge bg-light-warning text-warning x-small ms-2">Rescheduled</span>';
                 } else if (p.status === 'cancelled') {
@@ -2264,6 +2266,7 @@ window.openActionHub = function(data) {
     .bg-light-warning { background-color: rgba(255, 193, 7, 0.1); }
     .bg-light-success { background-color: rgba(25, 135, 84, 0.1); }
     .bg-light-danger { background-color: rgba(220, 53, 69, 0.1); }
+    .bg-light-info { background-color: rgba(13, 202, 240, 0.1); }
 </style>
 
 <!-- Modal Booking Detail -->

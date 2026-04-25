@@ -100,14 +100,32 @@ $stmt = $conn->prepare("
         bp.nama_pasien, 
         bp.nomor_tlp, 
         bp.tanggal_lahir,
-        bp.status,
-        bp.remark,
-        GROUP_CONCAT(pg.nama_pemeriksaan SEPARATOR ', ') as exams,
+        -- Status agregasi: prioritaskan rescheduled, lalu partial, lalu done
+        CASE 
+            WHEN SUM(CASE WHEN bp.status = 'rescheduled' THEN 1 ELSE 0 END) > 0 THEN 'rescheduled'
+            WHEN SUM(CASE WHEN bp.status = 'done' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN bp.status != 'done' THEN 1 ELSE 0 END) > 0 THEN 'partial'
+            WHEN SUM(CASE WHEN bp.status = 'done' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN bp.status != 'done' THEN 1 ELSE 0 END) = 0 THEN 'done'
+            WHEN SUM(CASE WHEN bp.status = 'cancelled' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN bp.status != 'cancelled' THEN 1 ELSE 0 END) = 0 THEN 'cancelled'
+            ELSE 'booked'
+        END as status,
+        GROUP_CONCAT(DISTINCT bp.remark SEPARATOR ' | ') as remark,
+        GROUP_CONCAT(
+            CONCAT(
+                pg.nama_pemeriksaan, 
+                CASE 
+                    WHEN bp.status = 'done' THEN ' [Done]' 
+                    WHEN bp.status = 'rescheduled' THEN ' [Rescheduled]' 
+                    WHEN bp.status = 'cancelled' THEN ' [Cancelled]' 
+                    ELSE '' 
+                END
+            ) 
+            SEPARATOR ', '
+        ) as exams,
         GROUP_CONCAT(pg.id SEPARATOR ',') as exam_ids
     FROM inventory_booking_pasien bp
     JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
     WHERE bp.booking_id = ?
-    GROUP BY bp.nama_pasien, bp.nomor_tlp, bp.tanggal_lahir, bp.status, bp.remark
+    GROUP BY bp.nama_pasien, bp.nomor_tlp, bp.tanggal_lahir
     ORDER BY MIN(bp.id) ASC
 ");
 $stmt->bind_param("i", $id);
