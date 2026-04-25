@@ -583,6 +583,7 @@ if (!empty($booking_ids)) {
                             }
                             $jf = (int)($row['jotform_submitted'] ?? 0);
                             ?>
+                            <div class="x-small fw-bold text-muted mb-2 text-nowrap"><?= htmlspecialchars($row['nomor_booking'] ?? '-') ?></div>
                             <div class="mb-1">
                                 <span class="badge <?= $bt_badge ?>"><?= $bt_label ?></span>
                             </div>
@@ -593,7 +594,6 @@ if (!empty($booking_ids)) {
                                     <span class="badge bg-danger x-small"><i class="fas fa-times me-1"></i>Jotform</span>
                                 <?php endif; ?>
                             </div>
-                            <div class="x-small text-muted">#<?= htmlspecialchars($row['nomor_booking'] ?? '-') ?></div>
                         </td>
                         <td>
                             <div class="fw-semibold">
