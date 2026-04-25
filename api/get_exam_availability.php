@@ -143,7 +143,7 @@ $r = $conn->query("
     FROM inventory_booking_detail bd
     JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
     WHERE bp.klinik_id = $klinik_id
-      AND bp.status = 'booked'
+      AND bp.status IN ('booked', 'rescheduled', 'pending_edit')
       AND $reserve_cond
       AND bp.tanggal_pemeriksaan >= '$today_esc'
       AND bp.tanggal_pemeriksaan <= '$month_end_esc'

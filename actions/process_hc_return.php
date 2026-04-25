@@ -14,16 +14,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_csrf();
 
-$role = (string)($_SESSION['role'] ?? '');
-if (!in_array($role, ['super_admin', 'admin_klinik'], true)) {
-    if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => 'Anda tidak memiliki akses.']);
-        exit;
-    }
-    $_SESSION['error'] = 'Anda tidak memiliki akses.';
-    redirect('index.php?page=dashboard');
-}
+// Check role access
+check_role(['super_admin', 'admin_klinik']);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') redirect('index.php?page=stok_petugas_hc');
 
@@ -113,6 +105,11 @@ if (!$u || (int)$u['klinik_id'] !== $klinik_id) {
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
 
+// Ownership Check for admin_klinik
+if ($_SESSION['role'] === 'admin_klinik' && (int)$klinik_id !== (int)$_SESSION['klinik_id']) {
+    throw new Exception('Akses Ditolak: Anda tidak memiliki wewenang untuk memproses pengembalian stok di luar klinik Anda');
+}
+
 $lock_name = 'stock_hc_transfer_' . (int)$klinik_id;
 $lock_esc = $conn->real_escape_string($lock_name);
 $rl = $conn->query("SELECT GET_LOCK('$lock_esc', 10) AS got");
@@ -138,16 +135,15 @@ try {
         if (!$b) throw new Exception('Barang tidak ditemukan.');
         $bname = (string)($b['nama_barang'] ?? '');
 
-        // 1. Check current bag stock
-        $stmt_bag = $conn->prepare("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ? LIMIT 1");
-        $stmt_bag->bind_param("iii", $barang_id, $user_hc_id, $klinik_id);
-        $stmt_bag->execute();
-        $bag_row = $stmt_bag->get_result()->fetch_assoc();
-        $bag_qty = (float)($bag_row['qty'] ?? 0);
-        
-        if ($qty_oper > $bag_qty + 0.00005) {
-            throw new Exception('Stok tas petugas tidak mencukupi untuk item: ' . $bname . '. Stok saat ini: ' . fmt_qty($bag_qty));
-        }
+        // --- RACE CONDITION FIX: LOCK BOTH SOURCE AND DESTINATION ---
+        // ALWAYS lock in the same order (Clinic then HC) to prevent DEADLOCKS
+        // 1. Lock Clinic Stock (Destination)
+        $conn->query("INSERT IGNORE INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES ($barang_id, $klinik_id, 0)");
+        $conn->query("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = $barang_id AND klinik_id = $klinik_id FOR UPDATE");
+
+        // 2. Lock HC Stock (Source)
+        $conn->query("INSERT IGNORE INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty) VALUES ($barang_id, $user_hc_id, $klinik_id, 0)");
+        $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = $barang_id AND user_id = $user_hc_id AND klinik_id = $klinik_id FOR UPDATE");
 
         // 2. Effective stock for transactions
         $ef_on = stock_effective($conn, $klinik_id, false, $barang_id);

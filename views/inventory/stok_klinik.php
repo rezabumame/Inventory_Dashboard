@@ -352,14 +352,14 @@ if ($active_tab == 'stok') {
                              JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id 
                              WHERE bd.barang_id = b.id 
                              AND bp.klinik_id $klinik_filter_sql
-                             AND bp.status = 'booked'
+                             AND bp.status IN ('booked', 'rescheduled', 'pending_edit')
                              AND bp.status_booking LIKE '%Clinic%'$filter_bp_onsite) as reserve_onsite,
                             (SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END), 0)
                              FROM inventory_booking_detail bd
                              JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
                              WHERE bd.barang_id = b.id
                              AND bp.klinik_id $klinik_filter_sql
-                             AND bp.status = 'booked'
+                             AND bp.status IN ('booked', 'rescheduled', 'pending_edit')
                              AND bp.status_booking LIKE '%HC%'$filter_bp_hc) as reserve_hc,
                             (SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0)
                                  FROM inventory_transaksi_stok ts

@@ -100,12 +100,14 @@ $stmt = $conn->prepare("
         bp.nama_pasien, 
         bp.nomor_tlp, 
         bp.tanggal_lahir,
+        bp.status,
+        bp.remark,
         GROUP_CONCAT(pg.nama_pemeriksaan SEPARATOR ', ') as exams,
         GROUP_CONCAT(pg.id SEPARATOR ',') as exam_ids
     FROM inventory_booking_pasien bp
     JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
     WHERE bp.booking_id = ?
-    GROUP BY bp.nama_pasien, bp.nomor_tlp, bp.tanggal_lahir
+    GROUP BY bp.nama_pasien, bp.nomor_tlp, bp.tanggal_lahir, bp.status, bp.remark
     ORDER BY MIN(bp.id) ASC
 ");
 $stmt->bind_param("i", $id);

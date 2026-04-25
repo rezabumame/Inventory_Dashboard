@@ -1,6 +1,41 @@
 <?php
+
 check_role(['cs', 'super_admin', 'admin_klinik']);
 require_once __DIR__ . '/../../lib/stock.php';
+
+// PAGINATION LOGIC
+$items_per_page = 10;
+$current_page = isset($_GET['p']) ? max(1, (int)$_GET['p']) : 1;
+$offset = ($current_page - 1) * $items_per_page;
+
+function renderPagination($total_pages, $current_page) {
+    if ($total_pages <= 1) return '';
+    $query_params = $_GET;
+    unset($query_params['p']);
+    $base_url = 'index.php?' . http_build_query($query_params);
+    $html = '<nav aria-label="Page navigation" class="mt-4"><ul class="pagination pagination-circular justify-content-end">';
+    $prev_class = ($current_page <= 1) ? 'disabled' : '';
+    $html .= '<li class="page-item ' . $prev_class . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page - 1) . '"><i class="fas fa-chevron-left"></i></a></li>';
+    $start = max(1, $current_page - 2);
+    $end = min($total_pages, $current_page + 2);
+    if ($start > 1) {
+        $html .= '<li class="page-item"><a class="page-link shadow-sm" href="' . $base_url . '&p=1">1</a></li>';
+        if ($start > 2) $html .= '<li class="page-item disabled"><span class="page-link border-0">...</span></li>';
+    }
+    for ($i = $start; $i <= $end; $i++) {
+        $active = ($i == $current_page) ? 'active' : '';
+        $html .= '<li class="page-item ' . $active . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $i . '">' . $i . '</a></li>';
+    }
+    if ($end < $total_pages) {
+        if ($end < $total_pages - 1) $html .= '<li class="page-item disabled"><span class="page-link border-0">...</span></li>';
+        $html .= '<li class="page-item"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $total_pages . '">' . $total_pages . '</a></li>';
+    }
+    $next_class = ($current_page >= $total_pages) ? 'disabled' : '';
+    $html .= '<li class="page-item ' . $next_class . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page + 1) . '"><i class="fas fa-chevron-right"></i></a></li>';
+    $html .= '</ul></nav>';
+    return $html;
+}
+
 
 
 // Normalize nomor_booking to a shorter format (not critical identifier; ID is the primary key)
@@ -41,7 +76,7 @@ $reset_url = ($role === 'admin_klinik') ? 'index.php?page=booking&filter_today=1
 $where = "1=1";
 if ($_SESSION['role'] == 'admin_klinik') {
     $where .= " AND b.klinik_id = " . $_SESSION['klinik_id'];
-    $where .= " AND b.status = 'booked' AND LOWER(COALESCE(b.booking_type, 'keep')) IN ('keep','fixed')";
+    $where .= " AND b.status IN ('booked', 'rescheduled') AND LOWER(COALESCE(b.booking_type, 'keep')) IN ('keep','fixed')";
 }
 if ($filter_today) {
     $where .= " AND b.tanggal_pemeriksaan = CURDATE()";
@@ -57,7 +92,7 @@ if ($filter_tujuan === 'clinic') {
 } elseif ($filter_tujuan === 'hc') {
     $where .= " AND b.status_booking LIKE '%HC%'";
 }
-if (in_array($filter_status, ['booked', 'completed', 'cancelled'], true)) {
+if (in_array($filter_status, ['booked', 'rescheduled', 'completed', 'cancelled'], true)) {
     $where .= " AND b.status = '" . $conn->real_escape_string($filter_status) . "'";
 }
 if (in_array($filter_tipe, ['keep', 'fixed', 'cancel'], true)) {
@@ -66,6 +101,12 @@ if (in_array($filter_tipe, ['keep', 'fixed', 'cancel'], true)) {
 if ($filter_fu === '1') {
     $where .= " AND b.status = 'booked' AND b.butuh_fu = 1";
 }
+
+
+// 1. Get total count
+$count_query = "SELECT COUNT(*) as cnt FROM inventory_booking_pemeriksaan b WHERE $where";
+$total_all = (int)($conn->query($count_query)->fetch_assoc()['cnt'] ?? 0);
+$total_pages = ceil($total_all / $items_per_page);
 
 $query = "SELECT b.*, k.nama_klinik,
           (SELECT COUNT(DISTINCT bd.barang_id) FROM inventory_booking_detail bd WHERE bd.booking_id = b.id) as total_items,
@@ -77,7 +118,7 @@ $query = "SELECT b.*, k.nama_klinik,
           JOIN inventory_klinik k ON b.klinik_id = k.id 
           WHERE $where
           ORDER BY b.tanggal_pemeriksaan DESC, COALESCE(b.jam_layanan, '') DESC, b.id DESC
-          LIMIT 500";
+          LIMIT $items_per_page OFFSET $offset";
 $result = $conn->query($query);
 
 // Pre-calculate current fulfillment status for displayed bookings
@@ -85,7 +126,7 @@ $bookings_data = [];
 $booking_ids = [];
 while ($row = $result->fetch_assoc()) {
     $bookings_data[] = $row;
-    if ($row['status'] === 'booked') $booking_ids[] = (int)$row['id'];
+    if (in_array($row['status'], ['booked', 'rescheduled'])) $booking_ids[] = (int)$row['id'];
 }
 
 $fulfillment_map = [];
@@ -261,12 +302,13 @@ if (!empty($booking_ids)) {
         border: none;
         background: transparent;
         color: #6c757d;
-        font-size: 0.85rem;
-        padding: 6px 12px;
+        font-size: 0.8rem;
+        padding: 4px 6px;
         border-radius: 6px;
         transition: all 0.2s ease;
         text-align: center;
         cursor: pointer;
+        white-space: nowrap;
     }
     .btn-segmented:hover {
         background-color: rgba(0,0,0,0.03);
@@ -304,7 +346,7 @@ if (!empty($booking_ids)) {
     <div class="card-body">
         <form method="GET" class="row g-3 align-items-end">
             <input type="hidden" name="page" value="booking">
-            <div class="col-xl-3 col-lg-6 col-md-6">
+            <div class="col-xl-2 col-lg-6 col-md-6">
                 <label class="form-label fw-bold text-muted mb-1">Tujuan</label>
                 <div class="segmented-control">
                     <input type="radio" class="btn-check" name="tujuan" id="filter_tujuan_all" value="" <?= $filter_tujuan === '' ? 'checked' : '' ?>>
@@ -317,7 +359,7 @@ if (!empty($booking_ids)) {
                     <label class="btn-segmented px-1" for="filter_tujuan_hc">HC</label>
                 </div>
             </div>
-            <div class="col-xl-3 col-lg-6 col-md-6">
+            <div class="col-xl-4 col-lg-6 col-md-6">
                 <label class="form-label fw-bold text-muted mb-1">Status</label>
                 <div class="segmented-control">
                     <input type="radio" class="btn-check" name="status" id="filter_status_all" value="" <?= $filter_status === '' ? 'checked' : '' ?>>
@@ -329,6 +371,9 @@ if (!empty($booking_ids)) {
                     <input type="radio" class="btn-check" name="status" id="filter_status_completed" value="completed" <?= $filter_status === 'completed' ? 'checked' : '' ?>>
                     <label class="btn-segmented px-1" for="filter_status_completed">Completed</label>
                     
+                    <input type="radio" class="btn-check" name="status" id="filter_status_rescheduled" value="rescheduled" <?= $filter_status === 'rescheduled' ? 'checked' : '' ?>>
+                    <label class="btn-segmented px-1" for="filter_status_rescheduled">Reschedule</label>
+
                     <input type="radio" class="btn-check" name="status" id="filter_status_cancelled" value="cancelled" <?= $filter_status === 'cancelled' ? 'checked' : '' ?>>
                     <label class="btn-segmented px-1" for="filter_status_cancelled">Cancel</label>
                 </div>
@@ -409,6 +454,23 @@ if (!empty($booking_ids)) {
             window.open(url.toString(), '_blank');
         }
         </script>
+<style>
+    /* CIRCULAR PAGINATION STYLING */
+    .pagination-circular .page-item { margin: 0 4px; }
+    .pagination-circular .page-link {
+        border-radius: 50% !important;
+        width: 40px; height: 40px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
+        transition: all 0.2s ease; background: #fff;
+    }
+    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
+    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
+    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
+</style>
+
+
+
         <?php if ($has_filters): ?>
             <div class="mt-3 d-flex flex-wrap gap-2">
                 <?php if ($filter_today): ?><span class="badge rounded-pill booking-chip bg-light text-dark">Hari ini</span><?php endif; ?>
@@ -540,7 +602,7 @@ if (!empty($booking_ids)) {
                                 $badge = 'bg-danger';
                                 $status_label = 'Pending Hapus (SPV)';
                             } elseif ($row['status'] == 'rescheduled') {
-                                $badge = 'bg-warning text-dark';
+                                $badge = 'bg-info text-white';
                                 $status_label = 'Rescheduled';
                             } elseif ($row['status'] == 'rejected') {
                                 $badge = 'bg-dark';
@@ -569,13 +631,13 @@ if (!empty($booking_ids)) {
                             $is_cs = ($_SESSION['role'] ?? '') === 'cs';
                             ?>
 
-                            <?php if (in_array($row['status'], ['booked', 'pending_edit', 'pending_delete', 'rejected'])): ?>
+                            <?php if (in_array($row['status'], ['booked', 'rescheduled', 'pending_edit', 'pending_delete', 'rejected'])): ?>
                                 <button type="button" class="btn btn-sm btn-primary px-3 rounded-pill btn-aksi-toggle" onclick="toggleActionDrawer(this)">
                                     <i class="fas fa-chevron-down me-1"></i>Aksi
                                 </button>
                                 
                                 <div class="action-drawer">
-                                    <?php if ($row['status'] === 'booked'): ?>
+                                    <?php if (in_array($row['status'], ['booked', 'rescheduled'])): ?>
                                         <?php if ($is_super_admin || $is_admin_klinik): ?>
                                             <button type="button" class="btn-drawer-icon text-info" title="Move" onclick="openMoveModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>', '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>');">
                                                 <i class="fas fa-exchange-alt"></i>
@@ -627,9 +689,10 @@ if (!empty($booking_ids)) {
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
+            <?= renderPagination($total_pages, $current_page) ?>
         </div>
     </div>
-</div>
 
 <!-- Modal Booking Baru -->
 <div class="modal fade" id="modalBookingBaru" tabindex="-1" aria-labelledby="modalBookingBaruLabel" aria-hidden="true">
@@ -756,10 +819,17 @@ var examOptionsModal = '<option value="">Pilih klinik dulu...</option>';
 var examRowIndexModal = 0;
 
 $(document).ready(function() {
-    // Initialize DataTable
+    // Initialize DataTable (Consolidated)
+    if ($.fn.DataTable.isDataTable('#bookingTable')) {
+        $('#bookingTable').DataTable().destroy();
+    }
     $('#bookingTable').DataTable({
         order: [], 
-        pageLength: 10,
+        paging: false,
+        info: false,
+        searching: true,
+        ordering: true,
+        fixedHeader: true,
         lengthChange: false,
         columnDefs: [{ orderable: false, targets: [7] }],
         language: {
@@ -1493,9 +1563,9 @@ window.openBookingDetail = function(id) {
                 paxHtml += `
                     <div class="p-2 border-bottom d-flex justify-content-between align-items-center" style="${rowStyle}">
                         <div>
-                            <div class="fw-bold text-dark">${idx + 1}. ${p.nama_pasien} ${statusBadge}</div>
-                            <div class="x-small text-muted">${p.exams}</div>
-                            ${p.remark && p.status !== 'cancelled' ? `<div class="x-small text-info mt-1"><i class="fas fa-info-circle me-1"></i>${p.remark}</div>` : ''}
+                            <div class="fw-bold text-dark ${p.status === 'cancelled' ? 'text-decoration-line-through text-muted' : ''}">${idx + 1}. ${p.nama_pasien} ${statusBadge}</div>
+                            <div class="x-small text-muted ${p.status === 'cancelled' ? 'text-decoration-line-through' : ''}">${p.exams}</div>
+                            ${p.remark ? `<div class="x-small ${p.status === 'rescheduled' ? 'text-primary' : 'text-info'} mt-1"><i class="fas fa-info-circle me-1"></i>${p.remark}</div>` : ''}
                         </div>
                     </div>
                 `;
@@ -1577,7 +1647,7 @@ window.openBookingDetail = function(id) {
                                 <span class="fw-bold text-dark"><i class="fas fa-users me-2 text-primary"></i>Daftar Pasien (${esc(h.jumlah_pax || 1)} Pax)</span>
                             </div>
                             <div class="card-body p-3" style="max-height: 500px; overflow-y: auto;">
-                                ${pasienHtml}
+                                ${paxHtml}
                             </div>
                         </div>
                     </div>
@@ -1795,6 +1865,24 @@ window.submitAdjust = function() {
 </script>
 
 <style>
+    /* CIRCULAR PAGINATION STYLING */
+    .pagination-circular .page-item { margin: 0 4px; }
+    .pagination-circular .page-link {
+        border-radius: 50% !important;
+        width: 40px; height: 40px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
+        transition: all 0.2s ease; background: #fff;
+    }
+    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
+    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
+    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
+</style>
+
+
+
+
+<style>
     .booking-detail-card {
         border: 1px solid #dfe3ea;
         border-radius: 12px;
@@ -1927,6 +2015,24 @@ $(document).ready(function() {
 });
 </script>
 
+<style>
+    /* CIRCULAR PAGINATION STYLING */
+    .pagination-circular .page-item { margin: 0 4px; }
+    .pagination-circular .page-link {
+        border-radius: 50% !important;
+        width: 40px; height: 40px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
+        transition: all 0.2s ease; background: #fff;
+    }
+    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
+    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
+    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
+</style>
+
+
+
+
 <!-- Action Hub Modal -->
 <div class="modal fade" id="modalActionHub" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-sm modal-dialog-centered" style="max-width: 340px;">
@@ -1959,7 +2065,7 @@ window.openActionHub = function(data) {
             </div>
         </a>`;
 
-    if (data.status === 'booked') {
+    if (data.status === 'booked' || data.status === 'rescheduled') {
         // 2. Move (Super/Admin Klinik)
         if (canSuperAdmin || canAdminKlinik) {
             html += `
@@ -2045,6 +2151,24 @@ window.openActionHub = function(data) {
     new bootstrap.Modal(document.getElementById('modalActionHub')).show();
 };
 </script>
+
+<style>
+    /* CIRCULAR PAGINATION STYLING */
+    .pagination-circular .page-item { margin: 0 4px; }
+    .pagination-circular .page-link {
+        border-radius: 50% !important;
+        width: 40px; height: 40px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
+        transition: all 0.2s ease; background: #fff;
+    }
+    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
+    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
+    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
+</style>
+
+
+
 
 <style>
     .bg-light-primary { background-color: rgba(32, 78, 171, 0.1); }
@@ -2261,11 +2385,15 @@ window.openActionHub = function(data) {
                 <div id="completionRescheduleSection" class="mt-3 p-3 border rounded bg-light" style="display:none;">
                     <h6 class="fw-bold text-warning"><i class="fas fa-calendar-alt me-2"></i>Detail Reschedule</h6>
                     <div class="row g-2">
-                        <div class="col-md-5">
+                        <div class="col-md-4">
                             <label class="x-small fw-bold text-muted text-uppercase">Tanggal Baru</label>
                             <input type="date" id="completionRescheduleDate" class="form-control form-control-sm" min="<?= date('Y-m-d') ?>">
                         </div>
-                        <div class="col-md-7">
+                        <div class="col-md-3">
+                            <label class="x-small fw-bold text-muted text-uppercase">Jam Baru</label>
+                            <input type="time" id="completionRescheduleTime" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-5">
                             <label class="x-small fw-bold text-muted text-uppercase">Alasan Reschedule</label>
                             <input type="text" id="completionRescheduleReason" class="form-control form-control-sm" placeholder="Contoh: Tensi tinggi">
                         </div>
@@ -2296,9 +2424,19 @@ window.openActionHub = function(data) {
                     <div class="fw-bold">Booking: <span id="rescheduleNomorBooking"></span></div>
                 </div>
                 
-                <div class="mb-3">
-                    <label class="form-label fw-bold">Tanggal Pemeriksaan Baru</label>
-                    <input type="date" id="rescheduleDate" class="form-control" min="<?= date('Y-m-d') ?>">
+                <div class="row">
+                    <div class="col-md-7">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Tanggal Pemeriksaan Baru</label>
+                            <input type="date" id="rescheduleDate" class="form-control" min="<?= date('Y-m-d') ?>">
+                        </div>
+                    </div>
+                    <div class="col-md-5">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Jam Baru</label>
+                            <input type="time" id="rescheduleTime" class="form-control">
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="mb-3">
@@ -2410,6 +2548,7 @@ window.submitCompletion = function() {
     }
     
     const rescheduleDate = $('#completionRescheduleDate').val();
+    const rescheduleTime = $('#completionRescheduleTime').val();
     const rescheduleReason = $('#completionRescheduleReason').val();
     
     // Validate reschedule
@@ -2430,6 +2569,7 @@ window.submitCompletion = function() {
             done_ids: doneIds,
             fallback: fallback,
             reschedule_date: rescheduleDate,
+            reschedule_time: rescheduleTime,
             reschedule_reason: rescheduleReason
         });
         bootstrap.Modal.getInstance(document.getElementById('modalCompletion')).hide();
@@ -2447,6 +2587,7 @@ window.openRescheduleModal = function(id, nomorBooking, currentDate) {
 window.submitReschedule = function() {
     const id = $('#rescheduleBookingId').val();
     const date = $('#rescheduleDate').val();
+    const time = $('#rescheduleTime').val();
     const reason = $('#rescheduleReason').val();
     
     if (!date || !reason) {
@@ -2458,8 +2599,41 @@ window.submitReschedule = function() {
         action: 'reschedule',
         id: id,
         new_date: date,
+        new_time: time,
         reason: reason
     });
     bootstrap.Modal.getInstance(document.getElementById('modalReschedule')).hide();
 };
 </script>
+
+<style>
+    /* CIRCULAR PAGINATION STYLING */
+    .pagination-circular .page-item { margin: 0 4px; }
+    .pagination-circular .page-link {
+        border-radius: 50% !important;
+        width: 40px; height: 40px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
+        transition: all 0.2s ease; background: #fff;
+    }
+    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
+    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
+    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
+</style>
+
+
+
+<style>
+    /* CIRCULAR PAGINATION STYLING */
+    .pagination-circular .page-item { margin: 0 4px; }
+    .pagination-circular .page-link {
+        border-radius: 50% !important;
+        width: 40px; height: 40px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
+        transition: all 0.2s ease; background: #fff;
+    }
+    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
+    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
+    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
+</style>

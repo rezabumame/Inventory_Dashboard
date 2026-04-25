@@ -7,11 +7,8 @@ require_once __DIR__ . '/../lib/stock.php';
 if (!isset($_SESSION['user_id'])) redirect('index.php?page=login');
 require_csrf();
 
-$role = (string)($_SESSION['role'] ?? '');
-if (!in_array($role, ['super_admin', 'admin_klinik'], true)) {
-    $_SESSION['error'] = 'Anda tidak memiliki akses.';
-    redirect('index.php?page=dashboard');
-}
+// Check role access
+check_role(['admin_klinik', 'super_admin']);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') redirect('index.php?page=stok_petugas_hc');
 
@@ -100,6 +97,11 @@ if (!$u || (int)$u['klinik_id'] !== $klinik_id) {
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
 
+// Ownership Check for admin_klinik
+if ($_SESSION['role'] === 'admin_klinik' && (int)$klinik_id !== (int)$_SESSION['klinik_id']) {
+    throw new Exception('Akses Ditolak: Anda tidak memiliki wewenang untuk mentransfer stok di luar klinik Anda');
+}
+
 $loc_onsite = stock_resolve_location($conn, (string)($kl['kode_klinik'] ?? ''));
 if ($loc_onsite === '') {
     if ($is_ajax) {
@@ -149,11 +151,18 @@ try {
         if (!$b) throw new Exception('Barang tidak ditemukan.');
         $bname = (string)($b['nama_barang'] ?? '');
 
+        // --- RACE CONDITION FIX: LOCK BOTH SOURCE AND DESTINATION ---
+        // 1. Lock Clinic Stock
+        $conn->query("INSERT IGNORE INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES ($barang_id, $klinik_id, 0)");
+        $conn->query("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = $barang_id AND klinik_id = $klinik_id FOR UPDATE");
+        
+        // 2. Lock HC Stock
+        $conn->query("INSERT IGNORE INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty) VALUES ($barang_id, $user_hc_id, $klinik_id, 0)");
+        $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = $barang_id AND user_id = $user_hc_id AND klinik_id = $klinik_id FOR UPDATE");
+
         $ef_on = stock_effective($conn, $klinik_id, false, $barang_id);
         if (!$ef_on['ok']) throw new Exception((string)$ef_on['message']);
         $onsite_before = (float)($ef_on['on_hand'] ?? 0);
-        $onsite_available = (float)($ef_on['available'] ?? 0);
-        if ($qty_oper > $onsite_available + 0.00005) throw new Exception('Stok Onsite tidak mencukupi untuk item: ' . $bname);
 
         $ef_hc = stock_effective($conn, $klinik_id, true, $barang_id);
         if (!$ef_hc['ok']) throw new Exception((string)$ef_hc['message']);
@@ -173,6 +182,12 @@ try {
 
         $qty_after_onsite = $onsite_before - $qty_oper;
         if ($qty_after_onsite < 0) $qty_after_onsite = 0;
+
+        // --- NEW FIX: REDUCE ONSITE CLINIC STOCK ---
+        $stmt_upd_onsite = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
+        $stmt_upd_onsite->bind_param("diii", $qty_oper, $created_by, $barang_id, $klinik_id);
+        $stmt_upd_onsite->execute();
+
         $stmt = $conn->prepare("
             INSERT INTO inventory_transaksi_stok
             (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)

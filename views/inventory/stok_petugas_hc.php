@@ -1029,15 +1029,23 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Popover(popoverTriggerEl)
     });
 
-    document.getElementById('massAllocAddRowBtn').onclick = function() {
-        addMassAllocRow();
-    };
+    var massAllocBtn = document.getElementById('massAllocAddRowBtn');
+    if (massAllocBtn) {
+        massAllocBtn.onclick = function() {
+            addMassAllocRow();
+        };
+    }
 
-    document.getElementById('formMassAllocationSO').onsubmit = function(e) {
-        var btn = document.getElementById('btnSubmitMassSO');
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...';
-    };
+    var massAllocForm = document.getElementById('formMassAllocationSO');
+    if (massAllocForm) {
+        massAllocForm.onsubmit = function(e) {
+            var btn = document.getElementById('btnSubmitMassSO');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...';
+            }
+        };
+    }
 });
 
 function openMassAllocationSO() {

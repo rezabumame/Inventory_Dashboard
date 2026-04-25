@@ -12,12 +12,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 // Check access
-$allowed_roles = ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'petugas_hc'];
-if (!in_array($_SESSION['role'], $allowed_roles)) {
-    $_SESSION['error'] = 'Anda tidak memiliki akses ke halaman ini. Role Anda: ' . $_SESSION['role'];
-    error_log('Pemakaian BHP access denied for role: ' . $_SESSION['role']);
-    redirect('index.php?page=dashboard');
-}
+check_role(['admin_klinik', 'super_admin', 'admin_gudang', 'spv_klinik', 'petugas_hc']);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('index.php?page=pemakaian_bhp_list');
@@ -105,9 +100,18 @@ try {
         $r_u = $conn->query("SELECT id, klinik_id FROM inventory_users WHERE id = " . (int)$user_hc_id . " AND role = 'petugas_hc' AND status = 'active' LIMIT 1");
         if (!$r_u || $r_u->num_rows === 0) throw new Exception('Petugas HC tidak valid');
         $urow = $r_u->fetch_assoc();
+        
+        // Ownership Check
+        if ($_SESSION['role'] !== 'super_admin' && (int)($urow['klinik_id'] ?? 0) !== (int)$_SESSION['klinik_id']) {
+            throw new Exception('Anda tidak memiliki otoritas untuk memproses petugas HC dari klinik lain');
+        }
         if ((int)($urow['klinik_id'] ?? 0) !== (int)$klinik_id) throw new Exception('Petugas HC tidak terdaftar di klinik ini');
     } else {
         $user_hc_id = null;
+        // Ownership Check for Clinic
+        if ($_SESSION['role'] !== 'super_admin' && $_SESSION['role'] !== 'admin_gudang' && (int)$klinik_id !== (int)$_SESSION['klinik_id']) {
+            throw new Exception('Akses Ditolak: Anda hanya diperbolehkan memproses data untuk klinik Anda sendiri');
+        }
     }
 
     // Lock per clinic+jenis to prevent concurrent stock mutation conflicts
@@ -606,13 +610,30 @@ try {
         $date_only = date('Y-m-d', strtotime($tanggal));
         
         // Cari ID pemakaian temporary
-        $stmt_find_temp = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal = ?");
+        $stmt_find_temp = $conn->prepare("SELECT id, user_hc_id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal = ?");
         $stmt_find_temp->bind_param("iss", $klinik_id, $jenis_pemakaian, $date_only);
         $stmt_find_temp->execute();
         $res_temp = $stmt_find_temp->get_result();
         
         while ($row_temp = $res_temp->fetch_assoc()) {
-            $temp_id = $row_temp['id'];
+            $temp_id = (int)$row_temp['id'];
+            $temp_user_hc_id = (int)($row_temp['user_hc_id'] ?? 0);
+            
+            // --- REVERSE STOCK BEFORE DELETION ---
+            $res_items = $conn->query("SELECT barang_id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $temp_id");
+            while ($it = $res_items->fetch_assoc()) {
+                $bid = (int)$it['barang_id'];
+                $qty_rev = (float)$it['qty'];
+                if ($jenis_pemakaian === 'hc' && $temp_user_hc_id > 0) {
+                    $conn->query("UPDATE inventory_stok_tas_hc SET qty = qty + $qty_rev WHERE barang_id = $bid AND user_id = $temp_user_hc_id AND klinik_id = $klinik_id");
+                } else {
+                    $conn->query("UPDATE inventory_stok_gudang_klinik SET qty = qty + $qty_rev WHERE barang_id = $bid AND klinik_id = $klinik_id");
+                }
+            }
+            // Clear details and transaction history
+            $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $temp_id");
+            $conn->query("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = $temp_id");
+
             $stmt_del_temp = $conn->prepare("DELETE FROM inventory_pemakaian_bhp WHERE id = ?");
             $stmt_del_temp->bind_param("i", $temp_id);
             $stmt_del_temp->execute();
@@ -673,6 +694,16 @@ try {
             $qty = $qty_in / $ratio;
         } else {
             $qty = $qty_in;
+        }
+
+        // --- RACE CONDITION FIX: LOCK THE STOCK ROW ---
+        if ($jenis_pemakaian === 'hc') {
+            $uid = (int)$user_hc_id;
+            $conn->query("INSERT IGNORE INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty) VALUES ($barang_id, $uid, $klinik_id, 0)");
+            $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = $barang_id AND user_id = $uid AND klinik_id = $klinik_id FOR UPDATE");
+        } else {
+            $conn->query("INSERT IGNORE INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES ($barang_id, $klinik_id, 0)");
+            $conn->query("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = $barang_id AND klinik_id = $klinik_id FOR UPDATE");
         }
 
         // Insert detail

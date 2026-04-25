@@ -126,7 +126,7 @@ function stock_reserve_qty(mysqli $conn, int $klinik_id, int $barang_id, string 
         FROM inventory_booking_detail bd
         JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
         WHERE bp.klinik_id = $klinik_id
-          AND bp.status IN ('booked', 'rescheduled')
+          AND bp.status IN ('booked', 'rescheduled', 'pending_edit')
           AND $reserve_cond
           AND bp.tanggal_pemeriksaan >= '$today'
           AND bd.barang_id = $barang_id

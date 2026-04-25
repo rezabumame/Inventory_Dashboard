@@ -10,7 +10,7 @@ $id = intval($_GET['id']);
 // Fetch booking
 $booking = $conn->query("SELECT b.*, k.nama_klinik FROM inventory_booking_pemeriksaan b JOIN inventory_klinik k ON b.klinik_id = k.id WHERE b.id = $id")->fetch_assoc();
 
-if (!$booking || !in_array($booking['status'], ['booked', 'pending_edit', 'rejected'])) {
+if (!$booking || !in_array($booking['status'], ['booked', 'rescheduled', 'pending_edit', 'rejected'])) {
     $_SESSION['error'] = 'Booking tidak ditemukan atau sudah diproses';
     redirect('index.php?page=booking');
 }

@@ -476,6 +476,7 @@ try {
     run_migration_task("Update: inventory_transfer_barang_detail qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transfer_barang_detail MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_pemakaian_bhp status enum", function() use ($conn) { return $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN status ENUM('active','pending_add','pending_edit','pending_delete','rejected','revised','pending_approval_spv') DEFAULT 'active'") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_booking_pemeriksaan status enum", function() use ($conn) { return $conn->query("ALTER TABLE inventory_booking_pemeriksaan MODIFY COLUMN status ENUM('booked','completed','cancelled','pending_edit','pending_delete','rejected','rescheduled') DEFAULT 'booked'") ? "Updated" : "Failed"; });
+    run_migration_task("Update: inventory_booking_pasien status enum", function() use ($conn) { return $conn->query("ALTER TABLE inventory_booking_pasien MODIFY COLUMN status ENUM('booked','done','rescheduled','cancelled') DEFAULT 'booked'") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_pemakaian_bhp change_source to VARCHAR(64)", function() use ($conn) { return $conn->query("ALTER TABLE inventory_pemakaian_bhp MODIFY COLUMN change_source VARCHAR(64) NULL") ? "Updated" : "Failed"; });
 
     run_migration_task("Table: inventory_booking_request_dedup", function() use ($conn) { return m_ensure_table($conn, "inventory_booking_request_dedup", "CREATE TABLE IF NOT EXISTS inventory_booking_request_dedup (
@@ -586,6 +587,7 @@ try {
     // Indexes
     run_migration_task("Index: inventory_barang uniq_odoo", function() use ($conn) { return m_ensure_unique_if_clean($conn, 'inventory_barang', 'odoo_product_id', 'uniq_odoo_product_id'); });
     run_migration_task("Index: inventory_barang uniq_kode", function() use ($conn) { return m_ensure_unique_if_clean($conn, 'inventory_barang', 'kode_barang', 'uniq_kode_barang'); });
+    run_migration_task("Index: inventory_booking_pemeriksaan uniq_nomor", function() use ($conn) { return m_ensure_unique_if_clean($conn, 'inventory_booking_pemeriksaan', 'nomor_booking', 'nomor_booking'); });
     
     $indices = [
         ['inventory_booking_pemeriksaan', 'idx_bp_klinik_status_tgl', "CREATE INDEX idx_bp_klinik_status_tgl ON inventory_booking_pemeriksaan (klinik_id, status, tanggal_pemeriksaan)"],

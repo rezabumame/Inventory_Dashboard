@@ -351,13 +351,11 @@ if ($active_tab === 'rekap') {
     $mtd_date = date('d M', strtotime("$selected_year-$selected_month-" . ($days_passed ?: 1)));
 
     $where_pb = "pb.status = 'active' AND pb.tanggal BETWEEN '$first_day' AND '$last_day'";
-    $where_bp_completed = "bp.status = 'completed' AND bp.tanggal_pemeriksaan BETWEEN '$first_day' AND '$last_day'";
     $where_bp_all_status = "bp.tanggal_pemeriksaan BETWEEN '$first_day' AND '$last_day'";
     
     if ($selected_klinik && $selected_klinik !== 'all') {
         $kid = (int)$selected_klinik;
         $where_pb .= " AND pb.klinik_id = $kid";
-        $where_bp_completed .= " AND bp.klinik_id = $kid";
         $where_bp_all_status .= " AND bp.klinik_id = $kid";
     }
 
@@ -366,12 +364,14 @@ if ($active_tab === 'rekap') {
     $sellout_data = [];
     while ($row = $res_sellout->fetch_assoc()) $sellout_data[$row['barang_id']] = $row;
 
-    $reserve_sold_query = "SELECT bd.barang_id, SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE (CASE WHEN bp.status_booking NOT LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as onsite, SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE (CASE WHEN bp.status_booking LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as hc FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id WHERE $where_bp_completed GROUP BY bd.barang_id";
+    // Reserve Sold Data (Berdasarkan Pasien yang sudah DONE)
+    $reserve_sold_query = "SELECT pgd.barang_id, SUM(CASE WHEN bp.status_booking NOT LIKE '%HC%' THEN pgd.qty_per_pemeriksaan ELSE 0 END) as onsite, SUM(CASE WHEN bp.status_booking LIKE '%HC%' THEN pgd.qty_per_pemeriksaan ELSE 0 END) as hc FROM inventory_booking_pasien p JOIN inventory_booking_pemeriksaan bp ON p.booking_id = bp.id JOIN inventory_pemeriksaan_grup_detail pgd ON p.pemeriksaan_grup_id = pgd.pemeriksaan_grup_id WHERE $where_bp_all_status AND p.status = 'done' GROUP BY pgd.barang_id";
     $res_reserve_sold = $conn->query($reserve_sold_query);
     $reserve_sold_data = [];
     while ($row = $res_reserve_sold->fetch_assoc()) $reserve_sold_data[$row['barang_id']] = $row;
 
-    $reserve_booked_query = "SELECT bd.barang_id, SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE (CASE WHEN bp.status_booking NOT LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as onsite, SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE (CASE WHEN bp.status_booking LIKE '%HC%' THEN bd.qty_gantung ELSE 0 END) END) as hc FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id WHERE $where_bp_all_status GROUP BY bd.barang_id";
+    // Reserve Booked Data (Total Rencana Awal - Semua status)
+    $reserve_booked_query = "SELECT pgd.barang_id, SUM(CASE WHEN bp.status_booking NOT LIKE '%HC%' THEN pgd.qty_per_pemeriksaan ELSE 0 END) as onsite, SUM(CASE WHEN bp.status_booking LIKE '%HC%' THEN pgd.qty_per_pemeriksaan ELSE 0 END) as hc FROM inventory_booking_pasien p JOIN inventory_booking_pemeriksaan bp ON p.booking_id = bp.id JOIN inventory_pemeriksaan_grup_detail pgd ON p.pemeriksaan_grup_id = pgd.pemeriksaan_grup_id WHERE $where_bp_all_status AND bp.status != 'rejected' GROUP BY pgd.barang_id";
     $res_reserve_booked = $conn->query($reserve_booked_query);
     $reserve_booked_data = [];
     while ($row = $res_reserve_booked->fetch_assoc()) $reserve_booked_data[$row['barang_id']] = $row;
@@ -389,8 +389,11 @@ if ($active_tab === 'rekap') {
             $s_hc = (float)($sellout_data[$bid]['hc'] ?? 0);
             $rs_onsite = (float)($reserve_sold_data[$bid]['onsite'] ?? 0);
             $rs_hc = (float)($reserve_sold_data[$bid]['hc'] ?? 0);
+            
+            // Penguncian: Pastikan Sellout minimal sama dengan Reserve-Sold agar tidak minus
             if ($s_onsite < $rs_onsite) $s_onsite = $rs_onsite;
             if ($s_hc < $rs_hc) $s_hc = $rs_hc;
+
             $s_total = $s_onsite + $s_hc;
             $rb_onsite = (float)($reserve_booked_data[$bid]['onsite'] ?? 0);
             $rb_hc = (float)($reserve_booked_data[$bid]['hc'] ?? 0);
@@ -613,7 +616,7 @@ if ($active_tab === 'rekap') {
         <div class="d-flex align-items-center"><label class="small fw-bold text-muted me-2 mb-0">Cari:</label><input type="text" id="customSearch" class="form-control form-control-sm" style="width: 200px;"></div>
     </div><div class="table-responsive"><table class="table table-bordered mb-0" id="tableSummary" style="font-size:0.85rem">
         <thead>
-            <tr><th rowspan="2" class="text-center">Kode</th><th rowspan="2">Nama Barang</th><th rowspan="2" class="text-center">Satuan</th><th colspan="3" class="text-center">Sellout</th><th colspan="2" class="text-center">Non-Reserve</th><th colspan="2" class="text-center">Reserve-Sold</th><th colspan="2" class="text-center">Reserve-Booked</th></tr>
+            <tr><th rowspan="2" class="text-center">Kode</th><th rowspan="2">Nama Barang</th><th rowspan="2" class="text-center">Satuan</th><th colspan="3" class="text-center">Sellout</th><th colspan="2" class="text-center">Non-Reserve<br><small style="text-transform: none; opacity: 0.8;">(Incl. Adjustment)</small></th><th colspan="2" class="text-center">Reserve-Sold</th><th colspan="2" class="text-center">Reserve-Booked</th></tr>
             <tr><th class="text-center">Total</th><th class="text-center">Onsite</th><th class="text-center">HC</th><th class="text-center">Onsite</th><th class="text-center">HC</th><th class="text-center">Onsite</th><th class="text-center">HC</th><th class="text-center">Onsite</th><th class="text-center">HC</th></tr>
         </thead>
         <tbody>

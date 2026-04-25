@@ -32,7 +32,8 @@ try {
             'inventory_booking_detail',
             'inventory_booking_pasien',
             'inventory_booking_pemeriksaan',
-            'inventory_booking_request_dedup'
+            'inventory_booking_request_dedup',
+            'inventory_booking_history'
         ],
         'request' => [
             'inventory_request_barang_detail',
@@ -51,9 +52,6 @@ try {
         'history' => [
             'inventory_transaksi_stok',
             'inventory_upload_logs'
-        ],
-        'booking_history' => [
-            'inventory_booking_history'
         ]
     ];
 

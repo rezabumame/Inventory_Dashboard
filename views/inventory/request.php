@@ -1,8 +1,43 @@
 <?php
+
 check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik']);
 require_once __DIR__ . '/../../lib/counter.php';
 require_once __DIR__ . '/../../lib/stock.php';
 require_once __DIR__ . '/../../config/settings.php';
+
+// PAGINATION LOGIC
+$items_per_page = 10;
+$current_page = isset($_GET['p']) ? max(1, (int)$_GET['p']) : 1;
+$offset = ($current_page - 1) * $items_per_page;
+
+function renderPagination($total_pages, $current_page) {
+    if ($total_pages <= 1) return '';
+    $query_params = $_GET;
+    unset($query_params['p']);
+    $base_url = 'index.php?' . http_build_query($query_params);
+    $html = '<nav aria-label="Page navigation" class="mt-4"><ul class="pagination pagination-circular justify-content-end">';
+    $prev_class = ($current_page <= 1) ? 'disabled' : '';
+    $html .= '<li class="page-item ' . $prev_class . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page - 1) . '"><i class="fas fa-chevron-left"></i></a></li>';
+    $start = max(1, $current_page - 2);
+    $end = min($total_pages, $current_page + 2);
+    if ($start > 1) {
+        $html .= '<li class="page-item"><a class="page-link shadow-sm" href="' . $base_url . '&p=1">1</a></li>';
+        if ($start > 2) $html .= '<li class="page-item disabled"><span class="page-link border-0">...</span></li>';
+    }
+    for ($i = $start; $i <= $end; $i++) {
+        $active = ($i == $current_page) ? 'active' : '';
+        $html .= '<li class="page-item ' . $active . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $i . '">' . $i . '</a></li>';
+    }
+    if ($end < $total_pages) {
+        if ($end < $total_pages - 1) $html .= '<li class="page-item disabled"><span class="page-link border-0">...</span></li>';
+        $html .= '<li class="page-item"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $total_pages . '">' . $total_pages . '</a></li>';
+    }
+    $next_class = ($current_page >= $total_pages) ? 'disabled' : '';
+    $html .= '<li class="page-item ' . $next_class . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page + 1) . '"><i class="fas fa-chevron-right"></i></a></li>';
+    $html .= '</ul></nav>';
+    return $html;
+}
+
 
 $message = '';
 $user_id = $_SESSION['user_id'];
@@ -574,7 +609,24 @@ $incoming_requests = [];
 if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_hc'], true)) {
     if ($user_role === 'super_admin') {
         // Super Admin: Lihat semua request keluar
-        $query = "SELECT 
+        
+    // Count Outgoing
+    $query_base = "SELECT 
+                    r.*, 
+                    u.nama_lengkap as requestor_name,
+                    CASE
+                        WHEN r.ke_level = 'klinik' THEN CONCAT('Klinik - ', COALESCE(k_to.nama_klinik, '-'))
+                        WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
+                        ELSE UPPER(r.ke_level)
+                    END AS tujuan_label
+                  FROM inventory_request_barang r 
+                  JOIN inventory_users u ON r.created_by = u.id
+                  LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+                  ORDER BY r.created_at DESC";
+    $count_sql = preg_replace("/SELECT.*?FROM/s", "SELECT COUNT(*) as cnt FROM", $query_base);
+    $total_out = (int)($conn->query($count_sql)->fetch_assoc()['cnt'] ?? 0);
+    $total_pages_out = ceil($total_out / $items_per_page);
+    $query = "SELECT 
                     r.*, 
                     u.nama_lengkap as requestor_name,
                     CASE
@@ -586,10 +638,28 @@ if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_
                   JOIN inventory_users u ON r.created_by = u.id
                   LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
                   ORDER BY r.created_at DESC
-                  LIMIT 500";
+                   LIMIT $items_per_page OFFSET $offset";
     } elseif ($user_role === 'spv_klinik') {
         // SPV melihat semua request dari kliniknya (permintaan saya = klinik saya)
-        $query = "SELECT 
+        
+    // Count Outgoing
+    $query_base = "SELECT 
+                    r.*, 
+                    u.nama_lengkap as requestor_name,
+                    CASE
+                        WHEN r.ke_level = 'klinik' THEN CONCAT('Klinik - ', COALESCE(k_to.nama_klinik, '-'))
+                        WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
+                        ELSE UPPER(r.ke_level)
+                    END AS tujuan_label
+                  FROM inventory_request_barang r 
+                  JOIN inventory_users u ON r.created_by = u.id
+                  LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+                  WHERE r.dari_level = 'klinik' AND r.dari_id = $user_klinik
+                  ORDER BY r.created_at DESC";
+    $count_sql = preg_replace("/SELECT.*?FROM/s", "SELECT COUNT(*) as cnt FROM", $query_base);
+    $total_out = (int)($conn->query($count_sql)->fetch_assoc()['cnt'] ?? 0);
+    $total_pages_out = ceil($total_out / $items_per_page);
+    $query = "SELECT 
                     r.*, 
                     u.nama_lengkap as requestor_name,
                     CASE
@@ -602,10 +672,28 @@ if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_
                   LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
                   WHERE r.dari_level = 'klinik' AND r.dari_id = $user_klinik
                   ORDER BY r.created_at DESC
-                  LIMIT 500";
+                   LIMIT $items_per_page OFFSET $offset";
     } else {
         // Admin Klinik & Petugas HC: permintaan saya = yang saya buat
-        $query = "SELECT 
+        
+    // Count Outgoing
+    $query_base = "SELECT 
+                    r.*, 
+                    u.nama_lengkap as requestor_name,
+                    CASE
+                        WHEN r.ke_level = 'klinik' THEN CONCAT('Klinik - ', COALESCE(k_to.nama_klinik, '-'))
+                        WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
+                        ELSE UPPER(r.ke_level)
+                    END AS tujuan_label
+                  FROM inventory_request_barang r 
+                  JOIN inventory_users u ON r.created_by = u.id
+                  LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+                  WHERE r.created_by = $user_id 
+                  ORDER BY r.created_at DESC";
+    $count_sql = preg_replace("/SELECT.*?FROM/s", "SELECT COUNT(*) as cnt FROM", $query_base);
+    $total_out = (int)($conn->query($count_sql)->fetch_assoc()['cnt'] ?? 0);
+    $total_pages_out = ceil($total_out / $items_per_page);
+    $query = "SELECT 
                     r.*, 
                     u.nama_lengkap as requestor_name,
                     CASE
@@ -618,7 +706,7 @@ if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_
                   LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
                   WHERE r.created_by = $user_id 
                   ORDER BY r.created_at DESC
-                  LIMIT 500";
+                   LIMIT $items_per_page OFFSET $offset";
     }
     $res = $conn->query($query);
     while($row = $res->fetch_assoc()) $outgoing_requests[] = $row;
@@ -638,6 +726,11 @@ if (in_array($user_role, ['admin_gudang', 'admin_klinik', 'spv_klinik', 'super_a
         $where = "r.ke_level = 'klinik' AND r.ke_id = $user_klinik AND r.status NOT IN ('pending_spv','rejected_spv')";
     }
 
+    
+    // Count Incoming
+    $count_sql = "SELECT COUNT(*) as cnt FROM inventory_request_barang r WHERE $where";
+    $total_in = (int)($conn->query($count_sql)->fetch_assoc()['cnt'] ?? 0);
+    $total_pages_in = ceil($total_in / $items_per_page);
     $query = "SELECT r.*, u.nama_lengkap as requestor_name 
               , CASE
                     WHEN r.dari_level = 'klinik' THEN CONCAT('Klinik - ', COALESCE(k_from.nama_klinik, '-'))
@@ -655,7 +748,7 @@ if (in_array($user_role, ['admin_gudang', 'admin_klinik', 'spv_klinik', 'super_a
               LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
               WHERE $where
               ORDER BY r.created_at DESC
-              LIMIT 500";
+               LIMIT $items_per_page OFFSET $offset";
     $res = $conn->query($query);
     while($row = $res->fetch_assoc()) $incoming_requests[] = $row;
 }
@@ -864,6 +957,7 @@ function get_status_badge($status) {
                         </tbody>
                     </table>
                 </div>
+                <?= $active_tab === "outgoing" ? renderPagination($total_pages_out, $current_page) : "" ?>
             </div>
         </div>
     </div>
@@ -1511,4 +1605,34 @@ function cancelRequest(id) {
         }
     });
 }
+
+<style>
+    /* CIRCULAR PAGINATION STYLING */
+    .pagination-circular .page-item { margin: 0 4px; }
+    .pagination-circular .page-link {
+        border-radius: 50% !important;
+        width: 40px; height: 40px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
+        transition: all 0.2s ease; background: #fff;
+    }
+    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
+    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
+    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
+</style>
+
+<script>
+$(document).ready(function() {
+    $(".datatable").each(function() {
+        if ($.fn.DataTable.isDataTable($(this))) {
+            $(this).DataTable().destroy();
+        }
+        $(this).DataTable({
+            "paging": false,
+            "info": false,
+            "searching": true,
+            "ordering": true
+        });
+    });
+});
 </script>

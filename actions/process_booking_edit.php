@@ -78,7 +78,7 @@ try {
     // Get booking info
     $booking = $conn->query("SELECT * FROM inventory_booking_pemeriksaan WHERE id = $booking_id")->fetch_assoc();
     
-    if (!$booking || !in_array($booking['status'], ['booked', 'pending_edit', 'rejected'])) {
+    if (!$booking || !in_array($booking['status'], ['booked', 'rescheduled', 'pending_edit', 'rejected'])) {
         throw new Exception('Booking tidak ditemukan atau status tidak valid');
     }
 
