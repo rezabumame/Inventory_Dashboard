@@ -88,6 +88,72 @@ if ($can_cs_edit) {
         background-color: rgba(0,0,0,0.03);
     }
     .x-small { font-size: 0.75rem !important; }
+
+    /* REDESIGN: Patient Pax Cards (Sync with List) */
+    .pax-section-card {
+        border: 1px solid #e2e8f0 !important;
+        border-left: 5px solid #204EAB !important;
+        border-radius: 12px !important;
+        transition: transform 0.2s, box-shadow 0.2s;
+        overflow: hidden;
+    }
+    .pax-section-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(32, 78, 171, 0.12) !important;
+    }
+    .pax-card-header {
+        background: #fff !important;
+        border-bottom: 1px solid #f1f5f9 !important;
+        padding: 12px 16px !important;
+    }
+    .pax-title {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #1e293b;
+        display: flex;
+        align-items: center;
+    }
+    .pax-title i {
+        color: #204EAB;
+        margin-right: 10px;
+        font-size: 1rem;
+    }
+    .pax-label-minimal {
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #64748b;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        display: block;
+    }
+    .pax-exam-container {
+        background: #f8fafc;
+        border-radius: 10px;
+        padding: 12px;
+        border: 1px solid #f1f5f9;
+    }
+    .pax-exam-label {
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #20AB5C;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .pax-exam-label i { margin-right: 6px; }
+
+    /* Hide Spin Buttons */
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    input[type=number] {
+        -moz-appearance: textfield;
+    }
 </style>
 
 <div class="modal fade" id="modalEditBookingReal" tabindex="-1" aria-hidden="true">
@@ -132,7 +198,7 @@ if ($can_cs_edit) {
                                                 <label class="btn-segmented" for="edit_status_hc">HC</label>
                                             </div>
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-4">
                                             <label class="form-label fw-semibold">Klinik <span class="text-danger">*</span></label>
                                             <select name="new_klinik_id" id="edit_klinik_id" class="form-select" required>
                                                 <?php 
@@ -145,7 +211,7 @@ if ($can_cs_edit) {
                                                 <?php endwhile; ?>
                                             </select>
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-2">
                                             <label class="form-label fw-semibold">Jumlah Pax <span class="text-danger">*</span></label>
                                             <input type="number" name="jumlah_pax" id="edit_jumlah_pax" class="form-control" min="1" value="<?= (int)$booking['jumlah_pax'] ?>" required>
                                         </div>
@@ -250,36 +316,51 @@ if ($can_cs_edit) {
             var data = existingData[i] || { nama: '', nomor_tlp: '', tanggal_lahir: '', exams: [] };
             
             var card = `
-                <div class="card border-0 shadow-sm mb-3 pax-section-card" data-patient-idx="${i}">
-                    <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center py-2">
-                        <span class="small"><i class="fas fa-user me-2 text-primary"></i>Pasien ${num} ${i === 0 ? '(Utama)' : ''}</span>
+                <div class="card pax-section-card mb-4" data-patient-idx="${i}">
+                    <div class="pax-card-header d-flex justify-content-between align-items-center">
+                        <div class="pax-title">
+                            <i class="fas fa-user-circle"></i>
+                            Pasien ${num} ${i === 0 ? '<span class="badge bg-primary-custom ms-2" style="font-size: 0.65rem;">UTAMA</span>' : ''}
+                        </div>
                         <div class="d-flex align-items-center gap-2">
                             <button type="button" class="btn btn-outline-danger btn-sm border-0 py-0 btn-remove-patient" data-patient-idx="${i}" title="Hapus Pasien ini">
-                                <i class="fas fa-trash-alt me-1"></i><span class="x-small">Hapus</span>
+                                <i class="fas fa-trash-alt me-1"></i><span class="x-small fw-bold">HAPUS</span>
                             </button>
                         </div>
                     </div>
-                    <div class="card-body py-2">
-                        <div class="row g-2 mb-2">
+                    <div class="card-body py-3">
+                        <div class="row g-3 mb-3">
                             <div class="col-md-4">
-                                <label class="form-label x-small fw-semibold mb-1">Nama Pasien ${i === 0 ? '<span class="text-danger">*</span>' : ''}</label>
-                                <input type="text" name="patients[${i}][nama]" class="form-control form-control-sm" value="${data.nama || ''}" ${i === 0 ? 'required' : ''}>
+                                <label class="pax-label-minimal">Nama Pasien ${i === 0 ? '<span class="text-danger">*</span>' : ''}</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-id-card"></i></span>
+                                    <input type="text" name="patients[${i}][nama]" class="form-control ps-1 border-start-0" placeholder="Nama Lengkap" value="${data.nama || ''}" ${i === 0 ? 'required' : ''}>
+                                </div>
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label x-small fw-semibold mb-1">Nomor Tlp</label>
-                                <input type="text" name="patients[${i}][nomor_tlp]" class="form-control form-control-sm" value="${data.nomor_tlp || ''}">
+                                <label class="pax-label-minimal">Nomor Tlp</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-phone-alt"></i></span>
+                                    <input type="text" name="patients[${i}][nomor_tlp]" class="form-control ps-1 border-start-0" placeholder="08xxxxxxxx" value="${data.nomor_tlp || ''}">
+                                </div>
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label x-small fw-semibold mb-1">Tanggal Lahir</label>
-                                <input type="date" name="patients[${i}][tanggal_lahir]" class="form-control form-control-sm" value="${data.tanggal_lahir || ''}">
+                                <label class="pax-label-minimal">Tanggal Lahir</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-calendar-alt"></i></span>
+                                    <input type="date" name="patients[${i}][tanggal_lahir]" class="form-control ps-1 border-start-0" value="${data.tanggal_lahir || ''}">
+                                </div>
                             </div>
                         </div>
-                        <div class="pemeriksaan-section">
-                            <label class="form-label x-small fw-bold text-success mb-1"><i class="fas fa-notes-medical me-1"></i>Pemeriksaan</label>
+                        
+                        <div class="pax-exam-container">
+                            <label class="pax-exam-label"><i class="fas fa-microscope"></i> Paket Pemeriksaan</label>
                             <div class="patient-exams-list" data-patient-idx="${i}"></div>
-                            <button type="button" class="btn btn-link btn-sm text-success p-0 mt-0 x-small btn-add-exam" data-patient-idx="${i}">
-                                <i class="fas fa-plus-circle me-1"></i>Tambah Pemeriksaan
-                            </button>
+                            <div class="mt-2">
+                                <button type="button" class="btn btn-link btn-sm text-success p-0 fw-bold x-small text-decoration-none btn-add-exam" data-patient-idx="${i}">
+                                    <i class="fas fa-plus-circle me-1"></i>TAMBAH PEMERIKSAAN
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>`;

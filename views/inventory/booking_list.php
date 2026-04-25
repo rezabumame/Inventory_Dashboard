@@ -340,6 +340,72 @@ if (!empty($booking_ids)) {
         cursor: not-allowed;
     }
     .x-small { font-size: 0.75rem !important; }
+
+    /* REDESIGN: Patient Pax Cards */
+    .pax-section-card {
+        border: 1px solid #e2e8f0 !important;
+        border-left: 5px solid #204EAB !important;
+        border-radius: 12px !important;
+        transition: transform 0.2s, box-shadow 0.2s;
+        overflow: hidden;
+    }
+    .pax-section-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(32, 78, 171, 0.12) !important;
+    }
+    .pax-card-header {
+        background: #fff !important;
+        border-bottom: 1px solid #f1f5f9 !important;
+        padding: 12px 16px !important;
+    }
+    .pax-title {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #1e293b;
+        display: flex;
+        align-items: center;
+    }
+    .pax-title i {
+        color: #204EAB;
+        margin-right: 10px;
+        font-size: 1rem;
+    }
+    .pax-label-minimal {
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #64748b;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        display: block;
+    }
+    .pax-exam-container {
+        background: #f8fafc;
+        border-radius: 10px;
+        padding: 12px;
+        border: 1px solid #f1f5f9;
+    }
+    .pax-exam-label {
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #20AB5C;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .pax-exam-label i { margin-right: 6px; }
+
+    /* Hide Spin Buttons */
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    input[type=number] {
+        -moz-appearance: textfield;
+    }
 </style>
 
 <div class="card booking-filter-card shadow-sm mb-3">
@@ -698,11 +764,11 @@ if (!empty($booking_ids)) {
 <div class="modal fade" id="modalBookingBaru" tabindex="-1" aria-labelledby="modalBookingBaruLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold" id="modalBookingBaruLabel">
+            <div class="modal-header" style="background-color: #204EAB;">
+                <h5 class="modal-title fw-bold text-white" id="modalBookingBaruLabel">
                     <i class="fas fa-calendar-plus me-2"></i>Buat Booking Baru
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form id="formBooking" method="POST">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
@@ -735,7 +801,7 @@ if (!empty($booking_ids)) {
                                                 <label class="btn-segmented" for="status_hc">HC</label>
                                             </div>
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-4">
                                             <label class="form-label fw-semibold">Klinik <span class="text-danger">*</span></label>
                                             <select name="klinik_id" id="klinik_id_modal" class="form-select" required>
                                                 <option value="">Pilih Klinik...</option>
@@ -747,7 +813,7 @@ if (!empty($booking_ids)) {
                                                 <?php endwhile; ?>
                                             </select>
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-2">
                                             <label class="form-label fw-semibold">Jumlah Pax <span class="text-danger">*</span></label>
                                             <input type="number" name="jumlah_pax" id="jumlah_pax" class="form-control" min="1" value="1" required>
                                         </div>
@@ -1035,33 +1101,47 @@ window.renderPaxSections = function(paxCount) {
         var data = existingData[i] || { nama: '', tlp: '', dob: '', exams: [] };
         
         var card = `
-            <div class="card border-0 shadow-sm mb-3 pax-section-card" data-patient-idx="${i}">
-                <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center py-2">
-                    <span class="small"><i class="fas fa-user me-2 text-primary"></i>Pasien ${num} ${i === 0 ? '(Utama)' : ''}</span>
-                    ${i > 0 ? '<span class="badge bg-light text-muted fw-normal x-small border">Opsional</span>' : ''}
+            <div class="card pax-section-card mb-4" data-patient-idx="${i}">
+                <div class="pax-card-header d-flex justify-content-between align-items-center">
+                    <div class="pax-title">
+                        <i class="fas fa-user-circle"></i>
+                        Pasien ${num} ${i === 0 ? '<span class="badge bg-primary-custom ms-2" style="font-size: 0.65rem;">UTAMA</span>' : ''}
+                    </div>
+                    ${i > 0 ? '<span class="badge bg-light text-muted fw-bold x-small border px-2">OPSIONAL</span>' : ''}
                 </div>
-                <div class="card-body py-2">
-                    <div class="row g-2 mb-2">
+                <div class="card-body py-3">
+                    <div class="row g-3 mb-3">
                         <div class="col-md-4">
-                            <label class="form-label x-small fw-semibold mb-1">Nama Pasien ${i === 0 ? '<span class="text-danger">*</span>' : ''}</label>
-                            <input type="text" name="patients[${i}][nama]" class="form-control form-control-sm" placeholder="Nama Pasien ${num}" value="${data.nama}" ${i === 0 ? 'required' : ''}>
+                            <label class="pax-label-minimal">Nama Pasien ${i === 0 ? '<span class="text-danger">*</span>' : ''}</label>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-id-card"></i></span>
+                                <input type="text" name="patients[${i}][nama]" class="form-control ps-1 border-start-0" placeholder="Nama Lengkap" value="${data.nama}" ${i === 0 ? 'required' : ''}>
+                            </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label x-small fw-semibold mb-1">Nomor Tlp</label>
-                            <input type="text" name="patients[${i}][nomor_tlp]" class="form-control form-control-sm" placeholder="08xxxxxxxxxx" value="${data.tlp}">
+                            <label class="pax-label-minimal">Nomor Tlp</label>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-phone-alt"></i></span>
+                                <input type="text" name="patients[${i}][nomor_tlp]" class="form-control ps-1 border-start-0" placeholder="08xxxxxxxx" value="${data.tlp}">
+                            </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label x-small fw-semibold mb-1">Tanggal Lahir</label>
-                            <input type="date" name="patients[${i}][tanggal_lahir]" class="form-control form-control-sm" value="${data.dob}">
+                            <label class="pax-label-minimal">Tanggal Lahir</label>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-calendar-alt"></i></span>
+                                <input type="date" name="patients[${i}][tanggal_lahir]" class="form-control ps-1 border-start-0" value="${data.dob}">
+                            </div>
                         </div>
                     </div>
                     
-                    <div class="pemeriksaan-section">
-                        <label class="form-label x-small fw-bold text-success mb-1"><i class="fas fa-notes-medical me-1"></i>Pemeriksaan</label>
+                    <div class="pax-exam-container">
+                        <label class="pax-exam-label"><i class="fas fa-microscope"></i> Paket Pemeriksaan</label>
                         <div class="patient-exams-list" data-patient-idx="${i}"></div>
-                        <button type="button" class="btn btn-link btn-sm text-success p-0 mt-0 x-small" onclick="addPatientExamRow(${i})">
-                            <i class="fas fa-plus-circle me-1"></i>Tambah Pemeriksaan
-                        </button>
+                        <div class="mt-2">
+                            <button type="button" class="btn btn-link btn-sm text-success p-0 fw-bold x-small text-decoration-none" onclick="addPatientExamRow(${i})">
+                                <i class="fas fa-plus-circle me-1"></i>TAMBAH PEMERIKSAAN
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>`;
@@ -1787,21 +1867,29 @@ window.renderAdjustPaxSections = function() {
     for (var i = 0; i < addCount; i++) {
         var num = currentPax + i + 1;
         var section = `
-            <div class="card border shadow-sm mb-3">
-                <div class="card-header bg-light py-2">
-                    <span class="small fw-bold"><i class="fas fa-user-plus me-1 text-primary"></i>Data Pasien ${num}</span>
-                </div>
-                <div class="card-body p-3">
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold mb-1">Nama Pasien</label>
-                        <input type="text" name="additional_patients[${i}][nama]" class="form-control form-control-sm" placeholder="Pasien ${num}" value="Pasien ${num}">
+            <div class="card pax-section-card mb-3">
+                <div class="pax-card-header d-flex justify-content-between align-items-center">
+                    <div class="pax-title">
+                        <i class="fas fa-user-plus"></i>
+                        Data Pasien Tambahan ${num}
                     </div>
-                    <div>
-                        <label class="form-label small fw-bold text-success mb-1"><i class="fas fa-notes-medical me-1"></i>Pemeriksaan</label>
+                </div>
+                <div class="card-body py-3">
+                    <div class="mb-3">
+                        <label class="pax-label-minimal">Nama Pasien</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-id-card"></i></span>
+                            <input type="text" name="additional_patients[${i}][nama]" class="form-control ps-1 border-start-0" placeholder="Pasien ${num}" value="Pasien ${num}">
+                        </div>
+                    </div>
+                    <div class="pax-exam-container">
+                        <label class="pax-exam-label"><i class="fas fa-microscope"></i> Pemeriksaan</label>
                         <div class="additional-exams-list" data-idx="${i}"></div>
-                        <button type="button" class="btn btn-link btn-sm text-success p-0 x-small" onclick="addAdditionalExamRow(${i}, '${primaryExamId}')">
-                            <i class="fas fa-plus-circle me-1"></i>Tambah Pemeriksaan
-                        </button>
+                        <div class="mt-2">
+                            <button type="button" class="btn btn-link btn-sm text-success p-0 fw-bold x-small text-decoration-none" onclick="addAdditionalExamRow(${i}, '${primaryExamId}')">
+                                <i class="fas fa-plus-circle me-1"></i>TAMBAH PEMERIKSAAN
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>`;
