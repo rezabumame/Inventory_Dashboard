@@ -100,11 +100,10 @@ $stmt = $conn->prepare("
         bp.nama_pasien, 
         bp.nomor_tlp, 
         bp.tanggal_lahir,
-        -- Status agregasi: prioritaskan rescheduled, lalu partial, lalu done
+        -- Status agregasi: prioritaskan rescheduled, lalu done (meskipun baru sebagian sesuai request user)
         CASE 
             WHEN SUM(CASE WHEN bp.status = 'rescheduled' THEN 1 ELSE 0 END) > 0 THEN 'rescheduled'
-            WHEN SUM(CASE WHEN bp.status = 'done' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN bp.status != 'done' THEN 1 ELSE 0 END) > 0 THEN 'partial'
-            WHEN SUM(CASE WHEN bp.status = 'done' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN bp.status != 'done' THEN 1 ELSE 0 END) = 0 THEN 'done'
+            WHEN SUM(CASE WHEN bp.status = 'done' THEN 1 ELSE 0 END) > 0 THEN 'done'
             WHEN SUM(CASE WHEN bp.status = 'cancelled' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN bp.status != 'cancelled' THEN 1 ELSE 0 END) = 0 THEN 'cancelled'
             ELSE 'booked'
         END as status,
