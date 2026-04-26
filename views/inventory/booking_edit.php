@@ -237,10 +237,7 @@ if ($can_cs_edit) {
                                                 <input type="radio" class="btn-check" name="booking_type" id="edit_type_fixed" value="fixed" <?= $bt === 'fixed' ? 'checked' : '' ?>>
                                                 <label class="btn-segmented" for="edit_type_fixed">Fixed</label>
 
-                                                <?php if ($can_cs_edit): ?>
-                                                <input type="radio" class="btn-check" name="booking_type" id="edit_type_cancel" value="cancel" <?= $bt === 'cancel' ? 'checked' : '' ?>>
-                                                <label class="btn-segmented" for="edit_type_cancel">Cancel</label>
-                                                <?php endif; ?>
+
                                             </div>
                                         </div>
                                         <div class="col-md-4">
