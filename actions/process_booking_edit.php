@@ -37,6 +37,10 @@ $jotform_submitted = isset($_POST['jotform_submitted']) ? (int)$_POST['jotform_s
 $new_klinik_id = (int)($_POST['new_klinik_id'] ?? 0);
 $new_status_booking = trim((string)($_POST['new_status_booking'] ?? ''));
 $jumlah_pax = (int)($_POST['jumlah_pax'] ?? 0);
+if ($jumlah_pax > 10) {
+    echo json_encode(['success' => false, 'message' => 'Maksimal jumlah pax adalah 10!']);
+    exit;
+}
 $request_reason = trim((string)($_POST['request_reason'] ?? ''));
 
 if (empty($patients)) {

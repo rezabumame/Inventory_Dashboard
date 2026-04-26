@@ -30,8 +30,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $msg = '<div class="alert alert-success">Koneksi RPC tersimpan.</div>';
     } else if ($form_type === 'hooks') {
         $lark = trim((string)($_POST['webhook_lark_url'] ?? ''));
+        $lark_booking = trim((string)($_POST['webhook_lark_booking_url'] ?? ''));
+        $lark_at_id = trim((string)($_POST['webhook_lark_booking_at_id'] ?? ''));
         $gsheet = trim((string)($_POST['gsheet_booking_webhook_url'] ?? ''));
         set_setting('webhook_lark_url', $lark);
+        set_setting('webhook_lark_booking_url', $lark_booking);
+        set_setting('webhook_lark_booking_at_id', $lark_at_id);
         set_setting('gsheet_booking_webhook_url', $gsheet);
         $msg = '<div class="alert alert-success">Webhook tersimpan.</div>';
     } else if ($form_type === 'public_access') {
@@ -71,6 +75,8 @@ $rpc_password_saved = ((string)get_setting('odoo_rpc_password', '')) !== '';
 $gudang_location_code = trim((string)get_setting('odoo_location_gudang_utama', ''));
 $integration_method = get_setting('odoo_integration_method', $rpc_url !== '' ? 'rpc' : 'api');
 $lark_webhook = trim((string)get_setting('webhook_lark_url', ''));
+$lark_booking_webhook = trim((string)get_setting('webhook_lark_booking_url', ''));
+$lark_booking_at_id = trim((string)get_setting('webhook_lark_booking_at_id', ''));
 $gsheet_webhook = trim((string)get_setting('gsheet_booking_webhook_url', ''));
 $public_stok_token = trim((string)get_setting('public_stok_token', ''));
 $scheduler_token_saved = trim((string)get_setting('odoo_sync_token', ''));
@@ -448,9 +454,22 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                 <form method="POST" class="row g-3">
                     <input type="hidden" name="form_type" value="hooks">
                     <div class="col-12">
-                        <label class="form-label">Lark Webhook URL</label>
+                        <label class="form-label">Lark Webhook URL (Stock / Odoo)</label>
                         <input type="url" class="form-control" name="webhook_lark_url" value="<?= htmlspecialchars($lark_webhook) ?>" placeholder="https://open.larksuite.com/...">
-                        <div class="form-text">Notifikasi ringkasan sinkronisasi Odoo</div>
+                        <div class="form-text">Notifikasi ringkasan sinkronisasi stok Odoo</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Lark Webhook URL (Booking FU / Reschedule)</label>
+                        <input type="url" class="form-control" name="webhook_lark_booking_url" value="<?= htmlspecialchars($lark_booking_webhook) ?>" placeholder="https://open.larksuite.com/...">
+                        <div class="form-text">Notifikasi jika status booking menjadi FU atau Reschedule</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Lark Open ID to Tag (Optional)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">@</span>
+                            <input type="text" name="webhook_lark_booking_at_id" class="form-control" value="<?= htmlspecialchars($lark_booking_at_id) ?>" placeholder="Contoh: ou_xxxxxx">
+                        </div>
+                        <div class="form-text mt-1">Masukkan Open ID user untuk mention otomatis di notifikasi booking. Gunakan tanda koma (,) untuk memasukkan lebih dari satu ID.</div>
                     </div>
                     <div class="col-12">
                         <label class="form-label">GSheets Webhook (Booking)</label>

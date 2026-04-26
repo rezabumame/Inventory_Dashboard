@@ -812,7 +812,7 @@ if (!empty($booking_ids)) {
                                         </div>
                                         <div class="col-md-2">
                                             <label class="form-label fw-semibold">Jumlah Pax <span class="text-danger">*</span></label>
-                                            <input type="number" name="jumlah_pax" id="jumlah_pax" class="form-control" min="1" value="1" required>
+                                            <input type="number" name="jumlah_pax" id="jumlah_pax" class="form-control" min="1" max="10" value="1" required>
                                         </div>
                                         <div class="col-md-3" id="order_id_container_modal" style="display: none;">
                                             <label class="form-label fw-semibold">Order ID</label>
@@ -1923,7 +1923,9 @@ $(document).on('input', '#adjustAdditionalPax', function() {
 window.submitAdjust = function() {
     const id = $('#adjustBookingId').val();
     const add = parseInt($('#adjustAdditionalPax').val());
+    const current = parseInt($('#adjustCurrentPax').text()) || 0;
     if (!add || add < 1) { showWarning('Minimal 1!'); return; }
+    if (current + add > 10) { showWarning('Total pax tidak boleh lebih dari 10!'); return; }
     
     // Collect data pasien tambahan
     var patients = [];
@@ -2418,7 +2420,7 @@ window.openActionHub = function(data) {
                     <label class="form-label fw-bold">
                         <i class="fas fa-user-plus"></i> Tambahan Pax <span class="text-danger">*</span>
                     </label>
-                    <input type="number" id="adjustAdditionalPax" class="form-control" min="1" value="1" required>
+                    <input type="number" id="adjustAdditionalPax" class="form-control" min="1" max="10" value="1" required>
                     <small class="text-muted">Masukkan jumlah pax tambahan</small>
                 </div>
                 

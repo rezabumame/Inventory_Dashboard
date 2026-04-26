@@ -458,6 +458,8 @@ INSERT INTO `inventory_app_settings` (`k`,`v`) VALUES ('odoo_sync_time','15:45')
 INSERT INTO `inventory_app_settings` (`k`,`v`) VALUES ('odoo_sync_token','bumame-sync-20260328');
 INSERT INTO `inventory_app_settings` (`k`,`v`) VALUES ('odoo_sync_weekday','1');
 INSERT INTO `inventory_app_settings` (`k`,`v`) VALUES ('webhook_lark_url','https://open.larksuite.com/open-apis/bot/v2/hook/b5fb86a4-f554-4deb-b60b-e03d550847bc');
+INSERT INTO `inventory_app_settings` (`k`,`v`) VALUES ('webhook_lark_booking_url','');
+INSERT INTO `inventory_app_settings` (`k`,`v`) VALUES ('webhook_lark_booking_at_id','');
 
 -- Data for table `odoo_format_config` --
 INSERT INTO `inventory_odoo_format_config` (`id`,`internal_reference`,`name`,`uom`,`product_category`,`income_account`,`valuation_account`,`expense_account`,`created_at`,`updated_at`) VALUES ('1','365','10394246001 - Sample Cup','Pcs','MCU / Laboratory Test','410101001 PENDAPATAN USAHA LAB - MCU','110501001 PERSEDIAAN BARANG PRODUK MCU','510101001 BEBAN LANGSUNG PENDAPATAN LAB - MCU','2026-03-31 18:57:13','2026-03-31 18:57:13');

@@ -213,7 +213,7 @@ if ($can_cs_edit) {
                                         </div>
                                         <div class="col-md-2">
                                             <label class="form-label fw-semibold">Jumlah Pax <span class="text-danger">*</span></label>
-                                            <input type="number" name="jumlah_pax" id="edit_jumlah_pax" class="form-control" min="1" value="<?= (int)$booking['jumlah_pax'] ?>" required>
+                                            <input type="number" name="jumlah_pax" id="edit_jumlah_pax" class="form-control" min="1" max="10" value="<?= (int)$booking['jumlah_pax'] ?>" required>
                                         </div>
                                         <div class="col-md-3" id="edit_order_id_container" style="<?= stripos($booking['status_booking'], 'HC') !== false ? '' : 'display: none;' ?>">
                                             <label class="form-label fw-semibold">Order ID</label>

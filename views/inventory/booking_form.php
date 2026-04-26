@@ -210,6 +210,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $nomor_tlp = !empty($_POST['nomor_tlp']) ? trim((string)$_POST['nomor_tlp']) : null;
     $tanggal_lahir = !empty($_POST['tanggal_lahir']) ? (string)$_POST['tanggal_lahir'] : null;
     $jumlah_pax = $_POST['jumlah_pax'];
+    if ($jumlah_pax > 10) {
+        echo "<script>alert('Maksimal jumlah pax adalah 10!');</script>";
+    } else {
     $catatan = !empty($_POST['catatan']) ? $_POST['catatan'] : null;
     $exams = $_POST['exams']; // array of [pemeriksaan_id, qty]
     $created_by = $_SESSION['user_id'];
@@ -330,6 +333,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             echo "<script>alert('Gagal: " . $e->getMessage() . "');</script>";
         }
     }
+    }
 }
 ?>
 
@@ -389,7 +393,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <div class="row">
                 <div class="col-md-3 mb-3">
                     <label class="fw-bold">Jumlah Pax <span class="text-danger">*</span></label>
-                    <input type="number" name="jumlah_pax" id="jumlah_pax" class="form-control" min="1" value="1" required>
+                    <input type="number" name="jumlah_pax" id="jumlah_pax" class="form-control" min="1" max="10" value="1" required>
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="fw-bold">Nama CS</label>

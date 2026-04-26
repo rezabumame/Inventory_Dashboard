@@ -216,7 +216,10 @@ try {
             // Sync patient status
             $conn->query("UPDATE inventory_booking_pasien SET status = 'rescheduled', remark = 'Reschedule masal ke $new_date' WHERE booking_id = $id AND status = 'booked'");
             
-            logBookingHistory($conn, $id, 'reschedule', ['tanggal_pemeriksaan' => ['old' => $old_date, 'new' => $new_date]], "Reschedule ke $new_date. Alasan: $reason");
+            $new_date_fmt = date('d M Y', strtotime($new_date));
+            $old_date_fmt = date('d M Y', strtotime($old_date));
+            logBookingHistory($conn, $id, 'reschedule', ['tanggal_pemeriksaan' => ['old' => $old_date, 'new' => $new_date]], "Reschedule dari $old_date_fmt ke $new_date_fmt. Alasan: $reason");
+            notify_lark_booking($conn, $id, 'reschedule', "Reschedule dari **$old_date_fmt** ke **$new_date_fmt**\n**Alasan:** $reason");
             $msg = "Booking berhasil di-reschedule ke tanggal $new_date " . ($new_time ? "jam $new_time" : "") . ".";
             break;
 
@@ -375,8 +378,10 @@ try {
                         }
                     }
                 }
+                $new_date_fmt = date('d M Y', strtotime($res_date));
                 logBookingHistory($conn, $id, 'reschedule', [], "Pasien split ke booking baru $new_nomor karena reschedule.");
                 logBookingHistory($conn, $new_id, 'create', [], "Booking hasil reschedule/split dari #" . $booking['nomor_booking']);
+                notify_lark_booking($conn, $new_id, 'reschedule', "Hasil split/reschedule dari #" . $booking['nomor_booking'] . " ke **$new_date_fmt**\n**Alasan:** $res_reason");
             }
 
             // 5. Finalize main booking
@@ -391,6 +396,7 @@ try {
                 throw new Exception('Access denied');
             }
             $conn->query("UPDATE inventory_booking_pemeriksaan SET butuh_fu = 1 WHERE id = $id");
+            notify_lark_booking($conn, $id, 'fu', "Ditandai butuh FU jadwal kedatangan");
             $msg = "Booking ditandai FU jadwal kedatangan.";
             break;
             
@@ -591,6 +597,9 @@ try {
             
             $old_pax = (int)($booking['jumlah_pax'] ?? 0);
             $new_total_pax = $old_pax + $additional_pax;
+            if ($new_total_pax > 10) {
+                throw new Exception("Total pax tidak boleh lebih dari 10 (Sudah ada $old_pax)");
+            }
             $is_hc = (stripos((string)$booking['status_booking'], 'HC') !== false);
             $target_klinik_id = (int)($booking['klinik_id'] ?? 0);
 

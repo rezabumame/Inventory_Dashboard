@@ -72,3 +72,64 @@ function notify_gsheet_booking(mysqli $conn, int $booking_id, string $event) {
         error_log("Webhook Error: " . $e->getMessage());
     }
 }
+require_once __DIR__ . '/lark.php';
+
+/**
+ * Notify Lark Webhook about booking events (FU, Reschedule)
+ */
+function notify_lark_booking(mysqli $conn, int $booking_id, string $event, string $note = '') {
+    try {
+        $webhook = trim((string)get_setting('webhook_lark_booking_url', ''));
+        if ($webhook === '') return;
+
+        // Fetch booking data
+        $sql = "SELECT b.*, k.nama_klinik 
+                FROM inventory_booking_pemeriksaan b
+                LEFT JOIN inventory_klinik k ON b.klinik_id = k.id
+                WHERE b.id = $booking_id LIMIT 1";
+        $res = $conn->query($sql);
+        if (!$res || $res->num_rows === 0) return;
+        $b = $res->fetch_assoc();
+
+        $title = "🔔 Update Booking";
+        $theme = "blue";
+        
+        if ($event === 'fu') {
+            $title = "🚨 Booking Butuh FU";
+            $theme = "orange";
+        } elseif ($event === 'reschedule') {
+            $title = "📅 Booking Rescheduled";
+            $theme = "violet";
+        }
+
+        // Format Date: dd mmm yyyy hh:mm
+        $date_raw = $b['tanggal_pemeriksaan'] . ' ' . ($b['jam_layanan'] ?: '00:00');
+        $date_fmt = date('d M Y H:i', strtotime($date_raw));
+
+        // Get CS Name from session or use existing cs_name
+        $cs_trigger = $_SESSION['nama_user'] ?? $b['cs_name'] ?? 'System';
+
+        // Get Mention ID if set (supports comma-separated IDs)
+        $at_ids_raw = trim((string)get_setting('webhook_lark_booking_at_id', ''));
+        $mention = "";
+        if ($at_ids_raw !== '') {
+            $ids = array_filter(array_map('trim', explode(',', $at_ids_raw)));
+            foreach ($ids as $id) {
+                $mention .= "<at id={$id}></at> ";
+            }
+        }
+
+        $lines = [
+            "{$mention}**Nomor:** {$b['nomor_booking']} | **Status:** " . strtoupper($b['status']),
+            "**Pasien:** {$b['nama_pemesan']} | **Klinik:** " . ($b['nama_klinik'] ?: '-'),
+            "**Jadwal:** {$date_fmt}",
+            "**Note:** " . ($note ?: ($b['reschedule_reason'] ?: '-')),
+            "**PIC:** @{$cs_trigger}"
+        ];
+
+        lark_post_card($webhook, $title, $lines, $theme);
+
+    } catch (\Throwable $e) {
+        error_log("Lark Webhook Error: " . $e->getMessage());
+    }
+}

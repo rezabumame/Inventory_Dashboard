@@ -49,6 +49,9 @@ try {
     $jam_layanan = $_POST['jam_layanan'] ?? null;
     $jotform_submitted = isset($_POST['jotform_submitted']) ? (int)$_POST['jotform_submitted'] : 0;
     $jumlah_pax = intval($_POST['jumlah_pax'] ?? 1);
+    if ($jumlah_pax > 10) {
+        throw new Exception('Maksimal jumlah pax adalah 10!');
+    }
     $catatan = !empty($_POST['catatan']) ? $_POST['catatan'] : null;
     $patients = $_POST['patients'] ?? [];
     $created_by = $_SESSION['user_id'];

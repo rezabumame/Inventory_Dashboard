@@ -4,6 +4,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/odoo.php';
 require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../lib/lark.php';
 require_once __DIR__ . '/odoo_rpc_client.php';
 
 header('Content-Type: application/json');
@@ -63,65 +64,13 @@ function http_get_json($url, $headers = []) {
 }
 
 function lark_webhook_url() {
-    $url = trim((string)get_setting('webhook_lark_url', ''));
-    return $url;
-}
-
-function lark_send_payload(string $payload, int $timeout_sec = 8): bool {
-    $url = lark_webhook_url();
-    if ($url === '') return false;
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout_sec);
-    $resp = curl_exec($ch);
-    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    if ($resp === false || $code < 200 || $code >= 300) return false;
-    $j = json_decode((string)$resp, true);
-    if (!is_array($j)) return true;
-    if (array_key_exists('code', $j)) return (int)$j['code'] === 0;
-    if (array_key_exists('StatusCode', $j)) return (int)$j['StatusCode'] === 0;
-    return true;
-}
-
-function post_lark_post_lines(array $lines, array $bold_line_indexes = []) {
-    $content = [];
-    foreach ($lines as $i => $line) {
-        $line = (string)$line;
-        if ($line === '') $line = ' ';
-        $el = ['tag' => 'text', 'text' => $line];
-        if (in_array($i, $bold_line_indexes, true)) $el['style'] = ['bold'];
-        $content[] = [$el];
-    }
-
-    $payload = json_encode([
-        'msg_type' => 'post',
-        'content' => [
-            'post' => [
-                'zh_cn' => [
-                    'title' => 'Sync Odoo',
-                    'content' => $content
-                ]
-            ]
-        ]
-    ]);
-    if (!is_string($payload) || $payload === '') {
-        post_lark_text(implode("\n", $lines));
-        return;
-    }
-    $ok = lark_send_payload($payload, 8);
-    if (!$ok) post_lark_text(implode("\n", $lines));
+    return trim((string)get_setting('webhook_lark_url', ''));
 }
 
 function post_lark_text($text) {
-    $payload = json_encode([
-        'msg_type' => 'text',
-        'content' => ['text' => $text]
-    ]);
-    if (!is_string($payload) || $payload === '') return;
-    lark_send_payload($payload, 8);
+    $url = lark_webhook_url();
+    if ($url === '') return;
+    lark_post_text($url, $text);
 }
 
 function mirror_stats(mysqli $conn): array {
@@ -652,36 +601,50 @@ try {
     $dq = fmt_id_qty($qty_a - $qty_b);
     $dr = $rows_a - $rows_b;
     $dr_s = $dr >= 0 ? ('+' . $dr) : (string)$dr;
-    $lines = [];
-    $lines[] = "[SYNC ODOO][API][" . strtoupper($sync_trigger) . "] Selesai " . date('d M Y H:i');
-    $lines[] = "Durasi: {$dur}s";
-    $lines[] = "Produk: {$products_count}";
-    $lines[] = "Lokasi target: " . count($locations);
-    $lines[] = "Rows mirror: {$rows_b} → {$rows_a} ({$dr_s})";
-    $lines[] = "Total qty mirror: " . fmt_id_qty($qty_b) . " → " . fmt_id_qty($qty_a) . " (" . (($qty_a - $qty_b) >= 0 ? '+' : '') . $dq . ")";
-    $lines[] = "Last update mirror: " . fmt_ts($mirror_before['last_update'] ?? '') . " → " . fmt_ts($mirror_after['last_update'] ?? '');
-    $loc_group_map = build_loc_group_map($conn);
-    $diff_pack = build_diff_grouped_lines_compact($mirror_before, $mirror_after, $loc_group_map, 12, 0.0001);
-    $diff_lines = $diff_pack['lines'] ?? [];
-    $diff_bold = $diff_pack['bold'] ?? [];
+    $title = "🔄 Odoo Stock Sync Success";
+    $card_lines = [
+        "**Event:** Odoo Stock Sync (" . strtoupper($sync_trigger) . ")",
+        "**Waktu:** " . date('d M Y H:i') . " | **Durasi:** {$dur}s",
+        "**Statistik:** {$products_count} Produk | " . count($locations) . " Lokasi",
+        "**Mirror:** {$rows_a} baris ({$dr_s}) | Qty: " . fmt_id_qty($qty_a) . " (" . (($qty_a - $qty_b) >= 0 ? '+' : '') . $dq . ")"
+    ];
+
     if (!empty($diff_lines)) {
-        $lines[] = "";
-        $lines[] = "Top perubahan lokasi:";
-        $lines = array_merge($lines, $diff_lines);
+        $card_lines[] = "";
+        $card_lines[] = "📊 **Top Perubahan Lokasi:**";
+        foreach ($diff_lines as $idx => $dl) {
+            if ($dl === '') continue;
+            // If line doesn't start with '-', it's a group header
+            if (substr(trim($dl), 0, 1) !== '-') {
+                $card_lines[] = "**" . trim($dl) . "**";
+            } else {
+                $card_lines[] = trim($dl);
+            }
+        }
     }
-    $lines[] = "";
-    $lines[] = "Ringkasan per Klinik:";
-    $sum_klinik = build_group_summary_lines($mirror_after, $loc_group_map, false, 12);
-    if (!empty($sum_klinik)) $lines = array_merge($lines, $sum_klinik);
-    $lines[] = "";
-    $lines[] = "Ringkasan Homecare:";
-    $sum_hc = build_group_summary_lines($mirror_after, $loc_group_map, true, 12);
-    if (!empty($sum_hc)) $lines = array_merge($lines, $sum_hc);
-    post_lark_text(implode("\n", $lines));
+
+    if (!empty($sum_klinik)) {
+        $card_lines[] = "";
+        $card_lines[] = "🏥 **Ringkasan per Klinik:**";
+        foreach ($sum_klinik as $sk) $card_lines[] = "• " . ltrim($sk, '- ');
+    }
+
+    if (!empty($sum_hc)) {
+        $card_lines[] = "";
+        $card_lines[] = "🏠 **Ringkasan Homecare:**";
+        foreach ($sum_hc as $sh) $card_lines[] = "• " . ltrim($sh, '- ');
+    }
+
+    lark_post_card(lark_webhook_url(), $title, $card_lines, "blue");
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     $dur = round(microtime(true) - $sync_started_at, 1);
-    post_lark_text("[SYNC ODOO][" . strtoupper($sync_trigger) . "] Gagal " . date('d M Y H:i') . "\nDurasi: {$dur}s\n" . $e->getMessage());
+    lark_post_card(lark_webhook_url(), "❌ Odoo Stock Sync Failed", [
+        "**Trigger:** " . strtoupper($sync_trigger),
+        "**Waktu:** " . date('d M Y H:i'),
+        "**Durasi:** {$dur}s",
+        "**Error:** " . $e->getMessage()
+    ], "red");
 }
 ?>

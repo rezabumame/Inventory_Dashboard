@@ -4,6 +4,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/settings.php';
 require_once __DIR__ . '/../config/odoo.php';
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../lib/lark.php';
 
 header('Content-Type: application/json');
 
@@ -100,19 +101,14 @@ if (!$lock_ok) {
     exit;
 }
 
-$lark_url = trim((string)get_setting('webhook_lark_url', ''));
+function lark_webhook_url() {
+    return trim((string)get_setting('webhook_lark_url', ''));
+}
+
 function post_lark_text_sched($text) {
-    global $lark_url;
-    if ($lark_url === '') return;
-    $payload = json_encode(['msg_type' => 'text', 'content' => ['text' => $text]]);
-    $ch = curl_init($lark_url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
-    curl_exec($ch);
-    curl_close($ch);
+    $url = lark_webhook_url();
+    if ($url === '') return;
+    lark_post_text($url, $text);
 }
 
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';

@@ -575,12 +575,20 @@ try {
         });
     }
 
-    // Initial settings for GSheet sync
+    // Initial settings for GSheet & Lark
     run_migration_task("Data: GSheet Sync Settings", function() use ($conn) {
         if (!table_exists($conn, 'inventory_app_settings')) return "Table not found";
         $conn->query("INSERT IGNORE INTO inventory_app_settings (k, v) VALUES ('gsheet_exam_url', '')");
         $conn->query("INSERT IGNORE INTO inventory_app_settings (k, v) VALUES ('gsheet_exam_sheet', '')");
         $conn->query("INSERT IGNORE INTO inventory_app_settings (k, v) VALUES ('gsheet_exam_mapping', '{}')");
+        return "Settings Initialized";
+    });
+
+    run_migration_task("Data: Lark Webhook Settings", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_app_settings')) return "Table not found";
+        $conn->query("INSERT IGNORE INTO inventory_app_settings (k, v) VALUES ('webhook_lark_url', '')");
+        $conn->query("INSERT IGNORE INTO inventory_app_settings (k, v) VALUES ('webhook_lark_booking_url', '')");
+        $conn->query("INSERT IGNORE INTO inventory_app_settings (k, v) VALUES ('webhook_lark_booking_at_id', '')");
         return "Settings Initialized";
     });
 
