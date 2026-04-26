@@ -495,7 +495,7 @@ try {
             user_id INT NOT NULL,
             user_name VARCHAR(255),
             action VARCHAR(100),
-            changes JSON,
+            changes LONGTEXT,
             notes TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX (booking_id),

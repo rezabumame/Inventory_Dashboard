@@ -17,13 +17,17 @@ if ($booking_id <= 0) {
 
 $sql = "SELECT * FROM inventory_booking_history WHERE booking_id = ? ORDER BY created_at DESC";
 $stmt = $conn->prepare($sql);
+if (!$stmt) {
+    echo json_encode(['success' => false, 'message' => 'Table history belum tersedia. Silakan jalankan migrate.php.']);
+    exit;
+}
 $stmt->bind_param("i", $booking_id);
 $stmt->execute();
 $result = $stmt->get_result();
 
 $history = [];
 while ($row = $result->fetch_assoc()) {
-    $row['changes'] = json_decode($row['changes'], true);
+    $row['changes'] = json_decode($row['changes'] ?? '{}', true);
     $history[] = $row;
 }
 
