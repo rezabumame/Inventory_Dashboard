@@ -2176,15 +2176,34 @@ window.loadBookingHistory = function() {
             }
 
             var html = '<div class="px-2 pt-2">';
+            var keyLabels = {
+                'butuh_fu': 'Follow Up',
+                'status': 'Status',
+                'tanggal': 'Tanggal',
+                'jam': 'Jam',
+                'booking_type': 'Tipe Booking',
+                'jotform_submitted': 'Jotform',
+                'catatan': 'Catatan',
+                'reschedule_split': 'Reschedule Split',
+                'source': 'Sumber'
+            };
+            var formatVal = function(k, v) {
+                if (k === 'butuh_fu') return parseInt(v) === 1 ? 'Aktif' : 'Nonaktif';
+                if (k === 'jotform_submitted') return parseInt(v) === 1 ? 'Sudah' : 'Belum';
+                if (v == null || v === '') return '-';
+                return v;
+            };
+
             res.data.forEach(function(item) {
                 var changesHtml = '';
                 if (item.changes) {
                     changesHtml = '<div class="mt-1 d-flex flex-wrap gap-1">';
                     for (var key in item.changes) {
                         var change = item.changes[key];
-                        var oldVal = change.old || '-';
-                        var newVal = change.new || '-';
-                        changesHtml += `<span class="change-badge"><i class="fas fa-edit me-1"></i>${key}: <span class="text-muted text-decoration-line-through x-small">${oldVal}</span> <i class="fas fa-long-arrow-alt-right mx-1 text-primary"></i> <strong>${newVal}</strong></span>`;
+                        var label = keyLabels[key] || key;
+                        var oldVal = formatVal(key, change.old);
+                        var newVal = formatVal(key, change.new);
+                        changesHtml += `<span class="change-badge"><i class="fas fa-edit me-1"></i>${label}: <span class="text-muted text-decoration-line-through x-small">${oldVal}</span> <i class="fas fa-long-arrow-alt-right mx-1 text-primary"></i> <strong>${newVal}</strong></span>`;
                     }
                     changesHtml += '</div>';
                 }
