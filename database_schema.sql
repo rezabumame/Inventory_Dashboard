@@ -91,6 +91,9 @@ CREATE TABLE IF NOT EXISTS `inventory_booking_pasien` (
   `pemeriksaan_grup_id` int(11) NOT NULL,
   `nomor_tlp` varchar(30) DEFAULT NULL,
   `tanggal_lahir` date DEFAULT NULL,
+  `status` enum('booked','done','rescheduled','cancelled') DEFAULT 'booked',
+  `remark` text DEFAULT NULL,
+  `done_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `booking_id` (`booking_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -106,7 +109,7 @@ CREATE TABLE IF NOT EXISTS `inventory_booking_pemeriksaan` (
   `nakes_hc` varchar(200) DEFAULT NULL,
   `catatan` text DEFAULT NULL,
   `tanggal_pemeriksaan` date NOT NULL,
-  `status` enum('booked','completed','cancelled','pending_edit','pending_delete','rejected') DEFAULT 'booked',
+  `status` enum('booked','completed','cancelled','pending_edit','pending_delete','rejected','rescheduled') DEFAULT 'booked',
   `approval_reason` text DEFAULT NULL,
   `spv_approved_by` int(11) DEFAULT NULL,
   `spv_approved_at` datetime DEFAULT NULL,
@@ -124,6 +127,7 @@ CREATE TABLE IF NOT EXISTS `inventory_booking_pemeriksaan` (
   `butuh_fu` tinyint(1) NOT NULL DEFAULT 0,
   `is_out_of_stock` tinyint(1) NOT NULL DEFAULT 0,
   `out_of_stock_items` text DEFAULT NULL,
+  `reschedule_reason` text DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `nomor_booking` (`nomor_booking`),
   KEY `idx_bp_klinik_status_tgl` (`klinik_id`,`status`,`tanggal_pemeriksaan`)
@@ -540,7 +544,7 @@ INSERT INTO `inventory_odoo_format_config` (`id`,`internal_reference`,`name`,`uo
 INSERT INTO `inventory_odoo_format_config` (`id`,`internal_reference`,`name`,`uom`,`product_category`,`income_account`,`valuation_account`,`expense_account`,`created_at`,`updated_at`) VALUES ('76','15','Alcohol Swab 70% (new)','Pcs','OTHERS / General','420101002 PENDAPATAN LAIN - LAIN','110501009 PERSEDIAAN BARANG LAIN - LAIN','510301001 BEBAN LANGSUNG PENDAPATAN CONSUMABLE','2026-03-31 18:57:25','2026-03-31 18:57:25');
 INSERT INTO `inventory_odoo_format_config` (`id`,`internal_reference`,`name`,`uom`,`product_category`,`income_account`,`valuation_account`,`expense_account`,`created_at`,`updated_at`) VALUES ('77','15.','Alcohol Swab [ Jangan di Pakai ]','Pcs','OTHERS / General','420101002 PENDAPATAN LAIN - LAIN','110501009 PERSEDIAAN BARANG LAIN - LAIN','510301001 BEBAN LANGSUNG PENDAPATAN CONSUMABLE','2026-03-31 18:57:25','2026-03-31 18:57:25');
 INSERT INTO `inventory_odoo_format_config` (`id`,`internal_reference`,`name`,`uom`,`product_category`,`income_account`,`valuation_account`,`expense_account`,`created_at`,`updated_at`) VALUES ('78','317','Alkohol Urin','Test','MCU / Laboratory Test','410101001 PENDAPATAN USAHA LAB - MCU','110501001 PERSEDIAAN BARANG PRODUK MCU','510101001 BEBAN LANGSUNG PENDAPATAN LAB - MCU','2026-03-31 18:57:25','2026-03-31 18:57:25');
-INSERT INTO `inventory_odoo_format_config` (`id`,`internal_reference`,`name`,`uom`,`product_category`,`income_account`,`valuation_account`,`expense_account`,`created_at`,`updated_at`) VALUES ('79','741','Allplex™ HPV28 Detection                                                                                            ','Test','MCU / Laboratory Test','410101001 PENDAPATAN USAHA LAB - MCU','110501001 PERSEDIAAN BARANG PRODUK MCU','510101001 BEBAN LANGSUNG PENDAPATAN LAB - MCU','2026-03-31 18:57:25','2026-03-31 18:57:25');
+INSERT INTO `inventory_odoo_format_config` (`id`,`internal_reference`,`name`,`uom`,`product_category`,`income_account`,`valuation_account`,`expense_account`,`created_at`,`updated_at`) VALUES ('79','741','Allplexâ„¢ HPV28 Detection                                                                                            ','Test','MCU / Laboratory Test','410101001 PENDAPATAN USAHA LAB - MCU','110501001 PERSEDIAAN BARANG PRODUK MCU','510101001 BEBAN LANGSUNG PENDAPATAN LAB - MCU','2026-03-31 18:57:25','2026-03-31 18:57:25');
 INSERT INTO `inventory_odoo_format_config` (`id`,`internal_reference`,`name`,`uom`,`product_category`,`income_account`,`valuation_account`,`expense_account`,`created_at`,`updated_at`) VALUES ('80','167','Alpha-Fetoprotein (AFP)','Test','MCU / Laboratory Test','410101001 PENDAPATAN USAHA LAB - MCU','110501001 PERSEDIAAN BARANG PRODUK MCU','510101001 BEBAN LANGSUNG PENDAPATAN LAB - MCU','2026-03-31 18:57:25','2026-03-31 18:57:25');
 INSERT INTO `inventory_odoo_format_config` (`id`,`internal_reference`,`name`,`uom`,`product_category`,`income_account`,`valuation_account`,`expense_account`,`created_at`,`updated_at`) VALUES ('81','655','Amonium Oksalat','mL','MCU / Laboratory Test','410101001 PENDAPATAN USAHA LAB - MCU','110501001 PERSEDIAAN BARANG PRODUK MCU','510101001 BEBAN LANGSUNG PENDAPATAN LAB - MCU','2026-03-31 18:57:25','2026-03-31 18:57:25');
 INSERT INTO `inventory_odoo_format_config` (`id`,`internal_reference`,`name`,`uom`,`product_category`,`income_account`,`valuation_account`,`expense_account`,`created_at`,`updated_at`) VALUES ('82','607','Amplop Bumame 90pps','Pcs','All [KHUSUS NON TRACK INVENTORY]','410101000 PENDAPATAN USAHA - LABORATORIUM','110501009 PERSEDIAAN BARANG LAIN - LAIN','510101000 BEBAN LANGSUNG - LABORATORIUM','2026-03-31 18:57:25','2026-03-31 18:57:25');
