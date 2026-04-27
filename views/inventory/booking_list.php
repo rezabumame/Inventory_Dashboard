@@ -3,57 +3,7 @@
 check_role(['cs', 'super_admin', 'admin_klinik']);
 require_once __DIR__ . '/../../lib/stock.php';
 
-// PAGINATION LOGIC
-$items_per_page = 10;
-$current_page = isset($_GET['p']) ? max(1, (int)$_GET['p']) : 1;
-$offset = ($current_page - 1) * $items_per_page;
 
-function renderPagination($total_pages, $current_page) {
-    if ($total_pages <= 1) return '';
-    $query_params = $_GET;
-    unset($query_params['p']);
-    $base_url = 'index.php?' . http_build_query($query_params);
-    $html = '<nav aria-label="Page navigation" class="mt-4"><ul class="pagination pagination-circular justify-content-end">';
-    
-    // Previous
-    $prev_class = ($current_page <= 1) ? 'disabled' : '';
-    $html .= '<li class="page-item ' . $prev_class . '"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page - 1) . '"><i class="fas fa-chevron-left"></i></a></li>';
-    
-    $range = 1; // Number of pages around current
-    
-    // Page 1
-    $active = (1 == $current_page) ? 'active' : '';
-    $html .= '<li class="page-item ' . $active . '"><a class="page-link shadow-sm" href="' . $base_url . '&p=1">1</a></li>';
-
-    if ($current_page > $range + 2) {
-        $html .= '<li class="page-item disabled"><span class="page-link border-0">...</span></li>';
-    }
-
-    $start = max(2, $current_page - $range);
-    $end = min($total_pages - 1, $current_page + $range);
-
-    for ($i = $start; $i <= $end; $i++) {
-        $active = ($i == $current_page) ? 'active' : '';
-        $html .= '<li class="page-item ' . $active . '"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $i . '">' . $i . '</a></li>';
-    }
-
-    if ($current_page < $total_pages - $range - 1) {
-        $html .= '<li class="page-item disabled"><span class="page-link border-0">...</span></li>';
-    }
-
-    // Last Page
-    if ($total_pages > 1) {
-        $active = ($total_pages == $current_page) ? 'active' : '';
-        $html .= '<li class="page-item ' . $active . '"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $total_pages . '">' . $total_pages . '</a></li>';
-    }
-
-    // Next
-    $next_class = ($current_page >= $total_pages) ? 'disabled' : '';
-    $html .= '<li class="page-item ' . $next_class . '"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page + 1) . '"><i class="fas fa-chevron-right"></i></a></li>';
-    
-    $html .= '</ul></nav>';
-    return $html;
-}
 
 
 
@@ -131,7 +81,7 @@ if ($filter_fu === '1') {
 // 1. Get total count
 $count_query = "SELECT COUNT(*) as cnt FROM inventory_booking_pemeriksaan b WHERE $where";
 $total_all = (int)($conn->query($count_query)->fetch_assoc()['cnt'] ?? 0);
-$total_pages = ceil($total_all / $items_per_page);
+// $total_pages = ceil($total_all / $items_per_page);
 
 $query = "SELECT b.*, k.nama_klinik, u.nama_lengkap as creator_name,
           (SELECT COUNT(DISTINCT bd.barang_id) FROM inventory_booking_detail bd WHERE bd.booking_id = b.id) as total_items,
@@ -143,8 +93,7 @@ $query = "SELECT b.*, k.nama_klinik, u.nama_lengkap as creator_name,
           JOIN inventory_klinik k ON b.klinik_id = k.id 
           LEFT JOIN inventory_users u ON b.created_by = u.id
           WHERE $where
-          ORDER BY b.tanggal_pemeriksaan DESC, COALESCE(b.jam_layanan, '') DESC, b.id DESC
-          LIMIT $items_per_page OFFSET $offset";
+          ORDER BY b.tanggal_pemeriksaan DESC, COALESCE(b.jam_layanan, '') DESC, b.id DESC";
 $result = $conn->query($query);
 
 // Pre-calculate current fulfillment status for displayed bookings
@@ -799,7 +748,6 @@ if (!empty($booking_ids)) {
                 </tbody>
             </table>
             </div>
-            <?= renderPagination($total_pages, $current_page) ?>
         </div>
     </div>
 
