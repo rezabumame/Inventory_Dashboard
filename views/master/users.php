@@ -126,14 +126,6 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
         min-height: 100vh;
     }
 
-    .page-header {
-        background: white;
-        padding: 1rem 1.5rem;
-        border-radius: 12px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        margin-bottom: 1.5rem;
-        border-left: 5px solid var(--bumame-blue);
-    }
 
     /* Table Styles */
     .table-premium {
@@ -144,12 +136,12 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
     }
 
     .table-premium thead th {
-        background-color: var(--slate-50);
-        color: var(--slate-600);
-        font-weight: 700;
+        background-color: #f8f9fa;
+        color: #444;
+        font-weight: 600;
         text-transform: uppercase;
-        font-size: 0.75rem;
-        letter-spacing: 0.05em;
+        font-size: 0.8rem;
+        letter-spacing: 0.5px;
         padding: 1rem;
         border-bottom: 1px solid var(--slate-200);
     }
@@ -228,25 +220,36 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
         transition: all 0.2s ease; background: #fff;
     }
     .pagination-circular .page-link:hover { background-color: var(--slate-50); color: var(--bumame-blue); border-color: var(--bumame-blue); }
-    .pagination-circular .page-item.active .page-link { background-color: var(--bumame-blue-soft) !important; color: var(--bumame-blue) !important; border-color: var(--bumame-blue) !important; font-weight: 700; }
+    .pagination-circular .page-item.active .page-link { background-color: var(--bumame-blue) !important; color: white !important; border-color: var(--bumame-blue) !important; font-weight: 700; }
     .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: var(--slate-200); border-color: var(--slate-100); opacity: 0.6; }
+    
+    /* Input Style */
+    .form-control:focus, .form-select:focus {
+        border-color: var(--bumame-blue);
+        box-shadow: 0 0 0 0.2rem rgba(32, 78, 171, 0.15);
+    }
 </style>
 
-<div class="container-fluid users-container py-4">
+<div class="container-fluid py-4">
     <!-- Header -->
-    <div class="page-header d-flex justify-content-between align-items-center">
-        <div>
-            <h1 class="h4 mb-0 fw-800" style="color: var(--bumame-blue); letter-spacing: -0.02em;">
+    <div class="row mb-4 align-items-center">
+        <div class="col">
+            <h1 class="h3 mb-1 fw-bold" style="color: var(--bumame-blue);">
                 <i class="fas fa-users-cog me-2"></i>Manajemen User
             </h1>
-            <p class="text-muted mb-0 small">Kelola hak akses dan profil staf Bumame</p>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
+                    <li class="breadcrumb-item active">Manajemen User</li>
+                </ol>
+            </nav>
         </div>
-        <div class="d-flex gap-2">
-            <button class="btn btn-outline-success btn-sm fw-700 px-3 rounded-pill" data-bs-toggle="modal" data-bs-target="#modalImport">
-                <i class="fas fa-file-excel me-1"></i>Import
+        <div class="col-auto d-flex gap-2">
+            <button class="btn btn-outline-success px-4" data-bs-toggle="modal" data-bs-target="#modalImport">
+                <i class="fas fa-file-excel me-2"></i>Import
             </button>
-            <button class="btn btn-primary btn-sm fw-700 px-3 rounded-pill" data-bs-toggle="modal" data-bs-target="#modalAdd">
-                <i class="fas fa-plus me-1"></i>Tambah User
+            <button class="btn shadow-sm text-white px-4" style="background-color: var(--bumame-blue);" data-bs-toggle="modal" data-bs-target="#modalAdd">
+                <i class="fas fa-plus me-2"></i>Tambah User
             </button>
         </div>
     </div>
@@ -289,10 +292,10 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                 </select>
             </div>
             <div class="col-md-3 d-flex gap-2">
-                <button type="submit" class="btn btn-primary btn-sm fw-700 flex-grow-1 rounded-3">
+                <button type="submit" class="btn btn-sm fw-700 flex-grow-1 text-white" style="background-color: var(--bumame-blue);">
                     <i class="fas fa-filter me-2"></i>Filter Data
                 </button>
-                <a href="index.php?page=users" class="btn btn-outline-secondary btn-sm rounded-3">
+                <a href="index.php?page=users" class="btn btn-outline-secondary btn-sm">
                     <i class="fas fa-undo"></i>
                 </a>
             </div>
@@ -398,18 +401,18 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
         <div class="modal-content border-0 shadow-lg rounded-4">
             <form action="actions/process_user_bulk_upload.php" method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
-                <div class="modal-header border-0 pb-0">
-                    <h5 class="modal-title fw-800" style="color: var(--bumame-blue);">
+                <div class="modal-header" style="background-color: var(--bumame-blue);">
+                    <h5 class="modal-title text-white fw-bold">
                         <i class="fas fa-file-excel me-2"></i>Import User Bulk
                     </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div class="alert alert-info border-0 rounded-3 shadow-sm mb-4">
                         <i class="fas fa-info-circle me-2"></i>
                         Gunakan template resmi untuk format yang benar.
                         <div class="mt-2">
-                            <a href="api/download_template_users.php" class="btn btn-primary btn-sm rounded-pill px-3">
+                            <a href="api/download_template_users.php" class="btn btn-primary btn-sm px-3">
                                 <i class="fas fa-download me-1"></i>Download Template
                             </a>
                         </div>
@@ -437,11 +440,11 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
             <form method="POST">
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="action" value="add_user">
-                <div class="modal-header border-0 pb-0">
-                    <h5 class="modal-title fw-800" style="color: var(--bumame-blue);">
+                <div class="modal-header" style="background-color: var(--bumame-blue);">
+                    <h5 class="modal-title text-white fw-bold">
                         <i class="fas fa-user-plus me-2"></i>Tambah User Baru
                     </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body py-4">
                     <div class="mb-3">
@@ -497,11 +500,11 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="action" value="edit_user">
                 <input type="hidden" name="id" id="edit_id">
-                <div class="modal-header border-0 pb-0">
-                    <h5 class="modal-title fw-800" style="color: var(--bumame-blue);">
+                <div class="modal-header" style="background-color: var(--bumame-blue);">
+                    <h5 class="modal-title text-white fw-bold">
                         <i class="fas fa-user-edit me-2"></i>Edit Profil User
                     </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body py-4">
                     <div class="mb-3">
