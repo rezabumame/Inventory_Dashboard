@@ -811,8 +811,8 @@ if (!empty($booking_ids)) {
                                             </select>
                                         </div>
                                         <div class="col-md-2">
-                                            <label class="form-label fw-semibold">Jumlah Pax <span class="text-danger">*</span></label>
-                                            <input type="number" name="jumlah_pax" id="jumlah_pax" class="form-control" min="1" max="10" value="1" required>
+                                            <label class="form-label fw-semibold">Jumlah Pax</label>
+                                            <input type="number" name="jumlah_pax" id="jumlah_pax" class="form-control bg-light" min="1" max="10" value="1" readonly required>
                                         </div>
                                         <div class="col-md-3" id="order_id_container_modal" style="display: none;">
                                             <label class="form-label fw-semibold">Order ID</label>
@@ -851,6 +851,12 @@ if (!empty($booking_ids)) {
                             </div>
 
                             <!-- Section Data Pasien (Dynamic per Pax) -->
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div class="fw-bold text-primary-custom"><i class="fas fa-users me-2"></i>Identitas Pasien</div>
+                                <button type="button" class="btn btn-sm btn-primary" id="btnAddPatientModal">
+                                    <i class="fas fa-plus me-1"></i> Tambah Pasien
+                                </button>
+                            </div>
                             <div id="paxSectionsWrapper"></div>
 
                             <div class="card border-0 shadow-sm">
@@ -923,9 +929,37 @@ $(document).ready(function() {
     });
 
     // Modal Booking Baru Event Listeners
-    $('#jumlah_pax').on('input change', function() {
-        var paxValue = parseInt($(this).val()) || 1;
-        renderPaxSections(paxValue);
+    $('#btnAddPatientModal').on('click', function() {
+        var $input = $('#jumlah_pax');
+        var curr = parseInt($input.val()) || 1;
+        if (curr < 10) {
+            $input.val(curr + 1);
+            renderPaxSections(curr + 1);
+        } else {
+            Swal.fire('Info', 'Maksimal 10 pasien per booking!', 'info');
+        }
+    });
+
+    $(document).on('click', '.btn-remove-patient-modal', function() {
+        var $input = $('#jumlah_pax');
+        var curr = parseInt($input.val()) || 1;
+        if (curr > 1) {
+            Swal.fire({
+                title: 'Hapus Pasien?',
+                text: "Data pasien ini akan dihapus dari form.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Ya, Hapus',
+                cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    $input.val(curr - 1);
+                    renderPaxSections(curr - 1);
+                }
+            });
+        } else {
+            Swal.fire('Info', 'Minimal 1 pasien per booking!', 'info');
+        }
     });
     
     $('#modalBookingBaru').on('shown.bs.modal', function() {
@@ -1104,15 +1138,20 @@ window.renderPaxSections = function(paxCount) {
                         <i class="fas fa-user-circle"></i>
                         Pasien ${num} ${i === 0 ? '<span class="badge bg-primary-custom ms-2" style="font-size: 0.65rem;">UTAMA</span>' : ''}
                     </div>
-                    ${i > 0 ? '<span class="badge bg-light text-muted fw-bold x-small border px-2">OPSIONAL</span>' : ''}
+                    <div class="d-flex align-items-center gap-2">
+                        ${i > 0 ? `
+                        <button type="button" class="btn btn-outline-danger btn-sm border-0 py-0 btn-remove-patient-modal" title="Hapus Pasien">
+                            <i class="fas fa-trash-alt me-1"></i><span class="x-small fw-bold">HAPUS</span>
+                        </button>` : ''}
+                    </div>
                 </div>
                 <div class="card-body py-3">
                     <div class="row g-3 mb-3">
                         <div class="col-md-4">
-                            <label class="pax-label-minimal">Nama Pasien ${i === 0 ? '<span class="text-danger">*</span>' : ''}</label>
+                            <label class="pax-label-minimal">Nama Pasien <span class="text-danger">*</span></label>
                             <div class="input-group input-group-sm">
                                 <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-id-card"></i></span>
-                                <input type="text" name="patients[${i}][nama]" class="form-control ps-1 border-start-0" placeholder="Nama Lengkap" value="${data.nama}" ${i === 0 ? 'required' : ''}>
+                                <input type="text" name="patients[${i}][nama]" class="form-control ps-1 border-start-0" placeholder="Nama Lengkap" value="${data.nama}" required>
                             </div>
                         </div>
                         <div class="col-md-4">

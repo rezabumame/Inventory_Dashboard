@@ -213,7 +213,7 @@ if ($can_cs_edit) {
                                         </div>
                                         <div class="col-md-2">
                                             <label class="form-label fw-semibold">Jumlah Pax <span class="text-danger">*</span></label>
-                                            <input type="number" name="jumlah_pax" id="edit_jumlah_pax" class="form-control" min="1" max="10" value="<?= (int)$booking['jumlah_pax'] ?>" required>
+                                            <input type="number" name="jumlah_pax" id="edit_jumlah_pax" class="form-control bg-light" min="1" max="10" value="<?= (int)$booking['jumlah_pax'] ?>" readonly required>
                                         </div>
                                         <div class="col-md-3" id="edit_order_id_container" style="<?= stripos($booking['status_booking'], 'HC') !== false ? '' : 'display: none;' ?>">
                                             <label class="form-label fw-semibold">Order ID</label>
@@ -256,6 +256,12 @@ if ($can_cs_edit) {
                             </div>
 
                             <!-- Dynamic Pax Sections -->
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div class="fw-bold text-primary-custom"><i class="fas fa-users me-2"></i>Identitas Pasien</div>
+                                <button type="button" class="btn btn-sm btn-primary" id="btnAddPatient">
+                                    <i class="fas fa-plus me-1"></i> Tambah Pasien
+                                </button>
+                            </div>
                             <div id="editPaxSectionsWrapper"></div>
 
                             <div class="card border-0 shadow-sm">
@@ -328,10 +334,10 @@ if ($can_cs_edit) {
                     <div class="card-body py-3">
                         <div class="row g-3 mb-3">
                             <div class="col-md-4">
-                                <label class="pax-label-minimal">Nama Pasien ${i === 0 ? '<span class="text-danger">*</span>' : ''}</label>
+                                <label class="pax-label-minimal">Nama Pasien <span class="text-danger">*</span></label>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-id-card"></i></span>
-                                    <input type="text" name="patients[${i}][nama]" class="form-control ps-1 border-start-0" placeholder="Nama Lengkap" value="${data.nama || ''}" ${i === 0 ? 'required' : ''}>
+                                    <input type="text" name="patients[${i}][nama]" class="form-control ps-1 border-start-0" placeholder="Nama Lengkap" value="${data.nama || ''}" required>
                                 </div>
                             </div>
                             <div class="col-md-4">
@@ -541,6 +547,16 @@ if ($can_cs_edit) {
         // Events
         $modalEl.find('#edit_jumlah_pax').on('input change', function() {
             renderPaxSectionsEdit(parseInt($(this).val()) || 1);
+        });
+
+        $modalEl.find('#btnAddPatient').on('click', function() {
+            var $paxInput = $('#edit_jumlah_pax');
+            var current = parseInt($paxInput.val()) || 0;
+            if (current < 10) {
+                $paxInput.val(current + 1).trigger('change');
+            } else {
+                showWarning('Maksimal 10 pasien!');
+            }
         });
 
         $modalEl.find('#edit_klinik_id').on('change', function() {
