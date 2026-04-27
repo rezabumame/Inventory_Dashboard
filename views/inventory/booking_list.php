@@ -1899,30 +1899,49 @@ window.renderAdjustPaxSections = function() {
     var currentPax = parseInt($('#adjustCurrentPax').text()) || 0;
     var primaryExamId = $('#modalAdjust').data('primary-exam-id') || '';
     
+    // Save existing data from inputs before re-rendering
+    var existingData = [];
+    $wrapper.find('.pax-section-card').each(function(i) {
+        var exams = [];
+        $(this).find('select[name*="[exams]"]').each(function() {
+            if ($(this).val()) exams.push($(this).val());
+        });
+        existingData[i] = {
+            nama: $(this).find('input[name*="[nama]"]').val(),
+            exams: exams
+        };
+    });
+
     $wrapper.empty();
     for (var i = 0; i < addCount; i++) {
         var num = currentPax + i + 1;
+        var data = existingData[i] || { nama: `Pasien ${num}`, exams: [primaryExamId] };
         var section = `
-            <div class="card pax-section-card mb-3">
+            <div class="card pax-section-card mb-3" data-idx="${i}">
                 <div class="pax-card-header d-flex justify-content-between align-items-center">
                     <div class="pax-title">
                         <i class="fas fa-user-plus"></i>
                         Data Pasien Tambahan ${num}
                     </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-danger btn-sm border-0 py-0 btn-remove-adjust-pax" title="Hapus Pasien Tambahan ini">
+                            <i class="fas fa-trash-alt me-1"></i><span class="x-small fw-bold">HAPUS</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body py-3">
                     <div class="mb-3">
-                        <label class="pax-label-minimal">Nama Pasien</label>
+                        <label class="pax-label-minimal">Nama Pasien <span class="text-danger">*</span></label>
                         <div class="input-group input-group-sm">
                             <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-id-card"></i></span>
-                            <input type="text" name="additional_patients[${i}][nama]" class="form-control ps-1 border-start-0" placeholder="Pasien ${num}" value="Pasien ${num}">
+                            <input type="text" name="additional_patients[${i}][nama]" class="form-control ps-1 border-start-0" placeholder="Nama Pasien" value="${data.nama}" required>
                         </div>
                     </div>
                     <div class="pax-exam-container">
                         <label class="pax-exam-label"><i class="fas fa-microscope"></i> Pemeriksaan</label>
                         <div class="additional-exams-list" data-idx="${i}"></div>
                         <div class="mt-2">
-                            <button type="button" class="btn btn-link btn-sm text-success p-0 fw-bold x-small text-decoration-none" onclick="addAdditionalExamRow(${i}, '${primaryExamId}')">
+                            <button type="button" class="btn btn-link btn-sm text-success p-0 fw-bold x-small text-decoration-none" onclick="addAdditionalExamRow(${i})">
                                 <i class="fas fa-plus-circle me-1"></i>TAMBAH PEMERIKSAAN
                             </button>
                         </div>
@@ -1930,33 +1949,70 @@ window.renderAdjustPaxSections = function() {
                 </div>
             </div>`;
         $wrapper.append(section);
-        addAdditionalExamRow(i, primaryExamId);
+        
+        if (data.exams && data.exams.length > 0) {
+            data.exams.forEach(function(eid) { addAdditionalExamRow(i, eid); });
+        } else {
+            addAdditionalExamRow(i, '');
+        }
     }
 };
 
 window.addAdditionalExamRow = function(pIdx, selectedId = '') {
     var $list = $(`.additional-exams-list[data-idx="${pIdx}"]`);
     var row = `
-        <div class="row g-2 mb-1 additional-exam-row">
+        <div class="row g-2 mb-1 additional-exam-row align-items-center">
             <div class="col">
-                <select name="additional_patients[${pIdx}][exams][]" class="form-select form-select-sm" required>
+                <select name="additional_patients[${pIdx}][exams][]" class="form-select form-select-sm additional-exam-select" required>
                     ${examOptionsModal}
                 </select>
             </div>
             <div class="col-auto">
                 <button type="button" class="btn btn-outline-danger btn-sm border-0 py-0" onclick="$(this).closest('.additional-exam-row').remove()">
-                    <i class="fas fa-trash"></i>
+                    <i class="fas fa-trash-alt"></i>
                 </button>
             </div>
         </div>`;
     $list.append(row);
+    var $select = $list.find('.additional-exam-row').last().find('select');
+    if (typeof $select.select2 === 'function') {
+        var $modal = $('#modalAdjust');
+        $select.select2({ 
+            theme: 'bootstrap-5', 
+            width: '100%', 
+            dropdownParent: $modal,
+            templateResult: formatExamOption,
+            templateSelection: formatExamOption
+        });
+    }
     if (selectedId) {
-        $list.find('.additional-exam-row').last().find('select').val(selectedId);
+        $select.val(selectedId).trigger('change');
     }
 };
 
-$(document).on('input', '#adjustAdditionalPax', function() {
-    renderAdjustPaxSections();
+$(document).on('click', '#btnAddNewAdjustPatient', function() {
+    var $input = $('#adjustAdditionalPax');
+    var currentAdd = parseInt($input.val()) || 0;
+    var currentPax = parseInt($('#adjustCurrentPax').text()) || 0;
+    
+    if (currentPax + currentAdd < 10) {
+        $input.val(currentAdd + 1);
+        renderAdjustPaxSections();
+    } else {
+        Swal.fire('Info', 'Total pax maksimal adalah 10.', 'info');
+    }
+});
+
+$(document).on('click', '.btn-remove-adjust-pax', function() {
+    var $input = $('#adjustAdditionalPax');
+    var currentAdd = parseInt($input.val()) || 0;
+    
+    if (currentAdd > 1) {
+        $input.val(currentAdd - 1);
+        renderAdjustPaxSections();
+    } else {
+        Swal.fire('Info', 'Minimal 1 pax tambahan jika ingin menggunakan form ini.', 'info');
+    }
 });
 
 window.submitAdjust = function() {
@@ -2439,7 +2495,7 @@ window.openActionHub = function(data) {
 
 <!-- Modal Adjust Pax -->
 <div class="modal fade" id="modalAdjust" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header" style="background-color: #204EAB;">
                 <h5 class="modal-title text-white">
@@ -2456,11 +2512,16 @@ window.openActionHub = function(data) {
                 </div>
                 
                 <div class="mb-3">
-                    <label class="form-label fw-bold">
-                        <i class="fas fa-user-plus"></i> Tambahan Pax <span class="text-danger">*</span>
-                    </label>
-                    <input type="number" id="adjustAdditionalPax" class="form-control" min="1" max="10" value="1" required>
-                    <small class="text-muted">Masukkan jumlah pax tambahan</small>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label fw-bold mb-0">
+                            <i class="fas fa-user-plus"></i> Tambahan Pax
+                        </label>
+                        <button type="button" class="btn btn-sm btn-primary" id="btnAddNewAdjustPatient">
+                            <i class="fas fa-plus me-1"></i> Tambah Pasien
+                        </button>
+                    </div>
+                    <input type="number" id="adjustAdditionalPax" class="form-control bg-light" value="1" readonly required>
+                    <small class="text-muted">Gunakan tombol "Tambah Pasien" untuk menambah data.</small>
                 </div>
                 
                 <div id="adjustPaxSectionsWrapper" class="mt-3"></div>
