@@ -109,7 +109,7 @@ $count_query = "SELECT COUNT(*) as cnt FROM inventory_booking_pemeriksaan b WHER
 $total_all = (int)($conn->query($count_query)->fetch_assoc()['cnt'] ?? 0);
 $total_pages = ceil($total_all / $items_per_page);
 
-$query = "SELECT b.*, k.nama_klinik, u.nama as creator_name,
+$query = "SELECT b.*, k.nama_klinik, u.nama_lengkap as creator_name,
           (SELECT COUNT(DISTINCT bd.barang_id) FROM inventory_booking_detail bd WHERE bd.booking_id = b.id) as total_items,
           (SELECT GROUP_CONCAT(DISTINCT pg.nama_pemeriksaan ORDER BY pg.nama_pemeriksaan SEPARATOR ', ')
            FROM inventory_booking_pasien bp
@@ -560,7 +560,7 @@ if (!empty($booking_ids)) {
                         <th>Jenis Pemeriksaan</th>
                         <th>Tujuan</th>
                         <th>Jadwal</th>
-                        <th>CS Info</th>
+                        <th>INPUT BY</th>
                         <th>Status</th>
                         <th>Aksi</th>
                     </tr>
