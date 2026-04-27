@@ -1092,7 +1092,7 @@ window.renderPaxSections = function(paxCount) {
         };
     });
 
-    var inheritExams = (existingData[0] && existingData[0].exams) ? existingData[0].exams : [];
+    // var inheritExams = (existingData[0] && existingData[0].exams) ? existingData[0].exams : [];
 
     $wrapper.empty();
     for (var i = 0; i < paxCount; i++) {
@@ -1153,8 +1153,9 @@ window.renderPaxSections = function(paxCount) {
         
         if (data.exams && data.exams.length > 0) {
             data.exams.forEach(function(examId) { addPatientExamRow(i, examId); });
-        } else if (i > 0 && inheritExams.length > 0) {
-            inheritExams.forEach(function(examId) { addPatientExamRow(i, examId); });
+        } else if (i > 0 && false) {
+            // Removed inheritance as per user request
+            // inheritExams.forEach(function(examId) { addPatientExamRow(i, examId); });
         } else {
             addPatientExamRow(i, '');
         }
@@ -1188,10 +1189,11 @@ window.addPatientExamRow = function(patientIdx, selectedId = '') {
     }
     if (selectedId) {
         $select.val(selectedId).trigger('change');
-    } else if (patientIdx > 0 && rowIdx === 0) {
-        var $modal = $list.closest('.modal');
-        var firstExam = $modal.find(`.patient-exams-list[data-patient-idx="0"] .patient-exam-select`).first().val();
-        if (firstExam) $select.val(firstExam).trigger('change');
+    } else if (patientIdx > 0 && rowIdx === 0 && false) {
+        // Removed inheritance as per user request
+        // var $modal = $list.closest('.modal');
+        // var firstExam = $modal.find(`.patient-exams-list[data-patient-idx="0"] .patient-exam-select`).first().val();
+        // if (firstExam) $select.val(firstExam).trigger('change');
     }
 };
 
