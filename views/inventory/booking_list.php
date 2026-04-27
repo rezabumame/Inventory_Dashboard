@@ -109,7 +109,7 @@ $count_query = "SELECT COUNT(*) as cnt FROM inventory_booking_pemeriksaan b WHER
 $total_all = (int)($conn->query($count_query)->fetch_assoc()['cnt'] ?? 0);
 $total_pages = ceil($total_all / $items_per_page);
 
-$query = "SELECT b.*, k.nama_klinik,
+$query = "SELECT b.*, k.nama_klinik, u.nama as creator_name,
           (SELECT COUNT(DISTINCT bd.barang_id) FROM inventory_booking_detail bd WHERE bd.booking_id = b.id) as total_items,
           (SELECT GROUP_CONCAT(DISTINCT pg.nama_pemeriksaan ORDER BY pg.nama_pemeriksaan SEPARATOR ', ')
            FROM inventory_booking_pasien bp
@@ -117,6 +117,7 @@ $query = "SELECT b.*, k.nama_klinik,
            WHERE bp.booking_id = b.id) as jenis_pemeriksaan
           FROM inventory_booking_pemeriksaan b 
           JOIN inventory_klinik k ON b.klinik_id = k.id 
+          LEFT JOIN inventory_users u ON b.created_by = u.id
           WHERE $where
           ORDER BY b.tanggal_pemeriksaan DESC, COALESCE(b.jam_layanan, '') DESC, b.id DESC
           LIMIT $items_per_page OFFSET $offset";
@@ -649,7 +650,9 @@ if (!empty($booking_ids)) {
                         </td>
                         <td>
                             <div class="booking-muted" style="font-size: 0.8rem;">
-                                <div class="fw-bold text-dark"><i class="fas fa-user-edit me-1"></i><?= htmlspecialchars($row['cs_name'] ?? '-') ?></div>
+                                <div class="fw-bold text-dark" title="Input by: <?= htmlspecialchars($row['creator_name'] ?? '-') ?>">
+                                    <i class="fas fa-user-edit me-1"></i><?= htmlspecialchars($row['creator_name'] ?? $row['cs_name'] ?? '-') ?>
+                                </div>
                                 <div class="text-muted small mt-1"><i class="fas fa-clock me-1"></i><?= date('d/m/y H:i', strtotime($row['created_at'])) ?></div>
                             </div>
                         </td>
