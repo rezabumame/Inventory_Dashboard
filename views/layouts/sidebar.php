@@ -74,7 +74,7 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
 
         <?php if (in_array($role, ['cs', 'super_admin', 'admin_klinik', 'spv_klinik'])): ?>
         <?php $booking_url = in_array($role, ['admin_klinik', 'spv_klinik'], true) ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1'; ?>
-        <a href="<?= $booking_url ?>" class="sidebar-link <?= in_array($current_page, ['booking', 'booking_create']) ? 'active' : '' ?>">
+        <a href="<?= $booking_url ?>" class="sidebar-link <?= $current_page == 'booking' ? 'active' : '' ?>">
             <i class="fas fa-calendar-check"></i> CS Booking
         </a>
         <?php endif; ?>

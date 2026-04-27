@@ -84,9 +84,6 @@ switch ($page) {
     case 'booking':
         include 'views/inventory/booking_list.php';
         break;
-    case 'booking_create':
-        include 'views/inventory/booking_form.php';
-        break;
     case 'booking_edit':
         include 'views/inventory/booking_edit.php';
         break;
