@@ -224,7 +224,13 @@ if ($can_cs_edit) {
                                             <label class="form-label fw-semibold">Jadwal Pemeriksaan <span class="text-danger">*</span></label>
                                             <div class="input-group">
                                                 <input type="date" name="tanggal" id="edit_tanggal" class="form-control" value="<?= $booking['tanggal_pemeriksaan'] ?>" required>
-                                                <input type="time" name="jam_layanan" id="edit_jam" class="form-control" value="<?= $booking['jam_layanan'] ?>">
+                                                <?php 
+                                                    $jam_val = (string)($booking['jam_layanan'] ?? '');
+                                                    if ($jam_val !== '' && preg_match('/^\d{1,2}$/', $jam_val)) $jam_val .= ':00';
+                                                    // Ensure format is HH:mm for the time input
+                                                    if ($jam_val !== '' && preg_match('/^\d{2}:\d{2}:\d{2}/', $jam_val)) $jam_val = substr($jam_val, 0, 5);
+                                                ?>
+                                                <input type="time" name="jam_layanan" id="edit_jam" class="form-control" value="<?= htmlspecialchars($jam_val) ?>">
                                             </div>
                                         </div>
                                         <div class="col-md-4">

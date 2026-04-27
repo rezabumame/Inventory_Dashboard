@@ -353,7 +353,7 @@ try {
                     SELECT ?, order_id, klinik_id, status_booking, ?, ?, nakes_hc, catatan, ?, ?, 'rescheduled', ?, NOW(), booking_type, jotform_submitted, cs_name, ?, ?, ?
                     FROM inventory_booking_pemeriksaan WHERE id = ?");
                 $pax_count = count($reschedule_pids);
-                $stmt_clone->bind_param("ssisissssi", $new_nomor, $new_nama, $pax_count, $res_date, $res_time, $created_by, $new_tlp, $new_tgl_lahir, $res_reason, $id);
+                $stmt_clone->bind_param("ssississsi", $new_nomor, $new_nama, $pax_count, $res_date, $res_time, $created_by, $new_tlp, $new_tgl_lahir, $res_reason, $id);
                 $stmt_clone->execute();
                 $new_id = $conn->insert_id;
 
