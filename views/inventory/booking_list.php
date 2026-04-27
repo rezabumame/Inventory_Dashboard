@@ -28,10 +28,11 @@ $filter_tujuan = (string) ($_GET['tujuan'] ?? '');
 $filter_status = (string) ($_GET['status'] ?? '');
 $filter_tipe = (string) ($_GET['tipe'] ?? '');
 $filter_fu = (string) ($_GET['fu'] ?? '');
+$filter_klinik = (string) ($_GET['klinik_id'] ?? '');
 $filter_start = (string) ($_GET['start_date'] ?? '');
 $filter_end = (string) ($_GET['end_date'] ?? '');
 $filter_q = trim((string) ($_GET['q'] ?? ''));
-$has_filters = ($show_all || isset($_GET['filter_today']) || $filter_tujuan !== '' || $filter_status !== '' || $filter_tipe !== '' || $filter_fu !== '' || $filter_start !== '' || $filter_end !== '' || $filter_q !== '');
+$has_filters = ($show_all || isset($_GET['filter_today']) || $filter_tujuan !== '' || $filter_status !== '' || $filter_tipe !== '' || $filter_fu !== '' || $filter_klinik !== '' || $filter_start !== '' || $filter_end !== '' || $filter_q !== '');
 if (!$has_filters) {
     if ($role === 'admin_klinik') {
         $filter_today = true;
@@ -77,6 +78,9 @@ if (in_array($filter_tipe, ['keep', 'fixed', 'cancel'], true)) {
 }
 if ($filter_fu === '1') {
     $where .= " AND b.status = 'booked' AND b.butuh_fu = 1";
+}
+if ($filter_klinik !== '') {
+    $where .= " AND b.klinik_id = " . (int)$filter_klinik;
 }
 
 
@@ -614,30 +618,48 @@ if (!empty($booking_ids)) {
                 </div>
                 <div class="col-12 w-100 mt-2 mb-1 border-top" style="border-top-color: rgba(0,0,0,0.05) !important;">
                 </div>
-                <div class="col-lg-5 col-md-6">
-                    <label class="form-label fw-bold text-muted mb-1">Range Tanggal</label>
-                    <div class="row g-2">
-                        <div class="col-6">
-                            <input type="date" name="start_date" class="form-control"
-                                value="<?= htmlspecialchars($filter_start) ?>">
+
+                <div class="col-12">
+                    <div class="row g-3 align-items-end">
+                        <?php if (in_array($role, ['super_admin', 'cs'])): ?>
+                            <div class="col-xl-3 col-lg-4 col-md-6">
+                                <label class="form-label fw-bold text-muted mb-1">Klinik</label>
+                                <select name="klinik_id" class="form-select">
+                                    <option value="">Semua Klinik</option>
+                                    <?php
+                                    $clinics = $conn->query("SELECT id, nama_klinik FROM inventory_klinik ORDER BY nama_klinik ASC");
+                                    while ($c = $clinics->fetch_assoc()):
+                                        ?>
+                                        <option value="<?= $c['id'] ?>" <?= $filter_klinik == $c['id'] ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($c['nama_klinik']) ?>
+                                        </option>
+                                    <?php endwhile; ?>
+                                </select>
+                            </div>
+                        <?php endif; ?>
+
+                        <div class="<?= in_array($role, ['super_admin', 'cs']) ? 'col-xl-4 col-lg-4' : 'col-xl-5 col-lg-6' ?> col-md-6">
+                            <label class="form-label fw-bold text-muted mb-1">Range Tanggal</label>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <input type="date" name="start_date" class="form-control" value="<?= htmlspecialchars($filter_start) ?>">
+                                </div>
+                                <div class="col-6">
+                                    <input type="date" name="end_date" class="form-control" value="<?= htmlspecialchars($filter_end) ?>">
+                                </div>
+                            </div>
                         </div>
-                        <div class="col-6">
-                            <input type="date" name="end_date" class="form-control"
-                                value="<?= htmlspecialchars($filter_end) ?>">
+
+                        <div class="col-xl d-flex flex-wrap justify-content-md-end justify-content-start gap-2">
+                            <?php if ($has_filters): ?>
+                                <a href="<?= $reset_url ?>" class="btn btn-outline-secondary px-3"><i class="fas fa-undo me-1"></i> Reset</a>
+                            <?php endif; ?>
+                            <button type="submit" class="btn btn-primary px-4"><i class="fas fa-filter me-1"></i> Filter</button>
+                            <button type="button" class="btn btn-success px-3" onclick="exportExcel()">
+                                <i class="fas fa-file-excel me-1"></i> Export
+                            </button>
                         </div>
                     </div>
-                </div>
-                <div
-                    class="col-lg-7 col-md-6 d-flex flex-wrap justify-content-md-end justify-content-start gap-2 h-100">
-                    <?php if ($has_filters): ?>
-                        <a href="<?= $reset_url ?>" class="btn btn-outline-secondary px-3"><i class="fas fa-undo me-1"></i>
-                            Reset</a>
-                    <?php endif; ?>
-                    <button type="submit" class="btn btn-primary px-4"><i class="fas fa-filter me-1"></i>
-                        Filter</button>
-                    <button type="button" class="btn btn-success px-3" onclick="exportExcel()">
-                        <i class="fas fa-file-excel me-1"></i> Export
-                    </button>
                 </div>
             </form>
 
@@ -661,6 +683,7 @@ if (!empty($booking_ids)) {
                     url.searchParams.append('status', getVal('status'));
                     url.searchParams.append('tipe', getVal('tipe'));
                     url.searchParams.append('fu', getVal('fu'));
+                    url.searchParams.append('klinik_id', getVal('klinik_id'));
                     url.searchParams.append('q', qVal);
 
                     <?php if ($filter_today): ?>
@@ -1927,30 +1950,80 @@ if (!empty($booking_ids)) {
                 </tr>`;
                     }).join('') : '<tr><td colspan="2" class="text-center text-muted py-2">Tidak ada item</td></tr>';
 
-                    // Render Patient List
+                    // Render Patient List grouped by status
                     let paxHtml = '';
-                    res.pasien_list.forEach((p, idx) => {
-                        let statusBadge = '';
-                        let rowStyle = '';
-                        if (p.status === 'done') {
-                            statusBadge = '<span class="badge bg-success x-small ms-2">Completed</span>';
-                        } else if (p.status === 'rescheduled') {
-                            statusBadge = '<span class="badge bg-info x-small ms-2">Rescheduled</span>';
-                        } else if (p.status === 'cancelled') {
-                            statusBadge = `<span class="badge bg-danger x-small ms-2" title="Alasan: ${p.remark || '-'}">Cancelled</span>`;
-                            rowStyle = 'background-color: rgba(220, 53, 69, 0.05);';
+                    let statusGroups = {
+                        'done': { label: 'Completed', color: 'success', icon: 'check-double', items: {} },
+                        'rescheduled': { label: 'Rescheduled', color: 'info', icon: 'calendar-alt', items: {} },
+                        'cancelled': { label: 'Cancelled', color: 'danger', icon: 'times-circle', items: {} },
+                        'booked': { label: 'Booked', color: 'primary', icon: 'clock', items: {} }
+                    };
+
+                    res.pasien_list.forEach(p => {
+                        let st = p.status || 'booked';
+                        if (!statusGroups[st]) st = 'booked';
+                        
+                        let pKey = p.nama_pasien + '|' + (p.nomor_tlp || '') + '|' + (p.tanggal_lahir || '');
+                        if (!statusGroups[st].items[pKey]) {
+                            statusGroups[st].items[pKey] = { 
+                                name: p.nama_pasien, 
+                                tlp: p.nomor_tlp,
+                                dob: p.tanggal_lahir,
+                                exams: [], 
+                                remarks: new Set() 
+                            };
                         }
+                        statusGroups[st].items[pKey].exams.push(p.exam_name);
+                        if (p.remark) statusGroups[st].items[pKey].remarks.add(p.remark);
+                    });
+
+                    ['done', 'rescheduled', 'cancelled', 'booked'].forEach(st => {
+                        let group = statusGroups[st];
+                        let pKeys = Object.keys(group.items);
+                        if (pKeys.length === 0) return;
 
                         paxHtml += `
-                    <div class="p-2 border-bottom d-flex justify-content-between align-items-center" style="${rowStyle}">
-                        <div>
-                            <div class="fw-bold text-dark ${p.status === 'cancelled' ? 'text-decoration-line-through text-muted' : ''}">${idx + 1}. ${p.nama_pasien} ${statusBadge}</div>
-                            <div class="x-small text-muted ${p.status === 'cancelled' ? 'text-decoration-line-through' : ''}">${p.exams}</div>
-                            ${p.remark ? `<div class="x-small ${p.status === 'rescheduled' ? 'text-primary' : 'text-info'} mt-1"><i class="fas fa-info-circle me-1"></i>${p.remark}</div>` : ''}
-                        </div>
-                    </div>
-                `;
+                            <div class="mb-4">
+                                <div class="d-flex align-items-center mb-2 pb-1 border-bottom border-${group.color} border-opacity-25">
+                                    <span class="badge bg-${group.color} me-2"><i class="fas fa-${group.icon}"></i></span>
+                                    <span class="x-small fw-bold text-uppercase text-${group.color}">${group.label}</span>
+                                </div>
+                        `;
+
+                        pKeys.forEach((pKey, idx) => {
+                            let p = group.items[pKey];
+                            let remarksHtml = '';
+                            p.remarks.forEach(r => {
+                                let icon = r.includes('Rescheduled ke') ? 'calendar-check' : 'info-circle';
+                                let textClass = r.includes('Rescheduled ke') ? 'text-primary' : 'text-muted';
+                                
+                                // Make #BK-XXXXX clickable if it looks like a booking number
+                                let formattedR = r.replace(/(#BK-\d+)/g, '<span class="fw-bold">$1</span>');
+                                
+                                remarksHtml += `<div class="x-small ${textClass} mt-1"><i class="fas fa-${icon} me-1"></i>${formattedR}</div>`;
+                            });
+
+                            paxHtml += `
+                                <div class="ps-2 mb-2">
+                                    <div class="small fw-bold text-dark d-flex align-items-center flex-wrap gap-2">
+                                        <span>${idx + 1}. ${p.name}</span>
+                                        <span class="badge bg-light text-muted border fw-normal" style="font-size: 0.65rem;">
+                                            <i class="fas fa-phone me-1"></i>${p.tlp || '-'}
+                                        </span>
+                                        <span class="badge bg-light text-muted border fw-normal" style="font-size: 0.65rem;">
+                                            <i class="fas fa-birthday-cake me-1"></i>${p.dob ? fmtDateIdShort(p.dob) : '-'}
+                                        </span>
+                                    </div>
+                                    <div class="small text-muted ps-3" style="line-height: 1.4;">${p.exams.join(', ')}</div>
+                                    <div class="ps-3">${remarksHtml}</div>
+                                </div>
+                            `;
+                        });
+
+                        paxHtml += `</div>`;
                     });
+
+                    if (!paxHtml) paxHtml = '<div class="text-center py-4 text-muted small italic">Tidak ada data pasien</div>';
                     $('#detailPaxList').html(paxHtml);
 
                     $('#bookingDetailTitle').text('Detail: ' + (h.nomor_booking || ''));
@@ -2876,7 +2949,7 @@ if (!empty($booking_ids)) {
                     <input type="hidden" id="completionBookingId">
                     <div class="alert alert-info py-2 mb-3">
                         <div class="fw-bold">Booking: <span id="completionNomorBooking"></span></div>
-                        <small>Pilih pasien yang benar-benar telah selesai melakukan pemeriksaan.</small>
+                        <small>Pilih <b>pemeriksaan</b> yang benar-benar telah selesai dilakukan.</small>
                     </div>
 
                     <div class="table-responsive">
@@ -2887,7 +2960,7 @@ if (!empty($booking_ids)) {
                                         <input type="checkbox" class="form-check-input" id="checkAllPasien" checked>
                                     </th>
                                     <th>Nama Pasien</th>
-                                    <th>Pemeriksaan</th>
+                                    <th>Pemeriksaan / Paket</th>
                                     <th width="200">Status Akhir</th>
                                 </tr>
                             </thead>
@@ -2983,22 +3056,80 @@ if (!empty($booking_ids)) {
             $.post('api/ajax_booking_detail.php', { id: id }, function (res) {
                 if (res.success) {
                     let html = '';
-                    res.pasien_list.forEach(function (p, i) {
-                        html += `
-                <tr>
-                    <td class="text-center">
-                        <input type="checkbox" class="form-check-input cb-pasien-done" value="${p.id}" checked data-index="${i}">
-                    </td>
-                    <td><div class="fw-bold">${p.nama_pasien}</div></td>
-                    <td><div class="x-small text-muted">${p.exams}</div></td>
-                    <td>
-                        <select class="form-select form-select-sm sel-pasien-fallback" data-index="${i}" disabled>
-                            <option value="done" selected>Completed</option>
-                            <option value="reschedule">Reschedule</option>
-                            <option value="cancel">Cancel</option>
-                        </select>
-                    </td>
-                </tr>`;
+                    let groups = {};
+                    res.pasien_list.forEach(p => {
+                        let key = p.nama_pasien + '|' + (p.nomor_tlp || '') + '|' + (p.tanggal_lahir || '');
+                        if (!groups[key]) groups[key] = { name: p.nama_pasien, items: [] };
+                        groups[key].items.push(p);
+                    });
+
+                    let rowIndex = 0;
+                    Object.keys(groups).forEach(key => {
+                        let g = groups[key];
+                        let groupId = 'grp-' + rowIndex;
+                        
+                        if (g.items.length === 1) {
+                            let p = g.items[0];
+                            html += `
+                                <tr>
+                                    <td class="text-center">
+                                        <input type="checkbox" class="form-check-input cb-pasien-done" value="${p.id}" checked data-index="${rowIndex}">
+                                    </td>
+                                    <td><div class="fw-bold">${p.nama_pasien}</div></td>
+                                    <td><div class="x-small text-muted">${p.exam_name}</div></td>
+                                    <td>
+                                        <select class="form-select form-select-sm sel-pasien-fallback" data-index="${rowIndex}" disabled>
+                                            <option value="done" selected>Completed</option>
+                                            <option value="reschedule">Reschedule</option>
+                                            <option value="cancel">Cancel</option>
+                                        </select>
+                                    </td>
+                                </tr>`;
+                            rowIndex++;
+                        } else {
+                            // Group Header
+                            html += `
+                                <tr class="bg-light border-bottom-0 align-middle">
+                                    <td class="text-center">
+                                        <input type="checkbox" class="form-check-input group-check" data-target="${groupId}" checked>
+                                    </td>
+                                    <td colspan="2">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div class="fw-bold text-primary"><i class="fas fa-user-circle me-2"></i>${g.name} <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-2" style="font-size:0.7rem;">${g.items.length} Pemeriksaan</span></div>
+                                            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none fw-bold" style="font-size: 0.75rem;" onclick="toggleCompletionGroup('${groupId}', this)">
+                                                <i class="fas fa-chevron-down me-1"></i> LIHAT DETAIL
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <select class="form-select form-select-sm group-fallback-select" data-target="${groupId}" disabled>
+                                            <option value="done" selected>Completed</option>
+                                            <option value="reschedule">Reschedule</option>
+                                            <option value="cancel">Cancel</option>
+                                        </select>
+                                    </td>
+                                </tr>`;
+                            
+                            // Sub-rows
+                            g.items.forEach(p => {
+                                html += `
+                                    <tr class="exam-sub-row ${groupId}" style="display:none; background-color: #fdfdfd;">
+                                        <td class="text-center">
+                                            <input type="checkbox" class="form-check-input cb-pasien-done sub-item-${groupId}" value="${p.id}" checked data-index="${rowIndex}" data-group="${groupId}">
+                                        </td>
+                                        <td class="ps-4 text-muted"><div class="small">${p.nama_pasien}</div></td>
+                                        <td><div class="small text-muted"><i class="fas fa-microscope me-1"></i>${p.exam_name}</div></td>
+                                        <td>
+                                            <select class="form-select form-select-sm sel-pasien-fallback" data-index="${rowIndex}" disabled>
+                                                <option value="done" selected>Completed</option>
+                                                <option value="reschedule">Reschedule</option>
+                                                <option value="cancel">Cancel</option>
+                                            </select>
+                                        </td>
+                                    </tr>`;
+                                rowIndex++;
+                            });
+                        }
                     });
                     $('#completionPasienWrapper').html(html);
                     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalCompletion')).show();
@@ -3012,15 +3143,63 @@ if (!empty($booking_ids)) {
             $('.cb-pasien-done').prop('checked', $(this).prop('checked')).trigger('change');
         });
 
+        window.toggleCompletionGroup = function (groupId, btn) {
+            var $rows = $('.' + groupId);
+            var isHidden = $rows.is(':hidden');
+            if (isHidden) {
+                $rows.show();
+                $(btn).html('<i class="fas fa-chevron-up me-1"></i> SEMBUNYIKAN');
+            } else {
+                $rows.hide();
+                $(btn).html('<i class="fas fa-chevron-down me-1"></i> LIHAT DETAIL');
+            }
+        };
+
+        $(document).on('change', '.group-check', function () {
+            var target = $(this).data('target');
+            var isChecked = $(this).prop('checked');
+            $('.sub-item-' + target).prop('checked', isChecked).trigger('change');
+
+            // Sync Group Selector
+            var $groupSel = $(`.group-fallback-select[data-target="${target}"]`);
+            if (isChecked) {
+                $groupSel.val('done').prop('disabled', true);
+            } else {
+                $groupSel.val('reschedule').prop('disabled', false);
+            }
+        });
+
+        $(document).on('change', '.group-fallback-select', function () {
+            var target = $(this).data('target');
+            var val = $(this).val();
+            $('.exam-sub-row.' + target + ' .sel-pasien-fallback').val(val).trigger('change');
+        });
+
         $(document).on('change', '.cb-pasien-done', function () {
             let idx = $(this).data('index');
             let isChecked = $(this).is(':checked');
             let $sel = $(`.sel-pasien-fallback[data-index="${idx}"]`);
+            let groupId = $(this).data('group');
 
             if (isChecked) {
                 $sel.val('done').prop('disabled', true);
             } else {
                 $sel.val('reschedule').prop('disabled', false);
+            }
+
+            // Sync group check & status
+            if (groupId) {
+                let allChecked = $(`.sub-item-${groupId}:checked`).length === $(`.sub-item-${groupId}`).length;
+                let $groupCheck = $(`.group-check[data-target="${groupId}"]`);
+                let $groupSel = $(`.group-fallback-select[data-target="${groupId}"]`);
+                
+                $groupCheck.prop('checked', allChecked);
+                if (allChecked) {
+                    $groupSel.val('done').prop('disabled', true);
+                } else {
+                    $groupSel.prop('disabled', false);
+                    // If mixed or none checked, group selector follows the first unchecked item or just stays
+                }
             }
 
             checkNeedReschedule();

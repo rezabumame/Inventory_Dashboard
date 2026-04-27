@@ -46,6 +46,21 @@ if ($role === 'admin_klinik') {
     }
 }
 
+$is_ajax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest');
+$dedup_key = sha1('booking_action|' . (int)($_SESSION['user_id'] ?? 0) . '|' . json_encode(array_diff_key($_POST, ['_csrf' => true])));
+if (!isset($_SESSION['_dedup'])) $_SESSION['_dedup'] = [];
+$now = time();
+if (!empty($_SESSION['_dedup'][$dedup_key]) && ($now - (int)$_SESSION['_dedup'][$dedup_key]) < 8) {
+    $msg_dedup = 'Permintaan sedang diproses atau duplikat. Silakan tunggu sebentar.';
+    if ($is_ajax) {
+        echo json_encode(['success' => false, 'message' => $msg_dedup]);
+        exit;
+    }
+    $_SESSION['error'] = $msg_dedup;
+    redirect('index.php?page=booking');
+}
+$_SESSION['_dedup'][$dedup_key] = $now;
+
 $conn->begin_transaction();
 try {
     // Get all items from details

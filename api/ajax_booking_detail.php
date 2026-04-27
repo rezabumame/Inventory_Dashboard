@@ -127,14 +127,37 @@ unset($row);
 $header['is_out_of_stock'] = $re_evaluated_is_out_of_stock;
 $header['out_of_stock_items'] = !empty($re_evaluated_out_of_stock_items) ? implode(', ', $re_evaluated_out_of_stock_items) : null;
 
-// Fetch all pasien (utama + tambahan) with their exams
+// 1. Fetch granular list (per package) for Completion Modal
 $stmt = $conn->prepare("
+    SELECT 
+        bp.id,
+        bp.nama_pasien, 
+        bp.nomor_tlp, 
+        bp.tanggal_lahir,
+        bp.status,
+        bp.remark,
+        pg.nama_pemeriksaan as exam_name,
+        pg.id as exam_id
+    FROM inventory_booking_pasien bp
+    JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
+    WHERE bp.booking_id = ?
+    ORDER BY bp.id ASC
+");
+$stmt->bind_param("i", $id);
+$stmt->execute();
+$pasien_list = [];
+$res = $stmt->get_result();
+while ($row = $res->fetch_assoc()) {
+    $pasien_list[] = $row;
+}
+
+// 2. Fetch grouped list for Detail Modal
+$stmt_g = $conn->prepare("
     SELECT 
         MIN(bp.id) as id,
         bp.nama_pasien, 
         bp.nomor_tlp, 
         bp.tanggal_lahir,
-        -- Status agregasi: prioritaskan rescheduled, lalu done (meskipun baru sebagian sesuai request user)
         CASE 
             WHEN SUM(CASE WHEN bp.status = 'rescheduled' THEN 1 ELSE 0 END) > 0 THEN 'rescheduled'
             WHEN SUM(CASE WHEN bp.status = 'done' THEN 1 ELSE 0 END) > 0 THEN 'done'
@@ -153,25 +176,19 @@ $stmt = $conn->prepare("
                 END
             ) 
             SEPARATOR ', '
-        ) as exams,
-        GROUP_CONCAT(pg.id SEPARATOR ',') as exam_ids
+        ) as exams
     FROM inventory_booking_pasien bp
     JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
     WHERE bp.booking_id = ?
     GROUP BY bp.nama_pasien, bp.nomor_tlp, bp.tanggal_lahir
     ORDER BY MIN(bp.id) ASC
 ");
-$stmt->bind_param("i", $id);
-$stmt->execute();
-$pasien_list = [];
-$res = $stmt->get_result();
-while ($row = $res->fetch_assoc()) {
-    if (!empty($row['exam_ids'])) {
-        $row['exam_ids'] = explode(',', $row['exam_ids']);
-    } else {
-        $row['exam_ids'] = [];
-    }
-    $pasien_list[] = $row;
+$stmt_g->bind_param("i", $id);
+$stmt_g->execute();
+$pasien_list_grouped = [];
+$res_g = $stmt_g->get_result();
+while ($row = $res_g->fetch_assoc()) {
+    $pasien_list_grouped[] = $row;
 }
 
 echo json_encode([
@@ -180,6 +197,7 @@ echo json_encode([
     'jenis_pemeriksaan' => $jenis,
     'items' => $items,
     'pasien_list' => $pasien_list,
+    'pasien_list_grouped' => $pasien_list_grouped,
 ], JSON_UNESCAPED_UNICODE);
 
 
