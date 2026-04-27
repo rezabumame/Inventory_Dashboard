@@ -1031,7 +1031,7 @@ function get_status_badge($status) {
                                     </tbody>
                                 </table>
                             </div>
-                            <button type="button" class="btn btn-success btn-sm" onclick="addRow()">+ Tambah Baris</button>
+                            <button type="button" id="btnAddRow" class="btn btn-success btn-sm" onclick="addRow()">+ Tambah Baris</button>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -1127,7 +1127,10 @@ function loadAvailableItems() {
         url: 'api/ajax_request_items.php',
         method: 'POST',
         dataType: 'json',
-        data: { ke_level: keLevel, ke_id: keId, _csrf: REQUEST_CSRF }
+        data: { ke_level: keLevel, ke_id: keId, _csrf: REQUEST_CSRF },
+        beforeSend: function() {
+            $('#btnAddRow').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>Loading...');
+        }
     }).done(function(res) {
         if (myVersion !== destVersion || destKey !== currentDestKey) return;
         availableItems = [];
@@ -1158,6 +1161,7 @@ function loadAvailableItems() {
     }).always(function() {
         if (myVersion !== destVersion || destKey !== currentDestKey) return;
         stockDataLoaded = true;
+        $('#btnAddRow').prop('disabled', false).html('+ Tambah Baris');
     });
 }
 
@@ -1460,57 +1464,44 @@ function viewRequest(id) {
             $('#view_request_id').val(id);
             var addCancel = data.indexOf('data-can-cancel="true"') !== -1;
             
-            if (data.indexOf('data-spv="true"') !== -1) {
-                 $('#form_action').val('approve_request');
-                 $('#view_footer').html(
-                    '<button type="button" class="btn btn-danger me-auto" onclick="submitApproval(\'reject\')">Tolak</button>' +
-                    '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>' +
-                    '<button type="button" class="btn btn-primary-custom" onclick="submitApproval(\'approve\')">Approve SPV</button>'
-                 );
-                 if (addCancel) {
-                    $('#view_footer').prepend('<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(' + id + ')"><i class="fas fa-times me-1"></i>Batalkan</button>');
-                 }
-            } else if (data.indexOf('data-pending="true"') !== -1) {
-                 $('#form_action').val('approve_request');
-                 $('#view_footer').html(
-                    '<button type="button" class="btn btn-danger me-auto" onclick="submitApproval(\'reject\')">Tolak</button>' +
-                    '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>' +
-                    '<button type="button" class="btn btn-primary-custom" onclick="submitApproval(\'approve\')">Setujui</button>'
-                 );
-                 if (addCancel) {
-                    $('#view_footer').prepend('<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(' + id + ')"><i class="fas fa-times me-1"></i>Batalkan</button>');
-                 }
-            } else if (data.indexOf('data-process="true"') !== -1) {
-                 $('#form_action').val('process_request');
-                 $('#status_action').val('completed');
-                 
-                 var extraBtn = '';
-                 if (data.indexOf('data-is-partial="true"') !== -1) {
-                     extraBtn = '<button type="button" class="btn btn-success me-2" onclick="forceComplete(' + id + ')"><i class="fas fa-check-circle me-1"></i>Tandai Selesai</button>';
-                 }
-                 
-                 $('#view_footer').html(
-                    '<a href="scripts/print_request.php?id=' + id + '" target="_blank" class="btn btn-info text-white me-auto">' +
-                        '<i class="fas fa-print me-1"></i> Cetak Dokumen' +
-                    '</a>' +
-                    extraBtn +
-                    '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>' +
-                    '<button type="button" class="btn btn-primary-custom" onclick="processUpload()">' +
-                        '<i class="fas fa-upload me-1"></i> Unggah Dokumen & Proses' +
-                    '</button>'
-                 );
+            var isSpv = data.indexOf('data-spv="true"') !== -1;
+            var isPending = data.indexOf('data-pending="true"') !== -1;
+            var isProcess = data.indexOf('data-process="true"') !== -1;
+            var isPartial = data.indexOf('data-is-partial="true"') !== -1;
+            
+            var footerHtml = '';
+            
+            if (isSpv || isPending) {
+                $('#form_action').val('approve_request');
+                footerHtml += '<button type="button" class="btn btn-danger me-auto" onclick="submitApproval(\'reject\')">Tolak</button>';
+                footerHtml += '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>';
+                footerHtml += '<button type="button" class="btn btn-primary-custom" onclick="submitApproval(\'approve\')">' + (isSpv ? 'Approve SPV' : 'Setujui') + '</button>';
+            } else if (isProcess) {
+                $('#form_action').val('process_request');
+                $('#status_action').val('completed');
+                
+                footerHtml += '<a href="scripts/print_request.php?id=' + id + '" target="_blank" class="btn btn-info text-white me-auto">';
+                footerHtml += '<i class="fas fa-print me-1"></i> Cetak Dokumen</a>';
+                
+                if (isPartial) {
+                    footerHtml += '<button type="button" class="btn btn-success me-2" onclick="forceComplete(' + id + ')"><i class="fas fa-check-circle me-1"></i>Tandai Selesai</button>';
+                }
+                
+                footerHtml += '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>';
+                footerHtml += '<button type="button" class="btn btn-primary-custom" onclick="processUpload()">';
+                footerHtml += '<i class="fas fa-upload me-1"></i> Unggah Dokumen & Proses</button>';
             } else {
-                 $('#form_action').val('');
-                 $('#view_footer').html(
-                    '<a href="scripts/print_request.php?id=' + id + '" target="_blank" class="btn btn-info text-white me-auto">' +
-                        '<i class="fas fa-print me-1"></i> Cetak Dokumen' +
-                    '</a>' +
-                    '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>'
-                 );
-                 if (addCancel) {
-                    $('#view_footer').prepend('<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(' + id + ')"><i class="fas fa-times me-1"></i>Batalkan</button>');
-                 }
+                $('#form_action').val('');
+                footerHtml += '<a href="scripts/print_request.php?id=' + id + '" target="_blank" class="btn btn-info text-white me-auto">';
+                footerHtml += '<i class="fas fa-print me-1"></i> Cetak Dokumen</a>';
+                footerHtml += '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>';
             }
+
+            if (addCancel) {
+                footerHtml = '<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(' + id + ')"><i class="fas fa-times me-1"></i>Batalkan</button>' + footerHtml;
+            }
+            
+            $('#view_footer').html(footerHtml);
         });
 }
 

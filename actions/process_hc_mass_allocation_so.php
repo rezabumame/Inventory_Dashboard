@@ -108,7 +108,7 @@ try {
         $qty_so = (float)$item['qty_so'];
         $uom_mode = (string)$item['uom_mode'];
 
-        // 1. Fetch latest data from DB (ratio and current stock)
+        // 1. Fetch latest data from DB (ratio and current stock) with locking
         $b = $conn->query("
             SELECT b.id, b.kode_barang, b.odoo_product_id, b.nama_barang, COALESCE(c.multiplier, 1) AS ratio
             FROM inventory_barang b
@@ -122,8 +122,12 @@ try {
         $ratio = (float)($b['ratio'] ?? 1);
         if ($ratio <= 0) $ratio = 1;
         
-        $res_curr = $conn->query("SELECT COALESCE(SUM(qty), 0) AS qty FROM inventory_stok_tas_hc WHERE user_id = $user_hc_id AND klinik_id = $klinik_id AND barang_id = $bid");
-        $latest_qty_db = (float)($res_curr && $res_curr->num_rows > 0 ? ($res_curr->fetch_assoc()['qty'] ?? 0) : 0);
+        // Lock the specific stock row to prevent race conditions
+        $stmt_lock = $conn->prepare("SELECT qty FROM inventory_stok_tas_hc WHERE user_id = ? AND klinik_id = ? AND barang_id = ? FOR UPDATE");
+        $stmt_lock->bind_param("iii", $user_hc_id, $klinik_id, $bid);
+        $stmt_lock->execute();
+        $res_lock = $stmt_lock->get_result();
+        $latest_qty_db = (float)($res_lock->num_rows > 0 ? ($res_lock->fetch_assoc()['qty'] ?? 0) : 0);
 
         // 2. Calculate target SO in operational units
         $qty_so_oper = ($uom_mode === 'odoo') ? ($qty_so / $ratio) : $qty_so;
