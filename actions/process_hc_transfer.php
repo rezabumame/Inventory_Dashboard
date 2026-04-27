@@ -9,6 +9,7 @@ require_csrf();
 
 // Check role access
 check_role(['admin_klinik', 'super_admin']);
+$role = $_SESSION['role'] ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') redirect('index.php?page=stok_petugas_hc');
 
@@ -97,10 +98,6 @@ if (!$u || (int)$u['klinik_id'] !== $klinik_id) {
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id);
 }
 
-// Ownership Check for admin_klinik
-if ($_SESSION['role'] === 'admin_klinik' && (int)$klinik_id !== (int)$_SESSION['klinik_id']) {
-    throw new Exception('Akses Ditolak: Anda tidak memiliki wewenang untuk mentransfer stok di luar klinik Anda');
-}
 
 $loc_onsite = stock_resolve_location($conn, (string)($kl['kode_klinik'] ?? ''));
 if ($loc_onsite === '') {
@@ -142,6 +139,11 @@ if ($got_lock !== 1) {
 
 $conn->begin_transaction();
 try {
+    // Ownership Check for admin_klinik
+    if ($role === 'admin_klinik' && (int)$klinik_id !== (int)$_SESSION['klinik_id']) {
+        throw new Exception('Akses Ditolak: Anda tidak memiliki wewenang untuk mentransfer stok di luar klinik Anda');
+    }
+
     foreach ($items as $barang_id => $qty_int) {
         $barang_id = (int)$barang_id;
         $qty_oper = (float)$qty_int;

@@ -89,7 +89,14 @@ function check_role($allowed_roles) {
         return;
     }
     if (!in_array($role, $allowed_roles, true)) {
-        echo "Access Denied";
+        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
+            header('Content-Type: application/json');
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Akses Ditolak: Peran Anda tidak diizinkan.']);
+        } else {
+            http_response_code(403);
+            echo "Access Denied";
+        }
         exit;
     }
 }

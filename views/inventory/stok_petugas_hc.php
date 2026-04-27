@@ -2276,8 +2276,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     $btn.prop('disabled', false).html('Simpan Transfer');
                 }
             },
-            error: function() {
-                $err.removeClass('d-none').text('Terjadi kesalahan sistem. Silakan coba lagi.');
+            error: function(xhr) {
+                var msg = 'Terjadi kesalahan sistem. Silakan coba lagi.';
+                try {
+                    var res = JSON.parse(xhr.responseText);
+                    if (res && res.message) msg = res.message;
+                } catch(e) {}
+                $err.removeClass('d-none').text(msg);
                 $btn.prop('disabled', false).html('Simpan Transfer');
             }
         });
@@ -2309,8 +2314,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     $btn.prop('disabled', false).html('Simpan Allocasi');
                 }
             },
-            error: function() {
-                $err.removeClass('d-none').text('Terjadi kesalahan sistem. Silakan coba lagi.');
+            error: function(xhr) {
+                var msg = 'Terjadi kesalahan sistem. Silakan coba lagi.';
+                try {
+                    var res = JSON.parse(xhr.responseText);
+                    if (res && res.message) msg = res.message;
+                } catch(e) {}
+                $err.removeClass('d-none').text(msg);
                 $btn.prop('disabled', false).html('Simpan Allocasi');
             }
         });
@@ -2476,8 +2486,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     $btn.prop('disabled', false).html('Simpan Pengembalian');
                 }
             },
-            error: function() {
-                $err.removeClass('d-none').text('Terjadi kesalahan sistem. Silakan coba lagi.');
+            error: function(xhr) {
+                var msg = 'Terjadi kesalahan sistem. Silakan coba lagi.';
+                try {
+                    var res = JSON.parse(xhr.responseText);
+                    if (res && res.message) msg = res.message;
+                } catch(e) {}
+                $err.removeClass('d-none').text(msg);
                 $btn.prop('disabled', false).html('Simpan Pengembalian');
             }
         });
