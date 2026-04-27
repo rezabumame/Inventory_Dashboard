@@ -317,7 +317,7 @@ if ($can_cs_edit) {
             });
         }
 
-        var inheritExams = (existingData[0] && existingData[0].exams) ? existingData[0].exams : [];
+        // var inheritExams = (existingData[0] && existingData[0].exams) ? existingData[0].exams : [];
 
         $wrapper.empty();
         for (var i = 0; i < paxCount; i++) {
@@ -377,8 +377,9 @@ if ($can_cs_edit) {
             
             if (data.exams && data.exams.length > 0) {
                 data.exams.forEach(function(examId) { addPatientExamRowEdit(i, examId); });
-            } else if (i > 0 && inheritExams.length > 0) {
-                inheritExams.forEach(function(examId) { addPatientExamRowEdit(i, examId); });
+            } else if (i > 0 && false) {
+                // Removed inheritance logic as per user request
+                // inheritExams.forEach(function(examId) { addPatientExamRowEdit(i, examId); });
             } else {
                 addPatientExamRowEdit(i, '');
             }
@@ -416,10 +417,11 @@ if ($can_cs_edit) {
         }
         if (selectedId) {
             $select.val(selectedId).trigger('change');
-        } else if (patientIdx > 0 && rowIdx === 0) {
-            var $modal = $list.closest('.modal');
-            var firstExam = $modal.find(`.patient-exams-list[data-patient-idx="0"] .patient-exam-select`).first().val();
-            if (firstExam) $select.val(firstExam).trigger('change');
+        } else if (patientIdx > 0 && rowIdx === 0 && false) {
+            // Removed inheritance logic as per user request
+            // var $modal = $list.closest('.modal');
+            // var firstExam = $modal.find(`.patient-exams-list[data-patient-idx="0"] .patient-exam-select`).first().val();
+            // if (firstExam) $select.val(firstExam).trigger('change');
         }
         checkEditSelectedStock();
     }

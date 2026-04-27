@@ -652,7 +652,7 @@ if (!empty($booking_ids)) {
                             } elseif ($row['status'] == 'completed') {
                                 $badge = 'bg-success';
                             } elseif ($row['status'] == 'cancelled') {
-                                $badge = 'bg-danger';
+                                $badge = 'bg-secondary';
                             } elseif ($row['status'] == 'pending_edit') {
                                 $badge = 'bg-info text-dark';
                                 $status_label = 'Pending Edit (SPV)';
@@ -1005,33 +1005,7 @@ $(document).ready(function() {
         if (klinikId) loadExamOptions(klinikId);
     });
 
-    $(document).on('change', '.patient-exam-select[data-patient-idx="0"]', function() {
-        var $this = $(this);
-        var changedRowIdx = $this.closest('.exam-row').data('row-idx');
-        
-        // Hanya sinkronkan jika baris pertama pasien 0 yang diubah
-        if (changedRowIdx !== 0) return;
-
-        var firstPatientExamId = $this.val();
-        
-        // Cari modal aktif dan ambil jumlah pax dari modal tersebut
-        var $modal = $this.closest('.modal');
-        var paxCount = parseInt($modal.find('input[name="jumlah_pax"]').val()) || 1;
-        
-        if (paxCount > 1) {
-            // Hanya sinkronkan elemen di dalam modal yang sama
-            $modal.find('.patient-exam-select').not(this).each(function() {
-                var $select = $(this);
-                var patientIdx = parseInt($select.attr('data-patient-idx') || $select.data('patient-idx'));
-                var rowIdx = $select.closest('.exam-row').data('row-idx');
-                
-                // Hanya sinkronkan ke baris pertama pasien LAIN (patientIdx > 0)
-                if (rowIdx === 0 && patientIdx > 0) {
-                    $select.val(firstPatientExamId).trigger('change');
-                }
-            });
-        }
-    });
+    // Sync logic removed as per user request to allow manual input for each patient.
 
     // Real-time validation for date and time
     $('#booking_tanggal, #booking_jam').on('change', function() {
@@ -1871,35 +1845,10 @@ window.openAdjustModal = function(id, nomorBooking, currentPax, klinikId, status
     $('#modalAdjust').data('klinik-id', klinikId);
     $('#modalAdjust').data('status-booking', statusBooking);
     
-    // Ambil jenis pemeriksaan pasien utama dari detail (via AJAX)
-    $.ajax({
-        url: 'api/ajax_booking_detail.php',
-        method: 'POST',
-        dataType: 'json',
-        data: { id: id },
-        success: function(res) {
-            var firstPatientExamId = '';
-            if (res && res.success && res.pasien_list && res.pasien_list.length > 0) {
-                // Ambil pemeriksaan pertama dari pasien pertama
-                var firstP = res.pasien_list[0];
-                if (firstP.exam_ids && firstP.exam_ids.length > 0) {
-                    firstPatientExamId = firstP.exam_ids[0];
-                }
-            }
-            $('#modalAdjust').data('primary-exam-id', firstPatientExamId);
-
-            // Pre-load exam options before showing
-            loadExamOptions(klinikId, function() {
-                renderAdjustPaxSections();
-                bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAdjust')).show();
-            });
-        },
-        error: function() {
-            loadExamOptions(klinikId, function() {
-                renderAdjustPaxSections();
-                bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAdjust')).show();
-            });
-        }
+    // Pre-load exam options before showing
+    loadExamOptions(klinikId, function() {
+        renderAdjustPaxSections();
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAdjust')).show();
     });
 };
 
@@ -1907,7 +1856,7 @@ window.renderAdjustPaxSections = function() {
     var $wrapper = $('#adjustPaxSectionsWrapper');
     var addCount = parseInt($('#adjustAdditionalPax').val()) || 1;
     var currentPax = parseInt($('#adjustCurrentPax').text()) || 0;
-    var primaryExamId = $('#modalAdjust').data('primary-exam-id') || '';
+    var primaryExamId = '';
     
     // Save existing data from inputs before re-rendering
     var existingData = [];
@@ -1925,7 +1874,7 @@ window.renderAdjustPaxSections = function() {
     $wrapper.empty();
     for (var i = 0; i < addCount; i++) {
         var num = currentPax + i + 1;
-        var data = existingData[i] || { nama: `Pasien ${num}`, exams: [primaryExamId] };
+        var data = existingData[i] || { nama: `Pasien ${num}`, exams: [] };
         var section = `
             <div class="card pax-section-card mb-3" data-idx="${i}">
                 <div class="pax-card-header d-flex justify-content-between align-items-center">
