@@ -15,7 +15,7 @@ function renderPagination($total_pages, $current_page) {
     $base_url = 'index.php?' . http_build_query($query_params);
     $html = '<nav aria-label="Page navigation" class="mt-4"><ul class="pagination pagination-circular justify-content-end">';
     $prev_class = ($current_page <= 1) ? 'disabled' : '';
-    $html .= '<li class="page-item ' . $prev_class . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page - 1) . '"><i class="fas fa-chevron-left"></i></a></li>';
+    $html .= '<li class="page-item ' . $prev_class . '"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page - 1) . '"><i class="fas fa-chevron-left"></i></a></li>';
     $start = max(1, $current_page - 2);
     $end = min($total_pages, $current_page + 2);
     if ($start > 1) {
@@ -24,14 +24,14 @@ function renderPagination($total_pages, $current_page) {
     }
     for ($i = $start; $i <= $end; $i++) {
         $active = ($i == $current_page) ? 'active' : '';
-        $html .= '<li class="page-item ' . $active . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $i . '">' . $i . '</a></li>';
+        $html .= '<li class="page-item ' . $active . '"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $i . '">' . $i . '</a></li>';
     }
     if ($end < $total_pages) {
         if ($end < $total_pages - 1) $html .= '<li class="page-item disabled"><span class="page-link border-0">...</span></li>';
         $html .= '<li class="page-item"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $total_pages . '">' . $total_pages . '</a></li>';
     }
     $next_class = ($current_page >= $total_pages) ? 'disabled' : '';
-    $html .= '<li class="page-item ' . $next_class . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page + 1) . '"><i class="fas fa-chevron-right"></i></a></li>';
+    $html .= '<li class="page-item ' . $next_class . '"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page + 1) . '"><i class="fas fa-chevron-right"></i></a></li>';
     $html .= '</ul></nav>';
     return $html;
 }
@@ -213,6 +213,20 @@ if (!empty($booking_ids)) {
 
 <style>
     .booking-table-responsive { overflow-x: auto; }
+    
+    /* CIRCULAR PAGINATION STYLING */
+    .pagination-circular .page-item { margin: 0 4px; }
+    .pagination-circular .page-link {
+        border-radius: 50% !important;
+        width: 40px; height: 40px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
+        transition: all 0.2s ease; background: #fff;
+    }
+    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
+    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
+    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
+
     #bookingTable_wrapper .dropdown-menu { z-index: 2000; max-height: 260px; overflow: auto; }
     .booking-filter-card { border: 1px solid rgba(0,0,0,.06); background: #ffffff; }
     .booking-filter-card .form-label { font-size: .78rem; letter-spacing: .02em; }
@@ -519,20 +533,7 @@ if (!empty($booking_ids)) {
             window.open(url.toString(), '_blank');
         }
         </script>
-<style>
-    /* CIRCULAR PAGINATION STYLING */
-    .pagination-circular .page-item { margin: 0 4px; }
-    .pagination-circular .page-link {
-        border-radius: 50% !important;
-        width: 40px; height: 40px;
-        display: flex; align-items: center; justify-content: center;
-        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
-        transition: all 0.2s ease; background: #fff;
-    }
-    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
-    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
-    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
-</style>
+
 
 
 
@@ -2074,20 +2075,7 @@ window.submitAdjust = function() {
 };
 </script>
 
-<style>
-    /* CIRCULAR PAGINATION STYLING */
-    .pagination-circular .page-item { margin: 0 4px; }
-    .pagination-circular .page-link {
-        border-radius: 50% !important;
-        width: 40px; height: 40px;
-        display: flex; align-items: center; justify-content: center;
-        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
-        transition: all 0.2s ease; background: #fff;
-    }
-    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
-    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
-    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
-</style>
+
 
 
 
@@ -2381,20 +2369,7 @@ window.openActionHub = function(data) {
 };
 </script>
 
-<style>
-    /* CIRCULAR PAGINATION STYLING */
-    .pagination-circular .page-item { margin: 0 4px; }
-    .pagination-circular .page-link {
-        border-radius: 50% !important;
-        width: 40px; height: 40px;
-        display: flex; align-items: center; justify-content: center;
-        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
-        transition: all 0.2s ease; background: #fff;
-    }
-    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
-    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
-    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
-</style>
+
 
 
 
