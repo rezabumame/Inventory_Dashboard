@@ -72,22 +72,56 @@ $stmt->bind_param("i", $id);
 $stmt->execute();
 $items = [];
 $res = $stmt->get_result();
+while ($row = $res->fetch_assoc()) {
+    $row['is_history'] = false;
+    $items[] = $row;
+}
+
+// Fallback: If items are empty (e.g. Completed or Cancelled), fetch from exam mapping as history
+if (empty($items)) {
+    $stmt_hist = $conn->prepare("
+        SELECT 
+            b.id AS barang_id,
+            b.kode_barang,
+            b.nama_barang,
+            b.satuan,
+            SUM(pgd.qty_per_pemeriksaan) AS qty
+        FROM inventory_booking_pasien bp
+        JOIN inventory_pemeriksaan_grup_detail pgd ON bp.pemeriksaan_grup_id = pgd.pemeriksaan_grup_id
+        JOIN inventory_barang b ON pgd.barang_id = b.id
+        WHERE bp.booking_id = ?
+        GROUP BY b.id, b.kode_barang, b.nama_barang, b.satuan
+        ORDER BY b.nama_barang ASC
+    ");
+    $stmt_hist->bind_param("i", $id);
+    $stmt_hist->execute();
+    $res_hist = $stmt_hist->get_result();
+    while ($row = $res_hist->fetch_assoc()) {
+        $row['is_history'] = true;
+        $items[] = $row;
+    }
+}
 $is_hc = (stripos($header['status_booking'] ?? '', 'HC') !== false);
 $klinik_id = (int)$header['klinik_id'];
 
 $re_evaluated_is_out_of_stock = 0;
 $re_evaluated_out_of_stock_items = [];
 
-while ($row = $res->fetch_assoc()) {
-    $ef = stock_effective($conn, $klinik_id, $is_hc, (int)$row['barang_id']);
-    $row['current_available'] = $ef['ok'] ? (float)$ef['on_hand'] : 0; // Menggunakan on_hand untuk cek pemenuhan booking
-    
-    if ($row['current_available'] < (float)$row['qty']) {
-        $re_evaluated_is_out_of_stock = 1;
-        $re_evaluated_out_of_stock_items[] = htmlspecialchars($row['nama_barang']) . " (Sisa: " . fmt_qty($row['current_available']) . ", Butuh: " . fmt_qty($row['qty']) . ")";
+foreach ($items as &$row) {
+    // Only check current availability for active bookings (not historical/completed)
+    if (!$row['is_history']) {
+        $ef = stock_effective($conn, $klinik_id, $is_hc, (int)$row['barang_id']);
+        $row['current_available'] = $ef['ok'] ? (float)$ef['on_hand'] : 0;
+        
+        if ($row['current_available'] < (float)$row['qty']) {
+            $re_evaluated_is_out_of_stock = 1;
+            $re_evaluated_out_of_stock_items[] = htmlspecialchars($row['nama_barang']) . " (Sisa: " . fmt_qty($row['current_available']) . ", Butuh: " . fmt_qty($row['qty']) . ")";
+        }
+    } else {
+        $row['current_available'] = null; // Don't show availability for history
     }
-    $items[] = $row;
 }
+unset($row);
 
 // Update header with re-evaluated OOS status
 $header['is_out_of_stock'] = $re_evaluated_is_out_of_stock;

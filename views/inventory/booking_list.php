@@ -1668,11 +1668,18 @@ window.openBookingDetail = function(id) {
                 return '<ul class="booking-oos-list mb-0">' + lis + '</ul>';
             };
             
+            var isHistoryMode = items.length > 0 && items[0].is_history;
             var rows = items.length ? items.map(function(it) {
                 var needed = parseFloat(it.qty || 0);
                 var current = parseFloat(it.current_available || 0);
                 var isShort = current < needed;
-                var stockInfo = `<span class="badge ${isShort ? 'bg-danger' : 'bg-success'} ms-2" style="font-size: 0.65rem;">Stok: ${fmtQtyJs(current)}</span>`;
+                
+                var stockInfo = '';
+                if (it.is_history) {
+                    stockInfo = `<span class="badge bg-secondary ms-2" style="font-size: 0.65rem; opacity: 0.7; font-weight: normal;"><i class="fas fa-history me-1"></i>Histori</span>`;
+                } else {
+                    stockInfo = `<span class="badge ${isShort ? 'bg-danger' : 'bg-success'} ms-2" style="font-size: 0.65rem;">Stok: ${fmtQtyJs(current)}</span>`;
+                }
                 
                 return `<tr style="font-size: 0.85rem;">
                     <td class="py-2">${esc(it.kode_barang + ' - ' + it.nama_barang)} ${stockInfo}</td>
@@ -1790,7 +1797,10 @@ window.openBookingDetail = function(id) {
                     <div class="col-md-6">
                         <div class="card border-0 shadow-sm mb-3">
                             <div class="card-header bg-white py-2 border-bottom">
-                                <span class="fw-bold text-dark"><i class="fas fa-boxes me-2 text-primary"></i>Kebutuhan Stok</span>
+                                <span class="fw-bold text-dark">
+                                    <i class="fas fa-boxes me-2 ${isHistoryMode ? 'text-secondary' : 'text-primary'}"></i>
+                                    ${isHistoryMode ? 'Estimasi Penggunaan Stok' : 'Kebutuhan Stok'}
+                                </span>
                             </div>
                             <div class="card-body p-0">
                                 <div class="table-responsive">
