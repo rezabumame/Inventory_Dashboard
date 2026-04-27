@@ -108,8 +108,8 @@ $re_evaluated_is_out_of_stock = 0;
 $re_evaluated_out_of_stock_items = [];
 
 foreach ($items as &$row) {
-    // Only check current availability for active bookings (not historical/completed)
-    if (!$row['is_history']) {
+    // Only check current availability for active bookings (not historical or already processed)
+    if (!$row['is_history'] && !in_array($header['status'], ['completed', 'cancelled', 'done'])) {
         $ef = stock_effective($conn, $klinik_id, $is_hc, (int)$row['barang_id']);
         $row['current_available'] = $ef['ok'] ? (float)$ef['on_hand'] : 0;
         

@@ -66,6 +66,8 @@ try {
             }
             $setType = ($role === 'cs') ? ", booking_type = 'cancel'" : "";
             $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'cancelled', butuh_fu = 0 $setType WHERE id = $id");
+            // Release stock
+            $conn->query("DELETE FROM inventory_booking_detail WHERE booking_id = $id");
             logBookingHistory($conn, $id, 'cancel', [], 'Booking dibatalkan');
             $msg = "Booking dibatalkan.";
             break;
@@ -425,6 +427,7 @@ try {
                 throw new Exception('Access denied');
             }
             $conn->query("UPDATE inventory_booking_pemeriksaan SET butuh_fu = 1 WHERE id = $id");
+            logBookingHistory($conn, $id, 'fu', ['butuh_fu' => ['old' => 0, 'new' => 1]], 'Ditandai butuh FU jadwal kedatangan');
             notify_lark_booking($conn, $id, 'fu', "Ditandai butuh FU jadwal kedatangan");
             $msg = "Booking ditandai FU jadwal kedatangan.";
             break;
