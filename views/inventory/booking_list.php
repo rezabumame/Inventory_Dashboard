@@ -76,7 +76,8 @@ $reset_url = ($role === 'admin_klinik') ? 'index.php?page=booking&filter_today=1
 $where = "1=1";
 if ($_SESSION['role'] == 'admin_klinik') {
     $where .= " AND b.klinik_id = " . $_SESSION['klinik_id'];
-    $where .= " AND b.status IN ('booked', 'rescheduled') AND LOWER(COALESCE(b.booking_type, 'keep')) IN ('keep','fixed')";
+    // Allow admin_klinik to see completed bookings as well
+    $where .= " AND b.status IN ('booked', 'rescheduled', 'completed') AND LOWER(COALESCE(b.booking_type, 'keep')) IN ('keep','fixed')";
 }
 if ($filter_today) {
     $where .= " AND b.tanggal_pemeriksaan = CURDATE()";
@@ -636,7 +637,15 @@ if (!empty($booking_ids)) {
                         </td>
                         <td>
                             <div class="fw-semibold"><?= date('d M Y', strtotime($row['tanggal_pemeriksaan'])) ?></div>
-                            <div class="booking-muted"><i class="fas fa-clock me-1"></i><?= htmlspecialchars($row['jam_layanan'] ?? '-') ?></div>
+                            <div class="booking-muted">
+                                <i class="fas fa-clock me-1"></i>
+                                <?php 
+                                    $jam = (string)($row['jam_layanan'] ?? '-');
+                                    // If time is just HH (like "12"), append ":00" for display
+                                    if (preg_match('/^\d{1,2}$/', $jam)) $jam .= ':00';
+                                    echo htmlspecialchars($jam);
+                                ?>
+                            </div>
                         </td>
                         <td>
                             <div class="booking-muted" style="font-size: 0.8rem;">

@@ -203,6 +203,7 @@ try {
             }
             $new_date = $_POST['new_date'] ?? '';
             $new_time = $_POST['new_time'] ?? null;
+            if ($new_time && preg_match('/^\d{1,2}$/', $new_time)) $new_time .= ':00';
             $reason = $_POST['reason'] ?? '';
             if (empty($new_date) || empty($reason)) {
                 throw new Exception('Tanggal dan alasan wajib diisi');
@@ -231,6 +232,7 @@ try {
             $fallback = $_POST['fallback'] ?? []; // Map of id => action
             $res_date = $_POST['reschedule_date'] ?? null;
             $res_time = $_POST['reschedule_time'] ?? null;
+            if ($res_time && preg_match('/^\d{1,2}$/', $res_time)) $res_time .= ':00';
             $res_reason = $_POST['reschedule_reason'] ?? '';
 
             if (empty($done_ids) && empty($fallback)) {
