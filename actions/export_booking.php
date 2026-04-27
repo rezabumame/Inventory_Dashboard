@@ -20,7 +20,8 @@ $filter_tipe = (string)($_GET['tipe'] ?? '');
 $filter_fu = (string)($_GET['fu'] ?? '');
 $filter_start = (string)($_GET['start_date'] ?? '');
 $filter_end = (string)($_GET['end_date'] ?? '');
-$has_filters = ($show_all || isset($_GET['filter_today']) || $filter_tujuan !== '' || $filter_status !== '' || $filter_tipe !== '' || $filter_fu !== '' || $filter_start !== '' || $filter_end !== '');
+$filter_q = trim((string)($_GET['q'] ?? ''));
+$has_filters = ($show_all || isset($_GET['filter_today']) || $filter_tujuan !== '' || $filter_status !== '' || $filter_tipe !== '' || $filter_fu !== '' || $filter_start !== '' || $filter_end !== '' || $filter_q !== '');
 
 if (!$has_filters) {
     if ($role === 'admin_klinik') {
@@ -78,15 +79,23 @@ if (in_array($filter_tipe, ['keep', 'fixed', 'cancel'], true)) {
 if ($filter_fu === '1') {
     $whereParts[] = "b.status = 'booked' AND b.butuh_fu = 1";
 }
+if ($filter_q !== '') {
+    $whereParts[] = "(b.nama_pemesan LIKE ? OR b.nomor_booking LIKE ? OR u.nama_lengkap LIKE ?)";
+    $types .= "sss";
+    $q_param = "%$filter_q%";
+    $params[] = $q_param;
+    $params[] = $q_param;
+    $params[] = $q_param;
+}
 
-$query = "SELECT b.*, k.nama_klinik,
-          (SELECT COUNT(DISTINCT bd.barang_id) FROM inventory_booking_detail bd WHERE bd.booking_id = b.id) as total_items,
+$query = "SELECT b.*, k.nama_klinik, u.nama_lengkap as cs_name,
           (SELECT GROUP_CONCAT(DISTINCT pg.nama_pemeriksaan ORDER BY pg.nama_pemeriksaan SEPARATOR ', ')
            FROM inventory_booking_pasien bp
            JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
            WHERE bp.booking_id = b.id) as jenis_pemeriksaan
           FROM inventory_booking_pemeriksaan b 
           JOIN inventory_klinik k ON b.klinik_id = k.id 
+          LEFT JOIN inventory_users u ON b.created_by = u.id
           WHERE " . implode(" AND ", $whereParts) . "
           ORDER BY b.tanggal_pemeriksaan ASC, b.id DESC";
 
@@ -124,7 +133,6 @@ echo '<th>Nama Pasien</th>';
 echo '<th>Nomor Tlp</th>';
 echo '<th>Tgl Lahir</th>';
 echo '<th>Total Pax</th>';
-echo '<th>Total Items</th>';
 echo '<th>Jenis Pemeriksaan</th>';
 echo '<th>Klinik</th>';
 echo '<th>Status Tujuan</th>';
@@ -149,7 +157,6 @@ if ($result && $result->num_rows > 0) {
         echo '<td>="' . htmlspecialchars($row['nomor_tlp'] ?? '') . '"</td>';
         echo '<td>' . htmlspecialchars($row['tanggal_lahir'] ?? '-') . '</td>';
         echo '<td>' . htmlspecialchars($row['jumlah_pax'] ?? 0) . '</td>';
-        echo '<td>' . htmlspecialchars($row['total_items'] ?? 0) . '</td>';
         echo '<td>' . htmlspecialchars($row['jenis_pemeriksaan'] ?? '-') . '</td>';
         echo '<td>' . htmlspecialchars($row['nama_klinik'] ?? '-') . '</td>';
         echo '<td>' . htmlspecialchars($row['status_booking'] ?? '-') . '</td>';

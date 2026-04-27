@@ -46,6 +46,19 @@ if (!empty($end_date)) {
     $types .= "s";
 }
 
+$filter_q = trim((string)($_GET['q'] ?? ''));
+if ($filter_q !== '') {
+    $where_clause .= " AND (pb.nomor_pemakaian LIKE ? OR k.nama_klinik LIKE ? OR u_created.nama_lengkap LIKE ? OR u_hc.nama_lengkap LIKE ? OR b.nama_barang LIKE ? OR b.kode_barang LIKE ?)";
+    $types .= "ssssss";
+    $q_param = "%$filter_q%";
+    $params[] = $q_param;
+    $params[] = $q_param;
+    $params[] = $q_param;
+    $params[] = $q_param;
+    $params[] = $q_param;
+    $params[] = $q_param;
+}
+
 $stmt_exp = $conn->prepare("
     SELECT 
         b.kode_barang as ID,
@@ -69,6 +82,8 @@ $stmt_exp = $conn->prepare("
     LEFT JOIN inventory_odoo_format_config ofc ON b.kode_barang = ofc.internal_reference
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     JOIN inventory_klinik k ON pb.klinik_id = k.id
+    LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
+    LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
     LEFT JOIN inventory_odoo_support_data osd ON osd.key_name = TRIM(SUBSTRING_INDEX(REPLACE(ofc.product_category, '/', ' '), ' ', 1))
     WHERE $where_clause AND pb.status = 'active'
     ORDER BY TANGGAL_INPUT_FULL DESC, ID ASC
