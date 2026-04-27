@@ -47,7 +47,7 @@ $sql = "SELECT
             k.nama_klinik
         FROM inventory_booking_pemeriksaan b
         LEFT JOIN inventory_klinik k ON b.klinik_id = k.id
-        WHERE b.status IN ('booked', 'rescheduled')
+        WHERE b.status = 'booked'
         AND LOWER(COALESCE(b.booking_type, 'keep')) = 'keep'
         ORDER BY b.tanggal_pemeriksaan ASC, b.jam_layanan ASC, b.id ASC";
 
