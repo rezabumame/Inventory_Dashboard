@@ -536,10 +536,7 @@ if (!empty($booking_ids)) {
 
 <div class="card shadow-sm">
     <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div class="fw-bold text-muted" style="font-size: 0.85rem;">
-                <i class="fas fa-database me-1"></i> Total: <span class="text-primary"><?= number_format($total_all) ?></span> data
-            </div>
+        <div class="d-flex justify-content-end align-items-center mb-3">
             <div style="width: 300px;">
                 <form method="GET" action="index.php">
                     <input type="hidden" name="page" value="booking">
