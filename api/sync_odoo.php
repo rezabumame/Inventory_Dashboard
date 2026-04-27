@@ -500,32 +500,48 @@ try {
         $dr = $rows_a - $rows_b;
         $dr_s = $dr >= 0 ? ('+' . $dr) : (string)$dr;
         $lines = [];
-        $lines[] = "[SYNC ODOO][RPC][" . strtoupper($sync_trigger) . "] Selesai " . date('d M Y H:i');
-        $lines[] = "Durasi: {$dur}s";
-        $lines[] = "Produk: {$products_count}";
-        $lines[] = "Lokasi target: " . count($locations) . " (skip: " . count($skipped_locations) . ")";
-        $lines[] = "Rows mirror: {$rows_b} → {$rows_a} ({$dr_s})";
-        $lines[] = "Total qty mirror: " . fmt_id_qty($qty_b) . " → " . fmt_id_qty($qty_a) . " (" . (($qty_a - $qty_b) >= 0 ? '+' : '') . $dq . ")";
-        $lines[] = "Last update mirror: " . fmt_ts($mirror_before['last_update'] ?? '') . " → " . fmt_ts($mirror_after['last_update'] ?? '');
-        if (!empty($errors)) $lines[] = "Error lokasi: " . count($errors);
         $loc_group_map = build_loc_group_map($conn);
         $diff_pack = build_diff_grouped_lines_compact($mirror_before, $mirror_after, $loc_group_map, 12, 0.0001);
         $diff_lines = $diff_pack['lines'] ?? [];
-        $diff_bold = $diff_pack['bold'] ?? [];
-        if (!empty($diff_lines)) {
-            $lines[] = "";
-            $lines[] = "Top perubahan lokasi:";
-            $lines = array_merge($lines, $diff_lines);
-        }
-        $lines[] = "";
-        $lines[] = "Ringkasan per Klinik:";
         $sum_klinik = build_group_summary_lines($mirror_after, $loc_group_map, false, 12);
-        if (!empty($sum_klinik)) $lines = array_merge($lines, $sum_klinik);
-        $lines[] = "";
-        $lines[] = "Ringkasan Homecare:";
         $sum_hc = build_group_summary_lines($mirror_after, $loc_group_map, true, 12);
-        if (!empty($sum_hc)) $lines = array_merge($lines, $sum_hc);
-        post_lark_text(implode("\n", $lines));
+
+        $title = "🔄 Odoo Stock Sync Success";
+        $card_lines = [
+            "**Event:** Odoo Stock Sync (" . strtoupper($sync_trigger) . ")",
+            "**Waktu:** " . date('d M Y H:i') . " | **Durasi:** {$dur}s",
+            "**Statistik:** {$products_count} Produk | " . count($locations) . " Lokasi",
+            "**Mirror:** {$rows_a} baris ({$dr_s}) | Qty: " . fmt_id_qty($qty_a) . " (" . (($qty_a - $qty_b) >= 0 ? '+' : '') . $dq . ")"
+        ];
+        if (!empty($errors)) $card_lines[] = "";
+        if (!empty($errors)) $card_lines[] = "⚠️ **Error Lokasi:** " . count($errors);
+
+        if (!empty($diff_lines)) {
+            $card_lines[] = "";
+            $card_lines[] = "📊 **Top Perubahan Lokasi:**";
+            foreach ($diff_lines as $dl) {
+                if ($dl === '') continue;
+                if (substr(trim($dl), 0, 1) !== '-') {
+                    $card_lines[] = "**" . trim($dl) . "**";
+                } else {
+                    $card_lines[] = trim($dl);
+                }
+            }
+        }
+
+        if (!empty($sum_klinik)) {
+            $card_lines[] = "";
+            $card_lines[] = "🏥 **Ringkasan per Klinik:**";
+            foreach ($sum_klinik as $sk) $card_lines[] = "• " . ltrim($sk, '- ');
+        }
+
+        if (!empty($sum_hc)) {
+            $card_lines[] = "";
+            $card_lines[] = "🏠 **Ringkasan Homecare:**";
+            foreach ($sum_hc as $sh) $card_lines[] = "• " . ltrim($sh, '- ');
+        }
+
+        lark_post_card(lark_webhook_url(), $title, $card_lines, "blue");
         exit;
     }
 
