@@ -2794,36 +2794,27 @@ window.submitReschedule = function() {
     });
     bootstrap.Modal.getInstance(document.getElementById('modalReschedule')).hide();
 };
+
+$(document).ready(function() {
+    if ($.fn.DataTable.isDataTable('#bookingTable')) {
+        $('#bookingTable').DataTable().destroy();
+    }
+    $('#bookingTable').DataTable({
+        "order": [[ 4, "desc" ]], // Sort by Jadwal DESC by default
+        "pageLength": 10,
+        "language": {
+            "search": "Filter di tabel:",
+            "lengthMenu": "Tampilkan _MENU_ data",
+            "info": "Menampilkan _START_ sampai _END_ dari _TOTAL_ data",
+            "paginate": {
+                "first": "Pertama",
+                "last": "Terakhir",
+                "next": "Berikutnya",
+                "previous": "Sebelumnya"
+            }
+        }
+    });
+});
 </script>
 
-<style>
-    /* CIRCULAR PAGINATION STYLING */
-    .pagination-circular .page-item { margin: 0 4px; }
-    .pagination-circular .page-link {
-        border-radius: 50% !important;
-        width: 40px; height: 40px;
-        display: flex; align-items: center; justify-content: center;
-        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
-        transition: all 0.2s ease; background: #fff;
-    }
-    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
-    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
-    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
-</style>
 
-
-
-<style>
-    /* CIRCULAR PAGINATION STYLING */
-    .pagination-circular .page-item { margin: 0 4px; }
-    .pagination-circular .page-link {
-        border-radius: 50% !important;
-        width: 40px; height: 40px;
-        display: flex; align-items: center; justify-content: center;
-        border: 1px solid #e2e8f0; color: #64748b; font-weight: 500;
-        transition: all 0.2s ease; background: #fff;
-    }
-    .pagination-circular .page-link:hover { background-color: #f8fafc; color: #204EAB; border-color: #204EAB; }
-    .pagination-circular .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; border-color: #bfdbfe !important; font-weight: 700; }
-    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: #cbd5e1; border-color: #f1f5f9; opacity: 0.6; }
-</style>
