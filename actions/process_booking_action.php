@@ -210,6 +210,8 @@ try {
             }
             
             $old_date = $booking['tanggal_pemeriksaan'];
+            $old_time = $booking['jam_layanan'] ?? '-';
+            
             $stmt_u = $conn->prepare("UPDATE inventory_booking_pemeriksaan SET tanggal_pemeriksaan = ?, jam_layanan = ?, reschedule_reason = ?, status = 'rescheduled', butuh_fu = 0 WHERE id = ?");
             $stmt_u->bind_param("sssi", $new_date, $new_time, $reason, $id);
             $stmt_u->execute();
@@ -219,7 +221,13 @@ try {
             
             $new_date_fmt = date('d M Y', strtotime($new_date));
             $old_date_fmt = date('d M Y', strtotime($old_date));
-            logBookingHistory($conn, $id, 'reschedule', ['tanggal_pemeriksaan' => ['old' => $old_date, 'new' => $new_date]], "Reschedule dari $old_date_fmt ke $new_date_fmt. Alasan: $reason");
+            
+            $changes = ['tanggal' => ['old' => $old_date, 'new' => $new_date]];
+            if ($old_time != $new_time) {
+                $changes['jam'] = ['old' => $old_time, 'new' => $new_time];
+            }
+            
+            logBookingHistory($conn, $id, 'reschedule', $changes, "Reschedule dari $old_date_fmt " . ($old_time ? "($old_time)" : "") . " ke $new_date_fmt " . ($new_time ? "($new_time)" : "") . ". Alasan: $reason");
             notify_lark_booking($conn, $id, 'reschedule', "Reschedule dari **$old_date_fmt** ke **$new_date_fmt**\n**Alasan:** $reason");
             $msg = "Booking berhasil di-reschedule ke tanggal $new_date " . ($new_time ? "jam $new_time" : "") . ".";
             break;
@@ -381,8 +389,24 @@ try {
                     }
                 }
                 $new_date_fmt = date('d M Y', strtotime($res_date));
-                logBookingHistory($conn, $id, 'reschedule', [], "Pasien split ke booking baru $new_nomor karena reschedule.");
-                logBookingHistory($conn, $new_id, 'create', [], "Booking hasil reschedule/split dari #" . $booking['nomor_booking']);
+                $old_date_fmt = date('d M Y', strtotime($booking['tanggal_pemeriksaan']));
+                $old_time = $booking['jam_layanan'] ?? '-';
+                
+                $changes_orig = [
+                    'reschedule_split' => ['old' => 'Original', 'new' => "Split to $new_nomor"],
+                    'tanggal' => ['old' => $booking['tanggal_pemeriksaan'], 'new' => $res_date]
+                ];
+                if ($old_time != $res_time) $changes_orig['jam'] = ['old' => $old_time, 'new' => $res_time];
+
+                logBookingHistory($conn, $id, 'reschedule', $changes_orig, "Pasien split ke booking baru $new_nomor karena reschedule ke $new_date_fmt.");
+                
+                $changes_new = [
+                    'source' => ['old' => 'New', 'new' => "Split from #" . $booking['nomor_booking']],
+                    'tanggal' => ['old' => $booking['tanggal_pemeriksaan'], 'new' => $res_date]
+                ];
+                if ($old_time != $res_time) $changes_new['jam'] = ['old' => $old_time, 'new' => $res_time];
+                
+                logBookingHistory($conn, $new_id, 'create', $changes_new, "Booking hasil reschedule/split dari #" . $booking['nomor_booking'] . " ke tanggal $new_date_fmt.");
                 notify_lark_booking($conn, $new_id, 'reschedule', "Hasil split/reschedule dari #" . $booking['nomor_booking'] . " ke **$new_date_fmt**\n**Alasan:** $res_reason");
             }
 
