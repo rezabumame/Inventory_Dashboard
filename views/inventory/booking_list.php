@@ -51,7 +51,7 @@ if ($_SESSION['role'] == 'admin_klinik') {
 }
 if ($filter_q !== '') {
     $esc_q = $conn->real_escape_string($filter_q);
-    $where .= " AND (b.nama_pemesan LIKE '%$esc_q%' OR b.nomor_booking LIKE '%$esc_q%')";
+    $where .= " AND (b.nama_pemesan LIKE '%$esc_q%' OR b.nomor_booking LIKE '%$esc_q%' OR u.nama_lengkap LIKE '%$esc_q%')";
 }
 if ($filter_today) {
     $where .= " AND b.tanggal_pemeriksaan = CURDATE()";
@@ -79,9 +79,16 @@ if ($filter_fu === '1') {
 
 
 // 1. Get total count
-$count_query = "SELECT COUNT(*) as cnt FROM inventory_booking_pemeriksaan b WHERE $where";
+$count_query = "SELECT COUNT(*) as cnt 
+                FROM inventory_booking_pemeriksaan b 
+                LEFT JOIN inventory_users u ON b.created_by = u.id
+                WHERE $where";
 $total_all = (int)($conn->query($count_query)->fetch_assoc()['cnt'] ?? 0);
-// $total_pages = ceil($total_all / $items_per_page);
+
+$items_per_page = 10;
+$total_pages = ceil($total_all / $items_per_page);
+$current_page = max(1, (int)($_GET['p'] ?? 1));
+$offset = ($current_page - 1) * $items_per_page;
 
 $query = "SELECT b.*, k.nama_klinik, u.nama_lengkap as creator_name,
           (SELECT COUNT(DISTINCT bd.barang_id) FROM inventory_booking_detail bd WHERE bd.booking_id = b.id) as total_items,
@@ -93,7 +100,8 @@ $query = "SELECT b.*, k.nama_klinik, u.nama_lengkap as creator_name,
           JOIN inventory_klinik k ON b.klinik_id = k.id 
           LEFT JOIN inventory_users u ON b.created_by = u.id
           WHERE $where
-          ORDER BY b.tanggal_pemeriksaan DESC, COALESCE(b.jam_layanan, '') DESC, b.id DESC";
+          ORDER BY b.tanggal_pemeriksaan DESC, COALESCE(b.jam_layanan, '') DESC, b.id DESC
+          LIMIT $items_per_page OFFSET $offset";
 $result = $conn->query($query);
 
 // Pre-calculate current fulfillment status for displayed bookings
@@ -398,13 +406,7 @@ if (!empty($booking_ids)) {
     <div class="card-body">
         <form method="GET" class="row g-3 align-items-end">
             <input type="hidden" name="page" value="booking">
-            <div class="col-xl-3 col-lg-6 col-md-6">
-                <label class="form-label fw-bold text-muted mb-1">Cari Nama / No Booking</label>
-                <div class="input-group">
-                    <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
-                    <input type="text" name="q" class="form-control border-start-0 ps-0" placeholder="Ketik nama atau nomor..." value="<?= htmlspecialchars($filter_q) ?>">
-                </div>
-            </div>
+            <!-- Search moved to table header -->
             <div class="col-xl-2 col-lg-6 col-md-6">
                 <label class="form-label fw-bold text-muted mb-1">Tujuan</label>
                 <div class="segmented-control">
@@ -534,6 +536,23 @@ if (!empty($booking_ids)) {
 
 <div class="card shadow-sm">
     <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="fw-bold text-muted" style="font-size: 0.85rem;">
+                <i class="fas fa-database me-1"></i> Total: <span class="text-primary"><?= number_format($total_all) ?></span> data
+            </div>
+            <div style="width: 300px;">
+                <form method="GET" action="index.php">
+                    <input type="hidden" name="page" value="booking">
+                    <?php foreach ($_GET as $key => $val): if (!in_array($key, ['q', 'p', 'page'])): ?>
+                        <input type="hidden" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($val) ?>">
+                    <?php endif; endforeach; ?>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                        <input type="text" name="q" class="form-control border-start-0 ps-0" placeholder="Cari Nama / No / Admin..." value="<?= htmlspecialchars($filter_q) ?>" style="border-radius: 0 8px 8px 0;">
+                    </div>
+                </form>
+            </div>
+        </div>
         <div class="table-responsive booking-table-responsive">
             <table id="bookingTable" class="table table-hover table-striped booking-table align-middle">
                 <thead>
@@ -747,9 +766,44 @@ if (!empty($booking_ids)) {
                     <?php endforeach; ?>
                 </tbody>
             </table>
-            </div>
         </div>
+
+        <?php if ($total_pages > 1): ?>
+            <div class="mt-4 d-flex justify-content-between align-items-center">
+                <div class="text-muted small">
+                    Menampilkan <?= $offset + 1 ?> - <?= min($offset + $items_per_page, $total_all) ?> dari <?= $total_all ?> data
+                </div>
+                <nav aria-label="Page navigation">
+                    <ul class="pagination pagination-circular mb-0">
+                        <?php
+                        $params = $_GET;
+                        $p_url = function($p) use ($params) {
+                            $params['p'] = $p;
+                            return 'index.php?' . http_build_query($params);
+                        };
+                        ?>
+                        <li class="page-item <?= ($current_page <= 1) ? 'disabled' : '' ?>">
+                            <a class="page-link" href="<?= $p_url($current_page - 1) ?>"><i class="fas fa-chevron-left"></i></a>
+                        </li>
+                        <?php
+                        $start_p = max(1, $current_page - 2);
+                        $end_p = min($total_pages, $start_p + 4);
+                        if ($end_p - $start_p < 4) $start_p = max(1, $end_p - 4);
+                        
+                        for ($i = $start_p; $i <= $end_p; $i++): if ($i < 1) continue; ?>
+                            <li class="page-item <?= ($i == $current_page) ? 'active' : '' ?>">
+                                <a class="page-link" href="<?= $p_url($i) ?>"><?= $i ?></a>
+                            </li>
+                        <?php endfor; ?>
+                        <li class="page-item <?= ($current_page >= $total_pages) ? 'disabled' : '' ?>">
+                            <a class="page-link" href="<?= $p_url($current_page + 1) ?>"><i class="fas fa-chevron-right"></i></a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        <?php endif; ?>
     </div>
+</div>
 
 <!-- Modal Booking Baru -->
 <div class="modal fade" id="modalBookingBaru" tabindex="-1" aria-labelledby="modalBookingBaruLabel" aria-hidden="true">
@@ -2752,17 +2806,11 @@ $(document).ready(function() {
     }
     $('#bookingTable').DataTable({
         "order": [[ 4, "desc" ]], // Sort by Jadwal DESC by default
-        "pageLength": 10,
+        "paging": false,
+        "searching": false,
+        "info": false,
         "language": {
-            "search": "Filter di tabel:",
-            "lengthMenu": "Tampilkan _MENU_ data",
-            "info": "Menampilkan _START_ sampai _END_ dari _TOTAL_ data",
-            "paginate": {
-                "first": '<i class="fas fa-angle-double-left"></i>',
-                "last": '<i class="fas fa-angle-double-right"></i>',
-                "next": '<i class="fas fa-chevron-right"></i>',
-                "previous": '<i class="fas fa-chevron-left"></i>'
-            }
+            "emptyTable": "Tidak ada data ditemukan"
         }
     });
 });
