@@ -67,6 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
 // Fetch Data
 $filter_role = $_GET['role'] ?? '';
 $filter_klinik = $_GET['klinik_id'] ?? '';
+$search = trim($_GET['search'] ?? '');
 
 $where_clauses = [];
 if ($filter_role !== '') {
@@ -75,14 +76,30 @@ if ($filter_role !== '') {
 if ($filter_klinik !== '') {
     $where_clauses[] = "u.klinik_id = " . (int)$filter_klinik;
 }
+if ($search !== '') {
+    $s = $conn->real_escape_string($search);
+    $where_clauses[] = "(u.nama_lengkap LIKE '%$s%' OR u.username LIKE '%$s%')";
+}
 
 $where_sql = "";
 if (!empty($where_clauses)) {
     $where_sql = " WHERE " . implode(" AND ", $where_clauses);
 }
 
+// Pagination
+$limit = 10;
+$page = isset($_GET['p']) ? (int)$_GET['p'] : 1;
+if ($page < 1) $page = 1;
+$offset = ($page - 1) * $limit;
+
+// Count Total
+$total_res = $conn->query("SELECT COUNT(*) as total FROM inventory_users u $where_sql");
+$total_row = $total_res->fetch_assoc();
+$total_records = $total_row['total'];
+$total_pages = ceil($total_records / $limit);
+
 $users = [];
-$res = $conn->query("SELECT u.*, k.nama_klinik FROM inventory_users u LEFT JOIN inventory_klinik k ON u.klinik_id = k.id $where_sql ORDER BY u.nama_lengkap ASC LIMIT 500");
+$res = $conn->query("SELECT u.*, k.nama_klinik FROM inventory_users u LEFT JOIN inventory_klinik k ON u.klinik_id = k.id $where_sql ORDER BY u.nama_lengkap ASC LIMIT $limit OFFSET $offset");
 while ($row = $res->fetch_assoc()) $users[] = $row;
 
 $kliniks = [];
@@ -201,8 +218,18 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
         margin-bottom: 1.5rem;
     }
 
-    .fw-800 { font-weight: 800; }
-    .fw-700 { font-weight: 700; }
+    /* Circular Pagination */
+    .pagination-circular .page-item { margin: 0 4px; }
+    .pagination-circular .page-link {
+        border-radius: 50% !important;
+        width: 36px; height: 36px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid var(--slate-200); color: var(--slate-600); font-weight: 500;
+        transition: all 0.2s ease; background: #fff;
+    }
+    .pagination-circular .page-link:hover { background-color: var(--slate-50); color: var(--bumame-blue); border-color: var(--bumame-blue); }
+    .pagination-circular .page-item.active .page-link { background-color: var(--bumame-blue-soft) !important; color: var(--bumame-blue) !important; border-color: var(--bumame-blue) !important; font-weight: 700; }
+    .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: var(--slate-200); border-color: var(--slate-100); opacity: 0.6; }
 </style>
 
 <div class="container-fluid users-container py-4">
@@ -231,7 +258,14 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
     <div class="filter-card shadow-sm">
         <form method="GET" class="row g-2 align-items-end">
             <input type="hidden" name="page" value="users">
-            <div class="col-md-4">
+            <div class="col-md-3">
+                <label class="form-label small fw-700 text-muted mb-1 uppercase" style="font-size: 0.65rem;">Cari User</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" name="search" class="form-control border-start-0 rounded-end-3" placeholder="Nama atau username..." value="<?= htmlspecialchars($search) ?>">
+                </div>
+            </div>
+            <div class="col-md-3">
                 <label class="form-label small fw-700 text-muted mb-1 uppercase" style="font-size: 0.65rem;">Filter Role</label>
                 <select name="role" class="form-select form-select-sm rounded-3">
                     <option value="">-- Semua Role --</option>
@@ -243,7 +277,7 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                     <option value="cs" <?= $filter_role === 'cs' ? 'selected' : '' ?>>CS</option>
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label small fw-700 text-muted mb-1 uppercase" style="font-size: 0.65rem;">Filter Klinik/Lokasi</label>
                 <select name="klinik_id" class="form-select form-select-sm rounded-3">
                     <option value="">-- Semua Lokasi --</option>
@@ -254,7 +288,7 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-4 d-flex gap-2">
+            <div class="col-md-3 d-flex gap-2">
                 <button type="submit" class="btn btn-primary btn-sm fw-700 flex-grow-1 rounded-3">
                     <i class="fas fa-filter me-2"></i>Filter Data
                 </button>
@@ -317,6 +351,44 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                 </tbody>
             </table>
         </div>
+        
+        <?php if ($total_pages > 1): ?>
+        <div class="p-3 border-top d-flex justify-content-between align-items-center bg-white">
+            <div class="small text-muted fw-600">
+                Menampilkan <?= min($offset + 1, $total_records) ?> - <?= min($offset + $limit, $total_records) ?> dari <?= $total_records ?> user
+            </div>
+            <nav>
+                <ul class="pagination pagination-circular mb-0">
+                    <?php 
+                        $query_str = "index.php?page=users&role=$filter_role&klinik_id=$filter_klinik&search=" . urlencode($search);
+                    ?>
+                    <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+                        <a class="page-link" href="<?= $query_str ?>&p=<?= $page - 1 ?>"><i class="fas fa-chevron-left small"></i></a>
+                    </li>
+                    <?php 
+                    $start = max(1, $page - 2);
+                    $end = min($total_pages, $page + 2);
+                    if ($start > 1) {
+                        echo '<li class="page-item"><a class="page-link" href="'.$query_str.'&p=1">1</a></li>';
+                        if ($start > 2) echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
+                    }
+                    for ($i = $start; $i <= $end; $i++): 
+                    ?>
+                        <li class="page-item <?= $i == $page ? 'active' : '' ?>">
+                            <a class="page-link" href="<?= $query_str ?>&p=<?= $i ?>"><?= $i ?></a>
+                        </li>
+                    <?php endfor; ?>
+                    <?php if ($end < $total_pages): ?>
+                        <?php if ($end < $total_pages - 1) echo '<li class="page-item disabled"><span class="page-link">...</span></li>'; ?>
+                        <li class="page-item"><a class="page-link" href="<?= $query_str ?>&p=<?= $total_pages ?>"><?= $total_pages ?></a></li>
+                    <?php endif; ?>
+                    <li class="page-item <?= $page >= $total_pages ? 'disabled' : '' ?>">
+                        <a class="page-link" href="<?= $query_str ?>&p=<?= $page + 1 ?>"><i class="fas fa-chevron-right small"></i></a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+        <?php endif; ?>
     </div>
 </div>
 

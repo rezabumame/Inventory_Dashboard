@@ -874,24 +874,24 @@ function get_status_badge($status) {
                         <thead>
                             <tr>
                                 <th>No Request</th>
-                                <th>Tanggal</th>
+                                <th class="text-center">Tanggal</th>
                                 <th>Dari</th>
                                 <th>Tujuan</th>
-                                <th>Status</th>
-                                <th>Aksi</th>
+                                <th class="text-center">Status</th>
+                                <th class="text-center">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($incoming_all as $row): ?>
                             <tr>
                                 <td><?= $row['nomor_request'] ?></td>
-                                <td><?= date('d M Y', strtotime($row['created_at'])) ?></td>
+                                <td class="text-center"><?= date('d M Y', strtotime($row['created_at'])) ?></td>
                                 <td><?= htmlspecialchars(($row['dari_label'] ?? strtoupper($row['dari_level'])) . ' (' . ($row['requestor_name'] ?? '-') . ')') ?></td>
                                 <td><?= htmlspecialchars($row['tujuan_label'] ?? strtoupper($row['ke_level'])) ?></td>
-                                <td>
+                                <td class="text-center">
                                     <?= get_status_badge($row['status']) ?>
                                 </td>
-                                <td>
+                                <td class="text-center">
                                     <button class="btn btn-sm text-white" style="background-color: #204EAB;" onclick="viewRequest(<?= $row['id'] ?>)">
                                         Detail
                                     </button>
@@ -916,22 +916,22 @@ function get_status_badge($status) {
                         <thead>
                             <tr>
                                 <th>No Request</th>
-                                <th>Tanggal</th>
+                                <th class="text-center">Tanggal</th>
                                 <th>Tujuan</th>
-                                <th>Status</th>
-                                <th>Aksi</th>
+                                <th class="text-center">Status</th>
+                                <th class="text-center">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($outgoing_requests as $row): ?>
                             <tr>
                                 <td><?= $row['nomor_request'] ?></td>
-                                <td><?= date('d M Y', strtotime($row['created_at'])) ?></td>
+                                <td class="text-center"><?= date('d M Y', strtotime($row['created_at'])) ?></td>
                                 <td><?= htmlspecialchars($row['tujuan_label'] ?? strtoupper($row['ke_level'])) ?></td>
-                                <td>
+                                <td class="text-center">
                                     <?= get_status_badge($row['status']) ?>
                                 </td>
-                                <td>
+                                <td class="text-center">
                                     <button class="btn btn-sm text-white" style="background-color: #204EAB;" onclick="viewRequest(<?= $row['id'] ?>)">
                                         Detail
                                     </button>
@@ -1014,23 +1014,25 @@ function get_status_badge($status) {
                             <textarea name="catatan" class="form-control" rows="2"></textarea>
                         </div>
                         
-                        <div class="table-responsive">
-                            <table class="table table-bordered align-middle" style="min-width: 1000px; table-layout: fixed;">
-                                <thead class="bg-light">
-                                    <tr>
-                                        <th style="width: auto;">Barang</th>
-                                        <th style="width: 180px;" class="text-center">Ketersediaan</th>
-                                        <th style="width: 100px;" class="text-center">Qty</th>
-                                        <th style="width: 140px;" class="text-center">UOM</th>
-                                        <th style="width: 50px;"></th>
-                                    </tr>
-                                </thead>
-                                <tbody id="reqBody">
-                                    <!-- Rows -->
-                                </tbody>
-                            </table>
+                        <div class="col-12 mt-3">
+                            <div class="table-responsive">
+                                <table class="table table-bordered align-middle" style="min-width: 1000px; table-layout: fixed;">
+                                    <thead class="bg-light">
+                                        <tr>
+                                            <th style="width: auto;">Barang</th>
+                                            <th style="width: 180px;" class="text-center">Ketersediaan</th>
+                                            <th style="width: 100px;" class="text-center">Qty</th>
+                                            <th style="width: 140px;" class="text-center">UOM</th>
+                                            <th style="width: 50px;"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="reqBody">
+                                        <!-- Rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <button type="button" class="btn btn-success btn-sm" onclick="addRow()">+ Tambah Baris</button>
                         </div>
-                        <button type="button" class="btn btn-success btn-sm" onclick="addRow()">+ Tambah Baris</button>
                     </div>
                     <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
@@ -1074,9 +1076,10 @@ function get_status_badge($status) {
 </form>
 
 <script>
-const REQUEST_CSRF = <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>;
-var barangData = <?= json_encode($barang_list) ?>;
-var stockData = <?= json_encode($stock_available) ?>;
+var REQUEST_CSRF = <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>;
+var barangData = <?= json_encode(array_values($barang_list), JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?>;
+var stockData = <?= json_encode(array_values($stock_available), JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?>;
+if (!Array.isArray(barangData)) barangData = [];
 var stockDataLoaded = false;
 var availableItems = [];
 var destVersion = 0;
@@ -1091,38 +1094,7 @@ function fmtQty(v) {
     return s === "" ? "0" : s;
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-    // Move modals to body
-    var modalRequest = document.getElementById('modalRequest');
-    var modalView = document.getElementById('modalView');
-    if (modalRequest) document.body.appendChild(modalRequest);
-    if (modalView) document.body.appendChild(modalView);
-
-    loadAvailableItems().then(function() {
-        addRow();
-    });
-});
-
-$(document).on('change', '#tujuanRequest', function() {
-    applyTujuanValue(this.value);
-    $('#reqBody .stock-info').each(function() {
-        $(this).text('-').removeClass('bg-success bg-danger').addClass('bg-secondary');
-    });
-    loadAvailableItems().then(function() {
-        rebuildAllRowOptions();
-        updateAllRowStocks();
-    });
-});
-
-$(document).on('shown.bs.modal', '#modalRequest', function() {
-    var tujuanEl = document.getElementById('tujuanRequest');
-    if (!tujuanEl) return;
-    applyTujuanValue(tujuanEl.value);
-    loadAvailableItems().then(function() {
-        rebuildAllRowOptions();
-        updateAllRowStocks();
-    });
-});
+var $ = jQuery;
 
 function applyTujuanValue(v) {
     var parts = String(v || '').split(':');
@@ -1150,12 +1122,13 @@ function loadAvailableItems() {
     var keId = keIdEl ? keIdEl.value : '0';
     var destKey = keLevel + ':' + keId;
     stockDataDestKey = destKey;
+    
     return $.ajax({
         url: 'api/ajax_request_items.php',
         method: 'POST',
         dataType: 'json',
         data: { ke_level: keLevel, ke_id: keId, _csrf: REQUEST_CSRF }
-    }).then(function(res) {
+    }).done(function(res) {
         if (myVersion !== destVersion || destKey !== currentDestKey) return;
         availableItems = [];
         stockData = {};
@@ -1163,96 +1136,99 @@ function loadAvailableItems() {
         uomMeta = {};
         if (res && res.success && Array.isArray(res.items)) {
             availableItems = res.items;
-            availableItems.forEach(function(it) {
-                if (it && it.barang_id) stockData[it.barang_id] = parseFloat(it.qty || 0);
-                if (it && it.barang_id) window.__stockUom[it.barang_id] = it.satuan || '';
+            for (var i = 0; i < availableItems.length; i++) {
+                var it = availableItems[i];
                 if (it && it.barang_id) {
+                    stockData[it.barang_id] = parseFloat(it.qty || 0);
+                    window.__stockUom[it.barang_id] = it.satuan || '';
                     uomMeta[it.barang_id] = {
                         uom_oper: it.satuan || '',
                         uom_odoo: it.uom_odoo || '',
                         uom_ratio: parseFloat(it.uom_ratio || 1) || 1
                     };
                 }
-            });
+            }
         }
         window.__requestStockLocationCode = (res && res.location_code) ? res.location_code : '';
-        stockDataLoaded = true;
-    }).catch(function() {
+    }).fail(function() {
         if (myVersion !== destVersion || destKey !== currentDestKey) return;
         stockData = {};
         availableItems = [];
         window.__requestStockLocationCode = '';
+    }).always(function() {
+        if (myVersion !== destVersion || destKey !== currentDestKey) return;
         stockDataLoaded = true;
     });
 }
 
 function buildOptionsHtml(selectedId) {
     var options = '<option value="">- Pilih Barang -</option>';
-    if (stockDataLoaded && availableItems.length > 0) {
-        availableItems.forEach(function(it) {
-            var sel = (selectedId && it.barang_id == selectedId) ? 'selected' : '';
-            var labelCode = (it.kode_barang && String(it.kode_barang).trim() !== '') ? it.kode_barang : it.odoo_product_id;
+    var itemsToUse = (stockDataLoaded && Array.isArray(availableItems) && availableItems.length > 0) ? availableItems : barangData;
+    
+    if (Array.isArray(itemsToUse)) {
+        for (var i = 0; i < itemsToUse.length; i++) {
+            var it = itemsToUse[i];
+            var bid = it.barang_id || it.id;
+            var sel = (selectedId && bid == selectedId) ? 'selected' : '';
+            var labelCode = (it.kode_barang && String(it.kode_barang).trim() !== '') ? it.kode_barang : (it.odoo_product_id || '-');
             var uomOper = it.satuan || '';
             var uomOdoo = it.uom_odoo || '';
             var ratio = parseFloat(it.uom_ratio || 1) || 1;
-            options += '<option value="' + it.barang_id + '" ' + sel +
+            var name = it.nama_barang || '-';
+            
+            options += '<option value="' + bid + '" ' + sel +
                 ' data-uom-oper="' + String(uomOper).replace(/"/g,'&quot;') + '"' +
                 ' data-uom-odoo="' + String(uomOdoo).replace(/"/g,'&quot;') + '"' +
                 ' data-uom-ratio="' + String(ratio).replace(/"/g,'&quot;') + '"' +
-                '>' + labelCode + ' - ' + it.nama_barang + ' (' + uomOper + ')</option>';
-        });
-    } else {
-        barangData.forEach(function(b) {
-            var sel = (selectedId && b.id == selectedId) ? 'selected' : '';
-            var labelCode = (b.kode_barang && String(b.kode_barang).trim() !== '') ? b.kode_barang : b.odoo_product_id;
-            var uomOper = b.satuan || '';
-            var uomOdoo = b.uom_odoo || '';
-            var ratio = parseFloat(b.uom_ratio || 1) || 1;
-            options += '<option value="' + b.id + '" ' + sel +
-                ' data-uom-oper="' + String(uomOper).replace(/"/g,'&quot;') + '"' +
-                ' data-uom-odoo="' + String(uomOdoo).replace(/"/g,'&quot;') + '"' +
-                ' data-uom-ratio="' + String(ratio).replace(/"/g,'&quot;') + '"' +
-                '>' + labelCode + ' - ' + b.nama_barang + ' (' + uomOper + ')</option>';
-        });
+                '>' + labelCode + ' - ' + name + ' (' + uomOper + ')</option>';
+        }
     }
     return options;
 }
 
-function addRow(selectedId = null) {
+function addRow(selectedId) {
+    if (selectedId === undefined || selectedId === null) selectedId = null;
     var options = buildOptionsHtml(selectedId);
+    var body = $('#reqBody');
+    if (body.length === 0) return;
 
-    var row = `<tr>
-        <td>
-            <select name="items[]" class="form-select req-item" onchange="updateStock(this)" required style="width: 100%;">
-                ${options}
-            </select>
-        </td>
-        <td class="text-center">
-            <span class="stock-info badge bg-secondary" style="white-space: normal; display: inline-block;">-</span>
-        </td>
-        <td><input type="number" name="qtys[]" class="form-control text-center" min="0.0001" step="0.0001" value="1" required style="width: 100%;"></td>
-        <td>
-            <select name="uom_modes[]" class="form-select req-uom" required style="width: 100%;">
-                <option value="oper">-</option>
-            </select>
-        </td>
-        <td class="text-center">
-            <button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)"><i class="fas fa-times"></i></button>
-        </td>
-    </tr>`;
-    $('#reqBody').append(row);
+    var row = '<tr>' +
+        '<td>' +
+            '<select name="items[]" class="form-select req-item" onchange="updateStock(this)" required style="width: 100%;">' +
+                options +
+            '</select>' +
+        '</td>' +
+        '<td class="text-center">' +
+            '<span class="stock-info badge bg-secondary" style="white-space: normal; display: inline-block;">-</span>' +
+        '</td>' +
+        '<td class="text-center"><input type="number" name="qtys[]" class="form-control text-center" min="0.0001" step="0.0001" value="1" required style="width: 100%;"></td>' +
+        '<td class="text-center">' +
+            '<select name="uom_modes[]" class="form-select req-uom" required style="width: 100%;">' +
+                '<option value="oper">-</option>' +
+            '</select>' +
+        '</td>' +
+        '<td class="text-center">' +
+            '<button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)"><i class="fas fa-times"></i></button>' +
+        '</td>' +
+    '</tr>';
     
-    // Init Select2
-    var lastRow = $('#reqBody tr:last');
-    lastRow.find('.req-item').select2({
-        theme: 'bootstrap-5',
-        width: '100%',
-        dropdownParent: $('#modalRequest')
-    });
+    body.append(row);
     
-    // Trigger update if selected
+    try {
+        var lastRow = body.find('tr:last');
+        var selectEl = lastRow.find('.req-item');
+        if (selectEl.length && typeof $.fn.select2 === 'function') {
+            selectEl.select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                dropdownParent: '#modalRequest'
+            });
+        }
+    } catch (e) {}
+    
     if (selectedId) {
-        updateStock(lastRow.find('.req-item')[0]);
+        var sel = body.find('tr:last').find('.req-item')[0];
+        if (sel) updateStock(sel);
     }
 }
 
@@ -1261,16 +1237,21 @@ function rebuildAllRowOptions() {
         var selEl = $(this).find('.req-item');
         if (selEl.length === 0) return;
         var current = selEl.val();
-        var hadSelect2 = (selEl.data('select2') !== undefined);
-        if (hadSelect2) {
-            selEl.select2('destroy');
+        try {
+            if (typeof selEl.select2 === 'function' && selEl.data('select2')) {
+                selEl.select2('destroy');
+            }
+            selEl.html(buildOptionsHtml(current));
+            if (typeof $.fn.select2 === 'function') {
+                selEl.select2({
+                    theme: 'bootstrap-5',
+                    width: '100%',
+                    dropdownParent: '#modalRequest'
+                });
+            }
+        } catch (e) {
+            selEl.html(buildOptionsHtml(current));
         }
-        selEl.html(buildOptionsHtml(current));
-        selEl.select2({
-            theme: 'bootstrap-5',
-            width: '100%',
-            dropdownParent: $('#modalRequest')
-        });
         if (current && selEl.find('option[value="' + current + '"]').length > 0) {
             selEl.val(current).trigger('change');
         } else {
@@ -1278,6 +1259,46 @@ function rebuildAllRowOptions() {
         }
     });
 }
+
+$(document).ready(function() {
+    var modalRequest = document.getElementById('modalRequest');
+    var modalView = document.getElementById('modalView');
+    if (modalRequest) document.body.appendChild(modalRequest);
+    if (modalView) document.body.appendChild(modalView);
+
+    setTimeout(function() {
+        if ($('#reqBody tr').length === 0) {
+            addRow();
+        }
+    }, 200);
+
+    loadAvailableItems().always(function() {
+        rebuildAllRowOptions();
+    });
+});
+
+$(document).on('change', '#tujuanRequest', function() {
+    applyTujuanValue(this.value);
+    $('#reqBody .stock-info').each(function() {
+        $(this).text('-').removeClass('bg-success bg-danger').addClass('bg-secondary');
+    });
+    loadAvailableItems().always(function() {
+        rebuildAllRowOptions();
+        updateAllRowStocks();
+    });
+});
+
+$(document).on('shown.bs.modal', '#modalRequest', function() {
+    if ($('#reqBody tr').length === 0) {
+        addRow();
+    }
+    var tujuanEl = document.getElementById('tujuanRequest');
+    if (tujuanEl) applyTujuanValue(tujuanEl.value);
+    loadAvailableItems().always(function() {
+        rebuildAllRowOptions();
+        updateAllRowStocks();
+    });
+});
 
 function updateStock(select) {
     var id = $(select).val();
@@ -1433,62 +1454,61 @@ function viewRequest(id) {
     $('#view_footer').html('<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>');
     
     fetch('api/get_request_details.php?id=' + id)
-        .then(response => response.text())
-        .then(data => {
+        .then(function(response) { return response.text(); })
+        .then(function(data) {
             $('#view_content').html(data);
             $('#view_request_id').val(id);
-            var addCancel = data.includes('data-can-cancel="true"');
+            var addCancel = data.indexOf('data-can-cancel="true"') !== -1;
             
-            if (data.includes('data-spv="true"')) {
+            if (data.indexOf('data-spv="true"') !== -1) {
                  $('#form_action').val('approve_request');
-                 $('#view_footer').html(`
-                    <button type="button" class="btn btn-danger me-auto" onclick="submitApproval('reject')">Tolak</button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="button" class="btn btn-primary-custom" onclick="submitApproval('approve')">Approve SPV</button>
-                 `);
+                 $('#view_footer').html(
+                    '<button type="button" class="btn btn-danger me-auto" onclick="submitApproval(\'reject\')">Tolak</button>' +
+                    '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>' +
+                    '<button type="button" class="btn btn-primary-custom" onclick="submitApproval(\'approve\')">Approve SPV</button>'
+                 );
                  if (addCancel) {
-                    $('#view_footer').prepend(`<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(${id})"><i class="fas fa-times me-1"></i>Batalkan</button>`);
+                    $('#view_footer').prepend('<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(' + id + ')"><i class="fas fa-times me-1"></i>Batalkan</button>');
                  }
-            } else if (data.includes('data-pending="true"')) {
+            } else if (data.indexOf('data-pending="true"') !== -1) {
                  $('#form_action').val('approve_request');
-                 $('#view_footer').html(`
-                    <button type="button" class="btn btn-danger me-auto" onclick="submitApproval('reject')">Tolak</button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="button" class="btn btn-primary-custom" onclick="submitApproval('approve')">Setujui</button>
-                 `);
+                 $('#view_footer').html(
+                    '<button type="button" class="btn btn-danger me-auto" onclick="submitApproval(\'reject\')">Tolak</button>' +
+                    '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>' +
+                    '<button type="button" class="btn btn-primary-custom" onclick="submitApproval(\'approve\')">Setujui</button>'
+                 );
                  if (addCancel) {
-                    $('#view_footer').prepend(`<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(${id})"><i class="fas fa-times me-1"></i>Batalkan</button>`);
+                    $('#view_footer').prepend('<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(' + id + ')"><i class="fas fa-times me-1"></i>Batalkan</button>');
                  }
-            } else if (data.includes('data-process="true"')) {
+            } else if (data.indexOf('data-process="true"') !== -1) {
                  $('#form_action').val('process_request');
                  $('#status_action').val('completed');
                  
-                 let extraBtn = '';
-                 if (data.includes('data-is-partial="true"')) {
-                     extraBtn = `<button type="button" class="btn btn-success me-2" onclick="forceComplete(${id})"><i class="fas fa-check-circle me-1"></i>Tandai Selesai</button>`;
+                 var extraBtn = '';
+                 if (data.indexOf('data-is-partial="true"') !== -1) {
+                     extraBtn = '<button type="button" class="btn btn-success me-2" onclick="forceComplete(' + id + ')"><i class="fas fa-check-circle me-1"></i>Tandai Selesai</button>';
                  }
                  
-                 $('#view_footer').html(`
-                    <a href="scripts/print_request.php?id=${id}" target="_blank" class="btn btn-info text-white me-auto">
-                        <i class="fas fa-print me-1"></i> Cetak Dokumen
-                    </a>
-                    ${extraBtn}
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
-                    <button type="button" class="btn btn-primary-custom" onclick="processUpload()">
-                        <i class="fas fa-upload me-1"></i> Unggah Dokumen & Proses
-                    </button>
-                 `);
+                 $('#view_footer').html(
+                    '<a href="scripts/print_request.php?id=' + id + '" target="_blank" class="btn btn-info text-white me-auto">' +
+                        '<i class="fas fa-print me-1"></i> Cetak Dokumen' +
+                    '</a>' +
+                    extraBtn +
+                    '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>' +
+                    '<button type="button" class="btn btn-primary-custom" onclick="processUpload()">' +
+                        '<i class="fas fa-upload me-1"></i> Unggah Dokumen & Proses' +
+                    '</button>'
+                 );
             } else {
-                 // For non-pending requests, add Print button
                  $('#form_action').val('');
-                 $('#view_footer').html(`
-                    <a href="scripts/print_request.php?id=${id}" target="_blank" class="btn btn-info text-white me-auto">
-                        <i class="fas fa-print me-1"></i> Cetak Dokumen
-                    </a>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
-                 `);
+                 $('#view_footer').html(
+                    '<a href="scripts/print_request.php?id=' + id + '" target="_blank" class="btn btn-info text-white me-auto">' +
+                        '<i class="fas fa-print me-1"></i> Cetak Dokumen' +
+                    '</a>' +
+                    '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>'
+                 );
                  if (addCancel) {
-                    $('#view_footer').prepend(`<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(${id})"><i class="fas fa-times me-1"></i>Batalkan</button>`);
+                    $('#view_footer').prepend('<button type="button" class="btn btn-outline-danger me-2" onclick="cancelRequest(' + id + ')"><i class="fas fa-times me-1"></i>Batalkan</button>');
                  }
             }
         });
@@ -1532,7 +1552,7 @@ function processUpload() {
             confirmButtonText: '<i class="fas fa-check me-1"></i> YA (Tetap Partial)',
             cancelButtonText: '<i class="fas fa-times me-1"></i> TIDAK (Selesai/Hangus)',
             reverseButtons: true
-        }).then((result) => {
+        }).then(function(result) {
             if (result.isConfirmed) {
                 $('#status_action').val('partial');
                 $('#approvalForm').submit();
@@ -1557,7 +1577,7 @@ function forceComplete(id) {
         cancelButtonColor: '#d33',
         confirmButtonText: 'Ya, Selesaikan!',
         cancelButtonText: 'Batal'
-    }).then((result) => {
+    }).then(function(result) {
         if (result.isConfirmed) {
             $('#form_action').val('force_complete_request');
             $('#approvalForm').submit();
@@ -1576,7 +1596,7 @@ function submitApproval(action) {
             cancelButtonColor: '#6c757d',
             confirmButtonText: 'Ya, Tolak!',
             cancelButtonText: 'Batal'
-        }).then((result) => {
+        }).then(function(result) {
             if (result.isConfirmed) {
                 $('#status_action').val('reject');
                 $('#approvalForm').submit();
@@ -1598,13 +1618,14 @@ function cancelRequest(id) {
         cancelButtonColor: '#6c757d',
         confirmButtonText: 'Ya, Batalkan!',
         cancelButtonText: 'Batal'
-    }).then((result) => {
+    }).then(function(result) {
         if (result.isConfirmed) {
             $('#cancel_request_id').val(id);
             $('#cancelForm').submit();
         }
     });
 }
+</script>
 
 <style>
     /* CIRCULAR PAGINATION STYLING */
