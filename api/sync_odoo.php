@@ -314,7 +314,7 @@ function build_group_summary_lines(array $stats_after, array $loc_group_map, boo
     $lines = [];
     $count = 0;
     foreach ($groups as $name => $agg) {
-        $lines[] = "- {$name}: rows " . (int)$agg['rows'] . ", qty " . fmt_id_qty($agg['qty'] ?? 0) . ", last " . fmt_ts($agg['last'] ?? '');
+        $lines[] = "- {$name}: rows " . (int)$agg['rows'] . ", qty " . fmt_id_qty($agg['qty'] ?? 0);
         $count++;
         if ($count >= $limit) break;
     }
