@@ -2807,14 +2807,63 @@ $(document).ready(function() {
             "lengthMenu": "Tampilkan _MENU_ data",
             "info": "Menampilkan _START_ sampai _END_ dari _TOTAL_ data",
             "paginate": {
-                "first": "Pertama",
-                "last": "Terakhir",
-                "next": "Berikutnya",
-                "previous": "Sebelumnya"
+                "first": '<i class="fas fa-angle-double-left"></i>',
+                "last": '<i class="fas fa-angle-double-right"></i>',
+                "next": '<i class="fas fa-chevron-right"></i>',
+                "previous": '<i class="fas fa-chevron-left"></i>'
             }
         }
     });
 });
 </script>
+
+<style>
+/* DATA TABLES CIRCULAR PAGINATION */
+.dataTables_wrapper .dataTables_paginate {
+    padding-top: 1.5rem;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+    border-radius: 50% !important;
+    width: 38px !important;
+    height: 38px !important;
+    padding: 0 !important;
+    margin: 0 3px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid #e2e8f0 !important;
+    background: #fff !important;
+    color: #64748b !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+    background: #f8fafc !important;
+    color: #204EAB !important;
+    border-color: #204EAB !important;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button.current, 
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+    background: #eff6ff !important;
+    color: #204EAB !important;
+    border-color: #bfdbfe !important;
+    font-weight: 700 !important;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled:hover,
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled:active {
+    background: #fff !important;
+    color: #cbd5e1 !important;
+    border-color: #f1f5f9 !important;
+    opacity: 0.5 !important;
+    cursor: default !important;
+}
+/* Hide the default hover state of datatables */
+.dataTables_wrapper .dataTables_paginate .paginate_button:active {
+    box-shadow: none !important;
+    background: #eff6ff !important;
+}
+</style>
 
 
