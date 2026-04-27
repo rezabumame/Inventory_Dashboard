@@ -419,6 +419,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 }
 
                                 $source_qty_before = 0;
+                                
+                                // Lock the stock cache row to prevent concurrent processing race conditions
+                                if ($source_level === 'gudang_utama') {
+                                    $stmt_lock = $conn->prepare("SELECT qty FROM inventory_stok_gudang_utama WHERE barang_id = ? FOR UPDATE");
+                                    $stmt_lock->bind_param("i", $b_id);
+                                } else {
+                                    $stmt_lock = $conn->prepare("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = ? AND klinik_id = ? FOR UPDATE");
+                                    $stmt_lock->bind_param("ii", $b_id, $source_id);
+                                }
+                                $stmt_lock->execute();
+                                $stmt_lock->get_result();
+
                                 $src_eff = stock_effective($conn, (int)$source_id, false, (int)$b_id); // Assuming source is always klinik or gudang_utama, not HC
                                 if ($source_level === 'gudang_utama') {
                                     // For gudang_utama, stock_effective returns on_hand directly
