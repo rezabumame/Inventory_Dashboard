@@ -89,7 +89,7 @@ if (empty($items)) {
         FROM inventory_booking_pasien bp
         JOIN inventory_pemeriksaan_grup_detail pgd ON bp.pemeriksaan_grup_id = pgd.pemeriksaan_grup_id
         JOIN inventory_barang b ON pgd.barang_id = b.id
-        WHERE bp.booking_id = ?
+        WHERE bp.booking_id = ? AND bp.status = 'done'
         GROUP BY b.id, b.kode_barang, b.nama_barang, b.satuan
         ORDER BY b.nama_barang ASC
     ");
