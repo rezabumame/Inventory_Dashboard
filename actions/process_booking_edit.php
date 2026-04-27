@@ -285,6 +285,18 @@ try {
         $changes['type'] = ['old' => $booking['status_booking'], 'new' => $target_status_booking];
         $notes_parts[] = "Ubah layanan jadi " . $target_status_booking;
     }
+    if ($booking['booking_type'] != $booking_type) {
+        $changes['booking_type'] = ['old' => ($booking['booking_type'] ?? 'keep'), 'new' => $booking_type];
+        $notes_parts[] = "Mengubah tipe (" . ucfirst($booking['booking_type'] ?? 'Keep') . " -> " . ucfirst($booking_type) . ")";
+    }
+    if ((int)$booking['jotform_submitted'] != (int)$jotform_submitted) {
+        $changes['jotform'] = ['old' => $booking['jotform_submitted'] ? 'Sudah' : 'Belum', 'new' => $jotform_submitted ? 'Sudah' : 'Belum'];
+        $notes_parts[] = "Update status Jotform (" . ($booking['jotform_submitted'] ? 'Sudah' : 'Belum') . " -> " . ($jotform_submitted ? 'Sudah' : 'Belum') . ")";
+    }
+    if (trim((string)($booking['catatan'] ?? '')) != $catatan) {
+        $changes['catatan'] = ['old' => $booking['catatan'], 'new' => $catatan];
+        $notes_parts[] = "Memperbarui catatan";
+    }
     
     // Fetch new exams summary
     $new_exams_res = $conn->query("
