@@ -79,7 +79,8 @@ $filter_tipe = (string)($_GET['tipe'] ?? '');
 $filter_fu = (string)($_GET['fu'] ?? '');
 $filter_start = (string)($_GET['start_date'] ?? '');
 $filter_end = (string)($_GET['end_date'] ?? '');
-$has_filters = ($show_all || isset($_GET['filter_today']) || $filter_tujuan !== '' || $filter_status !== '' || $filter_tipe !== '' || $filter_fu !== '' || $filter_start !== '' || $filter_end !== '');
+$filter_q = trim((string)($_GET['q'] ?? ''));
+$has_filters = ($show_all || isset($_GET['filter_today']) || $filter_tujuan !== '' || $filter_status !== '' || $filter_tipe !== '' || $filter_fu !== '' || $filter_start !== '' || $filter_end !== '' || $filter_q !== '');
 if (!$has_filters) {
     if ($role === 'admin_klinik') {
         $filter_today = true;
@@ -97,6 +98,10 @@ if ($_SESSION['role'] == 'admin_klinik') {
     $where .= " AND b.klinik_id = " . $_SESSION['klinik_id'];
     // Allow admin_klinik to see completed bookings as well
     $where .= " AND b.status IN ('booked', 'rescheduled', 'completed') AND LOWER(COALESCE(b.booking_type, 'keep')) IN ('keep','fixed')";
+}
+if ($filter_q !== '') {
+    $esc_q = $conn->real_escape_string($filter_q);
+    $where .= " AND (b.nama_pemesan LIKE '%$esc_q%' OR b.nomor_booking LIKE '%$esc_q%')";
 }
 if ($filter_today) {
     $where .= " AND b.tanggal_pemeriksaan = CURDATE()";
@@ -444,6 +449,13 @@ if (!empty($booking_ids)) {
     <div class="card-body">
         <form method="GET" class="row g-3 align-items-end">
             <input type="hidden" name="page" value="booking">
+            <div class="col-xl-3 col-lg-6 col-md-6">
+                <label class="form-label fw-bold text-muted mb-1">Cari Nama / No Booking</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" name="q" class="form-control border-start-0 ps-0" placeholder="Ketik nama atau nomor..." value="<?= htmlspecialchars($filter_q) ?>">
+                </div>
+            </div>
             <div class="col-xl-2 col-lg-6 col-md-6">
                 <label class="form-label fw-bold text-muted mb-1">Tujuan</label>
                 <div class="segmented-control">
@@ -541,6 +553,7 @@ if (!empty($booking_ids)) {
             url.searchParams.append('status', getVal('status'));
             url.searchParams.append('tipe', getVal('tipe'));
             url.searchParams.append('fu', getVal('fu'));
+            url.searchParams.append('q', getVal('q'));
             
             <?php if ($filter_today): ?>
             url.searchParams.append('filter_today', '1');
@@ -564,6 +577,7 @@ if (!empty($booking_ids)) {
                 <?php if ($filter_status !== ''): ?><span class="badge rounded-pill booking-chip bg-light text-dark">Status: <?= htmlspecialchars($filter_status) ?></span><?php endif; ?>
                 <?php if ($filter_tipe !== ''): ?><span class="badge rounded-pill booking-chip bg-light text-dark">Tipe: <?= htmlspecialchars($filter_tipe) ?></span><?php endif; ?>
                 <?php if ($filter_fu === '1'): ?><span class="badge rounded-pill booking-chip bg-light text-dark">Follow-up: Ya</span><?php endif; ?>
+                <?php if ($filter_q !== ''): ?><span class="badge rounded-pill booking-chip bg-primary text-white">Cari: <?= htmlspecialchars($filter_q) ?></span><?php endif; ?>
             </div>
         <?php endif; ?>
     </div>
