@@ -1390,7 +1390,13 @@ window.postBookingAction = function(params) {
         success: function(res) {
             Swal.close();
             if (res.success) {
-                showSuccessRedirect(res.message, res.redirect || 'index.php?page=booking');
+                let redirectUrl = res.redirect || 'index.php?page=booking';
+                if (res.trigger_detail_id) {
+                    // Append trigger_detail to the redirect URL
+                    const separator = redirectUrl.includes('?') ? '&' : '?';
+                    redirectUrl += separator + 'trigger_detail=' + res.trigger_detail_id;
+                }
+                showSuccessRedirect(res.message, redirectUrl);
             } else {
                 showError(res.message || 'Terjadi kesalahan');
             }

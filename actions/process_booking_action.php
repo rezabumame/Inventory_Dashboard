@@ -230,6 +230,7 @@ try {
             logBookingHistory($conn, $id, 'reschedule', $changes, "Reschedule dari $old_date_fmt " . ($old_time ? "($old_time)" : "") . " ke $new_date_fmt " . ($new_time ? "($new_time)" : "") . ". Alasan: $reason");
             notify_lark_booking($conn, $id, 'reschedule', "Reschedule dari **$old_date_fmt** ke **$new_date_fmt**\n**Alasan:** $reason");
             $msg = "Booking berhasil di-reschedule ke tanggal $new_date " . ($new_time ? "jam $new_time" : "") . ".";
+            $extra_data['trigger_detail_id'] = $id;
             break;
 
         case 'done_partial':
@@ -413,8 +414,10 @@ try {
             // 5. Finalize main booking
             $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'completed' WHERE id = $id");
             $conn->query("DELETE FROM inventory_booking_detail WHERE booking_id = $id"); // Release remaining stock for this ID
-            
             $msg = "Proses penyelesaian booking berhasil diperbarui.";
+            if (isset($new_id) && $new_id > 0) {
+                $extra_data['trigger_detail_id'] = $new_id;
+            }
             break;
 
         case 'fu':
@@ -715,7 +718,11 @@ try {
     $return_url = ($role === 'admin_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
     
     if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
-        echo json_encode(['success' => true, 'message' => $msg, 'redirect' => $return_url]);
+        $response = ['success' => true, 'message' => $msg, 'redirect' => $return_url];
+    if (isset($extra_data) && is_array($extra_data)) {
+        $response = array_merge($response, $extra_data);
+    }
+    echo json_encode($response);
         exit;
     }
     
