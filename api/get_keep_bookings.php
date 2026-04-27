@@ -70,9 +70,17 @@ while ($row = $res->fetch_assoc()) {
     $data[] = $row;
 }
 
+// Fetch global settings for Lark notifications
+$larkWebhook = trim((string)get_setting('webhook_lark_booking_url', ''));
+$larkMentionIds = trim((string)get_setting('webhook_lark_booking_at_id', ''));
+
 echo json_encode([
     'success' => true,
     'count' => count($data),
     'generated_at' => date('Y-m-d H:i:s'),
+    'config' => [
+        'lark_webhook' => $larkWebhook,
+        'lark_mention_ids' => $larkMentionIds
+    ],
     'data' => $data
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
