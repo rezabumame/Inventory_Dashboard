@@ -120,12 +120,16 @@ function notify_lark_booking(mysqli $conn, int $booking_id, string $event, strin
         }
 
         $lines = [
-            "{$mention}**Nomor:** {$b['nomor_booking']} | **Status:** " . strtoupper($b['status']),
+            "**Nomor:** {$b['nomor_booking']} | **Status:** " . strtoupper($b['status']),
             "**Pasien:** {$b['nama_pemesan']} | **Klinik:** " . ($b['nama_klinik'] ?: '-'),
             "**Jadwal:** {$date_fmt}",
             "**Note:** " . ($note ?: ($b['reschedule_reason'] ?: '-')),
             "**PIC:** @{$cs_trigger}"
         ];
+
+        if ($mention !== "") {
+            $lines[] = "cc: {$mention}";
+        }
 
         lark_post_card($webhook, $title, $lines, $theme);
 
