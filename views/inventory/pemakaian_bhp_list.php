@@ -3229,10 +3229,9 @@ if ($default_modal_klinik_id) {
                         const diffCount = Number(res.diff_count || diffs.length || 0);
 
                         let html = `<div class="text-start small mb-2">${res.message || 'Preview perbedaan.'}</div>`;
-                        html += `<div class="text-start small mb-2"><b>Total Perbedaan:</b> ${diffCount}</div>`;
+                        html += `<div class="text-start small mb-2"><b>Total Baris:</b> ${diffCount}</div>`;
                         html += `<div class="text-start small mb-3 p-2 bg-light rounded border-start border-4 border-primary">
-                        <strong>Selisih</strong> = selisih antara <strong>jumlah aktual di file Excel</strong> dengan <strong>jumlah produk hasil mapping dari booking CS berstatus Completed</strong> yang sudah tercatat di sistem (pemakaian auto, per kombinasi tanggal &amp; cabang &amp; jenis).
-                        Jika sudah pernah ada input manual untuk tanggal yang sama, angka &quot;Tercatat di sistem&quot; dapat memuat gabungan auto + manual.
+                        <strong>Selisih</strong> = selisih antara <strong>jumlah aktual di file Excel</strong> dengan <strong>jumlah produk hasil mapping dari booking CS berstatus Completed</strong> (Hasil Mapping Sistem).
                     </div>`;
 
                         if (diffs.length > 0) {
@@ -3245,9 +3244,9 @@ if ($default_modal_klinik_id) {
                                         <th>Jenis</th>
                                         <th>Kode</th>
                                         <th>Item</th>
-                                        <th class="text-end" title="Total pemakaian yang sudah ada di sistem (biasanya auto dari booking Completed)">Tercatat di sistem</th>
+                                        <th class="text-end" title="Total pemakaian dari hasil mapping booking Completed">Hasil Mapping Sistem</th>
                                         <th class="text-end" title="Jumlah aktual dari file Excel">Excel (aktual)</th>
-                                        <th class="text-end" title="Excel (aktual) − Tercatat di sistem">Selisih</th>
+                                        <th class="text-end" title="Excel (aktual) − Hasil Mapping Sistem">Selisih</th>
                                     </tr>
                                 </thead>
                                 <tbody>`;
@@ -3273,14 +3272,14 @@ if ($default_modal_klinik_id) {
                             });
                             html += `</tbody></table></div>`;
                             if (diffCount > diffs.length) {
-                                html += `<div class="text-muted small mt-2">Ditampilkan ${diffs.length} baris pertama dari ${diffCount} perbedaan.</div>`;
+                                html += `<div class="text-muted small mt-2">Ditampilkan ${diffs.length} baris pertama dari ${diffCount} baris.</div>`;
                             }
                         } else {
                             html += `<div class="alert alert-success small mb-0">Tidak ada perbedaan. Data upload sudah sama dengan data sistem.</div>`;
                         }
 
                         Swal.fire({
-                            title: 'Preview BHP Harian',
+                            title: res.has_auto ? 'Preview BHP Harian' : 'Konfirmasi Upload BHP',
                             html: html,
                             width: '90%',
                             showCancelButton: true,

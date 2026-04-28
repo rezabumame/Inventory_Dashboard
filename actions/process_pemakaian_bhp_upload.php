@@ -188,17 +188,25 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
         exit;
     }
 
-    // Step 1.2: Calculate Diffs against "Tercatat di sistem" (Completed Bookings)
+    // Step 1.2: Calculate Diffs against "Hasil Mapping Sistem" (Completed Bookings)
     $diffs = [];
+    $has_auto_global = false;
     foreach ($excel_groups as $g) {
         $tgl = $g['tanggal'];
         $kid = $g['klinik_id'];
         $bid = $g['barang_id'];
         $is_hc = ($g['jenis'] === 'hc');
         
+        // Check if there are ANY auto records for this date/clinic/type to determine if this is a "realization"
+        if (!$has_auto_global) {
+            $check_auto = $conn->query("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = $kid AND tanggal = '$tgl' AND jenis_pemakaian = '" . $g['jenis'] . "' AND is_auto = 1 AND status = 'active' LIMIT 1");
+            if ($check_auto && $check_auto->num_rows > 0) {
+                $has_auto_global = true;
+            }
+        }
+
         // Count already in system (Existing Pemakaian BHP for this date/clinic/type)
         $q_sys = 0;
-        
         $stmt_s = $conn->prepare("
             SELECT COALESCE(SUM(pbd.qty), 0) as qty
             FROM inventory_pemakaian_bhp_detail pbd
@@ -216,18 +224,16 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
 
         $selisih = $g['qty_excel'] - $q_sys;
         
-        // Only show if there IS a difference or user wants to see everything
-        // Usually, we only show rows where selisih != 0
-            $diffs[] = [
-                'tanggal' => date('d/m/Y', strtotime($tgl)),
-                'nama_klinik' => $g['nama_klinik'],
-                'jenis' => strtoupper($g['jenis']),
-                'kode_barang' => $g['kode_barang'],
-                'nama_barang' => $g['nama_barang'],
-                'existing_qty' => (float)$q_sys,
-                'upload_qty' => (float)$g['qty_excel'],
-                'diff' => (float)$selisih
-            ];
+        $diffs[] = [
+            'tanggal' => date('d/m/Y', strtotime($tgl)),
+            'nama_klinik' => $g['nama_klinik'],
+            'jenis' => strtoupper($g['jenis']),
+            'kode_barang' => $g['kode_barang'],
+            'nama_barang' => $g['nama_barang'],
+            'existing_qty' => (float)$q_sys,
+            'upload_qty' => (float)$g['qty_excel'],
+            'diff' => (float)$selisih
+        ];
     }
 
     $token = bin2hex(random_bytes(16));
@@ -237,6 +243,7 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
         'status' => 'preview', 
         'token' => $token, 
         'diffs' => $diffs,
+        'has_auto' => $has_auto_global,
         'diff_count' => count($diffs),
         'message' => count($diffs) > 0 ? 'Ditemukan perbedaan data antara Excel dan Sistem.' : 'Tidak ada perbedaan. Data upload sudah sama dengan data sistem.'
     ]);
