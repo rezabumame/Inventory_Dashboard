@@ -622,8 +622,8 @@ try {
         if (empty($tx['items'])) continue;
         
         $m = $tx['items'][0];
-        $tanggal_val = $m['tanggal_full'];
-        $created_at = $m['tanggal_full'];
+        $tanggal_val = date('Y-m-d', strtotime($m['tanggal_full'])); // DB is DATE type
+        $created_at = date('Y-m-d H:i:s'); // Tanggal Input must be current time
         
         // FORCE HC if nakes is present, even if not in master
         $jenis_pemakaian = (!empty($m['nama_nakes']) || $m['user_hc_id'] > 0) ? 'hc' : 'klinik';
