@@ -312,7 +312,7 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
                 $qty_sesudah = $qty_sebelum - $qty;
                 $cat = "Upload Excel: $nomor";
                 $st_log = $conn->prepare("INSERT INTO inventory_transaksi_stok (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at) VALUES (?, ?, ?, 'out', ?, ?, ?, 'pemakaian_bhp', ?, ?, ?, NOW())");
-                $st_log->bind_param("isiddddissi", $bid, $level, $level_id, $qty, $qty_sebelum, $qty_sesudah, $pid, $cat, $user_id);
+                $st_log->bind_param("isidddisi", $bid, $level, $level_id, $qty, $qty_sebelum, $qty_sesudah, $pid, $cat, $user_id);
                 $st_log->execute();
             }
         }
