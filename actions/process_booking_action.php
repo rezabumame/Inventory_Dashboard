@@ -185,19 +185,24 @@ try {
                     $catatan = "BHP (Auto-Booking) " . $nomor_pemakaian;
                     $created_at_str = date('Y-m-d H:i:s');
 
-                    $stmt_trans = $conn->prepare("
-                        INSERT INTO inventory_transaksi_stok
-                        (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
-                        VALUES (?, ?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?)
-                    ");
-                    $stmt_trans->bind_param("isidddsisis", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $ref_type, $ref_id, $catatan, $created_by, $created_at_str);
-                    $stmt_trans->execute();
+                    if (!$is_hc) {
+                        $stmt_trans = $conn->prepare("
+                            INSERT INTO inventory_transaksi_stok
+                            (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
+                            VALUES (?, ?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?)
+                        ");
+                        $stmt_trans->bind_param("isidddsisis", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $ref_type, $ref_id, $catatan, $created_by, $created_at_str);
+                        $stmt_trans->execute();
+                    }
 
                     // Update Internal Stock Tables
                     if ($is_hc && $level_id !== $klinik_id) {
+                        // Skip automatic stock deduction for HC - will be handled by Excel upload
+                        /*
                         $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
                         $stmt_upd->bind_param("diiii", $qty, $created_by, $bid, $level_id, $klinik_id);
                         $stmt_upd->execute();
+                        */
                     } else {
                         $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
                         $stmt_upd->bind_param("diii", $qty, $created_by, $bid, $klinik_id);
@@ -329,15 +334,14 @@ try {
                     $stmt_d->bind_param("iids", $pemakaian_id, $bid, $qty, $satuan);
                     $stmt_d->execute();
 
-                    $eff = stock_effective($conn, $klinik_id, $is_hc, $bid);
-                    $qty_before = $eff['ok'] ? (float)$eff['on_hand'] : 0;
-                    $qty_after = $qty_before - $qty;
-                    $cat = "BHP (Partial-Booking) " . $nomor_pemakaian;
-                    $stmt_trans->bind_param("isidddisi", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $pemakaian_id, $cat, $created_by);
-                    $stmt_trans->execute();
+                    if (!$is_hc) {
+                        $stmt_trans->bind_param("isidddisi", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $pemakaian_id, $cat, $created_by);
+                        $stmt_trans->execute();
+                    }
 
                     if ($is_hc && $level_id !== $klinik_id) {
-                        $conn->query("UPDATE inventory_stok_tas_hc SET qty = qty - $qty, updated_at = NOW(), updated_by = $created_by WHERE barang_id = $bid AND user_id = $level_id AND klinik_id = $klinik_id");
+                        // Skip automatic stock deduction for HC - will be handled by Excel upload
+                        // $conn->query("UPDATE inventory_stok_tas_hc SET qty = qty - $qty, updated_at = NOW(), updated_by = $created_by WHERE barang_id = $bid AND user_id = $level_id AND klinik_id = $klinik_id");
                     } else {
                         $conn->query("UPDATE inventory_stok_gudang_klinik SET qty = qty - $qty, updated_at = NOW(), updated_by = $created_by WHERE barang_id = $bid AND klinik_id = $klinik_id");
                     }
