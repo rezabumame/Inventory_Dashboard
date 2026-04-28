@@ -624,8 +624,14 @@ try {
         $m = $tx['items'][0];
         $tanggal_val = $m['tanggal_full'];
         $created_at = $m['tanggal_full'];
-        $jenis_pemakaian = !empty($m['nama_nakes']) ? 'hc' : 'klinik';
-        $catatan_transaksi = ($m['nama_pasien'] ?? 'Unknown') . ' (' . ($m['patient_id'] ?? '0') . ') - ' . ($m['layanan'] ?? '-');
+        
+        // FORCE HC if nakes is present, even if not in master
+        $jenis_pemakaian = (!empty($m['nama_nakes']) || $m['user_hc_id'] > 0) ? 'hc' : 'klinik';
+        
+        $patient_id = $m['patient_id'] ?? '0';
+        $nama_pasien = $m['nama_pasien'] ?? 'Unknown';
+        $layanan = $m['layanan'] ?? '-';
+        $catatan_transaksi = $nama_pasien . ' (' . $patient_id . ') - ' . $layanan;
 
         // --- BACKDATE CHECK (H-2) ---
         $yesterday = date('Y-m-d', strtotime('-1 day'));
