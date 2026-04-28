@@ -3340,8 +3340,14 @@ if ($default_modal_klinik_id) {
                         Swal.fire('Gagal', res.message, 'error');
                     }
                 },
-                error: function () {
-                    Swal.fire('Error', 'Terjadi kesalahan sistem saat upload', 'error');
+                error: function (xhr) {
+                    let errorMsg = 'Terjadi kesalahan sistem saat upload.';
+                    if (xhr.status === 403) {
+                        errorMsg = 'Sesi keamanan kadaluarsa (CSRF) saat upload. Silakan refresh halaman.';
+                    } else if (xhr.responseText) {
+                        errorMsg += '<br><div class="text-start small mt-2 p-2 bg-light border">Status: ' + xhr.status + '<br>' + xhr.responseText.substring(0, 200) + '</div>';
+                    }
+                    Swal.fire({ icon: 'error', title: 'Upload Error', html: errorMsg });
                 }
             });
         }
