@@ -548,10 +548,16 @@ try {
                 'items' => $items
             ]);
 
-            // Generate temporary nomor with prefix REQ-ADD
-             $date = date('ymd', strtotime($tanggal)); // ymd (260413) instead of Ymd
-             $seq = next_sequence($conn, 'BHP-REQ', $date);
-            $nomor_pemakaian = 'REQ-ADD-' . $date . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+            // Generate temporary nomor with prefix REQ (Monthly + Clinic Code)
+            $res_k = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1");
+            $k_row = $res_k->fetch_assoc();
+            $k_code_raw = ($jenis_pemakaian === 'hc') ? ($k_row['kode_homecare'] ?? 'HC') : ($k_row['kode_klinik'] ?? 'CLN');
+            $k_code = explode('/', $k_code_raw)[0]; // Strip /Stock
+            $date_ym = date('ym', strtotime($tanggal));
+            
+            require_once __DIR__ . '/../lib/counter.php';
+            $seq = next_sequence($conn, 'REQ-' . $k_code, $date_ym);
+            $nomor_pemakaian = 'REQ-' . $k_code . '-' . $date_ym . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
             $stmt = $conn->prepare("
                 INSERT INTO inventory_pemakaian_bhp 

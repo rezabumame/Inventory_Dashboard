@@ -240,9 +240,8 @@ try {
             // CRITICAL FIX: Update created_at to the SAME timestamp as stock logs to satisfy sellout filter.
             // Also update tanggal to NOW so it appears on today's report in Odoo Export
             $now_val = date('Y-m-d H:i:s');
-            $today_date = date('Y-m-d');
-            $stmt_upd = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'active', spv_approved_by = ?, spv_approved_at = NOW(), created_at = ?, tanggal = ? WHERE id = ?");
-            $stmt_upd->bind_param("issi", $user_id, $now_val, $today_date, $id);
+            $stmt_upd = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'active', spv_approved_by = ?, spv_approved_at = NOW(), created_at = ? WHERE id = ?");
+            $stmt_upd->bind_param("isi", $user_id, $now_val, $id);
             exec_or_throw($stmt_upd, 'Mark revision as active');
 
             $msg = "Revisi " . $header['nomor_pemakaian'] . " telah disetujui dan delta perubahan telah diterapkan.";
@@ -254,16 +253,25 @@ try {
             $items_payload = $pending_data['items'] ?? [];
             if (!is_array($items_payload) || empty($items_payload)) throw new Exception('Item penambahan kosong');
 
-            // 1. Generate REAL nomor pemakaian (replace REQ-ADD)
-            $tanggal = $pending_data['tanggal'];
-            $date = date('ymd', strtotime($tanggal)); // Use ymd (6 digits) for consistency
+            $tanggal = $header['tanggal']; // Use original date from record
+            $kid = (int)$header['klinik_id'];
+            $jenis_pemakaian = $header['jenis_pemakaian'];
+            
+            // Get clinic code
+            $res_k = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $kid LIMIT 1");
+            $k_row = $res_k->fetch_assoc();
+            $k_code_raw = ($jenis_pemakaian === 'hc') ? ($k_row['kode_homecare'] ?? 'HC') : ($k_row['kode_klinik'] ?? 'CLN');
+            $k_code = explode('/', $k_code_raw)[0]; // Strip /Stock
+            $date_ym = date('ym', strtotime($tanggal));
+
             require_once __DIR__ . '/../lib/counter.php';
             
-            $prefix = 'BHP-' . $date . '-';
+            $prefix = 'BHP-' . $k_code . '-' . $date_ym . '-';
+            $seq_prefix = 'BHP-' . $k_code;
             $max_retries = 10;
             $nomor_pemakaian = '';
             for ($i = 0; $i < $max_retries; $i++) {
-                $seq = next_sequence($conn, 'BHP', $date);
+                $seq = next_sequence($conn, $seq_prefix, $date_ym);
                 $temp_nomor = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
                 
                 $stmt_check = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE nomor_pemakaian = ? LIMIT 1");
@@ -281,9 +289,8 @@ try {
 
             // 2. Update Header status to active and set real number
             $now_val = date('Y-m-d H:i:s');
-            $today_date = date('Y-m-d');
-            $stmt_u = $conn->prepare("UPDATE inventory_pemakaian_bhp SET nomor_pemakaian = ?, status = 'active', spv_approved_by = ?, spv_approved_at = NOW(), created_at = ?, tanggal = ? WHERE id = ?");
-            $stmt_u->bind_param("sissi", $nomor_pemakaian, $user_id, $now_val, $today_date, $id);
+            $stmt_u = $conn->prepare("UPDATE inventory_pemakaian_bhp SET nomor_pemakaian = ?, status = 'active', spv_approved_by = ?, spv_approved_at = NOW(), created_at = ? WHERE id = ?");
+            $stmt_u->bind_param("sisi", $nomor_pemakaian, $user_id, $now_val, $id);
             exec_or_throw($stmt_u, 'Update header to active');
 
             $jenis_new = $header['jenis_pemakaian'];
