@@ -619,11 +619,13 @@ try {
     }
 
     foreach ($transactions as $tx) {
-        $m = $tx['meta'];
+        if (empty($tx['items'])) continue;
+        
+        $m = $tx['items'][0];
         $tanggal_val = $m['tanggal_full'];
         $created_at = $m['tanggal_full'];
         $jenis_pemakaian = !empty($m['nama_nakes']) ? 'hc' : 'klinik';
-        $catatan_transaksi = $m['nama_pasien'] . ' (' . $m['patient_id'] . ') - ' . $m['layanan'];
+        $catatan_transaksi = ($m['nama_pasien'] ?? 'Unknown') . ' (' . ($m['patient_id'] ?? '0') . ') - ' . ($m['layanan'] ?? '-');
 
         // --- BACKDATE CHECK (H-2) ---
         $yesterday = date('Y-m-d', strtotime('-1 day'));
