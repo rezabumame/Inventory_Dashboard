@@ -573,8 +573,8 @@ try {
         $k_code_raw = ($jenis_pemakaian === 'hc') ? ($k_row['kode_homecare'] ?? 'HC') : ($k_row['kode_klinik'] ?? 'CLN');
         $k_code = explode('/', $k_code_raw)[0]; // Strip /Stock
         
-        $date = date('ymd', strtotime($tanggal));
-        $prefix_full = 'BHP-' . $k_code . '-' . $date . '-';
+        $date_ym = date('ym', strtotime($tanggal));
+        $prefix_full = 'BHP-' . $k_code . '-' . $date_ym . '-';
         $seq_prefix = 'BHP-' . $k_code;
         
         // Loop to prevent duplicate nomor_pemakaian
@@ -582,7 +582,7 @@ try {
         $max_retries = 10;
         $nomor_pemakaian = '';
         for ($i = 0; $i < $max_retries; $i++) {
-            $seq = next_sequence($conn, $seq_prefix, $date);
+            $seq = next_sequence($conn, $seq_prefix, $date_ym);
             $temp_nomor = $prefix_full . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
             
             // Check if this number already exists in database

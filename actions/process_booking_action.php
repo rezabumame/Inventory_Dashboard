@@ -104,10 +104,10 @@ try {
             $k_code_raw = $is_hc ? ($k_row['kode_homecare'] ?? 'HC') : ($k_row['kode_klinik'] ?? 'CLN');
             $k_code = explode('/', $k_code_raw)[0]; // Strip /Stock
             
-            $date_ymd = date('ymd', strtotime($booking['tanggal_pemeriksaan'] ?? date('Y-m-d')));
+            $date_ym = date('ym', strtotime($booking['tanggal_pemeriksaan'] ?? date('Y-m-d')));
             $prefix = "EST-" . $k_code;
-            $seq = next_sequence($conn, $prefix, $date_ymd);
-            $nomor_pemakaian = $prefix . "-" . $date_ymd . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+            $seq = next_sequence($conn, $prefix, $date_ym);
+            $nomor_pemakaian = $prefix . "-" . $date_ym . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
             // 2. Hitung total qty per barang_id dari Master Pemeriksaan (Core & Support)
             $items_to_deduct = [];

@@ -297,10 +297,10 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
             $k_code_raw = ($jenis === 'hc') ? ($k_row['kode_homecare'] ?? 'HC') : ($k_row['kode_klinik'] ?? 'CLN');
             $k_code = explode('/', $k_code_raw)[0]; // Strip /Stock
             
-            $date_key = date('ymd', strtotime($tgl));
+            $date_ym = date('ym', strtotime($tgl));
             $prefix = "BHP-" . $k_code;
-            $seq = next_sequence($conn, $prefix, $date_key);
-            $nomor = $prefix . "-" . $date_key . "-" . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+            $seq = next_sequence($conn, $prefix, $date_ym);
+            $nomor = $prefix . "-" . $date_ym . "-" . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
             $note = $m['nama_pasien'] . " (" . $m['patient_id'] . ") - " . $m['layanan'];
 
             // Insert Header
