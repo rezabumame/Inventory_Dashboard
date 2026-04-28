@@ -44,7 +44,7 @@ $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
 $user_klinik = $_SESSION['klinik_id'];
 $active_tab = (string)($_GET['tab'] ?? '');
-if (!in_array($active_tab, ['incoming','outgoing'], true)) $active_tab = 'incoming';
+if (!in_array($active_tab, ['incoming','outgoing'], true)) $active_tab = 'outgoing';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
@@ -844,8 +844,16 @@ function get_status_badge($status) {
 <?= $message ?>
 
 <ul class="nav nav-pills mb-4" id="requestTabs" role="tablist">
-    <?php if (in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)): ?>
+    <?php if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_hc'], true)): ?>
     <li class="nav-item" role="presentation">
+        <a class="nav-link rounded-pill px-4 <?= ($active_tab === 'outgoing') ? 'active' : '' ?>" id="outgoing-tab" href="index.php?page=request&tab=outgoing" role="tab">
+            <i class="fas fa-paper-plane me-2"></i>Permintaan Saya <?php if ($user_role !== 'super_admin' && $outgoing_active_count > 0): ?><span class="badge bg-danger ms-1"><?= (int)$outgoing_active_count ?></span><?php endif; ?>
+        </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)): ?>
+    <li class="nav-item ms-2" role="presentation">
         <a class="nav-link rounded-pill px-4 <?= ($active_tab === 'incoming') ? 'active' : '' ?>" id="incoming-tab" href="index.php?page=request&tab=incoming" role="tab">
             <i class="fas fa-inbox me-2"></i>Masuk 
             <?php 
@@ -853,16 +861,6 @@ function get_status_badge($status) {
             if ($user_role !== 'super_admin' && $incoming_active_count > 0): ?>
                 <span class="badge bg-danger ms-1"><?= $incoming_active_count ?></span>
             <?php endif; ?>
-        </a>
-    </li>
-    <?php endif; ?>
-
-    <!-- No separate SPV tab; SPV approves from detail view -->
-    
-    <?php if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_hc'], true)): ?>
-    <li class="nav-item ms-2" role="presentation">
-        <a class="nav-link rounded-pill px-4 <?= ($active_tab === 'outgoing') ? 'active' : '' ?>" id="outgoing-tab" href="index.php?page=request&tab=outgoing" role="tab">
-            <i class="fas fa-paper-plane me-2"></i>Permintaan Saya <?php if ($user_role !== 'super_admin' && $outgoing_active_count > 0): ?><span class="badge bg-danger ms-1"><?= (int)$outgoing_active_count ?></span><?php endif; ?>
         </a>
     </li>
     <?php endif; ?>
