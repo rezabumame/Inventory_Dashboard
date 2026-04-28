@@ -81,8 +81,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (!$can_choose_klinik && (int)$row_old['klinik_id'] !== $user_klinik_id) {
                 $message = '<div class="alert alert-danger mb-3">Access denied.</div>';
             } else {
-                $conn->query("DELETE FROM inventory_users WHERE id = $id AND role = 'petugas_hc'");
-                $message = '<div class="alert alert-success mb-3">Petugas HC berhasil dihapus.</div>';
+                $conn->begin_transaction();
+                try {
+                    // 1. Delete allocated stock so it returns to 'unallocated'
+                    $conn->query("DELETE FROM inventory_stok_tas_hc WHERE user_id = $id");
+                    
+                    // 2. Delete the user
+                    $conn->query("DELETE FROM inventory_users WHERE id = $id AND role = 'petugas_hc'");
+                    
+                    $conn->commit();
+                    $message = '<div class="alert alert-success mb-3">Petugas HC dan data alokasi stoknya berhasil dihapus. Stok otomatis kembali ke status Unallocated.</div>';
+                } catch (Exception $e) {
+                    $conn->rollback();
+                    $message = '<div class="alert alert-danger mb-3">Gagal menghapus petugas: ' . $e->getMessage() . '</div>';
+                }
             }
         }
     }
