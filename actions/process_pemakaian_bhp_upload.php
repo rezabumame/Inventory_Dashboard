@@ -196,22 +196,20 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
         $bid = $g['barang_id'];
         $is_hc = ($g['jenis'] === 'hc');
         
-        // Count already in system (Completed bookings for this date/clinic/type)
+        // Count already in system (Existing Pemakaian BHP for this date/clinic/type)
         $q_sys = 0;
-        $reserve_cond = $is_hc ? "bp.status_booking LIKE '%HC%'" : "bp.status_booking LIKE '%Clinic%'";
         
-        // Sum from inventory_booking_detail for COMPLETED bookings
         $stmt_s = $conn->prepare("
-            SELECT COALESCE(SUM(bd.qty_gantung), 0) as qty
-            FROM inventory_booking_detail bd
-            JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
-            WHERE bp.klinik_id = ? 
-              AND bp.tanggal_pemeriksaan = ? 
-              AND bp.status = 'completed'
-              AND $reserve_cond
-              AND bd.barang_id = ?
+            SELECT COALESCE(SUM(pbd.qty), 0) as qty
+            FROM inventory_pemakaian_bhp_detail pbd
+            JOIN inventory_pemakaian_bhp pb ON pbd.pemakaian_bhp_id = pb.id
+            WHERE pb.klinik_id = ? 
+              AND pb.tanggal = ? 
+              AND pb.jenis_pemakaian = ?
+              AND pbd.barang_id = ?
+              AND pb.status = 'active'
         ");
-        $stmt_s->bind_param("isi", $kid, $tgl, $bid);
+        $stmt_s->bind_param("issi", $kid, $tgl, $g['jenis'], $bid);
         $stmt_s->execute();
         $res_s = $stmt_s->get_result()->fetch_assoc();
         $q_sys = (float)($res_s['qty'] ?? 0);
