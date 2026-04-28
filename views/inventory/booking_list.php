@@ -2939,59 +2939,45 @@ if (!empty($booking_ids)) {
 
     <!-- Modal Completion -->
     <div class="modal fade" id="modalCompletion" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title"><i class="fas fa-check-double me-2"></i>Selesaikan Booking</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header bg-primary text-white py-3" style="background-color: #204EAB !important;">
+                    <h5 class="modal-title fw-bold"><i class="fas fa-check-double me-2"></i>Selesaikan Booking</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body p-4">
                     <input type="hidden" id="completionBookingId">
-                    <div class="alert alert-info py-2 mb-3">
-                        <div class="fw-bold">Booking: <span id="completionNomorBooking"></span></div>
-                        <small>Pilih <b>pemeriksaan</b> yang benar-benar telah selesai dilakukan.</small>
+                    <div class="alert alert-info border-0 shadow-sm mb-4" style="background-color: #e3f2fd; border-left: 4px solid #204EAB !important;">
+                        <div class="d-flex align-items-center">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-info-circle text-primary fs-4"></i>
+                            </div>
+                            <div class="ms-3">
+                                <h6 class="mb-1 fw-bold text-primary">Booking: <span id="completionNomorBooking" class="text-dark"></span></h6>
+                                <p class="mb-0 small text-muted">Tentukan status akhir untuk setiap pasien dan pemeriksaan di bawah ini untuk memproses stok.</p>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="table-responsive">
-                        <table class="table table-bordered align-middle">
-                            <thead class="table-light">
-                                <tr>
-                                    <th width="50" class="text-center">
-                                        <input type="checkbox" class="form-check-input" id="checkAllPasien" checked>
-                                    </th>
-                                    <th>Nama Pasien</th>
-                                    <th>Pemeriksaan / Paket</th>
-                                    <th width="200">Status Akhir</th>
+                    <div class="table-responsive rounded-3 border">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="bg-light">
+                                <tr class="text-uppercase small fw-bold text-muted">
+                                    <th class="ps-4 py-3" style="width: 25%;">Nama Pasien</th>
+                                    <th class="py-3" style="width: 30%;">Pemeriksaan / Paket</th>
+                                    <th class="py-3" style="width: 20%;">Status Akhir</th>
+                                    <th class="pe-4 py-3" style="width: 25%;">Detail Reschedule</th>
                                 </tr>
                             </thead>
                             <tbody id="completionPasienWrapper"></tbody>
                         </table>
                     </div>
 
-                    <div id="completionRescheduleSection" class="mt-3 p-3 border rounded bg-light"
-                        style="display:none;">
-                        <h6 class="fw-bold text-warning"><i class="fas fa-calendar-alt me-2"></i>Detail Reschedule</h6>
-                        <div class="row g-2">
-                            <div class="col-md-4">
-                                <label class="x-small fw-bold text-muted text-uppercase">Tanggal Baru</label>
-                                <input type="date" id="completionRescheduleDate" class="form-control form-control-sm"
-                                    min="<?= date('Y-m-d') ?>">
-                            </div>
-                            <div class="col-md-3">
-                                <label class="x-small fw-bold text-muted text-uppercase">Jam Baru</label>
-                                <input type="time" id="completionRescheduleTime" class="form-control form-control-sm">
-                            </div>
-                            <div class="col-md-5">
-                                <label class="x-small fw-bold text-muted text-uppercase">Alasan Reschedule</label>
-                                <input type="text" id="completionRescheduleReason" class="form-control form-control-sm"
-                                    placeholder="Contoh: Tensi tinggi">
-                            </div>
-                        </div>
-                    </div>
+                    <!-- Global reschedule section removed in favor of per-item settings -->
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="button" class="btn btn-success px-4" onclick="submitCompletion()">
+                <div class="modal-footer bg-light border-top-0 py-3">
+                    <button type="button" class="btn btn-link text-muted fw-bold text-decoration-none px-4" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-success px-5 py-2 fw-bold shadow-sm rounded-pill" onclick="submitCompletion()">
                         <i class="fas fa-check-circle me-1"></i> Proses Selesai
                     </button>
                 </div>
@@ -3071,60 +3057,103 @@ if (!empty($booking_ids)) {
                         if (g.items.length === 1) {
                             let p = g.items[0];
                             html += `
-                                <tr>
-                                    <td class="text-center">
-                                        <input type="checkbox" class="form-check-input cb-pasien-done" value="${p.id}" checked data-index="${rowIndex}">
+                                <tr class="border-bottom">
+                                    <td class="ps-4">
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar-sm bg-light rounded-circle d-flex align-items-center justify-content-center me-2" style="width:32px; height:32px;">
+                                                <i class="fas fa-user text-muted small"></i>
+                                            </div>
+                                            <span class="fw-bold text-dark">${p.nama_pasien}</span>
+                                        </div>
                                     </td>
-                                    <td><div class="fw-bold">${p.nama_pasien}</div></td>
-                                    <td><div class="x-small text-muted">${p.exam_name}</div></td>
+                                    <td><span class="text-muted small">${p.exam_name}</span></td>
                                     <td>
-                                        <select class="form-select form-select-sm sel-pasien-fallback" data-index="${rowIndex}" disabled>
+                                        <select class="form-select form-select-sm border-0 bg-light sel-pasien-status" data-id="${p.id}" style="font-weight:600;">
                                             <option value="done" selected>Completed</option>
                                             <option value="reschedule">Reschedule</option>
                                             <option value="cancel">Cancel</option>
                                         </select>
+                                    </td>
+                                    <td class="pe-4">
+                                        <div class="reschedule-fields-${p.id}" style="display:none;">
+                                            <div class="d-flex gap-1 mb-1">
+                                                <input type="date" class="form-control form-control-sm res-date" min="<?= date('Y-m-d') ?>" style="width: 130px;">
+                                                <input type="time" class="form-control form-control-sm res-time" style="width: 100px;">
+                                            </div>
+                                            <input type="text" class="form-control form-control-sm res-reason" placeholder="Alasan Reschedule">
+                                        </div>
                                     </td>
                                 </tr>`;
                             rowIndex++;
                         } else {
                             // Group Header
                             html += `
-                                <tr class="bg-light border-bottom-0 align-middle">
-                                    <td class="text-center">
-                                        <input type="checkbox" class="form-check-input group-check" data-target="${groupId}" checked>
+                                <tr class="bg-light align-middle" style="background-color: #f8f9fa !important;">
+                                    <td class="ps-4">
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar-sm bg-primary-subtle rounded-circle d-flex align-items-center justify-content-center me-2" style="width:32px; height:32px;">
+                                                <i class="fas fa-users text-primary small"></i>
+                                            </div>
+                                            <span class="fw-bold text-primary">${g.name}</span>
+                                        </div>
                                     </td>
-                                    <td colspan="2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div class="fw-bold text-primary"><i class="fas fa-user-circle me-2"></i>${g.name} <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-2" style="font-size:0.7rem;">${g.items.length} Pemeriksaan</span></div>
-                                            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none fw-bold" style="font-size: 0.75rem;" onclick="toggleCompletionGroup('${groupId}', this)">
+                                    <td>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="badge rounded-pill bg-primary px-3 py-2" style="font-size:0.65rem;">${g.items.length} PEMERIKSAAN</span>
+                                            <button type="button" class="btn btn-outline-primary btn-sm px-2 py-1 fw-bold rounded-pill" style="font-size: 0.65rem;" onclick="toggleCompletionGroup('${groupId}', this)">
                                                 <i class="fas fa-chevron-down me-1"></i> LIHAT DETAIL
                                             </button>
                                         </div>
                                     </td>
                                     <td>
-                                        <select class="form-select form-select-sm group-fallback-select" data-target="${groupId}" disabled>
-                                            <option value="done" selected>Completed</option>
-                                            <option value="reschedule">Reschedule</option>
-                                            <option value="cancel">Cancel</option>
+                                        <select class="form-select form-select-sm border-primary-subtle bg-white group-status-select" data-target="${groupId}" style="font-weight:600;">
+                                            <option value="done" selected>All Completed</option>
+                                            <option value="reschedule">All Reschedule</option>
+                                            <option value="cancel">All Cancel</option>
+                                            <option value="mixed" disabled>Partial / Mixed</option>
                                         </select>
+                                    </td>
+                                    <td class="pe-4">
+                                        <div class="reschedule-group-fields-${groupId}" style="display:none;">
+                                            <div class="d-flex gap-1 mb-1">
+                                                <input type="date" class="form-control form-control-sm grp-res-date" min="<?= date('Y-m-d') ?>" style="width: 130px;">
+                                                <input type="time" class="form-control form-control-sm grp-res-time" style="width: 100px;">
+                                            </div>
+                                            <input type="text" class="form-control form-control-sm grp-res-reason" placeholder="Alasan Reschedule Massal">
+                                        </div>
+                                        <div class="reschedule-group-placeholder-${groupId} text-center">
+                                            <span class="text-muted x-small italic">Berlaku untuk semua pemeriksaan di bawah</span>
+                                        </div>
                                     </td>
                                 </tr>`;
                             
                             // Sub-rows
                             g.items.forEach(p => {
                                 html += `
-                                    <tr class="exam-sub-row ${groupId}" style="display:none; background-color: #fdfdfd;">
-                                        <td class="text-center">
-                                            <input type="checkbox" class="form-check-input cb-pasien-done sub-item-${groupId}" value="${p.id}" checked data-index="${rowIndex}" data-group="${groupId}">
+                                    <tr class="exam-sub-row ${groupId}" style="display:none; background-color: #ffffff;">
+                                        <td class="ps-5 py-2">
+                                            <div class="text-muted x-small"><i class="fas fa-level-up-alt fa-rotate-90 me-1"></i> Sub-item</div>
                                         </td>
-                                        <td class="ps-4 text-muted"><div class="small">${p.nama_pasien}</div></td>
-                                        <td><div class="small text-muted"><i class="fas fa-microscope me-1"></i>${p.exam_name}</div></td>
-                                        <td>
-                                            <select class="form-select form-select-sm sel-pasien-fallback" data-index="${rowIndex}" disabled>
+                                        <td class="py-2">
+                                            <div class="d-flex align-items-center small text-dark fw-medium">
+                                                <i class="fas fa-microscope text-muted me-2" style="font-size: 0.7rem;"></i>${p.exam_name}
+                                            </div>
+                                        </td>
+                                        <td class="py-2">
+                                            <select class="form-select form-select-sm border-0 bg-light sel-pasien-status" data-id="${p.id}" style="font-size: 0.7rem;">
                                                 <option value="done" selected>Completed</option>
                                                 <option value="reschedule">Reschedule</option>
                                                 <option value="cancel">Cancel</option>
                                             </select>
+                                        </td>
+                                        <td class="pe-4 py-2">
+                                            <div class="reschedule-fields-${p.id}" style="display:none;">
+                                                <div class="d-flex gap-1 mb-1">
+                                                    <input type="date" class="form-control form-control-sm res-date" min="<?= date('Y-m-d') ?>" style="width: 120px;">
+                                                    <input type="time" class="form-control form-control-sm res-time" style="width: 80px;">
+                                                </div>
+                                                <input type="text" class="form-control form-control-sm res-reason" style="font-size: 0.7rem;" placeholder="Alasan Reschedule">
+                                            </div>
                                         </td>
                                     </tr>`;
                                 rowIndex++;
@@ -3147,114 +3176,120 @@ if (!empty($booking_ids)) {
             var $rows = $('.' + groupId);
             var isHidden = $rows.is(':hidden');
             if (isHidden) {
-                $rows.show();
-                $(btn).html('<i class="fas fa-chevron-up me-1"></i> SEMBUNYIKAN');
+                $rows.fadeIn(200);
+                $(btn).html('<i class="fas fa-chevron-up me-1"></i> SEMBUNYIKAN').removeClass('btn-outline-primary').addClass('btn-primary');
             } else {
                 $rows.hide();
-                $(btn).html('<i class="fas fa-chevron-down me-1"></i> LIHAT DETAIL');
+                $(btn).html('<i class="fas fa-chevron-down me-1"></i> LIHAT DETAIL').removeClass('btn-primary').addClass('btn-outline-primary');
             }
         };
 
-        $(document).on('change', '.group-check', function () {
-            var target = $(this).data('target');
-            var isChecked = $(this).prop('checked');
-            $('.sub-item-' + target).prop('checked', isChecked).trigger('change');
-
-            // Sync Group Selector
-            var $groupSel = $(`.group-fallback-select[data-target="${target}"]`);
-            if (isChecked) {
-                $groupSel.val('done').prop('disabled', true);
-            } else {
-                $groupSel.val('reschedule').prop('disabled', false);
-            }
-        });
-
-        $(document).on('change', '.group-fallback-select', function () {
+        $(document).on('change', '.group-status-select', function () {
             var target = $(this).data('target');
             var val = $(this).val();
-            $('.exam-sub-row.' + target + ' .sel-pasien-fallback').val(val).trigger('change');
-        });
-
-        $(document).on('change', '.cb-pasien-done', function () {
-            let idx = $(this).data('index');
-            let isChecked = $(this).is(':checked');
-            let $sel = $(`.sel-pasien-fallback[data-index="${idx}"]`);
-            let groupId = $(this).data('group');
-
-            if (isChecked) {
-                $sel.val('done').prop('disabled', true);
+            if (!val) return;
+            
+            // Toggle bulk reschedule fields
+            if (val === 'reschedule') {
+                $(`.reschedule-group-fields-${target}`).show();
+                $(`.reschedule-group-placeholder-${target}`).hide();
             } else {
-                $sel.val('reschedule').prop('disabled', false);
+                $(`.reschedule-group-fields-${target}`).hide();
+                $(`.reschedule-group-placeholder-${target}`).show();
             }
 
-            // Sync group check & status
-            if (groupId) {
-                let allChecked = $(`.sub-item-${groupId}:checked`).length === $(`.sub-item-${groupId}`).length;
-                let $groupCheck = $(`.group-check[data-target="${groupId}"]`);
-                let $groupSel = $(`.group-fallback-select[data-target="${groupId}"]`);
-                
-                $groupCheck.prop('checked', allChecked);
-                if (allChecked) {
-                    $groupSel.val('done').prop('disabled', true);
-                } else {
-                    $groupSel.prop('disabled', false);
-                    // If mixed or none checked, group selector follows the first unchecked item or just stays
-                }
+            $(`.exam-sub-row.${target} .sel-pasien-status`).val(val).trigger('change');
+        });
+
+        $(document).on('input change', '.grp-res-date, .grp-res-time, .grp-res-reason', function() {
+            let $row = $(this).closest('tr');
+            let target = $(this).closest('td').find('.reschedule-group-fields-[class^="reschedule-group-fields-"]').attr('class')?.split(' ').find(c => c.startsWith('reschedule-group-fields-'))?.replace('reschedule-group-fields-', '');
+            // Alternative way to find target
+            if (!target) {
+                target = $(this).closest('tr').find('.group-status-select').data('target');
             }
-
-            checkNeedReschedule();
-        });
-
-        $(document).on('change', '.sel-pasien-fallback', function () {
-            checkNeedReschedule();
-        });
-
-        function checkNeedReschedule() {
-            let needReschedule = false;
-            $('.cb-pasien-done').each(function () {
-                if (!$(this).is(':checked')) {
-                    let idx = $(this).data('index');
-                    if ($(`.sel-pasien-fallback[data-index="${idx}"]`).val() === 'reschedule') {
-                        needReschedule = true;
-                    }
-                }
+            
+            let date = $row.find('.grp-res-date').val();
+            let time = $row.find('.grp-res-time').val();
+            let reason = $row.find('.grp-res-reason').val();
+            
+            $(`.exam-sub-row.${target}`).each(function() {
+                $(this).find('.res-date').val(date);
+                $(this).find('.res-time').val(time);
+                $(this).find('.res-reason').val(reason);
             });
+        });
 
-            if (needReschedule) $('#completionRescheduleSection').show();
-            else $('#completionRescheduleSection').hide();
-        }
+        $(document).on('change', '.sel-pasien-status', function () {
+            let id = $(this).data('id');
+            let val = $(this).val();
+            let $row = $(this).closest('tr');
+            
+            // Toggle reschedule fields
+            if (val === 'reschedule') {
+                $(`.reschedule-fields-${id}`).show();
+            } else {
+                $(`.reschedule-fields-${id}`).hide();
+            }
+
+            // Sync Group Header Status
+            let groupClasses = $row.attr('class').split(' ');
+            let groupId = groupClasses.find(c => c.startsWith('grp-'));
+            if (groupId) {
+                let $subItems = $(`.exam-sub-row.${groupId} .sel-pasien-status`);
+                let statuses = [];
+                $subItems.each(function() { statuses.push($(this).val()); });
+                
+                let uniqueStatuses = [...new Set(statuses)];
+                let $groupSel = $(`.group-status-select[data-target="${groupId}"]`);
+                
+                if (uniqueStatuses.length === 1) {
+                    $groupSel.val(uniqueStatuses[0]);
+                } else {
+                    $groupSel.val('mixed');
+                }
+            }
+        });
 
         window.submitCompletion = function () {
             const id = $('#completionBookingId').val();
             const doneIds = [];
             const fallback = {};
+            let hasError = false;
 
-            $('.cb-pasien-done:checked').each(function () {
-                doneIds.push($(this).val());
+            $('.sel-pasien-status').each(function () {
+                const pid = $(this).data('id');
+                const status = $(this).val();
+                
+                if (status === 'done') {
+                    doneIds.push(pid);
+                } else if (status === 'reschedule') {
+                    const $wrapper = $(`.reschedule-fields-${pid}`);
+                    const date = $wrapper.find('.res-date').val();
+                    const time = $wrapper.find('.res-time').val();
+                    const reason = $wrapper.find('.res-reason').val();
+
+                    if (!date || !reason) {
+                        Swal.fire('Perhatian', 'Tanggal dan Alasan Reschedule wajib diisi untuk setiap item yang di-reschedule.', 'warning');
+                        hasError = true;
+                        return false;
+                    }
+
+                    fallback[pid] = {
+                        status: 'reschedule',
+                        date: date,
+                        time: time,
+                        reason: reason
+                    };
+                } else if (status === 'cancel') {
+                    fallback[pid] = { status: 'cancel' };
+                }
             });
 
-            $('.cb-pasien-done:not(:checked)').each(function () {
-                let idx = $(this).data('index');
-                fallback[$(this).val()] = $(`.sel-pasien-fallback[data-index="${idx}"]`).val();
-            });
+            if (hasError) return;
 
             if (doneIds.length === 0 && Object.keys(fallback).length === 0) {
                 Swal.fire('Error', 'Pilih setidaknya satu tindakan untuk pasien.', 'error');
-                return;
-            }
-
-            const rescheduleDate = $('#completionRescheduleDate').val();
-            const rescheduleTime = $('#completionRescheduleTime').val();
-            const rescheduleReason = $('#completionRescheduleReason').val();
-
-            // Validate reschedule
-            let needReschedule = false;
-            for (let pid in fallback) {
-                if (fallback[pid] === 'reschedule') needReschedule = true;
-            }
-
-            if (needReschedule && (!rescheduleDate || !rescheduleReason)) {
-                Swal.fire('Error', 'Tanggal baru dan Alasan Reschedule wajib diisi.', 'warning');
                 return;
             }
 
@@ -3263,10 +3298,7 @@ if (!empty($booking_ids)) {
                     action: 'done_partial',
                     id: id,
                     done_ids: doneIds,
-                    fallback: fallback,
-                    reschedule_date: rescheduleDate,
-                    reschedule_time: rescheduleTime,
-                    reschedule_reason: rescheduleReason
+                    fallback: fallback
                 });
                 bootstrap.Modal.getInstance(document.getElementById('modalCompletion')).hide();
             });

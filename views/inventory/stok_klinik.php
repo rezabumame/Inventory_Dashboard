@@ -1227,24 +1227,43 @@ function loadHCDetail(barangId, klinikId, namaBarang) {
 // removed: loadSelloutDetail (not used)
 
 function confirmSync(btn) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const currentDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+
     Swal.fire({
         title: 'Konfirmasi Sinkronisasi',
-        text: 'Apakah Anda yakin ingin melakukan sinkronisasi stok dari Odoo sekarang? Proses ini mungkin memakan waktu beberapa saat.',
+        html: `
+            <div class="text-start">
+                <p class="small text-muted mb-3">Pilih waktu efektif sinkronisasi. Pemakaian lokal setelah waktu ini akan tetap muncul di dashboard untuk menghindari selisih.</p>
+                <label class="form-label small fw-bold">WAKTU EFEKTIF (OVERRIDE)</label>
+                <input type="datetime-local" id="override_time_stok" class="form-control mb-2" value="${currentDateTime}">
+                <div class="form-text small text-primary"><i class="fas fa-info-circle me-1"></i> Biarkan default jika ingin menggunakan waktu saat ini.</div>
+            </div>
+        `,
         icon: 'question',
         showCancelButton: true,
         confirmButtonColor: '#204EAB',
         cancelButtonColor: '#6c757d',
         confirmButtonText: 'Ya, Sync Sekarang',
         cancelButtonText: 'Batal',
-        reverseButtons: true
+        reverseButtons: true,
+        focusConfirm: false,
+        preConfirm: () => {
+            return document.getElementById('override_time_stok').value;
+        }
     }).then((result) => {
-        if (result.isConfirmed) {
-            syncFromOdoo(btn);
+        if (result.isConfirmed && result.value) {
+            syncFromOdoo(btn, result.value);
         }
     });
 }
 
-async function syncFromOdoo(btn) {
+async function syncFromOdoo(btn, overrideTime = '') {
     const statusEl = document.getElementById('syncStatus');
     const lastEl = document.getElementById('lastUpdateText');
     statusEl.textContent = 'Sinkronisasi berjalan...';
@@ -1252,6 +1271,9 @@ async function syncFromOdoo(btn) {
     try {
         const fd = new FormData();
         fd.append('_csrf', <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>);
+        if (overrideTime) {
+            fd.append('override_time', overrideTime.replace('T', ' ') + ':00');
+        }
         const res = await fetch('api/sync_odoo.php', { method: 'POST', body: fd });
         const data = await res.json();
         if (data.success) {
@@ -1263,18 +1285,22 @@ async function syncFromOdoo(btn) {
                 showConfirmButton: false
             });
             if (lastEl) {
-                const now = new Date();
+                let displayDate = new Date();
+                if (overrideTime) displayDate = new Date(overrideTime);
+                
                 const pad = n => n.toString().padStart(2, '0');
                 const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
-                const text = `Terakhir update: ${pad(now.getDate())} ${months[now.getMonth()]} ${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                const text = `Terakhir update: ${pad(displayDate.getDate())} ${months[displayDate.getMonth()]} ${displayDate.getFullYear()} ${pad(displayDate.getHours())}:${pad(displayDate.getMinutes())}`;
                 lastEl.textContent = text;
             }
             setTimeout(() => { window.location.reload(); }, 800);
         } else {
             statusEl.textContent = 'Gagal: ' + (data.message || 'Unknown error');
+            Swal.fire('Gagal!', data.message || 'Terjadi kesalahan saat sinkronisasi.', 'error');
         }
     } catch (e) {
         statusEl.textContent = 'Gagal: ' + e.message;
+        Swal.fire('Error!', e.message, 'error');
     } finally {
         btn.disabled = false;
     }

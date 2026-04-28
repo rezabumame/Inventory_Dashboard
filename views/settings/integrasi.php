@@ -655,37 +655,64 @@ document.addEventListener('DOMContentLoaded', function() {
     
     toggleFields();
 
-    window.confirmSyncNow = function(btn) {
-        Swal.fire({
+    window.confirmSyncNow = async function(btn) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const currentDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+        const { value: formValues } = await Swal.fire({
             title: 'Konfirmasi Sinkronisasi',
-            text: 'Jalankan sinkronisasi Odoo secara paksa sekarang?',
+            html: `
+                <div class="text-start">
+                    <p class="small text-muted mb-3">Pilih waktu efektif sinkronisasi. Pemakaian lokal setelah waktu ini akan tetap muncul di dashboard untuk menghindari selisih.</p>
+                    <label class="form-label small fw-bold">WAKTU EFEKTIF (OVERRIDE)</label>
+                    <input type="datetime-local" id="override_time" class="form-control mb-2" value="${currentDateTime}">
+                    <div class="form-text small text-primary"><i class="fas fa-info-circle me-1"></i> Biarkan default jika ingin menggunakan waktu saat ini.</div>
+                </div>
+            `,
             icon: 'question',
             showCancelButton: true,
             confirmButtonColor: '#204EAB',
             cancelButtonColor: '#6c757d',
             confirmButtonText: 'Ya, Jalankan',
-            cancelButtonText: 'Batal'
-        }).then((result) => {
-            if (result.isConfirmed) runSyncNow(btn);
+            cancelButtonText: 'Batal',
+            focusConfirm: false,
+            preConfirm: () => {
+                return document.getElementById('override_time').value;
+            }
         });
+
+        if (formValues) {
+            runSyncNow(btn, formValues);
+        }
     }
 
-    window.runSyncNow = async function(btn) {
+    window.runSyncNow = async function(btn, overrideTime = '') {
         const s = document.getElementById('connStatus');
         s.textContent = '⚡ Memproses...';
         btn.disabled = true;
         try {
             const fd = new FormData();
             fd.append('_csrf', <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>);
+            if (overrideTime) {
+                // Convert T to space for MySQL format
+                fd.append('override_time', overrideTime.replace('T', ' ') + ':00');
+            }
             const res = await fetch('api/sync_odoo.php', { method: 'POST', body: fd });
             const data = await res.json();
             if (data.success) {
                 Swal.fire('Berhasil!', 'Sinkronisasi selesai.', 'success').then(() => location.reload());
             } else {
                 s.textContent = '❌ Gagal: ' + (data.message || 'Unknown');
+                Swal.fire('Gagal!', data.message || 'Terjadi kesalahan saat sinkronisasi.', 'error');
             }
         } catch (e) {
             s.textContent = '❌ Gagal: ' + e.message;
+            Swal.fire('Error!', e.message, 'error');
         } finally {
             btn.disabled = false;
         }

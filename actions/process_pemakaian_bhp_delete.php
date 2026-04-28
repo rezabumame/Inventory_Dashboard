@@ -43,14 +43,13 @@ try {
         throw new Exception("Data pemakaian tidak ditemukan");
     }
 
-    // Permission check
-    $created_date = date('Y-m-d', strtotime($header['created_at']));
+    // Use usage date (tanggal) to determine the grace period
+    $usage_date = date('Y-m-d', strtotime($header['tanggal']));
     $today = date('Y-m-d');
     $yesterday = date('Y-m-d', strtotime('-1 day'));
-    $two_days_ago = date('Y-m-d', strtotime('-2 days'));
     
-    // H-0 and H-1 are considered within grace period (no approval needed)
-    $is_today = ($created_date === $today || $created_date === $yesterday);
+    // H-0 and H-1 of the USAGE DATE are considered within grace period (no approval needed)
+    $is_today = ($usage_date === $today || $usage_date === $yesterday);
     $is_over_2_days = !$is_today;
 
     if ($is_over_2_days) {

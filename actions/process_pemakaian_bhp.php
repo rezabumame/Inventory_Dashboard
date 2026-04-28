@@ -135,13 +135,13 @@ try {
             throw new Exception("Data lama tidak ditemukan");
         }
 
-        // Permission check
-        $created_date = date('Y-m-d', strtotime($old_header['created_at']));
+        // Use usage date (tanggal) to determine if this is a "historical" record
+        $usage_date = date('Y-m-d', strtotime($old_header['tanggal']));
         $today = date('Y-m-d');
         $yesterday = date('Y-m-d', strtotime('-1 day'));
         
-        // H-0 and H-1 are considered within grace period (no approval needed)
-        $is_today_edit = ($created_date === $today || $created_date === $yesterday);
+        // H-0 and H-1 of the USAGE DATE are considered within grace period (no approval needed)
+        $is_today_edit = ($usage_date === $today || $usage_date === $yesterday);
         
         $is_admin_klinik = $_SESSION['role'] === 'admin_klinik';
         $is_super_admin = $_SESSION['role'] === 'super_admin';

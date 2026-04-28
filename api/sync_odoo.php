@@ -18,6 +18,16 @@ if ($internalToken !== '') {
     if (!$okInternal && $dbToken !== '' && hash_equals($dbToken, $internalToken)) $okInternal = true;
 }
 $sync_trigger = $okInternal ? 'auto' : 'manual';
+
+$override_time = $_POST['override_time'] ?? '';
+$sync_timestamp = time();
+if ($override_time !== '') {
+    $ts = strtotime($override_time);
+    if ($ts !== false) {
+        $sync_timestamp = $ts;
+    }
+}
+
 $sync_started_at = microtime(true);
 if (!$okInternal) {
     if (!isset($_SESSION['user_id'])) {
@@ -479,7 +489,21 @@ try {
             }
         }
 
-        set_setting('odoo_sync_last_run', (string) time());
+        set_setting('odoo_sync_last_run', (string) $sync_timestamp);
+        
+        // Update updated_at in mirror table if override_time is used
+        if ($override_time !== '') {
+            $sync_dt = date('Y-m-d H:i:s', $sync_timestamp);
+            $loc_placeholders = array_fill(0, count($locations), '?');
+            $sql_upd = "UPDATE inventory_stock_mirror SET updated_at = ? WHERE location_code IN (" . implode(',', $loc_placeholders) . ")";
+            $stmt_upd = $conn->prepare($sql_upd);
+            $bind_types = 's' . str_repeat('s', count($locations));
+            $bind_args = [$sync_dt];
+            foreach ($locations as $l) $bind_args[] = $l;
+            $stmt_upd->bind_param($bind_types, ...$bind_args);
+            $stmt_upd->execute();
+        }
+
         echo json_encode([
             'success' => true,
             'method' => 'rpc',
@@ -506,10 +530,19 @@ try {
         $sum_klinik = build_group_summary_lines($mirror_after, $loc_group_map, false, 12);
         $sum_hc = build_group_summary_lines($mirror_after, $loc_group_map, true, 12);
 
+        $time_now = date('d M Y H:i');
+        $time_display = $time_now;
+        if ($override_time !== '') {
+            $eff_time = date('d M Y H:i', $sync_timestamp);
+            if ($eff_time !== $time_now) {
+                $time_display = "Aktual: $time_now | Efektif: $eff_time";
+            }
+        }
+
         $title = "🔄 Odoo Stock Sync Success";
         $card_lines = [
             "**Event:** Odoo Stock Sync (" . strtoupper($sync_trigger) . ")",
-            "**Waktu:** " . date('d M Y H:i') . " | **Durasi:** {$dur}s",
+            "**Waktu:** " . $time_display . " | **Durasi:** {$dur}s",
             "**Statistik:** {$products_count} Produk | " . count($locations) . " Lokasi",
             "**Mirror:** {$rows_a} baris ({$dr_s}) | Qty: " . fmt_id_qty($qty_a) . " (" . (($qty_a - $qty_b) >= 0 ? '+' : '') . $dq . ")"
         ];
@@ -606,7 +639,21 @@ try {
         }
     }
 
-    set_setting('odoo_sync_last_run', (string) time());
+    set_setting('odoo_sync_last_run', (string) $sync_timestamp);
+
+    // Update updated_at in mirror table if override_time is used
+    if ($override_time !== '') {
+        $sync_dt = date('Y-m-d H:i:s', $sync_timestamp);
+        $loc_placeholders = array_fill(0, count($locations), '?');
+        $sql_upd = "UPDATE inventory_stock_mirror SET updated_at = ? WHERE location_code IN (" . implode(',', $loc_placeholders) . ")";
+        $stmt_upd = $conn->prepare($sql_upd);
+        $bind_types = 's' . str_repeat('s', count($locations));
+        $bind_args = [$sync_dt];
+        foreach ($locations as $l) $bind_args[] = $l;
+        $stmt_upd->bind_param($bind_types, ...$bind_args);
+        $stmt_upd->execute();
+    }
+
     echo json_encode(['success' => true, 'method' => 'api', 'message' => 'Sync selesai', 'products' => $products_count, 'locations' => count($locations), 'rows' => $updated_rows]);
     $mirror_after = mirror_stats($conn);
     $dur = round(microtime(true) - $sync_started_at, 1);
@@ -617,10 +664,19 @@ try {
     $dq = fmt_id_qty($qty_a - $qty_b);
     $dr = $rows_a - $rows_b;
     $dr_s = $dr >= 0 ? ('+' . $dr) : (string)$dr;
+    $time_now = date('d M Y H:i');
+    $time_display = $time_now;
+    if ($override_time !== '') {
+        $eff_time = date('d M Y H:i', $sync_timestamp);
+        if ($eff_time !== $time_now) {
+            $time_display = "Aktual: $time_now | Efektif: $eff_time";
+        }
+    }
+
     $title = "🔄 Odoo Stock Sync Success";
     $card_lines = [
         "**Event:** Odoo Stock Sync (" . strtoupper($sync_trigger) . ")",
-        "**Waktu:** " . date('d M Y H:i') . " | **Durasi:** {$dur}s",
+        "**Waktu:** " . $time_display . " | **Durasi:** {$dur}s",
         "**Statistik:** {$products_count} Produk | " . count($locations) . " Lokasi",
         "**Mirror:** {$rows_a} baris ({$dr_s}) | Qty: " . fmt_id_qty($qty_a) . " (" . (($qty_a - $qty_b) >= 0 ? '+' : '') . $dq . ")"
     ];

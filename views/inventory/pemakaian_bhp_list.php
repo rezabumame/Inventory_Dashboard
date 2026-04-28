@@ -96,7 +96,7 @@ if ($active_tab == 'list') {
                     LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
                     LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
                     LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
-                    WHERE $base_where $search_where_list AND pb.is_auto = 0";
+                    WHERE $base_where $search_where_list";
 
     $stmt_count = $conn->prepare($count_query);
     $all_params = array_merge($base_params, $search_params);
@@ -122,7 +122,7 @@ if ($active_tab == 'list') {
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
-        WHERE $base_where $search_where_list AND pb.is_auto = 0
+        WHERE $base_where $search_where_list
         ORDER BY pb.created_at DESC, pb.nomor_pemakaian DESC
         LIMIT ? OFFSET ?
     ";
@@ -142,7 +142,6 @@ if ($active_tab == 'list') {
         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
         WHERE $base_where $search_where_list
           AND pb.status IN ('pending_edit', 'pending_delete', 'pending_approval_spv', 'pending_add')
-          AND pb.is_auto = 0
         GROUP BY pb.tanggal
         ORDER BY tgl DESC
         LIMIT 30
@@ -170,7 +169,7 @@ if ($active_tab == 'list') {
                         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
                         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
                         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
-                        WHERE $base_where $search_where_out AND pb.is_auto = 0 AND pb.status = 'active'";
+                        WHERE $base_where $search_where_out AND pb.status = 'active'";
 
     $stmt_count_out = $conn->prepare($count_query_out);
     $all_params_out_c = array_merge($base_params, $search_params);
@@ -475,6 +474,26 @@ if ($default_modal_klinik_id) {
         content: "/";
     }
 
+    /* Fix Select2 dropdown visuals and behavior in modals */
+    .select2-container {
+        z-index: 1061 !important;
+    }
+
+    .select2-container--open {
+        z-index: 1061 !important;
+    }
+
+    .select2-container--bootstrap-5 .select2-dropdown {
+        border-color: #204EAB !important;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1) !important;
+        border-radius: 12px !important;
+        overflow: hidden;
+    }
+
+    .select2-container--bootstrap-5 .select2-results__option--highlighted {
+        background-color: #204EAB !important;
+    }
+
     .jenis-segmented {
         background: #f1f3f5;
         border-radius: 12px;
@@ -604,6 +623,9 @@ if ($default_modal_klinik_id) {
                                     <div
                                         class="fw-bold <?= ($status === 'rejected') ? 'text-decoration-line-through text-muted' : '' ?>">
                                         <?= htmlspecialchars($row['nomor_pemakaian']) ?>
+                                        <?php if ($row['is_auto'] == 1): ?>
+                                            <span class="badge bg-info-subtle text-info border border-info-subtle ms-1" style="font-size: 0.6rem; vertical-align: middle;">AUTO</span>
+                                        <?php endif; ?>
                                     </div>
                                     <?php if ($status === 'rejected'): ?>
                                         <span class="badge bg-secondary small" style="font-size: 0.6rem;">REJECTED</span>
@@ -628,17 +650,16 @@ if ($default_modal_klinik_id) {
                                         </button>
 
                                         <?php
-                                        $created_date = date('Y-m-d', strtotime($row['created_at']));
+                                        // Use usage date (tanggal) to determine if this is a "historical" record
+                                        $usage_date = date('Y-m-d', strtotime($row['tanggal']));
                                         $today = date('Y-m-d');
                                         $yesterday = date('Y-m-d', strtotime('-1 day'));
-                                        $two_days_ago = date('Y-m-d', strtotime('-2 days'));
 
-                                        // H-0 and H-1 are considered within grace period (no approval needed)
-                                        $is_today = ($created_date === $today || $created_date === $yesterday);
+                                        // H-0 and H-1 of the USAGE DATE are considered within grace period (no approval needed)
+                                        $is_today = ($usage_date === $today || $usage_date === $yesterday);
 
-                                        // Rule: If > 2 days, DELETE is NOT allowed (only edit/request edit)
-                                        // Stricter: Only H-0 (today) and H-1 (yesterday) are allowed to delete/request delete
-                                        $is_over_2_days = !($created_date === $today || $created_date === $yesterday);
+                                        // Rule: If > 2 days of usage date, certain actions are restricted
+                                        $is_over_2_days = !$is_today;
 
                                         $is_creator = $row['created_by'] == $_SESSION['user_id'];
                                         $is_admin_klinik = $user_role === 'admin_klinik';
@@ -664,32 +685,32 @@ if ($default_modal_klinik_id) {
                                         $is_pending = (strpos((string) $status, 'pending') !== false || (strpos((string) $row['nomor_pemakaian'], 'REQ-ADD-') !== false && $status !== 'active'));
                                         ?>
 
-                                        <?php if ($status === 'active'): ?>
+                                        <?php if ($status === 'active' && $row['is_auto'] == 0): ?>
                                             <?php if ($can_edit_direct): ?>
                                                 <button class="btn btn-sm btn-warning edit-pemakaian" data-id="<?= $row['id'] ?>"
-                                                    data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>" title="Edit"
+                                                    data-tanggal="<?= $usage_date ?>" title="Edit"
                                                     data-bs-toggle="modal" data-bs-target="#modalEdit">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
                                                 <?php if (!$is_over_2_days): ?>
                                                     <button class="btn btn-sm btn-danger delete-pemakaian" data-id="<?= $row['id'] ?>"
                                                         data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
-                                                        data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>" title="Hapus">
+                                                        data-tanggal="<?= $usage_date ?>" title="Hapus">
                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                 <?php endif; ?>
                                             <?php elseif ($can_request_edit): ?>
                                                 <button class="btn btn-sm btn-outline-warning edit-pemakaian"
                                                     data-id="<?= $row['id'] ?>"
-                                                    data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
+                                                    data-tanggal="<?= $usage_date ?>"
                                                     title="Edit (Lewat Hari)" data-bs-toggle="modal" data-bs-target="#modalEdit">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
                                                 <?php if (!$is_over_2_days): ?>
                                                     <button class="btn btn-sm btn-outline-danger request-delete" data-id="<?= $row['id'] ?>"
                                                         data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
-                                                        data-created-at="<?= date('Y-m-d', strtotime($row['created_at'])) ?>"
-                                                        title="Request Hapus (Lewat Hari)">
+                                                        data-tanggal="<?= $usage_date ?>"
+                                                        title="Request Hapus (SPV)">
                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                 <?php endif; ?>
@@ -833,27 +854,28 @@ if ($default_modal_klinik_id) {
                                 <td><?= date('d/m/Y H:i', strtotime($row['created_at'] ?? '')) ?></td>
                                 <td><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
                                 <td>
-                                    <div class="nakes-pill">
+                                    <div class="fw-500 text-dark">
                                         <?= htmlspecialchars($pic_name) ?>
                                     </div>
                                 </td>
                                 <td>
-                                    <div class="item-pill">
+                                    <div class="fw-600 text-dark">
                                         <?= htmlspecialchars($row['nama_barang']) ?>
                                     </div>
                                 </td>
                                 <td class="text-center fw-bold text-primary"><?= fmt_qty($row['qty']) ?></td>
-                                <td>
-                                    <span class="uom-text">
-                                        <?= htmlspecialchars($row['satuan']) ?>
-                                    </span>
+                                <td class="text-muted small">
+                                    <?= htmlspecialchars($row['satuan']) ?>
                                 </td>
                                 <td class="text-center fw-bold text-success bg-light"><?= fmt_qty($qty_odoo) ?></td>
                                 <td class="text-muted small bg-light"><?= htmlspecialchars($uom_odoo) ?></td>
                                 <td>
-                                    <span class="status-pill <?= $badge_class ?>">
-                                        <?= $status_text ?>
-                                    </span>
+                                    <div class="d-flex align-items-center">
+                                        <span class="status-dot <?= $badge_class ?> me-2"></span>
+                                        <span class="text-muted small" style="font-size: 0.7rem;">
+                                            <?= $status_text ?>
+                                        </span>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endwhile; ?>
@@ -912,30 +934,31 @@ if ($default_modal_klinik_id) {
 
         .table-spreadsheet thead th {
             background-color: #f8f9fa !important;
-            color: #444 !important;
-            font-weight: 600;
+            color: #555 !important;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            padding: 14px 15px;
+            padding: 10px 12px;
             border: 1px solid #eef0f5;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
         }
 
         .table-spreadsheet tbody td {
-            padding: 12px 15px;
+            padding: 8px 12px;
             border-bottom: 1px solid #eef0f5;
             border-right: 1px solid #f8f9fa;
             background-color: #fff;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
+            color: #444;
         }
 
         .table-spreadsheet tbody tr:hover td {
-            background-color: #f1f4f9;
+            background-color: #f1f6ff !important;
             cursor: default;
         }
 
         .table-spreadsheet tbody tr:nth-child(even) td {
-            background-color: #f8fbfa;
+            background-color: #fafbfc;
         }
 
         .bg-warning-subtle {
@@ -950,51 +973,27 @@ if ($default_modal_klinik_id) {
             border-color: #ffeeba !important;
         }
 
-        /* UI Pills */
-        .item-pill {
-            background: #f1f3f5;
-            border-radius: 4px;
-            padding: 4px 10px;
-            display: inline-block;
-            color: #495057;
-            border: 1px solid #dee2e6;
-        }
-
-        .uom-text {
-            color: #6c757d;
-            font-weight: 500;
-        }
-
-        .status-pill {
-            background: #ffffff;
-            border: 1px solid #e9ecef;
-            border-radius: 4px;
-            padding: 2px 10px;
-            font-size: 0.75rem;
-            color: #888;
+        /* UI Enhancements for cleaner look */
+        .fw-500 { font-weight: 500; }
+        .fw-600 { font-weight: 600; }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
             display: inline-block;
         }
 
-        .status-pill.badge-hc {
-            border-left: 3px solid #0dcaf0;
-            color: #055160;
+        .status-dot.badge-hc {
+            background-color: #0dcaf0;
+            box-shadow: 0 0 0 2px rgba(13, 202, 240, 0.2);
         }
 
-        .status-pill.badge-klinik {
-            border-left: 3px solid #204EAB;
-            color: #0a2b6b;
+        .status-dot.badge-klinik {
+            background-color: #204EAB;
+            box-shadow: 0 0 0 2px rgba(32, 78, 171, 0.2);
         }
 
-        .nakes-pill {
-            background: #f1f3f5;
-            border-radius: 4px;
-            padding: 4px 10px;
-            display: inline-block;
-            color: #495057;
-            font-weight: 500;
-        }
-
-        /* Custom Scrollbar */
         .scrollbar-custom::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -1567,7 +1566,7 @@ if ($default_modal_klinik_id) {
                 placeholder: '-- Pilih Barang --',
                 allowClear: true,
                 minimumResultsForSearch: 0,
-                dropdownParent: $modal.length ? $modal : $(document.body)
+                dropdownParent: $modal.length ? $modal.find('.modal-content') : $(document.body)
             };
 
             $select.select2(opts);
@@ -2802,9 +2801,9 @@ if ($default_modal_klinik_id) {
             disabledFields.prop('disabled', true);
 
             const editId = $('#modalEdit').find('input[name="id"]').val();
-            const createdAtStr = $('.edit-pemakaian[data-id="' + editId + '"]').data('created-at');
+            const usageDateStr = $('.edit-pemakaian[data-id="' + editId + '"]').first().data('tanggal');
             let isPastDay = false;
-            if (createdAtStr) {
+            if (usageDateStr) {
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
 
@@ -2812,11 +2811,11 @@ if ($default_modal_klinik_id) {
                 yesterday.setDate(yesterday.getDate() - 1);
                 yesterday.setHours(0, 0, 0, 0);
 
-                const createdDate = new Date(createdAtStr);
-                createdDate.setHours(0, 0, 0, 0);
+                const usageDate = new Date(usageDateStr);
+                usageDate.setHours(0, 0, 0, 0);
 
-                // isPastDay is true only if createdDate is before yesterday (H-2 or older)
-                isPastDay = createdDate < yesterday;
+                // isPastDay is true if usageDate is before yesterday (H-2 or older)
+                isPastDay = usageDate < yesterday;
             }
 
             const userRole = '<?= $_SESSION['role'] ?>';

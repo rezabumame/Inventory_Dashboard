@@ -105,7 +105,7 @@ try {
             $k_code = explode('/', $k_code_raw)[0]; // Strip /Stock
             
             $date_ym = date('ym', strtotime($booking['tanggal_pemeriksaan'] ?? date('Y-m-d')));
-            $prefix = "EST-" . $k_code;
+            $prefix = "BHP-AUT-" . $k_code;
             $seq = next_sequence($conn, $prefix, $date_ym);
             $nomor_pemakaian = $prefix . "-" . $date_ym . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
@@ -299,10 +299,16 @@ try {
             // 2. Create BHP if needed
             $nomor_pemakaian = '';
             if (!empty($items_to_deduct)) {
-                $date_ymd = date('ymd', strtotime($booking['tanggal_pemeriksaan'] ?? date('Y-m-d')));
+                $res_k = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1");
+                $k_row = $res_k->fetch_assoc();
+                $k_code_raw = $is_hc ? ($k_row['kode_homecare'] ?? 'HC') : ($k_row['kode_klinik'] ?? 'CLN');
+                $k_code = explode('/', $k_code_raw)[0];
+
+                $date_ym = date('ym', strtotime($booking['tanggal_pemeriksaan'] ?? date('Y-m-d')));
                 require_once __DIR__ . '/../lib/counter.php';
-                $seq = next_sequence($conn, 'BHP', $date_ymd);
-                $nomor_pemakaian = 'BHP-' . $date_ymd . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+                $prefix = "BHP-AUT-" . $k_code;
+                $seq = next_sequence($conn, $prefix, $date_ym);
+                $nomor_pemakaian = $prefix . "-" . $date_ym . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
                 
                 $bhp_tanggal = (string)($booking['tanggal_pemeriksaan'] ?? date('Y-m-d')) . ' 00:00:00';
                 $stmt_h = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, catatan_transaksi, created_by, created_at, status, is_auto, booking_id) VALUES (?, ?, ?, ?, 'Partial-deduction from Booking', ?, NOW(), 'active', 1, ?)");
@@ -357,20 +363,40 @@ try {
             }
 
             // 3. Handle Fallback patients (Cancel / Reschedule)
-            $reschedule_pids = [];
-            foreach ($fallback as $pid => $act) {
+            $reschedule_groups = []; // [date|time|reason] => [pids]
+            $reschedule_info = [];   // [date|time|reason] => {date, time, reason}
+
+            foreach ($fallback as $pid => $data) {
                 $pid = (int)$pid;
+                $act = $data['status'] ?? '';
+                
                 if ($act === 'cancel') {
                     $conn->query("UPDATE inventory_booking_pasien SET status = 'cancelled', remark = 'Batal saat proses penyelesaian' WHERE id = $pid");
                 } elseif ($act === 'reschedule') {
-                    $reschedule_pids[] = $pid;
+                    $r_date = $data['date'] ?? '';
+                    $r_time = $data['time'] ?? '';
+                    $r_reason = $data['reason'] ?? '';
+                    
+                    if (empty($r_date)) continue;
+
+                    $group_key = $r_date . '|' . $r_time . '|' . $r_reason;
+                    if (!isset($reschedule_groups[$group_key])) {
+                        $reschedule_groups[$group_key] = [];
+                        $reschedule_info[$group_key] = ['date' => $r_date, 'time' => $r_time, 'reason' => $r_reason];
+                    }
+                    $reschedule_groups[$group_key][] = $pid;
                 }
             }
 
-            // 4. Split Rescheduled patients into NEW booking
-            if (!empty($reschedule_pids)) {
-                // Get info for the first rescheduled patient to use as header
-                $first_pid = (int)$reschedule_pids[0];
+            // 4. Create NEW bookings for each reschedule group
+            foreach ($reschedule_groups as $group_key => $pids) {
+                $info = $reschedule_info[$group_key];
+                $r_date = $info['date'];
+                $r_time = $info['time'];
+                $r_reason = $info['reason'];
+
+                // Get info for the first patient in this group to use as header defaults
+                $first_pid = (int)$pids[0];
                 $res_pinfo = $conn->query("SELECT nama_pasien, nomor_tlp, tanggal_lahir FROM inventory_booking_pasien WHERE id = $first_pid");
                 $pinfo = $res_pinfo->fetch_assoc();
                 $new_nama = $pinfo['nama_pasien'] ?? 'Patient';
@@ -378,30 +404,36 @@ try {
                 $new_tgl_lahir = $pinfo['tanggal_lahir'] ?? null;
 
                 // Generate new nomor_booking with -R suffix
+                // We need to check current latest -R for the BASE nomor_booking
                 $orig_nomor = (string)($booking['nomor_booking'] ?? '');
-                if (preg_match('/-R(\d+)$/', $orig_nomor, $m)) {
-                    $next_r = (int)$m[1] + 1;
-                    $new_nomor = preg_replace('/-R\d+$/', '-R' . $next_r, $orig_nomor);
+                $base_nomor = preg_replace('/-R\d+$/', '', $orig_nomor);
+                
+                $res_max = $conn->query("SELECT nomor_booking FROM inventory_booking_pemeriksaan WHERE nomor_booking LIKE '$base_nomor-R%' ORDER BY id DESC LIMIT 1");
+                if ($res_max && $max_row = $res_max->fetch_assoc()) {
+                    preg_match('/-R(\d+)$/', $max_row['nomor_booking'], $m);
+                    $next_r = (int)($m[1] ?? 0) + 1;
                 } else {
-                    $new_nomor = $orig_nomor . '-R1';
+                    $next_r = 1;
                 }
+                $new_nomor = $base_nomor . '-R' . $next_r;
                 
                 $stmt_clone = $conn->prepare("INSERT INTO inventory_booking_pemeriksaan 
                     (nomor_booking, order_id, klinik_id, status_booking, nama_pemesan, jumlah_pax, nakes_hc, catatan, tanggal_pemeriksaan, jam_layanan, status, created_by, created_at, booking_type, jotform_submitted, cs_name, nomor_tlp, tanggal_lahir, reschedule_reason)
                     SELECT ?, order_id, klinik_id, status_booking, ?, ?, nakes_hc, catatan, ?, ?, 'rescheduled', ?, NOW(), booking_type, jotform_submitted, cs_name, ?, ?, ?
                     FROM inventory_booking_pemeriksaan WHERE id = ?");
-                $pax_count = count($reschedule_pids);
-                $stmt_clone->bind_param("ssississsi", $new_nomor, $new_nama, $pax_count, $res_date, $res_time, $created_by, $new_tlp, $new_tgl_lahir, $res_reason, $id);
+                
+                $pax_count = count($pids);
+                $stmt_clone->bind_param("ssississsi", $new_nomor, $new_nama, $pax_count, $r_date, $r_time, $created_by, $new_tlp, $new_tgl_lahir, $r_reason, $id);
                 $stmt_clone->execute();
-                $new_id = $conn->insert_id;
+                $new_booking_id = $conn->insert_id;
 
-                foreach ($reschedule_pids as $pid) {
+                foreach ($pids as $pid) {
                     // 1. Mark original patient as rescheduled in the current booking
                     $conn->query("UPDATE inventory_booking_pasien SET status = 'rescheduled', remark = 'Rescheduled ke #$new_nomor' WHERE id = $pid");
                     
                     // 2. Clone patient to the NEW booking
                     $stmt_p_clone = $conn->prepare("INSERT INTO inventory_booking_pasien (booking_id, nama_pasien, pemeriksaan_grup_id, nomor_tlp, tanggal_lahir, status) SELECT ?, nama_pasien, pemeriksaan_grup_id, nomor_tlp, tanggal_lahir, 'booked' FROM inventory_booking_pasien WHERE id = ?");
-                    $stmt_p_clone->bind_param("ii", $new_id, $pid);
+                    $stmt_p_clone->bind_param("ii", $new_booking_id, $pid);
                     $stmt_p_clone->execute();
                     $new_pid = $conn->insert_id;
 
@@ -414,39 +446,33 @@ try {
                         while($i_row = $res_items->fetch_assoc()) {
                             $bid = (int)$i_row['barang_id']; $qty = (float)$i_row['qty_per_pemeriksaan'];
                             $q_onsite = $is_hc ? 0 : $qty; $q_hc = $is_hc ? $qty : 0;
-                            $conn->query("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES ($new_id, $new_pid, $bid, $qty, $q_onsite, $q_hc)");
+                            $conn->query("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES ($new_booking_id, $new_pid, $bid, $qty, $q_onsite, $q_hc)");
                         }
                     }
                 }
-                $new_date_fmt = date('d M Y', strtotime($res_date));
-                $old_date_fmt = date('d M Y', strtotime($booking['tanggal_pemeriksaan']));
-                $old_time = $booking['jam_layanan'] ?? '-';
                 
-                $changes_orig = [
-                    'reschedule_split' => ['old' => 'Original', 'new' => "Split to $new_nomor"],
-                    'tanggal' => ['old' => $booking['tanggal_pemeriksaan'], 'new' => $res_date]
-                ];
-                if ($old_time != $res_time) $changes_orig['jam'] = ['old' => $old_time, 'new' => $res_time];
-
-                logBookingHistory($conn, $id, 'reschedule', $changes_orig, "Pasien split ke booking baru $new_nomor karena reschedule ke $new_date_fmt.");
-                
-                $changes_new = [
-                    'source' => ['old' => 'New', 'new' => "Split from #" . $booking['nomor_booking']],
-                    'tanggal' => ['old' => $booking['tanggal_pemeriksaan'], 'new' => $res_date]
-                ];
-                if ($old_time != $res_time) $changes_new['jam'] = ['old' => $old_time, 'new' => $res_time];
-                
-                logBookingHistory($conn, $new_id, 'create', $changes_new, "Booking hasil reschedule/split dari #" . $booking['nomor_booking'] . " ke tanggal $new_date_fmt.");
-                notify_lark_booking($conn, $new_id, 'reschedule', "Hasil split/reschedule dari #" . $booking['nomor_booking'] . " ke **$new_date_fmt**\n**Alasan:** $res_reason");
+                $new_date_fmt = date('d M Y', strtotime($r_date));
+                logBookingHistory($conn, $id, 'reschedule', [], "Sebagian pasien split ke booking baru $new_nomor karena reschedule ke $new_date_fmt.");
+                logBookingHistory($conn, $new_booking_id, 'create', [], "Booking hasil reschedule/split dari #" . $booking['nomor_booking'] . " ke tanggal $new_date_fmt.");
+                notify_lark_booking($conn, $new_booking_id, 'reschedule', "Hasil split/reschedule dari #" . $booking['nomor_booking'] . " ke **$new_date_fmt**\n**Alasan:** $r_reason");
             }
 
             // 5. Finalize main booking
             $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'completed' WHERE id = $id");
             $conn->query("DELETE FROM inventory_booking_detail WHERE booking_id = $id"); // Release remaining stock for this ID
+            
+            $done_count = count($done_ids);
+            $res_count = count($reschedule_groups);
+            $can_count = 0;
+            foreach($fallback as $f) { if(($f['status'] ?? '') === 'cancel') $can_count++; }
+            
+            $history_note = "Penyelesaian Bertahap: $done_count Selesai";
+            if($res_count > 0) $history_note .= ", $res_count Reschedule (Split)";
+            if($can_count > 0) $history_note .= ", $can_count Batal";
+            if($nomor_pemakaian) $history_note .= ". (BHP: $nomor_pemakaian)";
+            
+            logBookingHistory($conn, $id, 'complete', [], $history_note);
             $msg = "Proses penyelesaian booking berhasil diperbarui.";
-            if (isset($new_id) && $new_id > 0) {
-                $extra_data['trigger_detail_id'] = $new_id;
-            }
             break;
 
         case 'fu':
@@ -473,6 +499,7 @@ try {
                 $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'cancelled', butuh_fu = 0, spv_approved_by = " . (int)$_SESSION['user_id'] . ", spv_approved_at = NOW() WHERE id = $id");
                 // Clear details (stock released)
                 $conn->query("DELETE FROM inventory_booking_detail WHERE booking_id = $id");
+                logBookingHistory($conn, $id, 'approve', [], 'Supervisor menyetujui pembatalan booking');
                 $msg = "Permintaan penghapusan disetujui. Booking telah dibatalkan.";
             } elseif ($booking['status'] === 'pending_edit') {
                 // Apply pending data
@@ -573,6 +600,7 @@ try {
                     }
                 }
                 $msg = "Permintaan perubahan disetujui. Data booking telah diperbarui.";
+                logBookingHistory($conn, $id, 'approve', [], 'Supervisor menyetujui perubahan data booking');
             } else {
                 throw new Exception("Status booking tidak valid untuk approval");
             }
@@ -635,6 +663,8 @@ try {
                 } else {
                     $conn->query("UPDATE inventory_booking_detail SET qty_reserved_onsite = qty_gantung, qty_reserved_hc = 0 WHERE booking_id = $id");
                 }
+                
+                logBookingHistory($conn, $id, 'move', ['status_booking' => ['old' => $booking['status_booking'], 'new' => $new_status]], "Booking dipindahkan ke $new_status");
                 $msg = "Booking berhasil dipindahkan ke $new_status." . ($is_oos ? " (Peringatan: Stok tidak mencukupi di lokasi tujuan)" : "");
             } finally {
                 $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
@@ -733,6 +763,7 @@ try {
                 $conn->query("UPDATE inventory_booking_pemeriksaan SET jumlah_pax = $new_total_pax WHERE id = $id");
             }
             
+            logBookingHistory($conn, $id, 'adjust', ['pax' => ['old' => $old_pax, 'new' => $new_total_pax]], "Menambah $additional_pax pax (Total menjadi $new_total_pax)");
             $msg = "Berhasil menambah $additional_pax pax (total: $new_total_pax)." . ($is_oos ? " (Peringatan: Stok tambahan tidak mencukupi)" : "");
             break;
             
