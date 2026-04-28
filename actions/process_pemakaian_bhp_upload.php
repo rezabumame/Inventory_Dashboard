@@ -220,18 +220,16 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
         
         // Only show if there IS a difference or user wants to see everything
         // Usually, we only show rows where selisih != 0
-        if (abs($selisih) > 0.0001) {
             $diffs[] = [
                 'tanggal' => date('d/m/Y', strtotime($tgl)),
                 'nama_klinik' => $g['nama_klinik'],
                 'jenis' => strtoupper($g['jenis']),
                 'kode_barang' => $g['kode_barang'],
                 'nama_barang' => $g['nama_barang'],
-                'qty_system' => (float)$q_sys,
-                'qty_excel' => (float)$g['qty_excel'],
-                'selisih' => (float)$selisih
+                'existing_qty' => (float)$q_sys,
+                'upload_qty' => (float)$g['qty_excel'],
+                'diff' => (float)$selisih
             ];
-        }
     }
 
     $token = bin2hex(random_bytes(16));
