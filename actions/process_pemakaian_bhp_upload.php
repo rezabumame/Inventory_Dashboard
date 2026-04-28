@@ -292,8 +292,8 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
                 $qty_sebelum = (float)($eff['on_hand'] ?? 0);
 
                 // Insert Detail
-                $st = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan, created_by) VALUES (?, ?, ?, ?, ?)");
-                $st->bind_param("idisi", $pid, $bid, $qty, $it['uom'], $user_id);
+                $st = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan) VALUES (?, ?, ?, ?)");
+                $st->bind_param("iids", $pid, $bid, $qty, $it['uom']);
                 $st->execute();
                 
                 // Deduct Stock
