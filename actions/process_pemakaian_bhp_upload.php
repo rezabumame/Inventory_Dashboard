@@ -112,10 +112,13 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
     while($r = $res->fetch_assoc()) $master_nakes[strtolower(trim($r['nama_lengkap']))] = $r;
 
     $master_klinik = [];
-    $res = $conn->query("SELECT id, nama_klinik, kode_klinik FROM inventory_klinik");
+    $res = $conn->query("SELECT id, nama_klinik, kode_klinik, alamat FROM inventory_klinik");
     while($r = $res->fetch_assoc()) {
         $master_klinik[strtolower(trim($r['nama_klinik']))] = $r;
         $master_klinik[strtolower(trim($r['kode_klinik']))] = $r;
+        if (!empty($r['alamat'])) {
+            $master_klinik[strtolower(trim($r['alamat']))] = $r;
+        }
     }
 
     $errors = [];
