@@ -604,10 +604,13 @@ try {
     // Group items by Transaction (Patient ID + Full Timestamp)
     $transactions = [];
     foreach ($data_to_process as $d) {
-        $tx_key = $d['patient_id'] . '|' . $d['tanggal_full'];
+        $patient_id = trim((string)($d['patient_id'] ?? ''));
+        $tanggal_full = trim((string)($d['tanggal_full'] ?? ''));
+        $tx_key = $patient_id . '|' . $tanggal_full;
+        
         if (!isset($transactions[$tx_key])) {
             $transactions[$tx_key] = [
-                'meta' => $d,
+                'tx_key' => $tx_key,
                 'items' => []
             ];
         }
@@ -695,11 +698,12 @@ try {
 
         $stmt = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->bind_param("sssiisis", $nomor_pemakaian, $tanggal_val, $jenis_pemakaian, $m['klinik_id'], $m['user_hc_id'], $catatan_transaksi, $user_id, $created_at);
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            throw new Exception("Gagal menyimpan header BHP ($nomor_pemakaian): " . $stmt->error);
+        }
         $pemakaian_id = $conn->insert_id;
 
         foreach ($tx['items'] as $it) {
-            // Get UoM ratio
             $item_id = $it['item_id'];
             $input_qty = $it['qty'];
             $input_uom = $it['uom'];
@@ -708,6 +712,9 @@ try {
             $stmt_b->bind_param("i", $item_id);
             $stmt_b->execute();
             $barang = $stmt_b->get_result()->fetch_assoc();
+            if (!$barang) {
+                throw new Exception("Barang ID $item_id tidak ditemukan saat proses simpan.");
+            }
             $satuan_db = $barang['satuan'];
 
             // Ratio detection
@@ -721,11 +728,14 @@ try {
                 }
             }
             
-            $final_qty = (float)round($input_qty / $ratio, 4);
+            // FIX: Multiplication for ratio (e.g. 1 Box * 10 = 10 Pcs)
+            $final_qty = (float)round($input_qty * $ratio, 4);
 
             $stmt_d = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan) VALUES (?, ?, ?, ?)");
             $stmt_d->bind_param("iids", $pemakaian_id, $item_id, $final_qty, $satuan_db);
-            $stmt_d->execute();
+            if (!$stmt_d->execute()) {
+                throw new Exception("Gagal menyimpan detail BHP item ID $item_id: " . $stmt_d->error);
+            }
 
             // Stock Transaction
             $level = ($jenis_pemakaian === 'hc') ? 'hc' : 'klinik';
@@ -741,9 +751,10 @@ try {
                 
                 $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ? WHERE barang_id = ? AND klinik_id = ?");
                 $stmt_upd->bind_param("diii", $final_qty, $user_id, $item_id, $level_id);
-                $stmt_upd->execute();
+                if (!$stmt_upd->execute()) {
+                    throw new Exception("Gagal update stok klinik item ID $item_id: " . $stmt_upd->error);
+                }
             } else {
-                // HC Stock from inventory_stok_tas_hc
                 $stmt_stok = $conn->prepare("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
                 $stmt_stok->bind_param("iii", $item_id, $m['user_hc_id'], $level_id);
                 $stmt_stok->execute();
@@ -752,14 +763,18 @@ try {
 
                 $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ? WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
                 $stmt_upd->bind_param("diiii", $final_qty, $user_id, $item_id, $m['user_hc_id'], $level_id);
-                $stmt_upd->execute();
+                if (!$stmt_upd->execute()) {
+                    throw new Exception("Gagal update stok HC item ID $item_id: " . $stmt_upd->error);
+                }
             }
 
             $qty_after = $qty_before - $final_qty;
             $stmt_t = $conn->prepare("INSERT INTO inventory_transaksi_stok (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at) VALUES (?, ?, ?, 'out', ?, ?, ?, 'pemakaian_bhp', ?, ?, ?, ?)");
             $cat = "Upload BHP: $nomor_pemakaian - " . $catatan_transaksi;
             $stmt_t->bind_param("isidddisis", $item_id, $level, $level_id, $final_qty, $qty_before, $qty_after, $pemakaian_id, $cat, $user_id, $created_at);
-            $stmt_t->execute();
+            if (!$stmt_t->execute()) {
+                throw new Exception("Gagal simpan log transaksi stok item ID $item_id: " . $stmt_t->error);
+            }
         }
     }
 
