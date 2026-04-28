@@ -136,14 +136,14 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
     }
 
     .table-premium thead th {
-        background-color: #f8f9fa;
-        color: #444;
+        background-color: var(--bumame-blue);
+        color: white;
         font-weight: 600;
         text-transform: uppercase;
         font-size: 0.8rem;
         letter-spacing: 0.5px;
-        padding: 1rem;
-        border-bottom: 1px solid var(--slate-200);
+        padding: 1.25rem 1rem;
+        border: none;
     }
 
     .table-premium tbody td {
@@ -177,28 +177,39 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
 
     /* Action Buttons */
     .btn-action {
-        width: 32px;
-        height: 32px;
+        width: 40px;
+        height: 40px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        border-radius: 8px;
+        border-radius: 12px;
         transition: all 0.2s;
-        border: 1px solid var(--slate-200);
         background: white;
-        color: var(--slate-600);
+        font-size: 1rem;
     }
 
-    .btn-action:hover {
-        background: var(--bumame-blue);
+    .btn-action-edit {
+        border: 1.5px solid #204EAB;
+        color: #204EAB;
+    }
+
+    .btn-action-edit:hover {
+        background: #204EAB;
         color: white;
-        border-color: var(--bumame-blue);
         transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(32, 78, 171, 0.2);
+    }
+
+    .btn-action-delete {
+        border: 1.5px solid #ef4444;
+        color: #ef4444;
     }
 
     .btn-action-delete:hover {
         background: #ef4444;
-        border-color: #ef4444;
+        color: white;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
     }
 
     /* Filter Card */
@@ -220,7 +231,12 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
         transition: all 0.2s ease; background: #fff;
     }
     .pagination-circular .page-link:hover { background-color: var(--slate-50); color: var(--bumame-blue); border-color: var(--bumame-blue); }
-    .pagination-circular .page-item.active .page-link { background-color: var(--bumame-blue) !important; color: white !important; border-color: var(--bumame-blue) !important; font-weight: 700; }
+    .pagination-circular .page-item.active .page-link { 
+        background-color: #ebf2ff !important; 
+        color: var(--bumame-blue) !important; 
+        border-color: #d6e6ff !important; 
+        font-weight: 700; 
+    }
     .pagination-circular .page-item.disabled .page-link { background-color: #fff; color: var(--slate-200); border-color: var(--slate-100); opacity: 0.6; }
     
     /* Input Style */
@@ -342,12 +358,14 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                             <?php endif; ?>
                         </td>
                         <td class="text-center">
-                            <button class="btn-action me-1" onclick="editUser(<?= htmlspecialchars(json_encode($u)) ?>)" title="Edit User">
-                                <i class="fas fa-pen-nib small"></i>
-                            </button>
-                            <button class="btn-action btn-action-delete" onclick="deleteUser(<?= $u['id'] ?>)" title="Hapus User">
-                                <i class="fas fa-trash-alt small"></i>
-                            </button>
+                            <div class="d-flex justify-content-center gap-2">
+                                <button class="btn-action btn-action-edit" onclick="editUser(<?= htmlspecialchars(json_encode($u)) ?>)" title="Edit User">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn-action btn-action-delete" onclick="deleteUser(<?= $u['id'] ?>)" title="Hapus User">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                     <?php endforeach; ?>
