@@ -788,7 +788,14 @@ try {
         unset($_SESSION['pemakaian_bhp_upload_preview'][$token]);
     }
 
-    $_SESSION['success'] = "Berhasil mengupload $row_count baris data BHP.";
+    $msg = "Berhasil mengupload data BHP.";
+    if ($is_ajax) {
+        ob_clean();
+        echo json_encode(['status' => 'success', 'message' => $msg]);
+        exit;
+    }
+
+    $_SESSION['success'] = $msg;
     redirect('index.php?page=pemakaian_bhp_list');
 
 } catch (Throwable $e) {
