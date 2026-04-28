@@ -593,7 +593,7 @@ if ($active_tab == 'stok') {
                 </label>
                 <input type="date" name="tanggal" class="form-control" value="<?= htmlspecialchars($filter_date) ?>" min="<?= htmlspecialchars($min_filter_date) ?>" max="<?= htmlspecialchars($today_date) ?>" onchange="this.form.submit()">
             </div>
-            <?php if (!in_array($_SESSION['role'], ['cs','admin_klinik','spv_klinik'])): ?>
+            <?php if ($_SESSION['role'] === 'super_admin'): ?>
             <div class="col-md-6">
                 <div class="d-flex flex-column align-items-end">
                     <button type="button" class="btn btn-outline-primary refresh-btn d-flex align-items-center justify-content-center gap-2" onclick="confirmSync(this)" <?= $is_history_date ? 'disabled' : '' ?>>

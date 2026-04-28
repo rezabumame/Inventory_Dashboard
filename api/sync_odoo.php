@@ -25,7 +25,7 @@ if (!$okInternal) {
         echo json_encode(['success' => false, 'message' => 'Unauthorized']);
         exit;
     }
-    if (!in_array($_SESSION['role'], ['super_admin', 'admin_gudang'])) {
+    if ($_SESSION['role'] !== 'super_admin') {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Forbidden']);
         exit;

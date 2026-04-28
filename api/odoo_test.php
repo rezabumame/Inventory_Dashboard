@@ -12,7 +12,7 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-if (!in_array($_SESSION['role'], ['super_admin', 'admin_gudang'])) {
+if ($_SESSION['role'] !== 'super_admin') {
     echo json_encode(['success' => false, 'message' => 'Forbidden']);
     exit;
 }
