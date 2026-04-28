@@ -86,7 +86,7 @@ function run_upload_process($conn) {
 }
 
 /**
- * STEP 1: Parse Excel and Show Preview
+ * STEP 1: Parse Excel and Compare with System Data (Auto Deduction from Completed Bookings)
  */
 function process_initial_excel($conn, $user_id, $is_ajax) {
     if (!isset($_FILES['excel_file']) || $_FILES['excel_file']['error'] !== UPLOAD_ERR_OK) {
@@ -94,7 +94,6 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
     }
 
     $file_path = $_FILES['excel_file']['tmp_name'];
-    $filename = $_FILES['excel_file']['name'];
     if (!$xlsx = SimpleXLSX::parse($file_path)) {
         throw new Exception('Gagal membaca Excel: ' . SimpleXLSX::parseError());
     }
@@ -104,7 +103,7 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
 
     // Pre-cache Masters
     $master_items = [];
-    $res = $conn->query("SELECT id, kode_barang, satuan FROM inventory_barang");
+    $res = $conn->query("SELECT id, kode_barang, nama_barang, satuan FROM inventory_barang");
     while($r = $res->fetch_assoc()) $master_items[strtolower(trim($r['kode_barang']))] = $r;
 
     $master_nakes = [];
@@ -116,18 +115,21 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
     while($r = $res->fetch_assoc()) {
         $master_klinik[strtolower(trim($r['nama_klinik']))] = $r;
         $master_klinik[strtolower(trim($r['kode_klinik']))] = $r;
-        if (!empty($r['alamat'])) {
-            $master_klinik[strtolower(trim($r['alamat']))] = $r;
-        }
+        if (!empty($r['alamat'])) $master_klinik[strtolower(trim($r['alamat']))] = $r;
     }
 
     $errors = [];
-    $data_to_process = [];
+    $excel_groups = [];
+    $raw_data = [];
+
     for ($i = 1; $i < count($rows); $i++) {
         $row = $rows[$i];
         if (empty(array_filter($row))) continue;
         
         $iso_date = parse_custom_date($row[0]);
+        if (!$iso_date) { add_error($errors, $i+1, 'Tanggal', 'Format tanggal tidak dikenali'); continue; }
+        
+        $date_only = date('Y-m-d', strtotime($iso_date));
         $patient_id = trim($row[1] ?? '');
         $nama_pasien = trim($row[2] ?? '');
         $layanan = trim($row[3] ?? '');
@@ -141,12 +143,14 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
         $klinik = $master_klinik[$branch_name] ?? null;
         $nakes = $master_nakes[strtolower($nakes_name)] ?? null;
 
-        if (!$iso_date) add_error($errors, $i+1, 'Tanggal', 'Format tanggal tidak dikenali');
         if (!$item) add_error($errors, $i+1, 'Kode Barang', "Barang '$kode_barang' tidak ditemukan");
         if (!$klinik) add_error($errors, $i+1, 'Cabang', "Cabang '$branch_name' tidak ditemukan");
 
         if (empty($errors)) {
-            $data_to_process[] = [
+            $is_hc = (!empty($nakes_name) || ($nakes['id'] ?? 0) > 0);
+            $jenis = $is_hc ? 'hc' : 'klinik';
+            
+            $raw_data[] = [
                 'tanggal_full' => $iso_date,
                 'patient_id' => $patient_id,
                 'nama_pasien' => $nama_pasien,
@@ -157,8 +161,25 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
                 'user_hc_id' => $nakes['id'] ?? 0,
                 'klinik_id' => $klinik['id'],
                 'nama_nakes' => $nakes_name,
-                'kode_barang' => $kode_barang
+                'kode_barang' => $kode_barang,
+                'jenis' => $jenis
             ];
+
+            // Grouping for Diff Calculation
+            $group_key = $date_only . '|' . $klinik['id'] . '|' . $jenis . '|' . $item['id'];
+            if (!isset($excel_groups[$group_key])) {
+                $excel_groups[$group_key] = [
+                    'tanggal' => $date_only,
+                    'klinik_id' => $klinik['id'],
+                    'nama_klinik' => $klinik['nama_klinik'],
+                    'jenis' => $jenis,
+                    'barang_id' => $item['id'],
+                    'kode_barang' => $item['kode_barang'],
+                    'nama_barang' => $item['nama_barang'],
+                    'qty_excel' => 0
+                ];
+            }
+            $excel_groups[$group_key]['qty_excel'] += $qty;
         }
     }
 
@@ -167,10 +188,62 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
         exit;
     }
 
-    $token = bin2hex(random_bytes(16));
-    $_SESSION['pemakaian_bhp_upload_preview'][$token] = ['data' => $data_to_process];
+    // Step 1.2: Calculate Diffs against "Tercatat di sistem" (Completed Bookings)
+    $diffs = [];
+    foreach ($excel_groups as $g) {
+        $tgl = $g['tanggal'];
+        $kid = $g['klinik_id'];
+        $bid = $g['barang_id'];
+        $is_hc = ($g['jenis'] === 'hc');
+        
+        // Count already in system (Completed bookings for this date/clinic/type)
+        $q_sys = 0;
+        $reserve_cond = $is_hc ? "bp.status_booking LIKE '%HC%'" : "bp.status_booking LIKE '%Clinic%'";
+        
+        // Sum from inventory_booking_detail for COMPLETED bookings
+        $stmt_s = $conn->prepare("
+            SELECT COALESCE(SUM(bd.qty_gantung), 0) as qty
+            FROM inventory_booking_detail bd
+            JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
+            WHERE bp.klinik_id = ? 
+              AND bp.tanggal_pemeriksaan = ? 
+              AND bp.status = 'completed'
+              AND $reserve_cond
+              AND bd.barang_id = ?
+        ");
+        $stmt_s->bind_param("isi", $kid, $tgl, $bid);
+        $stmt_s->execute();
+        $res_s = $stmt_s->get_result()->fetch_assoc();
+        $q_sys = (float)($res_s['qty'] ?? 0);
 
-    echo json_encode(['status' => 'preview', 'token' => $token, 'row_count' => count($data_to_process)]);
+        $selisih = $g['qty_excel'] - $q_sys;
+        
+        // Only show if there IS a difference or user wants to see everything
+        // Usually, we only show rows where selisih != 0
+        if (abs($selisih) > 0.0001) {
+            $diffs[] = [
+                'tanggal' => date('d/m/Y', strtotime($tgl)),
+                'nama_klinik' => $g['nama_klinik'],
+                'jenis' => strtoupper($g['jenis']),
+                'kode_barang' => $g['kode_barang'],
+                'nama_barang' => $g['nama_barang'],
+                'qty_system' => (float)$q_sys,
+                'qty_excel' => (float)$g['qty_excel'],
+                'selisih' => (float)$selisih
+            ];
+        }
+    }
+
+    $token = bin2hex(random_bytes(16));
+    $_SESSION['pemakaian_bhp_upload_preview'][$token] = ['data' => $raw_data];
+
+    echo json_encode([
+        'status' => 'preview', 
+        'token' => $token, 
+        'diffs' => $diffs,
+        'diff_count' => count($diffs),
+        'message' => count($diffs) > 0 ? 'Ditemukan perbedaan data antara Excel dan Sistem.' : 'Tidak ada perbedaan. Data upload sudah sama dengan data sistem.'
+    ]);
     exit;
 }
 
@@ -185,6 +258,7 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
     $data = $payload['data'];
     $transactions = [];
     foreach ($data as $d) {
+        // Group items by Patient + Date to create Header records
         $key = $d['patient_id'] . '|' . date('Y-m-d', strtotime($d['tanggal_full']));
         $transactions[$key]['items'][] = $d;
     }
@@ -197,7 +271,7 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
             $m = $tx['items'][0];
             $tgl = date('Y-m-d', strtotime($m['tanggal_full']));
             $created = date('Y-m-d H:i:s');
-            $jenis = (!empty($m['nama_nakes']) || $m['user_hc_id'] > 0) ? 'hc' : 'klinik';
+            $jenis = $m['jenis'];
             
             // Generate Number
             $date_key = date('ymd', strtotime($tgl));
