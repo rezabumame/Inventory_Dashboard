@@ -98,11 +98,16 @@ try {
             $jenis_pemakaian = $is_hc ? 'hc' : 'klinik';
             $created_by = (int)$_SESSION['user_id'];
             
-            // Perbaikan format nomor BHP agar menggunakan YYMMDD (6 digit)
+            // --- NEW NUMBERING SYSTEM (EST for Auto) ---
+            $res_k = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1");
+            $k_row = $res_k->fetch_assoc();
+            $k_code_raw = $is_hc ? ($k_row['kode_homecare'] ?? 'HC') : ($k_row['kode_klinik'] ?? 'CLN');
+            $k_code = explode('/', $k_code_raw)[0]; // Strip /Stock
+            
             $date_ymd = date('ymd', strtotime($booking['tanggal_pemeriksaan'] ?? date('Y-m-d')));
-            require_once __DIR__ . '/../lib/counter.php';
-            $seq = next_sequence($conn, 'BHP', $date_ymd);
-            $nomor_pemakaian = 'BHP-' . $date_ymd . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+            $prefix = "EST-" . $k_code;
+            $seq = next_sequence($conn, $prefix, $date_ymd);
+            $nomor_pemakaian = $prefix . "-" . $date_ymd . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
             // 2. Hitung total qty per barang_id dari Master Pemeriksaan (Core & Support)
             $items_to_deduct = [];
@@ -133,6 +138,8 @@ try {
                 if ($bhp_tanggal === '') $bhp_tanggal = date('Y-m-d');
                 $bhp_tanggal .= ' 00:00:00';
 
+                $jenis_pemakaian = $is_hc ? 'hc' : 'clinic';
+
                 // Insert header
                 $stmt_h = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, catatan_transaksi, created_by, created_at, status, is_auto, booking_id) VALUES (?, ?, ?, ?, 'Auto-deduction from Booking Completed', ?, NOW(), 'active', 1, ?)");
                 $stmt_h->bind_param("sssiii", $nomor_pemakaian, $bhp_tanggal, $jenis_pemakaian, $klinik_id, $created_by, $id);
@@ -142,16 +149,10 @@ try {
                 // Insert details and record transactions
                 $stmt_d = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan) VALUES (?, ?, ?, ?)");
                 
-                $level = $is_hc ? 'hc' : 'klinik';
-                $level_id = $klinik_id; // For klinik, level_id is klinik_id. For HC, it should be user_id, but booking doesn't have it yet.
-                
-                // If HC, try to find a default user_id for this clinic to satisfy the dashboard query
-                if ($is_hc) {
-                    $res_u = $conn->query("SELECT id FROM inventory_users WHERE klinik_id = $klinik_id AND role = 'petugas_hc' AND status = 'active' LIMIT 1");
-                    if ($res_u && $u_row = $res_u->fetch_assoc()) {
-                        $level_id = (int)$u_row['id'];
-                    }
-                }
+                // For Auto-deductions, we always deduct from the global clinic pool (level = 'klinik')
+                // and avoid assigning to a specific petugas HC until manual/Excel realization.
+                $level = 'klinik';
+                $level_id = $klinik_id;
 
                 foreach ($items_to_deduct as $bid => $qty) {
                     $bid = (int)$bid;
@@ -185,23 +186,20 @@ try {
                     $catatan = "BHP (Auto-Booking) " . $nomor_pemakaian;
                     $created_at_str = date('Y-m-d H:i:s');
 
-                    // Skip transaction log for auto-deduction (will be logged during real realization)
-                    /*
-                    if (!$is_hc) {
-                        $stmt_trans = $conn->prepare("
-                            INSERT INTO inventory_transaksi_stok
-                            (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
-                            VALUES (?, ?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?)
-                        ");
-                        $stmt_trans->bind_param("isidddsisis", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $ref_type, $ref_id, $catatan, $created_by, $created_at_str);
-                        $stmt_trans->execute();
-                    }
-                    */
+                    // Record transaction log for dashboard sellout tracking
+                    // We use 'klinik' level so it deducts from global pool in dashboard view
+                    $stmt_trans = $conn->prepare("
+                        INSERT INTO inventory_transaksi_stok
+                        (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
+                        VALUES (?, ?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    $stmt_trans->bind_param("isidddsisis", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $ref_type, $ref_id, $catatan, $created_by, $created_at_str);
+                    $stmt_trans->execute();
 
-                    // Skip automatic stock deduction for ALL (HC & Clinic) - will be handled by Excel upload
+                    // Skip automatic physical stock deduction for ALL (HC & Clinic) 
+                    // This ensures physical stock remains intact until real manual/Excel realization.
                     /*
                     if ($is_hc && $level_id !== $klinik_id) {
-                        // Skip automatic stock deduction for HC - will be handled by Excel upload
                         // $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
                         // $stmt_upd->bind_param("diiii", $qty, $created_by, $bid, $level_id, $klinik_id);
                         // $stmt_upd->execute();
@@ -337,14 +335,19 @@ try {
                     $stmt_d->bind_param("iids", $pemakaian_id, $bid, $qty, $satuan);
                     $stmt_d->execute();
 
-                    /*
-                    if (!$is_hc) {
-                        $stmt_trans->bind_param("isidddisi", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $pemakaian_id, $cat, $created_by);
-                        $stmt_trans->execute();
-                    }
+                    // Get effective stock for dashboard history reconstruction
+                    $eff = stock_effective($conn, $klinik_id, $is_hc, $bid);
+                    $qty_before = $eff['ok'] ? (float)($eff['on_hand'] ?? 0) : 0.0;
+                    $qty_after = $qty_before - $qty;
 
+                    // Record transaction log for dashboard sellout tracking
+                    $cat = "BHP (Partial-Auto) " . $nomor_pemakaian;
+                    $stmt_trans->bind_param("isidddiis", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $pemakaian_id, $cat, $created_by);
+                    $stmt_trans->execute();
+
+                    // Skip physical stock update for now
+                    /*
                     if ($is_hc && $level_id !== $klinik_id) {
-                        // Skip automatic stock deduction for HC - will be handled by Excel upload
                         // $conn->query("UPDATE inventory_stok_tas_hc SET qty = qty - $qty, updated_at = NOW(), updated_by = $created_by WHERE barang_id = $bid AND user_id = $level_id AND klinik_id = $klinik_id");
                     } else {
                         $conn->query("UPDATE inventory_stok_gudang_klinik SET qty = qty - $qty, updated_at = NOW(), updated_by = $created_by WHERE barang_id = $bid AND klinik_id = $klinik_id");

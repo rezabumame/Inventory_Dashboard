@@ -365,8 +365,6 @@ if ($active_tab == 'stok') {
                                  FROM inventory_transaksi_stok ts
                                  JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id
                                  WHERE ts.barang_id = b.id
-                                 AND ts.level = 'klinik'
-                                 AND ts.level_id $klinik_filter_sql
                                  AND ts.referensi_tipe = 'pemakaian_bhp'
                                  AND pb2.klinik_id $klinik_filter_sql
                                  AND pb2.jenis_pemakaian != 'hc'$filter_pb2_klinik
@@ -375,8 +373,6 @@ if ($active_tab == 'stok') {
                                  FROM inventory_transaksi_stok ts
                                  JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id
                                  WHERE ts.barang_id = b.id
-                                 AND ts.level = 'hc'
-                                 AND $hc_user_filter_sql
                                  AND ts.referensi_tipe = 'pemakaian_bhp'
                                  AND pb2.klinik_id $klinik_filter_sql
                                  AND pb2.jenis_pemakaian = 'hc'$filter_pb2_hc

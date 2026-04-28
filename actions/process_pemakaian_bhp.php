@@ -567,17 +567,23 @@ try {
             exit;
         }
 
-        // Generate nomor pemakaian
-        $date = date('ymd', strtotime($tanggal)); // ymd (260413) instead of Ymd
-        $prefix = 'BHP-' . $date . '-';
+        // --- NEW NUMBERING SYSTEM WITH CLINIC CODES ---
+        $res_k = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1");
+        $k_row = $res_k->fetch_assoc();
+        $k_code_raw = ($jenis_pemakaian === 'hc') ? ($k_row['kode_homecare'] ?? 'HC') : ($k_row['kode_klinik'] ?? 'CLN');
+        $k_code = explode('/', $k_code_raw)[0]; // Strip /Stock
+        
+        $date = date('ymd', strtotime($tanggal));
+        $prefix_full = 'BHP-' . $k_code . '-' . $date . '-';
+        $seq_prefix = 'BHP-' . $k_code;
         
         // Loop to prevent duplicate nomor_pemakaian
         require_once __DIR__ . '/../lib/counter.php';
         $max_retries = 10;
         $nomor_pemakaian = '';
         for ($i = 0; $i < $max_retries; $i++) {
-            $seq = next_sequence($conn, 'BHP', $date);
-            $temp_nomor = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+            $seq = next_sequence($conn, $seq_prefix, $date);
+            $temp_nomor = $prefix_full . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
             
             // Check if this number already exists in database
             $stmt_check = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE nomor_pemakaian = ? LIMIT 1");

@@ -291,10 +291,16 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
             $created = date('Y-m-d H:i:s');
             $jenis = $m['jenis'];
             
-            // Generate Number
+            // Generate Number with Clinic Code
+            $res_k = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = " . $m['klinik_id'] . " LIMIT 1");
+            $k_row = $res_k->fetch_assoc();
+            $k_code_raw = ($jenis === 'hc') ? ($k_row['kode_homecare'] ?? 'HC') : ($k_row['kode_klinik'] ?? 'CLN');
+            $k_code = explode('/', $k_code_raw)[0]; // Strip /Stock
+            
             $date_key = date('ymd', strtotime($tgl));
-            $seq = next_sequence($conn, 'BHP', $date_key);
-            $nomor = "BHP-$date_key-" . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+            $prefix = "BHP-" . $k_code;
+            $seq = next_sequence($conn, $prefix, $date_key);
+            $nomor = $prefix . "-" . $date_key . "-" . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
             $note = $m['nama_pasien'] . " (" . $m['patient_id'] . ") - " . $m['layanan'];
 
             // Insert Header
@@ -320,10 +326,16 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
                 
                 // Deduct Stock
                 if ($jenis === 'hc' && $uid > 0) {
+                    // Ensure row exists before update to support negative stock
+                    $conn->query("INSERT IGNORE INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty) VALUES ($bid, $uid, $kid, 0)");
+                    
                     $st_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
                     $st_upd->bind_param("diiii", $qty, $user_id, $bid, $uid, $kid);
                     $level = 'hc'; $level_id = $uid;
                 } else {
+                    // Ensure row exists before update to support negative stock
+                    $conn->query("INSERT IGNORE INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES ($bid, $kid, 0)");
+                    
                     $st_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
                     $st_upd->bind_param("diii", $qty, $user_id, $bid, $kid);
                     $level = 'klinik'; $level_id = $kid;
