@@ -3303,11 +3303,22 @@ if ($default_modal_klinik_id) {
                                     if (res2.status === 'success') {
                                         Swal.fire('Berhasil', res2.message, 'success').then(() => { location.reload(); });
                                     } else {
-                                        Swal.fire('Gagal', res2.message || 'Gagal memproses upload', 'error');
+                                        let debugMsg = res2.message || 'Gagal memproses upload';
+                                        if (res2.debug) {
+                                            debugMsg += '<br><small class="text-muted">Error in ' + res2.debug.file + ':' + res2.debug.line + '</small>';
+                                        }
+                                        Swal.fire({ icon: 'error', title: 'Gagal Simpan', html: debugMsg });
                                     }
                                 },
-                                error: function () {
-                                    Swal.fire('Error', 'Terjadi kesalahan sistem saat konfirmasi upload', 'error');
+                                error: function (xhr) {
+                                    let errorMsg = 'Terjadi kesalahan sistem saat konfirmasi upload.';
+                                    if (xhr.status === 403) {
+                                        errorMsg = 'Sesi keamanan kadaluarsa (CSRF). Silakan refresh halaman dan coba lagi.';
+                                    } else if (xhr.responseText) {
+                                        // Try to extract error message from response if it contains text
+                                        errorMsg += '<br><div class="text-start small mt-2 p-2 bg-light border">Status: ' + xhr.status + '<br>' + xhr.responseText.substring(0, 200) + '</div>';
+                                    }
+                                    Swal.fire({ icon: 'error', title: 'System Error', html: errorMsg });
                                 }
                             });
                         });

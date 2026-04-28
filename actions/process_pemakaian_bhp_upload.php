@@ -1,10 +1,15 @@
-<?php
 session_start();
+ob_start(); // Prevent any early output
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../lib/counter.php';
-file_put_contents(__DIR__ . '/../upload_debug.log', date('Y-m-d H:i:s') . " - Script started. AJAX: " . (isset($_POST['ajax']) ? '1' : '0') . " Action: " . ($_POST['action'] ?? 'none') . "\n", FILE_APPEND);
+
+// Use error_log instead of file_put_contents for cloud environments
+function log_cloud($msg) {
+    error_log("[BHP_UPLOAD] " . $msg);
+}
+log_cloud("Script started. AJAX: " . (isset($_POST['ajax']) ? '1' : '0') . " Action: " . ($_POST['action'] ?? 'none'));
 
 
 use Shuchkin\SimpleXLSX;
@@ -83,12 +88,7 @@ $filename = $_FILES['excel_file']['name'] ?? 'unknown';
 $is_ajax = (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest') || isset($_POST['ajax']);
 $is_confirm_upload = ($is_ajax && isset($_POST['action']) && $_POST['action'] === 'confirm_upload');
 
-// Debug logging helper
-function log_debug($msg) {
-    file_put_contents(__DIR__ . '/../upload_debug.log', date('Y-m-d H:i:s') . " - " . $msg . "\n", FILE_APPEND);
-}
-
-log_debug("Script started. AJAX: " . ($is_ajax ? '1' : '0') . " Action: " . ($_POST['action'] ?? 'none'));
+log_cloud("Script started. AJAX: " . ($is_ajax ? '1' : '0') . " Action: " . ($_POST['action'] ?? 'none'));
 
 // Validation helper
 function add_error(&$errors, $row, $col, $msg, $type = 'general', $data = []) {
@@ -779,23 +779,10 @@ try {
     }
 
     $conn->commit();
-    log_debug("Transaction committed successfully.");
+    log_cloud("Transaction committed successfully.");
     
     if ($is_confirm_upload && isset($token)) {
         unset($_SESSION['pemakaian_bhp_upload_preview'][$token]);
-        log_debug("Session preview cleared for token: $token");
-    }
-
-    if (!empty($locks_acquired)) release_named_locks($conn, $locks_acquired);
-
-    // Log success
-    $stmt_log = $conn->prepare("INSERT INTO inventory_upload_logs (user_id, filename, status, rows_success, rows_failed, error_details) VALUES (?, ?, 'success', ?, 0, NULL)");
-    $stmt_log->bind_param("isi", $user_id, $filename, $row_count);
-    $stmt_log->execute();
-
-    if ($is_ajax) {
-        echo json_encode(['status' => 'success', 'message' => "Berhasil mengupload $row_count baris data BHP."]);
-        exit;
     }
 
     $_SESSION['success'] = "Berhasil mengupload $row_count baris data BHP.";
