@@ -610,26 +610,18 @@ try {
         $date_only = date('Y-m-d', strtotime($tanggal));
         
         // Cari ID pemakaian temporary
-        $stmt_find_temp = $conn->prepare("SELECT id, user_hc_id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal = ?");
-        $stmt_find_temp->bind_param("iss", $klinik_id, $jenis_pemakaian, $date_only);
+        $stmt_find_temp = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal LIKE ?");
+        $tgl_like = $date_only . '%';
+        $stmt_find_temp->bind_param("iss", $klinik_id, $jenis_pemakaian, $tgl_like);
         $stmt_find_temp->execute();
         $res_temp = $stmt_find_temp->get_result();
         
         while ($row_temp = $res_temp->fetch_assoc()) {
             $temp_id = (int)$row_temp['id'];
-            $temp_user_hc_id = (int)($row_temp['user_hc_id'] ?? 0);
             
-            // --- REVERSE STOCK BEFORE DELETION ---
-            $res_items = $conn->query("SELECT barang_id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $temp_id");
-            while ($it = $res_items->fetch_assoc()) {
-                $bid = (int)$it['barang_id'];
-                $qty_rev = (float)$it['qty'];
-                if ($jenis_pemakaian === 'hc' && $temp_user_hc_id > 0) {
-                    $conn->query("UPDATE inventory_stok_tas_hc SET qty = qty + $qty_rev WHERE barang_id = $bid AND user_id = $temp_user_hc_id AND klinik_id = $klinik_id");
-                } else {
-                    $conn->query("UPDATE inventory_stok_gudang_klinik SET qty = qty + $qty_rev WHERE barang_id = $bid AND klinik_id = $klinik_id");
-                }
-            }
+            // --- SKIP REVERSE STOCK ---
+            // (We no longer deduct stock for Auto-BHP, so we don't need to return it)
+            
             // Clear details and transaction history
             $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $temp_id");
             $conn->query("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = $temp_id");
