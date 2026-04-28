@@ -3228,11 +3228,14 @@ if ($default_modal_klinik_id) {
                         const diffs = Array.isArray(res.diffs) ? res.diffs : [];
                         const diffCount = Number(res.diff_count || diffs.length || 0);
 
-                        let html = `<div class="text-start small mb-2">${res.message || 'Preview perbedaan.'}</div>`;
+                        let html = `<div class="text-start small mb-2">${res.message || 'Preview data upload.'}</div>`;
                         html += `<div class="text-start small mb-2"><b>Total Baris:</b> ${diffCount}</div>`;
-                        html += `<div class="text-start small mb-3 p-2 bg-light rounded border-start border-4 border-primary">
-                        <strong>Selisih</strong> = selisih antara <strong>jumlah aktual di file Excel</strong> dengan <strong>jumlah produk hasil mapping dari booking CS berstatus Completed</strong> (Hasil Mapping Sistem).
-                    </div>`;
+                        
+                        if (res.has_auto) {
+                            html += `<div class="text-start small mb-3 p-2 bg-light rounded border-start border-4 border-primary">
+                                <strong>Selisih</strong> = selisih antara <strong>jumlah aktual di file Excel</strong> dengan <strong>jumlah produk hasil mapping dari booking CS berstatus Completed</strong> (Hasil Mapping Sistem).
+                            </div>`;
+                        }
 
                         if (diffs.length > 0) {
                             html += `<div style="max-height: 360px; overflow:auto; border:1px solid #eee; border-radius:8px;">
@@ -3244,9 +3247,9 @@ if ($default_modal_klinik_id) {
                                         <th>Jenis</th>
                                         <th>Kode</th>
                                         <th>Item</th>
-                                        <th class="text-end" title="Total pemakaian dari hasil mapping booking Completed">Hasil Mapping Sistem</th>
+                                        ${res.has_auto ? '<th class="text-end" title="Total pemakaian dari hasil mapping booking Completed">Hasil Mapping Sistem</th>' : ''}
                                         <th class="text-end" title="Jumlah aktual dari file Excel">Excel (aktual)</th>
-                                        <th class="text-end" title="Excel (aktual) − Hasil Mapping Sistem">Selisih</th>
+                                        ${res.has_auto ? '<th class="text-end" title="Excel (aktual) − Hasil Mapping Sistem">Selisih</th>' : ''}
                                     </tr>
                                 </thead>
                                 <tbody>`;
@@ -3265,9 +3268,9 @@ if ($default_modal_klinik_id) {
                                 <td>${jenis}</td>
                                 <td>${kode}</td>
                                 <td>${nama}</td>
-                                <td class="text-end">${ex}</td>
+                                ${res.has_auto ? `<td class="text-end">${ex}</td>` : ''}
                                 <td class="text-end">${up}</td>
-                                <td class="text-end"><b>${df}</b></td>
+                                ${res.has_auto ? `<td class="text-end"><b>${df}</b></td>` : ''}
                             </tr>`;
                             });
                             html += `</tbody></table></div>`;
