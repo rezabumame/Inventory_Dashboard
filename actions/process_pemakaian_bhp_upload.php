@@ -182,7 +182,7 @@ try {
         $filename = $payload['filename'] ?? 'unknown_from_session';
         $row_count = count($data_to_process);
         
-        log_debug("Confirm Upload started. Token: $token. Rows: $row_count. File: $filename");
+        log_cloud("Confirm Upload started. Token: $token. Rows: $row_count. File: $filename");
 
         // Do NOT unset session yet. Wait until success to allow retries on transient errors.
         // unset($_SESSION['pemakaian_bhp_upload_preview'][$token]);
@@ -471,7 +471,7 @@ try {
             'filename' => $filename,
             'data_to_process' => $data_to_process
         ];
-        log_debug("Preview stored in session. Token: $token. File: $filename");
+        log_cloud("Preview stored in session. Token: $token. File: $filename");
 
         // Build barang map for display
         $barang_map = [];
@@ -790,8 +790,8 @@ try {
     redirect('index.php?page=pemakaian_bhp_list');
 
 } catch (Throwable $e) {
-    log_debug("ERROR CAUGHT: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
-    log_debug("Stack trace: " . $e->getTraceAsString());
+    log_cloud("ERROR CAUGHT: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
+    log_cloud("Stack trace: " . $e->getTraceAsString());
     // Attempt rollback if in transaction
     try {
         if (method_exists($conn, 'rollback')) {
