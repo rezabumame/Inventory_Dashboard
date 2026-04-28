@@ -4,6 +4,8 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../lib/counter.php';
+file_put_contents(__DIR__ . '/../upload_debug.log', date('Y-m-d H:i:s') . " - Script started. AJAX: " . (isset($_POST['ajax']) ? '1' : '0') . " Action: " . ($_POST['action'] ?? 'none') . "\n", FILE_APPEND);
+
 
 use Shuchkin\SimpleXLSX;
 
@@ -80,6 +82,13 @@ $user_klinik_id = $_SESSION['klinik_id'] ?? null;
 $filename = $_FILES['excel_file']['name'] ?? 'unknown';
 $is_ajax = (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest') || isset($_POST['ajax']);
 $is_confirm_upload = ($is_ajax && isset($_POST['action']) && $_POST['action'] === 'confirm_upload');
+
+// Debug logging helper
+function log_debug($msg) {
+    file_put_contents(__DIR__ . '/../upload_debug.log', date('Y-m-d H:i:s') . " - " . $msg . "\n", FILE_APPEND);
+}
+
+log_debug("Script started. AJAX: " . ($is_ajax ? '1' : '0') . " Action: " . ($_POST['action'] ?? 'none'));
 
 // Validation helper
 function add_error(&$errors, $row, $col, $msg, $type = 'general', $data = []) {
@@ -169,11 +178,13 @@ try {
         }
 
         $data_to_process = $payload['data_to_process'];
+        $filename = $payload['filename'] ?? 'unknown_from_session';
         $row_count = count($data_to_process);
+        
+        log_debug("Confirm Upload started. Token: $token. Rows: $row_count. File: $filename");
 
-        // Cleanup token to avoid re-use
-        unset($_SESSION['pemakaian_bhp_upload_preview'][$token]);
-        if (empty($_SESSION['pemakaian_bhp_upload_preview'])) unset($_SESSION['pemakaian_bhp_upload_preview']);
+        // Do NOT unset session yet. Wait until success to allow retries on transient errors.
+        // unset($_SESSION['pemakaian_bhp_upload_preview'][$token]);
 
         // Rebuild master_uom for ratio conversion
         $master_uom = [];
@@ -459,6 +470,7 @@ try {
             'filename' => $filename,
             'data_to_process' => $data_to_process
         ];
+        log_debug("Preview stored in session. Token: $token. File: $filename");
 
         // Build barang map for display
         $barang_map = [];
@@ -717,7 +729,7 @@ try {
 
             // Stock Transaction
             $level = ($jenis_pemakaian === 'hc') ? 'hc' : 'klinik';
-            $level_id = $m['klinik_id'];
+            $level_id = ($level === 'hc') ? $m['user_hc_id'] : $m['klinik_id'];
             $qty_before = 0;
 
             if ($level === 'klinik') {
@@ -752,6 +764,13 @@ try {
     }
 
     $conn->commit();
+    log_debug("Transaction committed successfully.");
+    
+    if ($is_confirm_upload && isset($token)) {
+        unset($_SESSION['pemakaian_bhp_upload_preview'][$token]);
+        log_debug("Session preview cleared for token: $token");
+    }
+
     if (!empty($locks_acquired)) release_named_locks($conn, $locks_acquired);
 
     // Log success
@@ -767,7 +786,9 @@ try {
     $_SESSION['success'] = "Berhasil mengupload $row_count baris data BHP.";
     redirect('index.php?page=pemakaian_bhp_list');
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
+    log_debug("ERROR CAUGHT: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
+    log_debug("Stack trace: " . $e->getTraceAsString());
     // Attempt rollback if in transaction
     try {
         if (method_exists($conn, 'rollback')) {
