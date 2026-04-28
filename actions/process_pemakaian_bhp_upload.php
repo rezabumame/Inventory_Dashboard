@@ -275,8 +275,8 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
         }
 
         foreach (array_keys($unique_dates) as $tgl) {
-            // Find and Delete ALL Auto BHP records for this Clinic and Date (Type: HC)
-            $res_auto = $conn->query("SELECT id FROM inventory_pemakaian_bhp WHERE is_auto = 1 AND klinik_id = $target_klinik_id AND tanggal LIKE '$tgl%' AND jenis_pemakaian = 'hc'");
+            // Find and Delete ALL Auto BHP records for this Clinic and Date (Both HC & Clinic)
+            $res_auto = $conn->query("SELECT id FROM inventory_pemakaian_bhp WHERE is_auto = 1 AND klinik_id = $target_klinik_id AND tanggal LIKE '$tgl%'");
             while ($auto_row = $res_auto->fetch_assoc()) {
                 $auto_id = $auto_row['id'];
                 $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $auto_id");

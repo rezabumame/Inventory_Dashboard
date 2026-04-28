@@ -185,6 +185,8 @@ try {
                     $catatan = "BHP (Auto-Booking) " . $nomor_pemakaian;
                     $created_at_str = date('Y-m-d H:i:s');
 
+                    // Skip transaction log for auto-deduction (will be logged during real realization)
+                    /*
                     if (!$is_hc) {
                         $stmt_trans = $conn->prepare("
                             INSERT INTO inventory_transaksi_stok
@@ -194,20 +196,21 @@ try {
                         $stmt_trans->bind_param("isidddsisis", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $ref_type, $ref_id, $catatan, $created_by, $created_at_str);
                         $stmt_trans->execute();
                     }
+                    */
 
-                    // Update Internal Stock Tables
+                    // Skip automatic stock deduction for ALL (HC & Clinic) - will be handled by Excel upload
+                    /*
                     if ($is_hc && $level_id !== $klinik_id) {
                         // Skip automatic stock deduction for HC - will be handled by Excel upload
-                        /*
-                        $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-                        $stmt_upd->bind_param("diiii", $qty, $created_by, $bid, $level_id, $klinik_id);
-                        $stmt_upd->execute();
-                        */
+                        // $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+                        // $stmt_upd->bind_param("diiii", $qty, $created_by, $bid, $level_id, $klinik_id);
+                        // $stmt_upd->execute();
                     } else {
                         $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
                         $stmt_upd->bind_param("diii", $qty, $created_by, $bid, $klinik_id);
                         $stmt_upd->execute();
                     }
+                    */
                 }
             }
 
@@ -334,6 +337,7 @@ try {
                     $stmt_d->bind_param("iids", $pemakaian_id, $bid, $qty, $satuan);
                     $stmt_d->execute();
 
+                    /*
                     if (!$is_hc) {
                         $stmt_trans->bind_param("isidddisi", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $pemakaian_id, $cat, $created_by);
                         $stmt_trans->execute();
@@ -345,6 +349,7 @@ try {
                     } else {
                         $conn->query("UPDATE inventory_stok_gudang_klinik SET qty = qty - $qty, updated_at = NOW(), updated_by = $created_by WHERE barang_id = $bid AND klinik_id = $klinik_id");
                     }
+                    */
                 }
             }
 
