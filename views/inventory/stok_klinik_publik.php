@@ -572,7 +572,30 @@ if ($active_tab === 'rekap') {
                     <td class="small fw-medium"><?= htmlspecialchars($r['nama_barang']) ?></td>
                     <td class="small text-muted text-center"><?= htmlspecialchars($r['satuan']) ?></td>
                     <td class="fw-bold text-center"><?= fmt_qty($s_on) ?></td>
-                    <?php if ($show_hc): ?><td class="text-center"><?php if($s_hc != 0): ?><a href="#" class="text-primary fw-bold text-decoration-none" onclick="loadHCDetail(<?= $r['barang_id'] ?>, <?= $selected_klinik === 'all' ? 0 : $selected_klinik ?>, '<?= addslashes($r['nama_barang']) ?>'); return false;"><?= fmt_qty($s_hc) ?></a><?php else: ?>0<?php endif; ?></td><?php endif; ?>
+                    <?php if ($show_hc): ?>
+                        <td class="text-center">
+                            <?php if($s_hc != 0 || (float)($r['in_transfer_hc'] ?? 0) > 0 || (float)($r['out_transfer_hc'] ?? 0) > 0): ?>
+                                <a href="#" class="text-primary fw-bold text-decoration-none" onclick="loadHCDetail(<?= $r['barang_id'] ?>, <?= $selected_klinik === 'all' ? 0 : $selected_klinik ?>, '<?= addslashes($r['nama_barang']) ?>'); return false;">
+                                    <?= fmt_qty($s_hc) ?>
+                                </a>
+                                <?php if ((float)($r['in_transfer_hc'] ?? 0) > 0 || (float)($r['out_transfer_hc'] ?? 0) > 0): ?>
+                                    <div class="d-flex align-items-center justify-content-center gap-1 small mt-1" style="font-size: 0.65rem;">
+                                        <?php if ((float)($r['in_transfer_hc'] ?? 0) > 0): ?>
+                                            <span class="text-success fw-bold"><i class="fas fa-arrow-down"></i> <?= fmt_qty($r['in_transfer_hc']) ?></span>
+                                        <?php endif; ?>
+                                        <?php if ((float)($r['in_transfer_hc'] ?? 0) > 0 && (float)($r['out_transfer_hc'] ?? 0) > 0): ?>
+                                            <span class="text-muted">|</span>
+                                        <?php endif; ?>
+                                        <?php if ((float)($r['out_transfer_hc'] ?? 0) > 0): ?>
+                                            <span class="text-danger fw-bold"><i class="fas fa-arrow-up"></i> <?= fmt_qty($r['out_transfer_hc']) ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                0
+                            <?php endif; ?>
+                        </td>
+                    <?php endif; ?>
                     <td class="text-center <?= $sell > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sell) ?></td>
                     <?php if ($show_hc): ?><td class="text-center <?= $sell_hc > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sell_hc) ?></td><?php endif; ?>
                     <td class="text-center <?= $res > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>"><?php if($res > 0 && $selected_klinik !== 'all' && $selected_klinik !== 'gudang_utama'): ?><a href="#" class="text-warning fw-bold text-decoration-none" onclick="openStokBreakdown(<?= $r['barang_id'] ?>, '<?= addslashes($r['nama_barang']) ?>'); return false;"><?= fmt_qty($res) ?></a><?php else: ?><?= fmt_qty($res) ?><?php endif; ?></td>

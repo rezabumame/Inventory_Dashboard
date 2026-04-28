@@ -1072,11 +1072,23 @@ function openStokBreakdown(barangId, namaBarang) {
                                            onclick="loadHCDetail(<?= $row['barang_id'] ?>, <?= $row['klinik_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>'); return false;">
                                             <?= fmt_qty($stok_hc) ?> <i class="fas fa-user-nurse"></i>
                                         </a>
-                                        <?php if ((float)($row['in_transfer_hc'] ?? 0) > 0): ?>
-                                              <div class="text-success small" style="font-size: 0.7rem; font-weight: bold;">
-                                                  <i class="fas fa-arrow-down me-1"></i><?= fmt_qty($row['in_transfer_hc']) ?>
-                                              </div>
-                                          <?php endif; ?>
+                                        <?php if ((float)($row['in_transfer_hc'] ?? 0) > 0 || (float)($row['out_transfer_hc'] ?? 0) > 0): ?>
+                                            <div class="d-flex align-items-center justify-content-center gap-2 small mt-1">
+                                                <?php if ((float)($row['in_transfer_hc'] ?? 0) > 0): ?>
+                                                    <div class="text-success fw-bold" style="font-size: 0.7rem;">
+                                                        <i class="fas fa-arrow-down"></i> <?= fmt_qty($row['in_transfer_hc']) ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                                <?php if ((float)($row['in_transfer_hc'] ?? 0) > 0 && (float)($row['out_transfer_hc'] ?? 0) > 0): ?>
+                                                    <div class="text-muted" style="font-size: 0.7rem; opacity: 0.3;">|</div>
+                                                <?php endif; ?>
+                                                <?php if ((float)($row['out_transfer_hc'] ?? 0) > 0): ?>
+                                                    <div class="text-danger fw-bold" style="font-size: 0.7rem;">
+                                                        <i class="fas fa-arrow-up"></i> <?= fmt_qty($row['out_transfer_hc']) ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endif; ?>
                                     </div>
                                 <?php else: ?>
                                     <span class="text-muted small">0</span>
