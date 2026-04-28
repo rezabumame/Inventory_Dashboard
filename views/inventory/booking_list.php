@@ -47,9 +47,9 @@ $reset_url = ($role === 'admin_klinik') ? 'index.php?page=booking&filter_today=1
 
 // Fetch Bookings
 $where = "1=1";
-if ($_SESSION['role'] == 'admin_klinik') {
-    $where .= " AND b.klinik_id = " . $_SESSION['klinik_id'];
-    // Allow admin_klinik to see completed bookings as well
+if (in_array($_SESSION['role'], ['admin_klinik', 'spv_klinik'], true)) {
+    $where .= " AND b.klinik_id = " . (int)$_SESSION['klinik_id'];
+    // Allow admin_klinik & spv_klinik to see completed bookings as well
     $where .= " AND b.status IN ('booked', 'rescheduled', 'completed') AND LOWER(COALESCE(b.booking_type, 'keep')) IN ('keep','fixed')";
 }
 if ($filter_q !== '') {
@@ -621,7 +621,7 @@ if (!empty($booking_ids)) {
 
                 <div class="col-12">
                     <div class="row g-3 align-items-end">
-                        <?php if (in_array($role, ['super_admin', 'cs'])): ?>
+                        <?php if (in_array($role, ['super_admin', 'cs'], true)): ?>
                             <div class="col-xl-3 col-lg-4 col-md-6">
                                 <label class="form-label fw-bold text-muted mb-1">Klinik</label>
                                 <select name="klinik_id" class="form-select">

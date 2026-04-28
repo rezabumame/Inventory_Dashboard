@@ -576,7 +576,7 @@ if (!empty($all_barang_ids)) {
                             <th rowspan="2">Nama Barang</th>
                             <th rowspan="2" class="text-center">Satuan</th>
                             <th colspan="3" class="text-center">Sellout</th>
-                            <th colspan="2" class="text-center">Non-Reserve<br><small style="text-transform: none; opacity: 0.8;">(Incl. Adjustment)</small></th>
+                            <th colspan="2" class="text-center">Non-Reserve</th>
                             <th colspan="2" class="text-center">Reserve-Sold</th>
                             <th colspan="2" class="text-center bg-reference">Reserve-Booked</th>
                         </tr>
@@ -667,7 +667,7 @@ $(document).ready(function() {
         ws_data.push([
             "Kode Barang", "Nama Barang", "Satuan",
             "Sellout", "", "", // Sellout (Total, Onsite, HC)
-            "Non-Reserve (Incl. Adjustment)", "", // Non-Reserve (Onsite, HC)
+            "Non-Reserve", "", // Non-Reserve (Onsite, HC)
             "Reserve-Sold", "", // Reserve-Sold (Onsite, HC)
             "Reserve-Booked", "" // Reserve-Booked (Onsite, HC)
         ]);
