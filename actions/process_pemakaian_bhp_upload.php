@@ -1,3 +1,4 @@
+<?php
 session_start();
 ob_start(); // Prevent any early output
 require_once __DIR__ . '/../config/config.php';
