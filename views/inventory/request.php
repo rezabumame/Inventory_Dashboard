@@ -9,6 +9,8 @@ require_once __DIR__ . '/../../config/settings.php';
 $items_per_page = 10;
 $current_page = isset($_GET['p']) ? max(1, (int)$_GET['p']) : 1;
 $offset = ($current_page - 1) * $items_per_page;
+$total_pages_out = 0;
+$total_pages_in = 0;
 
 function renderPagination($total_pages, $current_page) {
     if ($total_pages <= 1) return '';
@@ -44,7 +46,13 @@ $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
 $user_klinik = $_SESSION['klinik_id'];
 $active_tab = (string)($_GET['tab'] ?? '');
-if (!in_array($active_tab, ['incoming','outgoing'], true)) $active_tab = 'outgoing';
+if (!in_array($active_tab, ['incoming','outgoing'], true)) {
+    if ($user_role === 'admin_gudang') {
+        $active_tab = 'incoming';
+    } else {
+        $active_tab = 'outgoing';
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
