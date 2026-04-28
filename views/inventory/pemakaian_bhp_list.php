@@ -234,7 +234,7 @@ $q_missed = "
     LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
     WHERE $base_where $search_where_list
     GROUP BY DATE(pb.tanggal), pb.klinik_id, pb.jenis_pemakaian
-    HAVING SUM(pb.is_auto = 1) > 0 AND SUM(pb.is_auto = 0) = 0
+    HAVING SUM(pb.is_auto = 1) > 0
     ORDER BY tgl DESC, k.nama_klinik ASC
     LIMIT 100
 ";

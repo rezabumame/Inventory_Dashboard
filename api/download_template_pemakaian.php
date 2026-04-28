@@ -72,7 +72,7 @@ $q_missed = "
     LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
     WHERE $where_clause
     GROUP BY DATE(pb.tanggal), pb.klinik_id, pb.jenis_pemakaian
-    HAVING SUM(pb.is_auto = 1) > 0 AND SUM(pb.is_auto = 0) = 0
+    HAVING SUM(pb.is_auto = 1) > 0
     ORDER BY tgl DESC, k.nama_klinik ASC
     LIMIT 200
 ";
