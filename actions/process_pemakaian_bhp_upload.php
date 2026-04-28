@@ -263,37 +263,34 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
     $locks = acquire_named_locks($conn, ['inventory_bhp_process']);
     
     try {
+        // --- CLEANUP AUTO-DEDUCTION BY DATE & CLINIC ---
+        // We collect unique dates from transactions to clear them once
+        $unique_dates = [];
+        $target_klinik_id = 0;
+        foreach ($transactions as $tx) {
+            $m = $tx['items'][0];
+            $tgl = date('Y-m-d', strtotime($m['tanggal_full']));
+            $unique_dates[$tgl] = true;
+            $target_klinik_id = $m['klinik_id'];
+        }
+
+        foreach (array_keys($unique_dates) as $tgl) {
+            // Find and Delete ALL Auto BHP records for this Clinic and Date (Type: HC)
+            $res_auto = $conn->query("SELECT id FROM inventory_pemakaian_bhp WHERE is_auto = 1 AND klinik_id = $target_klinik_id AND tanggal LIKE '$tgl%' AND jenis_pemakaian = 'hc'");
+            while ($auto_row = $res_auto->fetch_assoc()) {
+                $auto_id = $auto_row['id'];
+                $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $auto_id");
+                $conn->query("DELETE FROM inventory_pemakaian_bhp WHERE id = $auto_id");
+            }
+        }
+        // ----------------------------------------------
+
         foreach ($transactions as $tx) {
             $m = $tx['items'][0];
             $tgl = date('Y-m-d', strtotime($m['tanggal_full']));
             $created = date('Y-m-d H:i:s');
             $jenis = $m['jenis'];
             
-            // --- CLEANUP AUTO-DEDUCTION ---
-            // Find booking_id by Patient Name and Date
-            $stmt_bk = $conn->prepare("
-                SELECT bp.id 
-                FROM inventory_booking_pemeriksaan bp
-                JOIN inventory_booking_pasien bpas ON bp.id = bpas.booking_id
-                WHERE bpas.nama_pasien = ? AND bp.tanggal_pemeriksaan = ? AND bp.status = 'completed'
-                LIMIT 1
-            ");
-            $stmt_bk->bind_param("ss", $m['nama_pasien'], $tgl);
-            $stmt_bk->execute();
-            $res_bk = $stmt_bk->get_result()->fetch_assoc();
-            $target_booking_id = $res_bk['id'] ?? 0;
-
-            if ($target_booking_id > 0) {
-                // Find and Delete Auto BHP records for this booking
-                $res_auto = $conn->query("SELECT id FROM inventory_pemakaian_bhp WHERE is_auto = 1 AND booking_id = $target_booking_id");
-                while ($auto_row = $res_auto->fetch_assoc()) {
-                    $auto_id = $auto_row['id'];
-                    $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $auto_id");
-                    $conn->query("DELETE FROM inventory_pemakaian_bhp WHERE id = $auto_id");
-                }
-            }
-            // ------------------------------
-
             // Generate Number
             $date_key = date('ymd', strtotime($tgl));
             $seq = next_sequence($conn, 'BHP', $date_key);
