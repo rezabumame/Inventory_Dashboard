@@ -16,6 +16,31 @@ function log_cloud($msg) {
     error_log("[BHP_UPLOAD] " . $msg);
 }
 
+function acquire_named_locks(mysqli $conn, array $lockNames, int $timeoutSeconds = 10): array {
+    $acquired = [];
+    foreach ($lockNames as $name) {
+        $esc = $conn->real_escape_string($name);
+        $r = $conn->query("SELECT GET_LOCK('$esc', " . (int)$timeoutSeconds . ") AS got");
+        $got = (int)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['got'] ?? 0) : 0);
+        if ($got !== 1) {
+            foreach ($acquired as $n) {
+                $e = $conn->real_escape_string($n);
+                $conn->query("SELECT RELEASE_LOCK('$e')");
+            }
+            throw new Exception("Sistem sedang memproses stok (lock: $name). Coba lagi sebentar.");
+        }
+        $acquired[] = $name;
+    }
+    return $acquired;
+}
+
+function release_named_locks(mysqli $conn, array $acquired): void {
+    foreach ($acquired as $name) {
+        $esc = $conn->real_escape_string($name);
+        $conn->query("SELECT RELEASE_LOCK('$esc')");
+    }
+}
+
 /**
  * Parsing date with support for multiple formats
  */
