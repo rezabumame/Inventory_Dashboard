@@ -96,7 +96,7 @@ if ($active_tab == 'list') {
                     LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
                     LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
                     LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
-                    WHERE $base_where $search_where_list";
+                    WHERE $base_where $search_where_list AND (pb.is_auto = 0 OR '$user_role' = 'super_admin')";
 
     $stmt_count = $conn->prepare($count_query);
     $all_params = array_merge($base_params, $search_params);
@@ -122,7 +122,7 @@ if ($active_tab == 'list') {
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
-        WHERE $base_where $search_where_list
+        WHERE $base_where $search_where_list AND (pb.is_auto = 0 OR '$user_role' = 'super_admin')
         ORDER BY pb.created_at DESC, pb.nomor_pemakaian DESC
         LIMIT ? OFFSET ?
     ";
@@ -140,7 +140,7 @@ if ($active_tab == 'list') {
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
-        WHERE $base_where $search_where_list
+        WHERE $base_where $search_where_list AND (pb.is_auto = 0 OR '$user_role' = 'super_admin')
           AND pb.status IN ('pending_edit', 'pending_delete', 'pending_approval_spv', 'pending_add')
         GROUP BY pb.tanggal
         ORDER BY tgl DESC
@@ -169,7 +169,7 @@ if ($active_tab == 'list') {
                         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
                         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
                         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
-                        WHERE $base_where $search_where_out AND pb.status = 'active'";
+                        WHERE $base_where $search_where_out AND (pb.is_auto = 0 OR '$user_role' = 'super_admin') AND pb.status = 'active'";
 
     $stmt_count_out = $conn->prepare($count_query_out);
     $all_params_out_c = array_merge($base_params, $search_params);
@@ -685,36 +685,44 @@ if ($default_modal_klinik_id) {
                                         $is_pending = (strpos((string) $status, 'pending') !== false || (strpos((string) $row['nomor_pemakaian'], 'REQ-ADD-') !== false && $status !== 'active'));
                                         ?>
 
-                                        <?php if ($status === 'active' && $row['is_auto'] == 0): ?>
-                                            <?php if ($can_edit_direct): ?>
-                                                <button class="btn btn-sm btn-warning edit-pemakaian" data-id="<?= $row['id'] ?>"
-                                                    data-tanggal="<?= $usage_date ?>" title="Edit"
-                                                    data-bs-toggle="modal" data-bs-target="#modalEdit">
-                                                    <i class="fas fa-edit"></i>
-                                                </button>
-                                                <?php if (!$is_over_2_days): ?>
+                                        <?php if ($status === 'active'): ?>
+                                            <div class="btn-group">
+                                                <?php if ($row['is_auto'] == 0): ?>
+                                                    <?php if ($can_edit_direct): ?>
+                                                        <button class="btn btn-sm btn-warning edit-pemakaian" data-id="<?= $row['id'] ?>"
+                                                            data-tanggal="<?= $usage_date ?>" title="Edit"
+                                                            data-bs-toggle="modal" data-bs-target="#modalEdit">
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
+                                                        <?php if (!$is_over_2_days): ?>
+                                                            <button class="btn btn-sm btn-danger delete-pemakaian" data-id="<?= $row['id'] ?>"
+                                                                data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
+                                                                data-tanggal="<?= $usage_date ?>" title="Hapus">
+                                                                <i class="fas fa-trash"></i>
+                                                            </button>
+                                                        <?php endif; ?>
+                                                    <?php elseif ($can_request_edit): ?>
+                                                        <button class="btn btn-sm btn-outline-warning edit-pemakaian"
+                                                            data-id="<?= $row['id'] ?>" data-tanggal="<?= $usage_date ?>"
+                                                            title="Edit (Lewat Hari)" data-bs-toggle="modal" data-bs-target="#modalEdit">
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
+                                                        <?php if (!$is_over_2_days): ?>
+                                                            <button class="btn btn-sm btn-outline-danger request-delete" data-id="<?= $row['id'] ?>"
+                                                                data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
+                                                                data-tanggal="<?= $usage_date ?>" title="Request Hapus (SPV)">
+                                                                <i class="fas fa-trash"></i>
+                                                            </button>
+                                                        <?php endif; ?>
+                                                    <?php endif; ?>
+                                                <?php elseif ($row['is_auto'] == 1 && $is_super_admin): ?>
                                                     <button class="btn btn-sm btn-danger delete-pemakaian" data-id="<?= $row['id'] ?>"
                                                         data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
-                                                        data-tanggal="<?= $usage_date ?>" title="Hapus">
+                                                        data-tanggal="<?= $usage_date ?>" title="Hapus (Auto BHP)">
                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                 <?php endif; ?>
-                                            <?php elseif ($can_request_edit): ?>
-                                                <button class="btn btn-sm btn-outline-warning edit-pemakaian"
-                                                    data-id="<?= $row['id'] ?>"
-                                                    data-tanggal="<?= $usage_date ?>"
-                                                    title="Edit (Lewat Hari)" data-bs-toggle="modal" data-bs-target="#modalEdit">
-                                                    <i class="fas fa-edit"></i>
-                                                </button>
-                                                <?php if (!$is_over_2_days): ?>
-                                                    <button class="btn btn-sm btn-outline-danger request-delete" data-id="<?= $row['id'] ?>"
-                                                        data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
-                                                        data-tanggal="<?= $usage_date ?>"
-                                                        title="Request Hapus (SPV)">
-                                                        <i class="fas fa-trash"></i>
-                                                    </button>
-                                                <?php endif; ?>
-                                            <?php endif; ?>
+                                            </div>
                                         <?php elseif ($is_pending): ?>
                                             <div class="d-flex align-items-center">
                                                 <span

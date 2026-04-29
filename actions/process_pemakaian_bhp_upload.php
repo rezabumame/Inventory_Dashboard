@@ -133,23 +133,38 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
         $patient_id = trim($row[1] ?? '');
         $nama_pasien = trim($row[2] ?? '');
         $layanan = trim($row[3] ?? '');
-        $kode_barang = strtolower(trim($row[9] ?? ''));
         $qty = (float)($row[5] ?? 0);
         $uom = trim($row[6] ?? '');
         $nakes_name = trim($row[7] ?? '');
         $branch_name = strtolower(trim($row[8] ?? ''));
+        $jenis_raw = strtolower(trim($row[9] ?? ''));
+        $kode_barang = strtolower(trim($row[10] ?? ''));
 
         $item = $master_items[$kode_barang] ?? null;
+        
+        // --- Improved Branch Matching (Alias/Partial) ---
         $klinik = $master_klinik[$branch_name] ?? null;
+        if (!$klinik) {
+            // Try partial match if not found exactly
+            foreach ($master_klinik as $key => $k) {
+                if ($branch_name !== '' && (strpos($key, $branch_name) !== false || strpos($branch_name, $key) !== false)) {
+                    $klinik = $k;
+                    break;
+                }
+            }
+        }
+        
         $nakes = $master_nakes[strtolower($nakes_name)] ?? null;
 
-        if (!$item) add_error($errors, $i+1, 'Kode Barang', "Barang '$kode_barang' tidak ditemukan");
-        if (!$klinik) add_error($errors, $i+1, 'Cabang', "Cabang '$branch_name' tidak ditemukan");
+        if (!$item) add_error($errors, $i+1, 'Kode Barang', "Barang '$kode_barang' tidak ditemukan (Kolom 11)");
+        if (!$klinik) add_error($errors, $i+1, 'Cabang', "Cabang '$branch_name' tidak ditemukan (Kolom 9)");
+
+        $jenis = ($jenis_raw === 'hc') ? 'hc' : 'klinik';
+        if ($jenis === 'hc' && !$nakes) {
+            add_error($errors, $i+1, 'Nama Nakes', "Untuk Jenis Pemakaian HC, Nama Nakes '$nakes_name' wajib diisi dan harus valid (Kolom 8)");
+        }
 
         if (empty($errors)) {
-            $is_hc = (!empty($nakes_name) || ($nakes['id'] ?? 0) > 0);
-            $jenis = $is_hc ? 'hc' : 'klinik';
-            
             $raw_data[] = [
                 'tanggal_full' => $iso_date,
                 'patient_id' => $patient_id,

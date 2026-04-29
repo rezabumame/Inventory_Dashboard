@@ -876,7 +876,7 @@ if ($bulk_cancel) {
 </div>
 
 <div class="modal fade" id="modalUnallocated" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="fas fa-dolly-flatbed me-2"></i>Unallocated HC — Barang Belum Teralokasi / Belum Terpeta</h5>
@@ -1066,7 +1066,7 @@ function fetchPetugasStockForSO() {
     var btnSubmit = document.getElementById('btnSubmitMassSO');
 
     if (!petugasId) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Pilih petugas terlebih dahulu.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Pilih petugas terlebih dahulu.</td></tr>';
         btnSubmit.disabled = true;
         return;
     }
@@ -1074,14 +1074,14 @@ function fetchPetugasStockForSO() {
     // Keep manually added rows
     var manualRows = Array.from(tbody.querySelectorAll('.mass-alloc-row.manually-added'));
     
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin me-2"></i>Memuat stok petugas...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin me-2"></i>Memuat stok petugas...</td></tr>';
     btnSubmit.disabled = true;
 
     fetch('api/ajax_hc_petugas_stock.php?klinik_id=' + klinikId + '&user_hc_id=' + petugasId)
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3">' + escapeHtml(data.message) + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-3">' + escapeHtml(data.message) + '</td></tr>';
                 return;
             }
             
@@ -1091,7 +1091,7 @@ function fetchPetugasStockForSO() {
             manualRows.forEach(row => tbody.appendChild(row));
             
             if (data.items.length === 0 && manualRows.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Petugas belum memiliki stok tas. Klik "Tambah Item Baru" untuk memulai.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Petugas belum memiliki stok tas. Klik "Tambah Item Baru" untuk memulai.</td></tr>';
             } else {
                 data.items.forEach(it => {
                     // Check if item already exists in manual rows to avoid duplicates
@@ -1105,14 +1105,14 @@ function fetchPetugasStockForSO() {
             filterMassAllocTable(); // Re-apply current filter
         })
         .catch(err => {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3">Gagal memuat data stok.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-3">Gagal memuat data stok.</td></tr>';
         });
 }
 
 function addMassAllocRow(data = null) {
     var tbody = document.getElementById('massAllocItemBody');
     // Clear placeholder
-    var placeholder = tbody.querySelector('td[colspan="6"]');
+    var placeholder = tbody.querySelector('td[colspan="5"]');
     if (placeholder) placeholder.closest('tr').remove();
 
     var isManual = (data === null);
@@ -1149,7 +1149,6 @@ function addMassAllocRow(data = null) {
             <input type="number" name="qty_so[]" class="form-control form-control-sm text-end so-qty-input fw-bold" 
                 step="0.0001" min="0" value="" oninput="calculateSoDiff(this)">
         </td>
-        <td class="p-1 text-end fw-bold so-diff-text small" style="width: 100px;">0</td>
         <td class="p-1" style="width: 120px;">
             <select name="uom_mode[]" class="form-select form-select-sm so-uom-select small" onchange="handleSoUomChange(this)">
                 <option value="oper">${escapeHtml(uomOper || 'Satuan')}</option>
@@ -1219,31 +1218,7 @@ function handleSoUomChange(select) {
 }
 
 function calculateSoDiff(input) {
-    var row = input.closest('tr');
-    var qtyLama = parseFloat(row.querySelector('.so-qty-lama-input').value) || 0;
-    var qtySo = parseFloat(input.value) || 0;
-    
-    var uomSelect = row.querySelector('.so-uom-select');
-    var uomMode = uomSelect.value;
-    
-    var barangSelect = row.querySelector('.so-barang-select');
-    var opt = barangSelect.options[barangSelect.selectedIndex];
-    var ratio = opt ? (parseFloat(opt.getAttribute('data-uom-ratio')) || 1) : 1;
-
-    // Convert SO to operational if needed
-    var qtySoOper = (uomMode === 'odoo') ? (qtySo / ratio) : qtySo;
-    
-    var diff = qtySoOper - qtyLama;
-    var diffText = row.querySelector('.so-diff-text');
-    diffText.textContent = (diff > 0 ? '+' : '') + fmtQty(diff);
-    
-    if (diff > 0.00001) {
-        diffText.className = 'p-1 text-end fw-bold so-diff-text small text-success';
-    } else if (diff < -0.00001) {
-        diffText.className = 'p-1 text-end fw-bold so-diff-text small text-danger';
-    } else {
-        diffText.className = 'p-1 text-end fw-bold so-diff-text small text-muted';
-    }
+    // Diff calculation remains but UI update is removed
 }
 
 function filterMassAllocTable() {
@@ -1652,13 +1627,12 @@ function fmtQty(v) {
                                         <th class="ps-3">Barang</th>
                                         <th class="text-end" style="width:100px;">Stok Lama</th>
                                         <th class="text-end" style="width:120px;">Hasil SO</th>
-                                        <th class="text-end" style="width:100px;">Selisih</th>
                                         <th class="text-center" style="width:120px;">UOM</th>
                                         <th class="text-center" style="width:50px;">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody id="massAllocItemBody">
-                                    <tr><td colspan="6" class="text-center text-muted py-3 small">Pilih petugas terlebih dahulu.</td></tr>
+                                    <tr><td colspan="5" class="text-center text-muted py-3 small">Pilih petugas terlebih dahulu.</td></tr>
                                 </tbody>
                             </table>
                         </div>

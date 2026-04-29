@@ -106,6 +106,7 @@ $headers = [
     'Satuan (UoM)',
     'Nama Nakes',
     'Nakes Branch',
+    'Jenis Pemakaian',
     'Kode Barang',
 ];
 
@@ -133,7 +134,11 @@ if (!empty($missed_uploads)) {
             bp.order_id,
             bp.nakes_hc,
             (SELECT GROUP_CONCAT(DISTINCT bpp.nama_pasien ORDER BY bpp.id SEPARATOR ', ')
-             FROM inventory_booking_pasien bpp WHERE bpp.booking_id = pb.booking_id) AS nama_pasien_list
+             FROM inventory_booking_pasien bpp WHERE bpp.booking_id = pb.booking_id) AS nama_pasien_list,
+            (SELECT GROUP_CONCAT(DISTINCT pg.nama_pemeriksaan ORDER BY pg.nama_pemeriksaan SEPARATOR ', ')
+             FROM inventory_booking_pasien bpp2
+             JOIN inventory_pemeriksaan_grup pg ON bpp2.pemeriksaan_grup_id = pg.id
+             WHERE bpp2.booking_id = pb.booking_id) AS layanan_list
         FROM inventory_pemakaian_bhp pb
         JOIN inventory_pemakaian_bhp_detail pbd ON pbd.pemakaian_bhp_id = pb.id
         JOIN inventory_barang b ON b.id = pbd.barang_id
@@ -178,16 +183,21 @@ if (!empty($missed_uploads)) {
             if ($qty <= 0) {
                 continue;
             }
+            $layanan = trim((string)($row['layanan_list'] ?? ''));
+            if ($layanan === '') {
+                $layanan = 'Auto (Booking / sistem)';
+            }
             $data[] = [
                 format_template_appointment((string)($row['tanggal'] ?? $tgl . ' 00:00:00')),
                 $patient_id,
                 $nama_pasien,
-                'Auto (Booking / sistem)',
+                $layanan,
                 (string)($row['nama_barang'] ?? ''),
                 (string)$qty,
                 (string)($row['satuan_row'] ?? ''),
                 $nakes,
                 $branch,
+                strtoupper((string)($row['jenis_pemakaian'] ?? 'KLINIK')),
                 strtolower(trim((string)($row['kode_barang'] ?? ''))),
             ];
         }
@@ -210,7 +220,8 @@ $xlsx->setColWidth(6, 10);
 $xlsx->setColWidth(7, 15);
 $xlsx->setColWidth(8, 25);
 $xlsx->setColWidth(9, 28);
-$xlsx->setColWidth(10, 15);
+$xlsx->setColWidth(10, 18);
+$xlsx->setColWidth(11, 15);
 
 $suffix = !empty($missed_uploads) ? '_gap_auto_' . preg_replace('/[^0-9-]/', '', $start_date) . '_' . preg_replace('/[^0-9-]/', '', $end_date) : '';
 $filename = 'Template_BHP_Baru' . $suffix . '_' . date('Ymd') . '.xlsx';

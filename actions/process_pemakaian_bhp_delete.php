@@ -52,15 +52,16 @@ try {
     $is_today = ($usage_date === $today || $usage_date === $yesterday);
     $is_over_2_days = !$is_today;
 
-    if ($is_over_2_days) {
-        throw new Exception("Data yang sudah lewat 2 hari tidak dapat dihapus, hanya diperbolehkan untuk edit.");
-    }
-    
     $is_creator = $header['created_by'] == $user_id;
     $is_admin_klinik = $_SESSION['role'] === 'admin_klinik';
     $is_super_admin = $_SESSION['role'] === 'super_admin';
     $reason = $_POST['reason'] ?? '';
 
+    // Super Admin can delete anything
+    if (!$is_super_admin && $is_over_2_days) {
+        throw new Exception("Data yang sudah lewat 2 hari tidak dapat dihapus, hanya diperbolehkan untuk edit.");
+    }
+    
     if (!$is_super_admin) {
         if ($is_today) {
             // Same day: Creator or Admin Klinik of the same clinic can delete

@@ -3077,8 +3077,8 @@ if (!empty($booking_ids)) {
                                     <td class="pe-4">
                                         <div class="reschedule-fields-${p.id}" style="display:none;">
                                             <div class="d-flex gap-1 mb-1">
-                                                <input type="date" class="form-control form-control-sm res-date" min="<?= date('Y-m-d') ?>" style="width: 130px;">
-                                                <input type="time" class="form-control form-control-sm res-time" style="width: 100px;">
+                                                <input type="date" class="form-control form-control-sm res-date" min="<?= date('Y-m-d') ?>" style="width: 135px;">
+                                                <input type="time" class="form-control form-control-sm res-time" style="width: 105px;">
                                             </div>
                                             <input type="text" class="form-control form-control-sm res-reason" placeholder="Alasan Reschedule">
                                         </div>
@@ -3116,8 +3116,8 @@ if (!empty($booking_ids)) {
                                     <td class="pe-4">
                                         <div class="reschedule-group-fields-${groupId}" style="display:none;">
                                             <div class="d-flex gap-1 mb-1">
-                                                <input type="date" class="form-control form-control-sm grp-res-date" min="<?= date('Y-m-d') ?>" style="width: 130px;">
-                                                <input type="time" class="form-control form-control-sm grp-res-time" style="width: 100px;">
+                                                <input type="date" class="form-control form-control-sm grp-res-date" min="<?= date('Y-m-d') ?>" style="width: 135px;">
+                                                <input type="time" class="form-control form-control-sm grp-res-time" style="width: 105px;">
                                             </div>
                                             <input type="text" class="form-control form-control-sm grp-res-reason" placeholder="Alasan Reschedule Massal">
                                         </div>
@@ -3149,8 +3149,8 @@ if (!empty($booking_ids)) {
                                         <td class="pe-4 py-2">
                                             <div class="reschedule-fields-${p.id}" style="display:none;">
                                                 <div class="d-flex gap-1 mb-1">
-                                                    <input type="date" class="form-control form-control-sm res-date" min="<?= date('Y-m-d') ?>" style="width: 120px;">
-                                                    <input type="time" class="form-control form-control-sm res-time" style="width: 80px;">
+                                                    <input type="date" class="form-control form-control-sm res-date" min="<?= date('Y-m-d') ?>" style="width: 130px;">
+                                                    <input type="time" class="form-control form-control-sm res-time" style="width: 100px;">
                                                 </div>
                                                 <input type="text" class="form-control form-control-sm res-reason" style="font-size: 0.7rem;" placeholder="Alasan Reschedule">
                                             </div>
