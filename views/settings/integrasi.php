@@ -390,7 +390,7 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                         </div>
                         <div class="col-md-7 mode-interval" style="display: <?= $mode === 'interval' ? 'block' : 'none' ?>;">
                             <label class="form-label">Interval Menit</label>
-                            <input type="number" class="form-control" name="interval_minutes" value="<?= $interval ?>" min="1">
+                            <input type="number" class="form-control" name="interval_minutes" value="<?= $interval ?>">
                         </div>
                         <div class="col-md-4 mode-weekly" style="display: <?= $mode === 'weekly' ? 'block' : 'none' ?>;">
                             <label class="form-label">Hari Eksekusi</label>
