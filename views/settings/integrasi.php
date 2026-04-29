@@ -42,21 +42,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $token = trim((string)($_POST['public_stok_token'] ?? ''));
         set_setting('public_stok_token', $token);
         $msg = '<div class="alert alert-success">Token akses publik tersimpan.</div>';
-    } else {
-        $enabled = isset($_POST['enabled']) ? '1' : '0';
+    } else if ($form_type === 'schedule') {
+        $enabled_input = $_POST['enabled'] ?? '0';
+        $enabled = ($enabled_input === '1') ? '1' : '0';
+        
         $scheduler_token = trim((string)($_POST['scheduler_token'] ?? ''));
         set_setting('odoo_sync_token', $scheduler_token);
         set_setting('odoo_sync_enabled', $enabled);
-        if ($enabled === '1') {
-            $mode = $_POST['mode'] ?? 'manual';
-            $interval = (string) max(0, (int)($_POST['interval_minutes'] ?? 0));
-            $weekday = (string) max(0, min(6, (int)($_POST['weekday'] ?? 1)));
-            $time = $_POST['time'] ?? '20:00';
-            set_setting('odoo_sync_mode', $mode);
-            set_setting('odoo_sync_interval_minutes', $interval);
-            set_setting('odoo_sync_weekday', $weekday);
-            set_setting('odoo_sync_time', $time);
+        
+        // Always save mode, weekday, and time if they are in the POST
+        // to avoid confusion when user changes them while sync is off
+        if (isset($_POST['mode'])) {
+            set_setting('odoo_sync_mode', $_POST['mode']);
         }
+        if (isset($_POST['interval_minutes'])) {
+            $interval = (string) max(1, (int)$_POST['interval_minutes']);
+            set_setting('odoo_sync_interval_minutes', $interval);
+        }
+        if (isset($_POST['weekday'])) {
+            $weekday = (string) max(0, min(6, (int)$_POST['weekday']));
+            set_setting('odoo_sync_weekday', $weekday);
+        }
+        if (isset($_POST['time'])) {
+            set_setting('odoo_sync_time', $_POST['time']);
+        }
+        
         $msg = '<div class="alert alert-success">Pengaturan jadwal tersimpan.</div>';
     }
 }
@@ -361,7 +371,7 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                     <i class="fas fa-calendar-alt"></i>
                     <span>Sinkronisasi Otomatis</span>
                     <div class="ms-auto form-check form-switch">
-                        <input class="form-check-input" type="checkbox" id="enabled" name="enabled" <?= $enabled ? 'checked' : '' ?> style="cursor: pointer;">
+                        <input class="form-check-input" type="checkbox" id="enabled" <?= $enabled ? 'checked' : '' ?> style="cursor: pointer;">
                     </div>
                 </div>
                 <form method="POST" class="row g-3">
