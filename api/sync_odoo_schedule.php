@@ -135,7 +135,6 @@ function run_once_sched($url, $headers) {
     $resp = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err = curl_error($ch);
-    curl_close($ch);
     $payload = json_decode((string)$resp, true);
     $ok = ($code >= 200 && $code < 300 && is_array($payload) && ($payload['success'] ?? false));
     return ['ok' => $ok, 'code' => $code, 'payload' => $payload, 'err' => $err, 'raw' => $resp];

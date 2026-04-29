@@ -276,9 +276,22 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
     $data = $payload['data'];
     $transactions = [];
     foreach ($data as $d) {
-        // Group items by Patient + Date to create Header records
-        $key = $d['patient_id'] . '|' . date('Y-m-d', strtotime($d['tanggal_full']));
+        // Group items by Nakes (user_hc_id) + Klinik + Jenis + Date to create Consolidated Header records
+        // This prevents the list from being cluttered with one record per patient.
+        $tgl_key = date('Y-m-d', strtotime($d['tanggal_full']));
+        $key = $d['jenis'] . '|' . $d['klinik_id'] . '|' . $d['user_hc_id'] . '|' . $tgl_key;
+        
+        if (!isset($transactions[$key])) {
+            $transactions[$key] = [
+                'meta' => $d,
+                'items' => [],
+                'patients' => []
+            ];
+        }
         $transactions[$key]['items'][] = $d;
+        if (!empty($d['nama_pasien'])) {
+            $transactions[$key]['patients'][$d['nama_pasien']] = true;
+        }
     }
 
     $conn->begin_transaction();
@@ -290,7 +303,7 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
         $unique_dates = [];
         $target_klinik_id = 0;
         foreach ($transactions as $tx) {
-            $m = $tx['items'][0];
+            $m = $tx['meta'];
             $tgl = date('Y-m-d', strtotime($m['tanggal_full']));
             $unique_dates[$tgl] = true;
             $target_klinik_id = $m['klinik_id'];
@@ -308,7 +321,7 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
         // ----------------------------------------------
 
         foreach ($transactions as $tx) {
-            $m = $tx['items'][0];
+            $m = $tx['meta'];
             $tgl = date('Y-m-d', strtotime($m['tanggal_full']));
             $created = date('Y-m-d H:i:s');
             $jenis = $m['jenis'];
@@ -323,7 +336,12 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
             $prefix = "BHP-" . $k_code;
             $seq = next_sequence($conn, $prefix, $date_ym);
             $nomor = $prefix . "-" . $date_ym . "-" . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
-            $note = $m['nama_pasien'] . " (" . $m['patient_id'] . ") - " . $m['layanan'];
+            
+            $patient_count = count($tx['patients']);
+            $note = "Pemakaian " . strtoupper($jenis) . " oleh " . $m['nama_nakes'] . " - Gabungan $patient_count Pasien";
+            if ($jenis === 'klinik') {
+                $note = "Pemakaian Klinik - Gabungan $patient_count Pasien";
+            }
 
             // Insert Header
             $st = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')");
