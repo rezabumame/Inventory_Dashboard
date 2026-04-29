@@ -111,7 +111,7 @@ function post_lark_text_sched($text) {
     lark_post_text($url, $text);
 }
 
-$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/'));
 $dir1 = rtrim(dirname($script), '/');          // e.g. /bumame_iventory2/api
@@ -127,6 +127,8 @@ function run_once_sched($url, $headers) {
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
     curl_setopt($ch, CURLOPT_TIMEOUT, 300);
     if (!empty($headers)) curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     if (session_id() !== '') curl_setopt($ch, CURLOPT_COOKIE, session_name() . '=' . session_id());

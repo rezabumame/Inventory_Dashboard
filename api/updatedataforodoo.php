@@ -145,7 +145,7 @@ if (!$lock_ok) {
 }
 
 try {
-    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
     $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/'));
     // Normalisasi script name untuk handle double slashes //api/...
@@ -158,6 +158,8 @@ try {
     $ch = curl_init($targetUrl);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
     curl_setopt($ch, CURLOPT_TIMEOUT, 300);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['X-Internal-Token: ' . $sysToken]);
     $resp = curl_exec($ch);
