@@ -105,8 +105,8 @@ $headers = [
     'Jumlah',
     'Satuan (UoM)',
     'Nama Nakes',
-    'Nakes Branch',
     'Jenis Pemakaian',
+    'Nakes Branch',
     'Kode Barang',
 ];
 
@@ -196,8 +196,8 @@ if (!empty($missed_uploads)) {
                 (string)$qty,
                 (string)($row['satuan_row'] ?? ''),
                 $nakes,
-                $branch,
                 strtoupper((string)($row['jenis_pemakaian'] ?? 'KLINIK')),
+                $branch,
                 strtolower(trim((string)($row['kode_barang'] ?? ''))),
             ];
         }

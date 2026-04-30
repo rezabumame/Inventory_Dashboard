@@ -136,8 +136,8 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
         $qty = (float)($row[5] ?? 0);
         $uom = trim($row[6] ?? '');
         $nakes_name = trim($row[7] ?? '');
-        $branch_name = strtolower(trim($row[8] ?? ''));
-        $jenis_raw = strtolower(trim($row[9] ?? ''));
+        $jenis_raw = strtolower(trim($row[8] ?? ''));
+        $branch_name = strtolower(trim($row[9] ?? ''));
         $kode_barang = strtolower(trim($row[10] ?? ''));
 
         $item = $master_items[$kode_barang] ?? null;
