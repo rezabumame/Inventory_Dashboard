@@ -498,14 +498,10 @@ if ($can_cs_edit) {
                 examOptionsEdit = '<option value="">Pilih pemeriksaan...</option>';
                 if (data && data.length > 0) {
                     data.forEach(function(exam) {
-                        var readyText = '';
-                        if (exam.no_mapping) {
-                            readyText = '(Input Manual di BHP)';
-                        } else {
-                            readyText = exam.is_available ? `(Ready: ${exam.qty})` : '(STOK KOSONG)';
-                        }
+
                         var textClass = exam.is_available ? '' : 'text-danger';
-                        examOptionsEdit += `<option value="${exam.id}" data-available="${exam.is_available ? 1 : 0}" class="${textClass}">${exam.name} ${readyText}</option>`;
+                        examOptionsEdit += `<option value="${exam.id}" data-available="${exam.is_available ? 1 : 0}" class="${textClass}">${exam.name}</option>`;
+
                     });
                 } else {
                     examOptionsEdit = '<option value="">Tidak ada pemeriksaan tersedia</option>';
