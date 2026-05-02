@@ -1,6 +1,6 @@
 <?php
 
-check_role(['cs', 'super_admin', 'admin_klinik']);
+check_role(['cs', 'super_admin', 'admin_klinik', 'spv_klinik']);
 require_once __DIR__ . '/../../lib/stock.php';
 
 
@@ -837,18 +837,16 @@ if (!empty($booking_ids)) {
                                     <div class="fw-semibold text-dark" style="font-size: 0.9rem;">
                                         <?= htmlspecialchars($row['nama_klinik']) ?></div>
                                 </td>
-                                <td>
+                                <?php
+                                $jam = (string) ($row['jam_layanan'] ?? '-');
+                                if (preg_match('/^\d{1,2}$/', $jam)) $jam .= ':00';
+                                ?>
+                                <td data-order="<?= date('Y-m-d', strtotime($row['tanggal_pemeriksaan'])) . ' ' . $jam ?>">
                                     <div class="fw-semibold"><?= date('d M Y', strtotime($row['tanggal_pemeriksaan'])) ?>
                                     </div>
-                                    <div class="booking-muted">
+                                    <div class="booking-muted" style="font-size: 0.75rem;">
                                         <i class="fas fa-clock me-1"></i>
-                                        <?php
-                                        $jam = (string) ($row['jam_layanan'] ?? '-');
-                                        // If time is just HH (like "12"), append ":00" for display
-                                        if (preg_match('/^\d{1,2}$/', $jam))
-                                            $jam .= ':00';
-                                        echo htmlspecialchars($jam);
-                                        ?>
+                                        <?= htmlspecialchars($jam) ?>
                                     </div>
                                 </td>
                                 <td>
