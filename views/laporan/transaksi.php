@@ -137,14 +137,14 @@ if ($can_filter_klinik) {
     }
 
     .table-custom thead th {
-        background-color: var(--slate-50);
-        color: var(--slate-600);
-        font-weight: 700;
+        background-color: var(--bumame-blue);
+        color: white;
+        font-weight: 600;
         text-transform: uppercase;
-        font-size: 0.7rem;
-        letter-spacing: 0.05em;
-        padding: 1.2rem 1rem;
-        border-bottom: 2px solid var(--slate-100);
+        font-size: 0.75rem;
+        letter-spacing: 0.025em;
+        padding: 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .table-custom tbody tr {
@@ -243,17 +243,22 @@ if ($can_filter_klinik) {
     .fw-800 { font-weight: 800; }
 </style>
 
-<div class="container-fluid trans-container py-4">
+<div class="container-fluid py-2">
     <!-- Header Section -->
-    <div class="page-header d-flex justify-content-between align-items-center">
-        <div>
-            <h1 class="h3 mb-1 fw-800" style="color: var(--bumame-blue); letter-spacing: -0.02em;">
-                Riwayat Transaksi Stok
+    <div class="row mb-3 align-items-center">
+        <div class="col">
+            <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
+                <i class="fas fa-history me-2"></i>Riwayat Transaksi Stok
             </h1>
-            <p class="text-muted mb-0 small fw-500">Monitor arus masuk dan keluar barang secara real-time</p>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
+                    <li class="breadcrumb-item active">Riwayat Transaksi</li>
+                </ol>
+            </nav>
         </div>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-excel shadow-sm" onclick="exportExcel()">
+        <div class="col-auto">
+            <button type="button" class="btn btn-success shadow-sm px-4" onclick="exportExcel()" style="border-radius: 10px; font-weight: 600;">
                 <i class="fas fa-file-excel me-2"></i>Export Excel
             </button>
         </div>
