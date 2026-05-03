@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../config/settings.php';
 require_once __DIR__ . '/../../lib/stock.php';
-check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'cs', 'petugas_hc']);
+check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'cs', 'petugas_hc']);
 try {
     $conn->query("
         INSERT INTO inventory_barang (odoo_product_id, kode_barang, nama_barang, satuan, stok_minimum, kategori)
@@ -15,7 +15,7 @@ try {
 
 $can_filter_klinik = in_array($_SESSION['role'], ['super_admin', 'admin_gudang', 'cs']);
 $is_cs = ($_SESSION['role'] == 'cs');
-$can_view_monitoring = in_array($_SESSION['role'], ['super_admin', 'admin_gudang', 'admin_klinik']);
+$can_view_monitoring = in_array($_SESSION['role'], ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik']);
 $active_tab = 'stok'; // Set default tab
 
 $selected_klinik = '';

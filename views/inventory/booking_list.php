@@ -34,7 +34,7 @@ $filter_end = (string) ($_GET['end_date'] ?? '');
 $filter_q = trim((string) ($_GET['q'] ?? ''));
 $has_filters = ($show_all || isset($_GET['filter_today']) || $filter_tujuan !== '' || $filter_status !== '' || $filter_tipe !== '' || $filter_fu !== '' || $filter_klinik !== '' || $filter_start !== '' || $filter_end !== '' || $filter_q !== '');
 if (!$has_filters) {
-    if ($role === 'admin_klinik') {
+    if ($role === 'admin_klinik' || $role === 'spv_klinik') {
         $filter_today = true;
     } else {
         $show_all = true;
@@ -43,7 +43,7 @@ if (!$has_filters) {
 }
 if ($show_all)
     $filter_today = false;
-$reset_url = ($role === 'admin_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
+$reset_url = ($role === 'admin_klinik' || $role === 'spv_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
 
 // Fetch Bookings
 $where = "1=1";
@@ -923,7 +923,7 @@ if (!empty($booking_ids)) {
 
                                         <div class="action-drawer">
                                             <?php if (in_array($row['status'], ['booked', 'rescheduled'])): ?>
-                                                <?php if ($is_super_admin || $is_admin_klinik): ?>
+                                                <?php if ($is_super_admin || $is_admin_klinik || $is_spv_klinik): ?>
                                                     <button type="button" class="btn-drawer-icon text-info" title="Move"
                                                         onclick="openMoveModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>', '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>');">
                                                         <i class="fas fa-exchange-alt"></i>
@@ -941,7 +941,7 @@ if (!empty($booking_ids)) {
                                                     </button>
                                                 <?php endif; ?>
 
-                                                <?php if ($is_admin_klinik || $is_super_admin): ?>
+                                                <?php if ($is_admin_klinik || $is_spv_klinik || $is_super_admin): ?>
                                                     <?php if ((int) ($row['butuh_fu'] ?? 0) === 0): ?>
                                                         <button type="button" class="btn-drawer-icon text-danger" title="FU"
                                                             onclick="return confirmButuhFU(<?= (int) $row['id'] ?>);">

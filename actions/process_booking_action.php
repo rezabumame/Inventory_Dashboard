@@ -11,7 +11,7 @@ require_once __DIR__ . '/../includes/history_helper.php';
 header('Content-Type: application/json');
 
 // Check role access
-check_role(['super_admin', 'admin_klinik', 'cs']);
+check_role(['super_admin', 'admin_klinik', 'spv_klinik', 'cs']);
 
 $action = (string)($_POST['action'] ?? ($_GET['action'] ?? ''));
 $id = (int)($_POST['id'] ?? ($_GET['id'] ?? 0));
@@ -38,7 +38,7 @@ if (!$booking || !in_array($booking['status'], ['booked', 'rescheduled', 'pendin
     $_SESSION['error'] = 'Booking tidak ditemukan atau sudah diproses';
     redirect('index.php?page=booking');
 }
-if ($role === 'admin_klinik') {
+if ($role === 'admin_klinik' || $role === 'spv_klinik') {
     $userKlinik = (int)($_SESSION['klinik_id'] ?? 0);
     if ((int)($booking['klinik_id'] ?? 0) !== $userKlinik) {
         $_SESSION['error'] = 'Access denied';
@@ -88,7 +88,7 @@ try {
             break;
         
         case 'done':
-            if (!in_array($role, ['admin_klinik', 'super_admin'], true)) {
+            if (!in_array($role, ['admin_klinik', 'spv_klinik', 'super_admin'], true)) {
                 throw new Exception('Access denied');
             }
 
@@ -221,7 +221,7 @@ try {
             break;
 
         case 'reschedule':
-            if (!in_array($role, ['admin_klinik', 'super_admin', 'cs'], true)) {
+            if (!in_array($role, ['admin_klinik', 'spv_klinik', 'super_admin', 'cs'], true)) {
                 throw new Exception('Access denied');
             }
             $new_date = $_POST['new_date'] ?? '';
@@ -257,7 +257,7 @@ try {
             break;
 
         case 'done_partial':
-            if (!in_array($role, ['admin_klinik', 'super_admin'], true)) {
+            if (!in_array($role, ['admin_klinik', 'spv_klinik', 'super_admin'], true)) {
                 throw new Exception('Access denied');
             }
             $done_ids = $_POST['done_ids'] ?? []; // Array of ids
@@ -476,7 +476,7 @@ try {
             break;
 
         case 'fu':
-            if (!in_array($role, ['admin_klinik', 'super_admin'], true)) {
+            if (!in_array($role, ['admin_klinik', 'spv_klinik', 'super_admin'], true)) {
                 throw new Exception('Access denied');
             }
             $conn->query("UPDATE inventory_booking_pemeriksaan SET butuh_fu = 1 WHERE id = $id");
@@ -619,7 +619,7 @@ try {
             
         case 'move':
             // Move booking
-            if (!in_array($role, ['admin_klinik', 'super_admin'], true)) {
+            if (!in_array($role, ['admin_klinik', 'spv_klinik', 'super_admin'], true)) {
                 throw new Exception('Access denied');
             }
             $new_status = (string)($_POST['new_status'] ?? ($_GET['new_status'] ?? ''));
@@ -673,7 +673,7 @@ try {
             
         case 'adjust':
             // Adjust pax - add additional pax with specific exams
-            if (!in_array($role, ['admin_klinik', 'super_admin'], true)) {
+            if (!in_array($role, ['admin_klinik', 'spv_klinik', 'super_admin'], true)) {
                 throw new Exception('Access denied');
             }
             $additional_pax = (int)($_POST['additional_pax'] ?? 0);
@@ -776,7 +776,7 @@ try {
     // Notify Google Sheets
     notify_gsheet_booking($conn, $id, 'booking_updated');
 
-    $return_url = ($role === 'admin_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
+    $return_url = ($role === 'admin_klinik' || $role === 'spv_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
     
     if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
         $response = ['success' => true, 'message' => $msg, 'redirect' => $return_url];
@@ -793,7 +793,7 @@ try {
 } catch (Exception $e) {
     $conn->rollback();
     $msg_err = $e->getMessage();
-    $return_url = ($role === 'admin_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
+    $return_url = ($role === 'admin_klinik' || $role === 'spv_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
     
     if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
         echo json_encode(['success' => false, 'message' => $msg_err]);
