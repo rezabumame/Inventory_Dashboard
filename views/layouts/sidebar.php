@@ -116,11 +116,16 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
-        <?php if ($role === 'super_admin' || in_array($role, ['admin_klinik', 'cs'])): ?>
+        <?php if ($role === 'super_admin' || in_array($role, ['admin_klinik', 'spv_klinik', 'cs'])): ?>
         <div class="sidebar-heading">MASTER DATA</div>
         <a href="index.php?page=pemeriksaan" class="sidebar-link <?= $current_page == 'pemeriksaan' ? 'active' : '' ?>">
             <i class="fas fa-notes-medical"></i> <?= ($role === 'super_admin') ? 'Master Pemeriksaan' : 'Daftar Pemeriksaan' ?>
         </a>
+        <?php if (in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik'])): ?>
+        <a href="index.php?page=petugas_hc" class="sidebar-link <?= $current_page == 'petugas_hc' ? 'active' : '' ?>">
+            <i class="fas fa-user-nurse"></i> Petugas HC
+        </a>
+        <?php endif; ?>
         <?php endif; ?>
 
         <?php if ($role === 'super_admin'): ?>
@@ -145,12 +150,7 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik'])): ?>
-        <div class="sidebar-heading">MAPPING HC</div>
-        <a href="index.php?page=petugas_hc" class="sidebar-link <?= $current_page == 'petugas_hc' ? 'active' : '' ?>">
-            <i class="fas fa-user-nurse"></i> Petugas HC
-        </a>
-        <?php endif; ?>
+
 
         <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'])): ?>
         <div class="sidebar-heading">LAPORAN</div>
