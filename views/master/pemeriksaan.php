@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/settings.php';
-check_role(['super_admin', 'admin_klinik', 'cs']);
+check_role(['super_admin', 'admin_klinik', 'spv_klinik', 'cs']);
 
 $role = $_SESSION['role'] ?? '';
 $can_edit = ($role === 'super_admin');

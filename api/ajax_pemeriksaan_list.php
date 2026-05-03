@@ -4,7 +4,7 @@ require_once __DIR__ . '/../config/database.php';
 
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['super_admin', 'admin_klinik', 'cs'])) {
+if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['super_admin', 'admin_klinik', 'spv_klinik', 'cs'])) {
     echo json_encode([
         "draw" => 0,
         "recordsTotal" => 0,
