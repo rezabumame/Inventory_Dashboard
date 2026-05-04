@@ -1,4 +1,13 @@
 <?php
+// Session configuration (12 hours)
+$session_lifetime = 12 * 60 * 60; // 43200 seconds
+ini_set('session.gc_maxlifetime', $session_lifetime);
+session_set_cookie_params($session_lifetime);
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Asia/Jakarta');
 
 // Robust HTTPS detection (supports reverse proxy/CDN)

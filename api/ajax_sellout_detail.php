@@ -1,5 +1,4 @@
 <?php
-session_start();
 require_once __DIR__ . '/../config/database.php';
 
 if (!isset($_POST['barang_id']) || !isset($_POST['klinik_id'])) {
