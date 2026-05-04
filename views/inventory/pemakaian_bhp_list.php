@@ -1,4 +1,5 @@
 <?php
+// Automation Test: Pre-push Hook
 // Check access
 $allowed_roles = ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'petugas_hc'];
 if (!in_array($_SESSION['role'], $allowed_roles)) {
