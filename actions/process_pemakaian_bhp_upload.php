@@ -231,6 +231,7 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
               AND pb.jenis_pemakaian = ?
               AND pbd.barang_id = ?
               AND pb.status = 'active'
+              AND pb.is_auto = 1
         ");
         $stmt_s->bind_param("issi", $kid, $tgl, $g['jenis'], $bid);
         $stmt_s->execute();
@@ -251,6 +252,17 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
         ];
     }
 
+    // Step 1.3: Check for Backdate (older than H-1)
+    $today = date('Y-m-d');
+    $yesterday = date('Y-m-d', strtotime('-1 day'));
+    $has_backdate = false;
+    foreach ($excel_groups as $g) {
+        if ($g['tanggal'] !== $today && $g['tanggal'] !== $yesterday) {
+            $has_backdate = true;
+            break;
+        }
+    }
+
     $token = bin2hex(random_bytes(16));
     $_SESSION['pemakaian_bhp_upload_preview'][$token] = ['data' => $raw_data];
 
@@ -259,6 +271,7 @@ function process_initial_excel($conn, $user_id, $is_ajax) {
         'token' => $token, 
         'diffs' => $diffs,
         'has_auto' => $has_auto_global,
+        'has_backdate' => $has_backdate,
         'diff_count' => count($diffs),
         'message' => count($diffs) > 0 ? 'Ditemukan perbedaan data antara Excel dan Sistem.' : 'Tidak ada perbedaan. Data upload sudah sama dengan data sistem.'
     ]);
@@ -343,9 +356,26 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
                 $note = "Pemakaian Klinik - Gabungan $patient_count Pasien";
             }
 
+            // Backdate Approval Logic
+            $today = date('Y-m-d');
+            $yesterday = date('Y-m-d', strtotime('-1 day'));
+            $status = 'active';
+            $backdate_reason = null;
+            $change_source = null;
+            $change_actor = null;
+            $change_reason_code = null;
+
+            if ($tgl !== $today && $tgl !== $yesterday) {
+                $status = 'pending_approval_spv';
+                $backdate_reason = $_POST['backdate_reason'] ?? '';
+                $change_source = $_POST['change_source'] ?? '';
+                $change_actor = $_POST['change_actor'] ?? '';
+                $change_reason_code = $_POST['change_reason_code'] ?? '';
+            }
+
             // Insert Header
-            $st = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')");
-            $st->bind_param("sssiisis", $nomor, $tgl, $jenis, $m['klinik_id'], $m['user_hc_id'], $note, $user_id, $created);
+            $st = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at, status, alasan_keterlambatan, change_source, change_actor_name, change_reason_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $st->bind_param("sssiisissssss", $nomor, $tgl, $jenis, $m['klinik_id'], $m['user_hc_id'], $note, $user_id, $created, $status, $backdate_reason, $change_source, $change_actor, $change_reason_code);
             $st->execute();
             $pid = $conn->insert_id;
 

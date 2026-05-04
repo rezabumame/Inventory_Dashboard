@@ -1921,164 +1921,8 @@ if ($default_modal_klinik_id) {
             };
 
             if (userRole === 'admin_klinik' && isPastDay) {
-                const reasonMap = {
-                    wrong_qty: 'Salah input jumlah/kuantitas item',
-                    wrong_item: 'Salah memilih jenis barang/BHP',
-                    wrong_date: 'Koreksi tanggal transaksi pemakaian',
-                    wrong_nakes: 'Koreksi data petugas HC/Nakes',
-                    wrong_klinik: 'Koreksi data klinik/lokasi',
-                    admin_libur: 'Admin sedang libur',
-                    other_admin: 'Lainnya (Koreksi Administrasi)'
-                };
-                const sourceMap = {
-                    admin_logistik: 'Admin Logistik',
-                    nakes: 'Nakes',
-                    sistem_integrasi: 'Sistem/Integrasi'
-                };
-
-                Swal.fire({
-                    title: 'Request Approval (Tambah Data Backdate)',
-                    html: `
-                    <div class="text-start p-2">
-                        <div class="alert alert-warning small py-2 mb-3">
-                            <i class="fas fa-exclamation-triangle me-2"></i>Tanggal pemakaian lebih dari H-2 memerlukan approval SPV.
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted mb-1">
-                                <i class="fas fa-info-circle me-1"></i> Alasan Penambahan <span class="text-danger">*</span>
-                            </label>
-                            <select id="swalReasonCodeAdd" class="form-select shadow-sm">
-                                <option value="">-- Pilih Alasan --</option>
-                                ${Object.entries(reasonMap).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
-                            </select>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted mb-1">
-                                <i class="fas fa-search me-1"></i> Sumber Informasi <span class="text-danger">*</span>
-                            </label>
-                            <select id="swalChangeSourceAdd" class="form-select shadow-sm">
-                                <option value="">-- Pilih Sumber --</option>
-                                ${Object.entries(sourceMap).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
-                            </select>
-                        </div>
-                        
-                        <div class="mb-1">
-                            <label class="form-label fw-bold small text-muted mb-1">
-                                <i class="fas fa-user-check me-1"></i> Pelaku / Asal Permintaan <span class="text-danger">*</span>
-                            </label>
-                            <div id="swalActorContainerAdd">
-                                <select id="swalChangeActorAdd" class="form-select shadow-sm">
-                                    <option value="">-- Pilih Pelaku --</option>
-                                </select>
-                            </div>
-                            <div class="form-text small" style="font-size: 0.75rem;">Siapa yang meminta atau bertanggung jawab atas penambahan data terlambat ini?</div>
-                        </div>
-                    </div>
-                `,
-                    showCancelButton: true,
-                    confirmButtonText: 'Lanjut',
-                    cancelButtonText: 'Batal',
-                    confirmButtonColor: '#204EAB',
-                    customClass: {
-                        popup: 'rounded-4 shadow-lg border-0',
-                        confirmButton: 'px-4 py-2 fw-bold rounded-pill',
-                        cancelButton: 'px-4 py-2 fw-bold rounded-pill'
-                    },
-                    didOpen: () => {
-                        const $source = $('#swalChangeSourceAdd');
-                        const $container = $('#swalActorContainerAdd');
-                        const currentKlinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : ($('#modalKlinikIdHidden').length ? $('#modalKlinikIdHidden').val() : '');
-
-                        $source.on('change', function () {
-                            const source = $(this).val();
-                            if (!source) {
-                                $container.html('<select id="swalChangeActorAdd" class="form-select shadow-sm"><option value="">-- Pilih Pelaku --</option></select>');
-                                return;
-                            }
-
-                            if (source === 'sistem_integrasi') {
-                                $container.html(`
-                                <div class="input-group">
-                                    <select id="swalChangeActorSelectAdd" class="form-select shadow-sm" style="width: 40%">
-                                        <option value="sistem">Sistem</option>
-                                        <option value="other">Lainnya...</option>
-                                    </select>
-                                    <input type="text" id="swalChangeActorTextAdd" class="form-control shadow-sm" placeholder="Nama..." style="display:none">
-                                </div>
-                            `);
-                                $('#swalChangeActorSelectAdd').on('change', function () {
-                                    if ($(this).val() === 'other') {
-                                        $('#swalChangeActorTextAdd').show().focus();
-                                    } else {
-                                        $('#swalChangeActorTextAdd').hide().val('');
-                                    }
-                                });
-                            } else {
-                                $container.html('<select id="swalChangeActorAdd" class="form-select shadow-sm"><option value="">Memuat...</option></select>');
-                                const $actor = $('#swalChangeActorAdd');
-                                loadChangeActorUsers(source, currentKlinikId).then((res) => {
-                                    let options = ['<option value="">-- Pilih Pelaku --</option>'];
-                                    if (res && res.success && Array.isArray(res.items)) {
-                                        res.items.forEach(it => options.push(`<option value="${it.id}">${it.nama_lengkap} (${it.role})</option>`));
-                                    }
-                                    options.push('<option value="other">-- Lainnya (Isi Manual) --</option>');
-                                    $actor.html(options.join(''));
-
-                                    $actor.on('change', function () {
-                                        if ($(this).val() === 'other') {
-                                            $container.html('<input type="text" id="swalChangeActorTextAdd" class="form-control shadow-sm" placeholder="Masukkan nama pelaku asal...">');
-                                            $('#swalChangeActorTextAdd').focus();
-                                        }
-                                    });
-                                });
-                            }
-                        });
-                    },
-                    preConfirm: () => {
-                        const reasonCode = String($('#swalReasonCodeAdd').val() || '');
-                        const changeSource = String($('#swalChangeSourceAdd').val() || '');
-                        let actorId = 0;
-                        let actorName = '';
-
-                        if ($('#swalChangeActorTextAdd').is(':visible')) {
-                            actorName = String($('#swalChangeActorTextAdd').val() || '').trim();
-                            if (!actorName) {
-                                Swal.showValidationMessage('Nama pelaku asal wajib diisi.');
-                                return false;
-                            }
-                        } else if ($('#swalChangeActorSelectAdd').length) {
-                            actorName = $('#swalChangeActorSelectAdd').val();
-                        } else {
-                            actorId = String($('#swalChangeActorAdd').val() || '');
-                            if (!actorId) {
-                                Swal.showValidationMessage('Pelaku asal wajib dipilih.');
-                                return false;
-                            }
-                        }
-
-                        if (!reasonCode) {
-                            Swal.showValidationMessage('Alasan penambahan wajib dipilih.');
-                            return false;
-                        }
-                        if (!changeSource) {
-                            Swal.showValidationMessage('Sumber informasi wajib dipilih.');
-                            return false;
-                        }
-
-                        return {
-                            is_request_approval: '1',
-                            reason_code: reasonCode,
-                            reason: reasonMap[reasonCode] || reasonCode,
-                            change_source: changeSource,
-                            change_actor_user_id: actorId,
-                            change_actor_name: actorName
-                        };
-                    }
-                }).then((result) => {
-                    if (result.isConfirmed && result.value) {
-                        triggerFinalSubmit(result.value);
-                    }
+                showBackdateApprovalModal((approvalData) => {
+                    triggerFinalSubmit(approvalData);
                 });
                 return false;
             }
@@ -2774,6 +2618,170 @@ if ($default_modal_klinik_id) {
             return { ok: true, data: ops };
         }
 
+        function showBackdateApprovalModal(callback) {
+            const reasonMap = {
+                wrong_qty: 'Salah input jumlah/kuantitas item',
+                wrong_item: 'Salah memilih jenis barang/BHP',
+                wrong_date: 'Koreksi tanggal transaksi pemakaian',
+                wrong_nakes: 'Koreksi data petugas HC/Nakes',
+                wrong_klinik: 'Koreksi data klinik/lokasi',
+                admin_libur: 'Admin sedang libur',
+                other_admin: 'Lainnya (Koreksi Administrasi)'
+            };
+            const sourceMap = {
+                admin_logistik: 'Admin Logistik',
+                nakes: 'Nakes',
+                sistem_integrasi: 'Sistem/Integrasi'
+            };
+
+            Swal.fire({
+                title: 'Request Approval (Tambah Data Backdate)',
+                html: `
+                <div class="text-start p-2">
+                    <div class="alert alert-warning small py-2 mb-3">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Tanggal pemakaian lebih dari H-2 memerlukan approval SPV.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted mb-1">
+                            <i class="fas fa-info-circle me-1"></i> Alasan Penambahan <span class="text-danger">*</span>
+                        </label>
+                        <select id="swalReasonCodeAdd" class="form-select shadow-sm">
+                            <option value="">-- Pilih Alasan --</option>
+                            ${Object.entries(reasonMap).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted mb-1">
+                            <i class="fas fa-search me-1"></i> Sumber Informasi <span class="text-danger">*</span>
+                        </label>
+                        <select id="swalChangeSourceAdd" class="form-select shadow-sm">
+                            <option value="">-- Pilih Sumber --</option>
+                            ${Object.entries(sourceMap).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-1">
+                        <label class="form-label fw-bold small text-muted mb-1">
+                            <i class="fas fa-user-check me-1"></i> Pelaku / Asal Permintaan <span class="text-danger">*</span>
+                        </label>
+                        <div id="swalActorContainerAdd">
+                            <select id="swalChangeActorAdd" class="form-select shadow-sm">
+                                <option value="">-- Pilih Pelaku --</option>
+                            </select>
+                        </div>
+                        <div class="form-text small" style="font-size: 0.75rem;">Siapa yang meminta atau bertanggung jawab atas penambahan data terlambat ini?</div>
+                    </div>
+                </div>
+            `,
+                showCancelButton: true,
+                confirmButtonText: 'Lanjut',
+                cancelButtonText: 'Batal',
+                confirmButtonColor: '#204EAB',
+                customClass: {
+                    popup: 'rounded-4 shadow-lg border-0',
+                    confirmButton: 'px-4 py-2 fw-bold rounded-pill',
+                    cancelButton: 'px-4 py-2 fw-bold rounded-pill'
+                },
+                didOpen: () => {
+                    const $source = $('#swalChangeSourceAdd');
+                    const $container = $('#swalActorContainerAdd');
+                    const currentKlinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : ($('#modalKlinikIdHidden').length ? $('#modalKlinikIdHidden').val() : '');
+
+                    $source.on('change', function () {
+                        const source = $(this).val();
+                        if (!source) {
+                            $container.html('<select id="swalChangeActorAdd" class="form-select shadow-sm"><option value="">-- Pilih Pelaku --</option></select>');
+                            return;
+                        }
+
+                        if (source === 'sistem_integrasi') {
+                            $container.html(`
+                            <div class="input-group">
+                                <select id="swalChangeActorSelectAdd" class="form-select shadow-sm" style="width: 40%">
+                                    <option value="sistem">Sistem</option>
+                                    <option value="other">Lainnya...</option>
+                                </select>
+                                <input type="text" id="swalChangeActorTextAdd" class="form-control shadow-sm" placeholder="Nama..." style="display:none">
+                            </div>
+                        `);
+                            $('#swalChangeActorSelectAdd').on('change', function () {
+                                if ($(this).val() === 'other') {
+                                    $('#swalChangeActorTextAdd').show().focus();
+                                } else {
+                                    $('#swalChangeActorTextAdd').hide().val('');
+                                }
+                            });
+                        } else {
+                            $container.html('<select id="swalChangeActorAdd" class="form-select shadow-sm"><option value="">Memuat...</option></select>');
+                            const $actor = $('#swalChangeActorAdd');
+                            loadChangeActorUsers(source, currentKlinikId).then((res) => {
+                                let options = ['<option value="">-- Pilih Pelaku --</option>'];
+                                if (res && res.success && Array.isArray(res.items)) {
+                                    res.items.forEach(it => options.push(`<option value="${it.id}">${it.nama_lengkap} (${it.role})</option>`));
+                                }
+                                options.push('<option value="other">-- Lainnya (Isi Manual) --</option>');
+                                $actor.html(options.join(''));
+
+                                $actor.on('change', function () {
+                                    if ($(this).val() === 'other') {
+                                        $container.html('<input type="text" id="swalChangeActorTextAdd" class="form-control shadow-sm" placeholder="Masukkan nama pelaku asal...">');
+                                        $('#swalChangeActorTextAdd').focus();
+                                    }
+                                });
+                            });
+                        }
+                    });
+                },
+                preConfirm: () => {
+                    const reasonCode = String($('#swalReasonCodeAdd').val() || '');
+                    const changeSource = String($('#swalChangeSourceAdd').val() || '');
+                    let actorId = 0;
+                    let actorName = '';
+
+                    if ($('#swalChangeActorTextAdd').is(':visible')) {
+                        actorName = String($('#swalChangeActorTextAdd').val() || '').trim();
+                        if (!actorName) {
+                            Swal.showValidationMessage('Nama pelaku asal wajib diisi.');
+                            return false;
+                        }
+                    } else if ($('#swalChangeActorSelectAdd').length) {
+                        actorName = $('#swalChangeActorSelectAdd').val();
+                    } else {
+                        actorId = String($('#swalChangeActorAdd').val() || '');
+                        if (!actorId) {
+                            Swal.showValidationMessage('Pelaku asal wajib dipilih.');
+                            return false;
+                        }
+                        // Find the text for actorName if actorId is selected
+                        actorName = $('#swalChangeActorAdd option:selected').text();
+                    }
+
+                    if (!reasonCode) {
+                        Swal.showValidationMessage('Alasan penambahan wajib dipilih.');
+                        return false;
+                    }
+                    if (!changeSource) {
+                        Swal.showValidationMessage('Sumber informasi wajib dipilih.');
+                        return false;
+                    }
+
+                    return {
+                        is_request_approval: '1',
+                        reason_code: reasonCode,
+                        reason: reasonMap[reasonCode] || reasonCode,
+                        change_source: changeSource,
+                        change_actor_user_id: actorId,
+                        change_actor_name: actorName
+                    };
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    callback(result.value);
+                }
+            });
+        }
+
         function loadChangeActorUsers(source, klinikId = null) {
             return $.ajax({
                 url: 'api/ajax_change_actor_users.php',
@@ -3297,39 +3305,59 @@ if ($default_modal_klinik_id) {
                             cancelButtonText: 'Batal'
                         }).then((r) => {
                             if (!r.isConfirmed) return;
-                            Swal.fire({
-                                title: 'Memproses...',
-                                text: 'Mohon tunggu, data sedang disimpan',
-                                allowOutsideClick: false,
-                                didOpen: () => { Swal.showLoading(); }
-                            });
-                            $.ajax({
-                                url: 'actions/process_pemakaian_bhp_upload.php',
-                                method: 'POST',
-                                data: { ajax: '1', action: 'confirm_upload', token: res.token, _csrf: PEMAKAIAN_CSRF },
-                                dataType: 'json',
-                                success: function (res2) {
-                                    if (res2.status === 'success') {
-                                        Swal.fire('Berhasil', res2.message, 'success').then(() => { location.reload(); });
-                                    } else {
-                                        let debugMsg = res2.message || 'Gagal memproses upload';
-                                        if (res2.debug) {
-                                            debugMsg += '<br><small class="text-muted">Error in ' + res2.debug.file + ':' + res2.debug.line + '</small>';
+
+                            const executeConfirm = (extraData = {}) => {
+                                Swal.fire({
+                                    title: 'Memproses...',
+                                    text: 'Mohon tunggu, data sedang disimpan',
+                                    allowOutsideClick: false,
+                                    didOpen: () => { Swal.showLoading(); }
+                                });
+                                const confirmData = {
+                                    ajax: '1',
+                                    action: 'confirm_upload',
+                                    token: res.token,
+                                    _csrf: PEMAKAIAN_CSRF,
+                                    backdate_reason: extraData.reason || '',
+                                    change_source: extraData.change_source || '',
+                                    change_actor: extraData.change_actor_name || '',
+                                    change_reason_code: extraData.reason_code || ''
+                                };
+                                $.ajax({
+                                    url: 'actions/process_pemakaian_bhp_upload.php',
+                                    method: 'POST',
+                                    data: confirmData,
+                                    dataType: 'json',
+                                    success: function (res2) {
+                                        if (res2.status === 'success') {
+                                            Swal.fire('Berhasil', res2.message, 'success').then(() => { location.reload(); });
+                                        } else {
+                                            let debugMsg = res2.message || 'Gagal memproses upload';
+                                            if (res2.debug) {
+                                                debugMsg += '<br><small class="text-muted">Error in ' + res2.debug.file + ':' + res2.debug.line + '</small>';
+                                            }
+                                            Swal.fire({ icon: 'error', title: 'Gagal Simpan', html: debugMsg });
                                         }
-                                        Swal.fire({ icon: 'error', title: 'Gagal Simpan', html: debugMsg });
+                                    },
+                                    error: function (xhr) {
+                                        let errorMsg = 'Terjadi kesalahan sistem saat konfirmasi upload.';
+                                        if (xhr.status === 403) {
+                                            errorMsg = 'Sesi keamanan kadaluarsa (CSRF). Silakan refresh halaman dan coba lagi.';
+                                        } else if (xhr.responseText) {
+                                            errorMsg += '<br><div class="text-start small mt-2 p-2 bg-light border">Status: ' + xhr.status + '<br>' + xhr.responseText.substring(0, 200) + '</div>';
+                                        }
+                                        Swal.fire({ icon: 'error', title: 'System Error', html: errorMsg });
                                     }
-                                },
-                                error: function (xhr) {
-                                    let errorMsg = 'Terjadi kesalahan sistem saat konfirmasi upload.';
-                                    if (xhr.status === 403) {
-                                        errorMsg = 'Sesi keamanan kadaluarsa (CSRF). Silakan refresh halaman dan coba lagi.';
-                                    } else if (xhr.responseText) {
-                                        // Try to extract error message from response if it contains text
-                                        errorMsg += '<br><div class="text-start small mt-2 p-2 bg-light border">Status: ' + xhr.status + '<br>' + xhr.responseText.substring(0, 200) + '</div>';
-                                    }
-                                    Swal.fire({ icon: 'error', title: 'System Error', html: errorMsg });
-                                }
-                            });
+                                });
+                            };
+
+                            if (res.has_backdate && '<?= $_SESSION['role'] ?>' === 'admin_klinik') {
+                                showBackdateApprovalModal((approvalData) => {
+                                    executeConfirm(approvalData);
+                                });
+                            } else {
+                                executeConfirm();
+                            }
                         });
                     } else if (res.status === 'success') {
                         Swal.fire('Berhasil', res.message, 'success').then(() => { location.reload(); });
