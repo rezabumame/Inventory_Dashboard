@@ -23,7 +23,11 @@ try {
 }
 
 // Get active tab
-$active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'list';
+$active_tab = $_GET['tab'] ?? 'list';
+$view_mode = $_GET['view'] ?? 'realized';
+if ($user_role !== 'super_admin') {
+    $view_mode = 'realized';
+}
 
 // Get filters (Default to last 7 days)
 $end_date = isset($_GET['end_date']) ? $_GET['end_date'] : date('Y-m-d');
@@ -96,16 +100,46 @@ if ($active_tab == 'list') {
                     LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
                     LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
                     LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
-                    WHERE $base_where $search_where_list AND (pb.is_auto = 0 OR '$user_role' = 'super_admin')";
+                    WHERE $base_where $search_where_list";
 
-    $stmt_count = $conn->prepare($count_query);
-    $all_params = array_merge($base_params, $search_params);
-    $all_types = $base_types . $search_types;
-    if (!empty($all_params)) {
-        $stmt_count->bind_param($all_types, ...$all_params);
+    if ($user_role === 'super_admin') {
+        $is_auto_val = ($view_mode === 'auto') ? 1 : 0;
+        $count_query .= " AND pb.is_auto = $is_auto_val";
+    } else {
+        $count_query .= " AND pb.is_auto = 0";
     }
-    $stmt_count->execute();
-    $total_all = (int) ($stmt_count->get_result()->fetch_assoc()['cnt'] ?? 0);
+
+    $total_all = 0;
+    $stmt_count = $conn->prepare($count_query);
+    if ($stmt_count) {
+        $all_params = array_merge($base_params, $search_params);
+        $all_types = $base_types . $search_types;
+        if (!empty($all_params)) {
+            $stmt_count->bind_param($all_types, ...$all_params);
+        }
+        $stmt_count->execute();
+        $res_cnt = $stmt_count->get_result();
+        if ($res_cnt) {
+            $total_all = (int) ($res_cnt->fetch_assoc()['cnt'] ?? 0);
+        }
+    }
+
+    // Also get count for the "other" tab badge if super_admin
+    $total_auto = 0;
+    if ($user_role === 'super_admin') {
+        $auto_count_q = "SELECT COUNT(*) as cnt FROM inventory_pemakaian_bhp pb WHERE $base_where AND pb.is_auto = 1";
+        $stmt_auto = $conn->prepare($auto_count_q);
+        if ($stmt_auto) {
+            if (!empty($base_params)) {
+                $stmt_auto->bind_param($base_types, ...$base_params);
+            }
+            $stmt_auto->execute();
+            $res_auto = $stmt_auto->get_result();
+            if ($res_auto) {
+                $total_auto = (int) ($res_auto->fetch_assoc()['cnt'] ?? 0);
+            }
+        }
+    }
 
     $items_per_page = 10;
     $total_pages = ceil($total_all / $items_per_page);
@@ -123,17 +157,28 @@ if ($active_tab == 'list') {
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
-        WHERE $base_where $search_where_list AND (pb.is_auto = 0 OR '$user_role' = 'super_admin')
-        ORDER BY pb.created_at DESC, pb.nomor_pemakaian DESC
+        WHERE $base_where $search_where_list";
+
+    if ($user_role === 'super_admin') {
+        $is_auto_val = ($view_mode === 'auto') ? 1 : 0;
+        $query .= " AND pb.is_auto = $is_auto_val";
+    } else {
+        $query .= " AND pb.is_auto = 0";
+    }
+
+    $query .= " ORDER BY pb.created_at DESC, pb.nomor_pemakaian DESC
         LIMIT ? OFFSET ?
     ";
 
+    $result = null;
     $stmt = $conn->prepare($query);
-    $all_params_p = array_merge($base_params, $search_params, [$items_per_page, $offset]);
-    $all_types_p = $base_types . $search_types . "ii";
-    $stmt->bind_param($all_types_p, ...$all_params_p);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    if ($stmt) {
+        $all_params_p = array_merge($base_params, $search_params, [$items_per_page, $offset]);
+        $all_types_p = $base_types . $search_types . "ii";
+        $stmt->bind_param($all_types_p, ...$all_params_p);
+        $stmt->execute();
+        $result = $stmt->get_result();
+    }
 
     $q_pending = "
         SELECT pb.tanggal AS tgl, COUNT(*) AS cnt
@@ -573,20 +618,45 @@ if ($default_modal_klinik_id) {
 <?php if ($active_tab == 'list'): ?>
     <div class="card shadow-sm">
         <div class="card-body">
-            <div class="d-flex justify-content-end align-items-center mb-3">
-                <div style="width: 300px;">
-                    <form method="GET" action="index.php">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div class="d-flex align-items-center">
+                    <?php if ($user_role === 'super_admin'): ?>
+                        <ul class="nav nav-pills" role="tablist">
+                            <li class="nav-item">
+                                <a class="nav-link rounded-pill py-2 px-4 me-2 <?= ($view_mode === 'realized') ? 'active-blue' : 'text-muted border' ?>" 
+                                   href="index.php?page=pemakaian_bhp_list&tab=list&view=realized">
+                                    <i class="fas fa-check-double me-1"></i> Realisasi
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link rounded-pill py-2 px-4 <?= ($view_mode === 'auto') ? 'active-blue' : 'text-muted border' ?>" 
+                                   href="index.php?page=pemakaian_bhp_list&tab=list&view=auto">
+                                    <i class="fas fa-robot me-1"></i> Estimasi (Auto)
+                                    <?php if ($total_auto > 0): ?>
+                                        <span class="badge rounded-pill bg-danger ms-1" style="font-size: 0.6rem;"><?= $total_auto ?></span>
+                                    <?php endif; ?>
+                                </a>
+                            </li>
+                        </ul>
+                    <?php endif; ?>
+                </div>
+
+                <div class="d-flex align-items-center">
+                    <form method="GET" action="index.php" class="d-flex">
                         <input type="hidden" name="page" value="pemakaian_bhp_list">
                         <input type="hidden" name="tab" value="list">
+                        <?php if (isset($_GET['view'])): ?>
+                            <input type="hidden" name="view" value="<?= htmlspecialchars($_GET['view']) ?>">
+                        <?php endif; ?>
                         <?php foreach ($_GET as $key => $val):
-                            if (!in_array($key, ['q', 'p', 'page', 'tab'])): ?>
+                            if (!in_array($key, ['q', 'p', 'page', 'tab', 'view'])): ?>
                                 <input type="hidden" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($val) ?>">
                             <?php endif; endforeach; ?>
-                        <div class="input-group input-group-sm">
+                        <div class="input-group input-group-sm" style="width: 250px;">
                             <span class="input-group-text bg-white border-end-0"><i
                                     class="fas fa-search text-muted"></i></span>
                             <input type="text" name="q" class="form-control border-start-0 ps-0"
-                                placeholder="Cari No. Pemakaian / Item" value="<?= htmlspecialchars($filter_q) ?>"
+                                placeholder="Cari No. Pemakaian..." value="<?= htmlspecialchars($filter_q) ?>"
                                 style="border-radius: 0 8px 8px 0;">
                         </div>
                     </form>
@@ -606,7 +676,8 @@ if ($default_modal_klinik_id) {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php while ($row = $result->fetch_assoc()):
+                        <?php if ($result && $result->num_rows > 0): ?>
+                            <?php while ($row = $result->fetch_assoc()):
                             $status = $row['status'] ?? 'active';
                             $row_class = ($status === 'rejected') ? 'table-secondary opacity-75' : '';
 
@@ -649,111 +720,90 @@ if ($default_modal_klinik_id) {
                                 <td><?= $total_items ?> item</td>
                                 <td><?= date('d/m/Y H:i', strtotime($row['created_at'])) ?></td>
                                 <td>
-                                    <div class="btn-group">
-                                        <button class="btn btn-sm btn-info view-detail" data-id="<?= $row['id'] ?>"
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-info view-detail" data-id="<?= $row['id'] ?>"
                                             title="Detail">
                                             <i class="fas fa-eye"></i>
                                         </button>
 
                                         <?php
-                                        // Use usage date (tanggal) to determine if this is a "historical" record
+                                        // Context variables
                                         $usage_date = date('Y-m-d', strtotime($row['tanggal']));
                                         $today = date('Y-m-d');
                                         $yesterday = date('Y-m-d', strtotime('-1 day'));
-
-                                        // H-0 and H-1 of the USAGE DATE are considered within grace period (no approval needed)
                                         $is_today = ($usage_date === $today || $usage_date === $yesterday);
-
-                                        // Rule: If > 2 days of usage date, certain actions are restricted
                                         $is_over_2_days = !$is_today;
-
                                         $is_creator = $row['created_by'] == $_SESSION['user_id'];
                                         $is_admin_klinik = $user_role === 'admin_klinik';
                                         $is_spv_klinik = $user_role === 'spv_klinik';
                                         $is_super_admin = $user_role === 'super_admin';
 
-                                        // Unified Access Logic
-                                        $can_edit_direct = false;
-                                        $can_request_edit = false;
-
-                                        if ($is_super_admin) {
-                                            $can_edit_direct = true;
-                                        } elseif ($is_admin_klinik) {
-                                            if ($is_today) {
-                                                $can_edit_direct = true;
-                                            } else {
-                                                $can_request_edit = true;
-                                            }
-                                        } elseif ($is_today && $is_creator) {
-                                            $can_edit_direct = true;
-                                        }
-
+                                        $can_edit_direct = ($is_super_admin || ($is_admin_klinik && $is_today) || ($is_today && $is_creator));
+                                        $can_request_edit = ($is_admin_klinik && !$is_today);
                                         $is_pending = (strpos((string) $status, 'pending') !== false || (strpos((string) $row['nomor_pemakaian'], 'REQ-ADD-') !== false && $status !== 'active'));
                                         ?>
 
+                                        <?php if ($is_pending && ($is_spv_klinik || $is_super_admin)): ?>
+                                            <button class="btn btn-success approve-request"
+                                                data-id="<?= $row['id'] ?>" title="Approve">
+                                                <i class="fas fa-check"></i>
+                                            </button>
+                                            <button class="btn btn-danger reject-request" data-id="<?= $row['id'] ?>"
+                                                title="Reject">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        <?php endif; ?>
+
                                         <?php if ($status === 'active'): ?>
-                                            <div class="btn-group">
-                                                <?php if ($row['is_auto'] == 0): ?>
-                                                    <?php if ($can_edit_direct): ?>
-                                                        <button class="btn btn-sm btn-warning edit-pemakaian" data-id="<?= $row['id'] ?>"
-                                                            data-tanggal="<?= $usage_date ?>" title="Edit"
-                                                            data-bs-toggle="modal" data-bs-target="#modalEdit">
-                                                            <i class="fas fa-edit"></i>
-                                                        </button>
-                                                        <?php if (!$is_over_2_days): ?>
-                                                            <button class="btn btn-sm btn-danger delete-pemakaian" data-id="<?= $row['id'] ?>"
-                                                                data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
-                                                                data-tanggal="<?= $usage_date ?>" title="Hapus">
-                                                                <i class="fas fa-trash"></i>
-                                                            </button>
-                                                        <?php endif; ?>
-                                                    <?php elseif ($can_request_edit): ?>
-                                                        <button class="btn btn-sm btn-outline-warning edit-pemakaian"
-                                                            data-id="<?= $row['id'] ?>" data-tanggal="<?= $usage_date ?>"
-                                                            title="Edit (Lewat Hari)" data-bs-toggle="modal" data-bs-target="#modalEdit">
-                                                            <i class="fas fa-edit"></i>
-                                                        </button>
-                                                        <?php if (!$is_over_2_days): ?>
-                                                            <button class="btn btn-sm btn-outline-danger request-delete" data-id="<?= $row['id'] ?>"
-                                                                data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
-                                                                data-tanggal="<?= $usage_date ?>" title="Request Hapus (SPV)">
-                                                                <i class="fas fa-trash"></i>
-                                                            </button>
-                                                        <?php endif; ?>
-                                                    <?php endif; ?>
-                                                <?php elseif ($row['is_auto'] == 1 && $is_super_admin): ?>
-                                                    <button class="btn btn-sm btn-danger delete-pemakaian" data-id="<?= $row['id'] ?>"
-                                                        data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
-                                                        data-tanggal="<?= $usage_date ?>" title="Hapus (Auto BHP)">
-                                                        <i class="fas fa-trash"></i>
+                                            <?php if ($row['is_auto'] == 0): ?>
+                                                <?php if ($can_edit_direct): ?>
+                                                    <button class="btn btn-warning edit-pemakaian" data-id="<?= $row['id'] ?>"
+                                                        data-tanggal="<?= $usage_date ?>" title="Edit"
+                                                        data-bs-toggle="modal" data-bs-target="#modalEdit">
+                                                        <i class="fas fa-edit"></i>
                                                     </button>
-                                                <?php endif; ?>
-                                            </div>
-                                        <?php elseif ($is_pending): ?>
-                                            <div class="d-flex align-items-center">
-                                                <span
-                                                    class="badge rounded-pill bg-warning-subtle text-warning border border-warning-subtle px-3 py-1 me-2 text-center"
-                                                    style="font-size: 0.65rem; line-height: 1.2;">
-                                                    <i class="fas fa-clock me-1"></i> Menunggu<br>Approval
-                                                </span>
-                                                <?php if ($is_spv_klinik || $is_super_admin): ?>
-                                                    <div class="btn-group">
-                                                        <button class="btn btn-sm btn-success approve-request"
-                                                            data-id="<?= $row['id'] ?>" title="Approve">
-                                                            <i class="fas fa-check"></i>
+                                                    <?php if (!$is_over_2_days): ?>
+                                                        <button class="btn btn-danger delete-pemakaian" data-id="<?= $row['id'] ?>"
+                                                            data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
+                                                            data-tanggal="<?= $usage_date ?>" title="Hapus">
+                                                            <i class="fas fa-trash"></i>
                                                         </button>
-                                                        <button class="btn btn-sm btn-danger reject-request" data-id="<?= $row['id'] ?>"
-                                                            title="Reject">
-                                                            <i class="fas fa-times"></i>
+                                                    <?php endif; ?>
+                                                <?php elseif ($can_request_edit): ?>
+                                                    <button class="btn btn-outline-warning edit-pemakaian"
+                                                        data-id="<?= $row['id'] ?>" data-tanggal="<?= $usage_date ?>"
+                                                        title="Edit (Lewat Hari)" data-bs-toggle="modal" data-bs-target="#modalEdit">
+                                                        <i class="fas fa-edit"></i>
+                                                    </button>
+                                                    <?php if (!$is_over_2_days): ?>
+                                                        <button class="btn btn-outline-danger request-delete" data-id="<?= $row['id'] ?>"
+                                                            data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
+                                                            data-tanggal="<?= $usage_date ?>" title="Request Hapus (SPV)">
+                                                            <i class="fas fa-trash"></i>
                                                         </button>
-                                                    </div>
+                                                    <?php endif; ?>
                                                 <?php endif; ?>
-                                            </div>
+                                            <?php elseif ($row['is_auto'] == 1 && $is_super_admin): ?>
+                                                <button class="btn btn-danger delete-pemakaian" data-id="<?= $row['id'] ?>"
+                                                    data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
+                                                    data-tanggal="<?= $usage_date ?>" title="Hapus (Auto BHP)">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            <?php endif; ?>
                                         <?php endif; ?>
                                     </div>
+
+                                    <?php if ($is_pending && $is_admin_klinik): ?>
+                                        <div class="mt-1">
+                                            <span class="badge rounded-pill bg-warning-subtle text-warning border border-warning-subtle px-2 py-1"
+                                                  style="font-size: 0.6rem;">
+                                                <i class="fas fa-clock me-1"></i> Menunggu Approval
+                                            </span>
+                                        </div>
+                                    <?php endif; ?>
                                 </td>
-                            </tr>
-                        <?php endwhile; ?>
+                            <?php endwhile; ?>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>
