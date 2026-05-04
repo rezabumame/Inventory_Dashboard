@@ -393,13 +393,26 @@ if (!function_exists('compact_transaction_note')) {
     </div>
     <?php endif; ?>
 
+    <?php if ($header['status'] === 'pending_approval_spv' && !empty($header['alasan_keterlambatan'])): ?>
+    <div class="note-box mb-4 border-warning bg-warning-subtle">
+        <div class="note-box-title text-warning">
+            <i class="fas fa-clock me-1"></i> Alasan Backdate (Keterlambatan)
+        </div>
+        <div class="note-box-content text-dark fw-medium">
+            <?= nl2br(htmlspecialchars($header['alasan_keterlambatan'])) ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <?php if ($has_history): ?>
     <div class="note-box mb-4 border-info bg-info-subtle">
         <div class="note-box-title text-info">
             <i class="fas fa-file-signature me-1"></i> Riwayat Request Perubahan
         </div>
         <div class="note-box-content text-dark fw-medium">
-            <div><strong>Alasan perubahan:</strong> <?= htmlspecialchars((string)($request_meta['reason_label'] ?? $header['approval_reason'] ?? '-')) ?></div>
+            <?php if (!empty($request_meta['reason_label']) || !empty($header['approval_reason'])): ?>
+                <div><strong>Alasan perubahan:</strong> <?= htmlspecialchars((string)($request_meta['reason_label'] ?? $header['approval_reason'] ?? '-')) ?></div>
+            <?php endif; ?>
             <div><strong>Sumber perubahan:</strong> <?= htmlspecialchars($change_source_label) ?></div>
             <div><strong>Pelaku asal:</strong> <?= htmlspecialchars($change_actor_name) ?></div>
             <?php if (!empty($header['spv_approved_by'])): ?>
