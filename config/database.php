@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/config.php';
 $host = getenv('DB_HOST') ?: 'localhost'; // Ubah ke localhost jika 127.0.0.1 bermasalah
 $user = getenv('DB_USER') ?: 'root';
 $pass = getenv('DB_PASS') !== false ? (string)getenv('DB_PASS') : '';

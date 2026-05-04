@@ -1743,8 +1743,9 @@ if ($default_modal_klinik_id) {
         if ($('#tableDataOut').length && !$.fn.DataTable.isDataTable('#tableDataOut')) {
             $('#tableDataOut').DataTable({
                 order: [[0, 'desc']], // Sort by Tanggal Input (kolom ke-0)
-                paging: true,
+                paging: false,
                 searching: false,
+                info: false,
                 language: {
                     emptyTable: 'Tidak ada data pemakaian ditemukan.'
                 }
