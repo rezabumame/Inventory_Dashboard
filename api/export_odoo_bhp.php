@@ -84,7 +84,7 @@ $stmt_exp = $conn->prepare("
     LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
     LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
     LEFT JOIN inventory_odoo_support_data osd ON osd.key_name = TRIM(SUBSTRING_INDEX(REPLACE(ofc.product_category, '/', ' '), ' ', 1))
-    WHERE $where_clause AND pb.status = 'active'
+    WHERE $where_clause AND pb.status = 'active' AND pb.is_auto = 0
     ORDER BY TANGGAL_INPUT_FULL DESC, ID ASC
 ");
 
