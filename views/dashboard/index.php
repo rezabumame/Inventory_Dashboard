@@ -366,7 +366,7 @@ if ($role === 'super_admin') {
                                         </span>
                                     </div>
                                 </div>
-                                <?php 
+                                <?php
                                 $date = date('Y-m-d', strtotime($b['tanggal_pemeriksaan']));
                                 if ($date == date('Y-m-d')) echo '<span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3">Hari Ini</span>';
                                 elseif ($date == date('Y-m-d', strtotime('+1 day'))) echo '<span class="badge bg-info bg-opacity-10 text-info rounded-pill px-3">Besok</span>';

@@ -1,5 +1,4 @@
 <?php
-
 require_once(implode(DIRECTORY_SEPARATOR, [__DIR__, '..', 'src', 'SimpleXLSXGen.php']));
 
 $xlsx = new \Shuchkin\SimpleXLSXGen();

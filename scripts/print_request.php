@@ -178,7 +178,7 @@ if ($req['ke_level'] == 'klinik') {
             </tr>
         </thead>
         <tbody>
-            <?php 
+            <?php
             $no = 1;
             while ($item = $details->fetch_assoc()): ?>
             <tr>

@@ -1,5 +1,4 @@
 <?php
-
 check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik']);
 require_once __DIR__ . '/../../lib/counter.php';
 require_once __DIR__ . '/../../lib/stock.php';
@@ -864,7 +863,7 @@ function get_status_badge($status) {
     <li class="nav-item ms-2" role="presentation">
         <a class="nav-link rounded-pill px-4 <?= ($active_tab === 'incoming') ? 'active' : '' ?>" id="incoming-tab" href="index.php?page=request&tab=incoming" role="tab">
             <i class="fas fa-inbox me-2"></i>Masuk 
-            <?php 
+            <?php
             $incoming_active_count = count(array_filter($incoming_all, function($r){ return in_array($r['status'], ['pending', 'pending_gudang'], true); }));
             if ($user_role !== 'super_admin' && $incoming_active_count > 0): ?>
                 <span class="badge bg-danger ms-1"><?= $incoming_active_count ?></span>

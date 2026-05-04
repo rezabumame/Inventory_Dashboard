@@ -9,7 +9,7 @@ require_once __DIR__ . '/config/database.php';
 
 // Pastikan hanya super_admin atau dijalankan via CLI yang bisa akses
 if (php_sapi_name() !== 'cli') {
-    session_start();
+    
     if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'super_admin') {
         die("Akses ditolak. Hanya Super Admin yang dapat menjalankan script ini.");
     }

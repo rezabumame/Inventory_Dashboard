@@ -4,9 +4,7 @@
  * Mengisi baris dari pemakaian AUTO yang belum ada realisasi manual (sama logika dengan peringatan di halaman list),
  * untuk rentang tanggal filter (GET start_date, end_date) — default 7 hari terakhir.
  */
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../vendor/autoload.php';

@@ -1,7 +1,4 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 
@@ -148,7 +145,7 @@ $approver = (string)($row['approver_name'] ?? '-');
                         </div>
                     </div>
 
-                    <?php 
+                    <?php
                         $box_name = ($who === 'approver') ? $approver : $pemohon;
                         $box_label = ($who === 'approver') ? 'DISETUJUI OLEH' : 'PEMOHON';
                         $box_sub = ($who === 'approver') ? 'SPV/Manager Klinik' : '';

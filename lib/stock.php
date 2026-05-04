@@ -1,5 +1,4 @@
 <?php
-
 function stock_resolve_location(mysqli $conn, string $code): string {
     $code = trim($code);
     if ($code === '') return '';

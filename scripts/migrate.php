@@ -1,5 +1,4 @@
 <?php
-
 require_once __DIR__ . '/../config/database.php';
 
 $is_cli = (php_sapi_name() === 'cli' || defined('STDIN'));

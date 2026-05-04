@@ -82,7 +82,7 @@
 <body>
 
 <!-- Sidebar -->
-<?php 
+<?php
     $current_page = isset($_GET['page']) ? $_GET['page'] : 'dashboard';
     $role = $_SESSION['role'] ?? '';
     $user_photo = $_SESSION['photo'] ?? '';

@@ -380,13 +380,13 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
             </div>
             <nav>
                 <ul class="pagination pagination-circular mb-0">
-                    <?php 
+                    <?php
                         $query_str = "index.php?page=users&role=$filter_role&klinik_id=$filter_klinik&search=" . urlencode($search);
                     ?>
                     <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
                         <a class="page-link" href="<?= $query_str ?>&p=<?= $page - 1 ?>"><i class="fas fa-chevron-left small"></i></a>
                     </li>
-                    <?php 
+                    <?php
                     $start = max(1, $page - 2);
                     $end = min($total_pages, $page + 2);
                     if ($start > 1) {

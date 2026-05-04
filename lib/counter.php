@@ -1,5 +1,4 @@
 <?php
-
 function next_sequence(mysqli $conn, string $key, string $dateYmd): int {
     $key = trim($key);
     $dateYmd = trim($dateYmd);

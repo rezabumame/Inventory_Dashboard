@@ -214,7 +214,7 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-end">
-                                    <?php 
+                                    <?php
                                         $data_json = htmlspecialchars(json_encode([
                                             'id' => (int)$p['id'],
                                             'klinik_id' => (int)$p['klinik_id'],

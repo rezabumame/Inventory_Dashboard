@@ -1,5 +1,4 @@
 <?php
-
 function odoo_rpc_post($baseUrl, $payload) {
     $url = rtrim($baseUrl, '/') . '/jsonrpc';
     $ch = curl_init($url);

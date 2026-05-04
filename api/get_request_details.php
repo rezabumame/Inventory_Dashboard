@@ -78,7 +78,7 @@ if ($can_cancel) {
     <div class="fw-semibold"><?= nl2br(htmlspecialchars($req['catatan'] ?? '-')) ?></div>
 </div>
 
-<?php 
+<?php
 $dokumens = [];
 $res_dok = $conn->query("SELECT * FROM inventory_request_barang_dokumen WHERE request_barang_id = $request_id ORDER BY created_at ASC");
 if ($res_dok && $res_dok->num_rows > 0) {
@@ -135,7 +135,7 @@ if ($res_dok && $res_dok->num_rows > 0) {
             <td>
                 <?php if ($can_process): ?>
                     <input type="hidden" name="received_items[]" value="<?= $row['barang_id'] ?>">
-                    <?php 
+                    <?php
                         $app = (float)($row['qty_approved'] ?? 0); 
                         if ($app <= 0) $app = (float)$row['qty_request'];
                         $already = (float)($row['qty_received'] ?? 0);

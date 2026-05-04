@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Notify Google Sheets Webhook about booking events
  * @param mysqli $conn

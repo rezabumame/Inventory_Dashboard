@@ -1061,7 +1061,7 @@ function openStokBreakdown(barangId, namaBarang) {
                             <td class="text-center">
                                 <?php if ($stok_hc != 0): ?>
                                     <div class="d-flex flex-column align-items-center">
-                                        <?php 
+                                        <?php
                                             $hc_class = ((float)$stok_hc) < 0 ? 'text-danger fw-bold' : 'text-primary fw-bold';
                                         ?>
                                         <a href="javascript:void(0)" class="<?= $hc_class ?> text-decoration-none"

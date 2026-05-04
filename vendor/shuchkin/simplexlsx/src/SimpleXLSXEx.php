@@ -1,5 +1,4 @@
 <?php
-
 /** @noinspection MultiAssignmentUsageInspection */
 
 namespace Shuchkin;

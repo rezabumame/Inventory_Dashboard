@@ -415,7 +415,7 @@ if (!function_exists('compact_transaction_note')) {
             <div><strong>Sumber perubahan:</strong> <?= htmlspecialchars($change_source_label) ?></div>
             <div><strong>Pelaku asal:</strong> <?= htmlspecialchars($change_actor_name) ?></div>
             <?php if (!empty($header['spv_approved_by'])): ?>
-                <?php 
+                <?php
                     $spv_id = (int)$header['spv_approved_by'];
                     $r_spv = $conn->query("SELECT nama_lengkap FROM inventory_users WHERE id = $spv_id LIMIT 1");
                     $spv_name = $r_spv ? ($r_spv->fetch_assoc()['nama_lengkap'] ?? '-') : '-';
@@ -446,7 +446,7 @@ if (!function_exists('compact_transaction_note')) {
                     </tr>
                 </thead>
                 <tbody>
-                    <?php 
+                    <?php
                     $no = 1;
                     if (!empty($display_details)):
                         foreach ($display_details as $detail):
@@ -507,7 +507,7 @@ if (!function_exists('compact_transaction_note')) {
                             </span>
                         </td>
                     </tr>
-                    <?php 
+                    <?php
                         endforeach;
                     else:
                     ?>

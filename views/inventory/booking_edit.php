@@ -201,7 +201,7 @@ if ($can_cs_edit) {
                                         <div class="col-md-4">
                                             <label class="form-label fw-semibold">Klinik <span class="text-danger">*</span></label>
                                             <select name="new_klinik_id" id="edit_klinik_id" class="form-select" required>
-                                                <?php 
+                                                <?php
                                                 $k_res = $conn->query("SELECT * FROM inventory_klinik WHERE status = 'active' ORDER BY nama_klinik");
                                                 while($k = $k_res->fetch_assoc()): 
                                                 ?>
@@ -224,7 +224,7 @@ if ($can_cs_edit) {
                                             <label class="form-label fw-semibold">Jadwal Pemeriksaan <span class="text-danger">*</span></label>
                                             <div class="input-group">
                                                 <input type="date" name="tanggal" id="edit_tanggal" class="form-control" value="<?= $booking['tanggal_pemeriksaan'] ?>" required>
-                                                <?php 
+                                                <?php
                                                     $jam_val = (string)($booking['jam_layanan'] ?? '');
                                                     if ($jam_val !== '' && preg_match('/^\d{1,2}$/', $jam_val)) $jam_val .= ':00';
                                                     // Ensure format is HH:mm for the time input

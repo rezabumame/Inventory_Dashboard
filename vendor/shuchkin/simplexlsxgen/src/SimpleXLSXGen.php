@@ -1,5 +1,4 @@
 <?php
-
 /** @noinspection UnknownInspectionInspection */
 /* PHP5.6 */
 /** @noinspection PowerOperatorCanBeUsedInspection */

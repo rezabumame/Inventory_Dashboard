@@ -1,5 +1,4 @@
 <?php
-
 check_role(['cs', 'super_admin', 'admin_klinik', 'spv_klinik']);
 require_once __DIR__ . '/../../lib/stock.php';
 
