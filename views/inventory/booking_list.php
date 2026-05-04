@@ -848,7 +848,7 @@ if (!empty($booking_ids)) {
                                         <?= htmlspecialchars($jam) ?>
                                     </div>
                                 </td>
-                                <td>
+                                <td data-order="<?= $row['created_at'] ?>">
                                     <div class="booking-muted" style="font-size: 0.8rem;">
                                         <div class="fw-bold text-dark"
                                             title="Input by: <?= htmlspecialchars($row['creator_name'] ?? '-') ?>">
