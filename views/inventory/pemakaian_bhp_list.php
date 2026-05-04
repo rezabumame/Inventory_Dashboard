@@ -117,6 +117,7 @@ if ($active_tab == 'list') {
             pb.*,
             k.nama_klinik,
             u_created.nama_lengkap as created_by_name,
+            u_hc.nama_lengkap as hc_name,
             (SELECT COUNT(*) FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = pb.id) as total_items_detail
         FROM inventory_pemakaian_bhp pb
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
@@ -595,10 +596,10 @@ if ($default_modal_klinik_id) {
                 <table class="table table-hover" id="tablePemakaianBHP" data-order-col="5">
                     <thead class="table-light">
                         <tr>
-                            <th>No. Pemakaian</th>
+                            <th class="ps-4">No. Pemakaian</th>
                             <th>Klinik</th>
                             <th>Jenis</th>
-                            <th>Tanggal Pemakaian BHP</th>
+                            <th class="text-center">Tanggal Pemakaian<br>BHP</th>
                             <th>Total Item</th>
                             <th>Tanggal Input</th>
                             <th>Aksi</th>
@@ -619,7 +620,7 @@ if ($default_modal_klinik_id) {
                             }
                             ?>
                             <tr class="<?= $row_class ?>">
-                                <td>
+                                <td class="ps-4">
                                     <div
                                         class="fw-bold <?= ($status === 'rejected') ? 'text-decoration-line-through text-muted' : '' ?>">
                                         <?= htmlspecialchars($row['nomor_pemakaian']) ?>
@@ -631,7 +632,12 @@ if ($default_modal_klinik_id) {
                                         <span class="badge bg-secondary small" style="font-size: 0.6rem;">REJECTED</span>
                                     <?php endif; ?>
                                 </td>
-                                <td><?= htmlspecialchars($row['nama_klinik'] ?? '-') ?></td>
+                                <td>
+                                    <?= htmlspecialchars($row['nama_klinik'] ?? '-') ?>
+                                    <?php if (stripos($row['jenis_pemakaian'], 'hc') !== false && !empty($row['hc_name'])): ?>
+                                        <br><small class="text-muted" style="font-size: 0.7rem;"><i class="fas fa-user-nurse me-1"></i><?= htmlspecialchars($row['hc_name']) ?></small>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <?php if (stripos($row['jenis_pemakaian'], 'hc') !== false): ?>
                                         <span class="badge bg-warning <?= ($status === 'rejected') ? 'grayscale' : '' ?>">HC</span>
@@ -639,7 +645,7 @@ if ($default_modal_klinik_id) {
                                         <span class="badge bg-info <?= ($status === 'rejected') ? 'grayscale' : '' ?>">Klinik</span>
                                     <?php endif; ?>
                                 </td>
-                                <td><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
+                                <td class="text-center"><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
                                 <td><?= $total_items ?> item</td>
                                 <td><?= date('d/m/Y H:i', strtotime($row['created_at'])) ?></td>
                                 <td>

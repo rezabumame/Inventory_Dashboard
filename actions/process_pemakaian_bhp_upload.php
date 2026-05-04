@@ -378,7 +378,7 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
 
             // Insert Header
             $st = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at, status, approval_reason, change_source, change_actor_user_id, change_actor_name, change_reason_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $st->bind_param("sssiisississss", $nomor, $tgl, $jenis, $m['klinik_id'], $m['user_hc_id'], $note, $user_id, $created, $status, $backdate_reason, $change_source, $change_actor_user_id, $change_actor_name, $change_reason_code);
+            $st->bind_param("sssiisissssiss", $nomor, $tgl, $jenis, $m['klinik_id'], $m['user_hc_id'], $note, $user_id, $created, $status, $backdate_reason, $change_source, $change_actor_user_id, $change_actor_name, $change_reason_code);
             $st->execute();
             $pid = $conn->insert_id;
 
