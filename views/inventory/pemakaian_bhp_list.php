@@ -1146,7 +1146,7 @@ if ($default_modal_klinik_id) {
                                             <input type="hidden" name="jenis_pemakaian" value="hc">
                                         <?php endif; ?>
                                     </div>
-                                    <div class="col-md-6">
+                                    <div class="col-md-3">
                                         <label class="form-label fw-semibold small mb-1">
                                             <i class="fas fa-hospital text-primary me-1"></i>Klinik
                                         </label>
@@ -1279,7 +1279,7 @@ if ($default_modal_klinik_id) {
                                         <input type="hidden" name="jenis_pemakaian" value="hc">
                                     <?php endif; ?>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold small mb-1">
                                         <i class="fas fa-hospital text-primary me-1"></i>Klinik
                                     </label>
