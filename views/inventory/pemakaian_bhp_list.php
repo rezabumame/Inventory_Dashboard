@@ -180,7 +180,7 @@ if ($active_tab == 'list') {
     $stmt_count_out->execute();
     $total_all = (int) ($stmt_count_out->get_result()->fetch_assoc()['cnt'] ?? 0);
 
-    $items_per_page = 100; // More items for detail view
+    $items_per_page = 10; // Match list tab for consistent pagination
     $total_pages = ceil($total_all / $items_per_page);
     $current_page = max(1, (int) ($_GET['p'] ?? 1));
     $offset = ($current_page - 1) * $items_per_page;
@@ -1742,6 +1742,7 @@ if ($default_modal_klinik_id) {
         // Initialize DataOut explicitly to avoid double-init and set correct sort + empty message
         if ($('#tableDataOut').length && !$.fn.DataTable.isDataTable('#tableDataOut')) {
             $('#tableDataOut').DataTable({
+                dom: 't',
                 order: [[0, 'desc']], // Sort by Tanggal Input (kolom ke-0)
                 paging: false,
                 searching: false,
@@ -3322,6 +3323,7 @@ if ($default_modal_klinik_id) {
                                     backdate_reason: extraData.reason || '',
                                     change_source: extraData.change_source || '',
                                     change_actor: extraData.change_actor_name || '',
+                                    change_actor_user_id: extraData.change_actor_user_id || '',
                                     change_reason_code: extraData.reason_code || ''
                                 };
                                 $.ajax({
@@ -3491,6 +3493,7 @@ if ($default_modal_klinik_id) {
                 $('#tablePemakaianBHP').DataTable().destroy();
             }
             $('#tablePemakaianBHP').DataTable({
+                dom: 't',
                 "order": [[5, "desc"]], // Sort by Tanggal Input DESC
                 "paging": false,
                 "searching": false,

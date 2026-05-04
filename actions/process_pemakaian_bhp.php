@@ -145,6 +145,10 @@ try {
         $is_admin_klinik = $_SESSION['role'] === 'admin_klinik';
         $is_super_admin = $_SESSION['role'] === 'super_admin';
         $reason = $_POST['reason'] ?? '';
+        $change_source = '';
+        $change_actor_user_id = null;
+        $change_actor_name = '';
+        $reason_code = (string)($_POST['reason_code'] ?? '');
 
         // Super Admin can always edit directly
         if ($is_super_admin) {
@@ -416,7 +420,6 @@ try {
                         (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, approval_reason, pending_data, change_source, change_actor_user_id, change_actor_name, change_reason_code, parent_id, revision, no_bhp_parent, status) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval_spv')
                     ");
-                    $reason_code = (string)($_POST['reason_code'] ?? '');
                     $stmt->bind_param("sssiisississsiis", 
                         $nomor_revisi, $tanggal_date, $jenis_pemakaian, $klinik_id, $user_hc_id, $catatan_transaksi, $created_by, 
                         $reason, $pending_data, $change_source, $change_actor_user_id, $change_actor_name, $reason_code, 

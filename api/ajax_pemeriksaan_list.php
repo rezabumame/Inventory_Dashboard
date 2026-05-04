@@ -3,15 +3,21 @@ require_once __DIR__ . '/../config/database.php';
 
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['super_admin', 'admin_klinik', 'spv_klinik', 'cs'])) {
-    echo json_encode([
-        "draw" => 0,
-        "recordsTotal" => 0,
-        "recordsFiltered" => 0,
-        "data" => [],
-        "error" => "Unauthorized access"
-    ]);
-    exit;
+$role = trim((string)($_SESSION['role'] ?? ''));
+if (!isset($_SESSION['user_id']) || !in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik', 'cs'])) {
+    // If it's spv_klinik and they are allowed as admin_klinik
+    if ($role === 'spv_klinik') {
+        // Pass
+    } else {
+        echo json_encode([
+            "draw" => 0,
+            "recordsTotal" => 0,
+            "recordsFiltered" => 0,
+            "data" => [],
+            "error" => "Unauthorized access"
+        ]);
+        exit;
+    }
 }
 
 $draw = (int)($_POST['draw'] ?? 0);

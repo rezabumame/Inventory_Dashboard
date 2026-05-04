@@ -18,7 +18,7 @@ $stmt = $conn->prepare("
         k.nama_klinik,
         u_created.nama_lengkap as created_by_name,
         u_hc.nama_lengkap as hc_name,
-        u_actor.nama_lengkap as change_actor_name
+        u_actor.nama_lengkap as joined_actor_name
     FROM inventory_pemakaian_bhp pb
     LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
     LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
@@ -51,7 +51,13 @@ $source_map = [
 ];
 $change_source_raw = (string)($request_meta['change_source'] ?? ($header['change_source'] ?? ''));
 $change_source_label = (string)($source_map[$change_source_raw] ?? '-');
-$change_actor_name = (string)($header['change_actor_name'] ?? '-');
+
+// Fix: Preferred Actor Name Logic
+$change_actor_name = (string)($header['change_actor_name'] ?? ''); 
+if (empty($change_actor_name)) {
+    $change_actor_name = (string)($header['joined_actor_name'] ?? '');
+}
+
 $change_actor_id_meta = (int)($request_meta['change_actor_user_id'] ?? 0);
 $change_actor_name_meta = (string)($request_meta['change_actor_name'] ?? '');
 
@@ -63,6 +69,7 @@ if ($change_actor_name_meta !== '') {
         $change_actor_name = (string)($r_actor->fetch_assoc()['nama_lengkap'] ?? '-');
     }
 }
+if (empty($change_actor_name)) $change_actor_name = '-';
 
 // Get detail items (Original)
 $original_details_data = [];
@@ -364,6 +371,24 @@ if (!function_exists('compact_transaction_note')) {
                             <?= htmlspecialchars($header['created_by_name']) ?>
                         </span>
                     </div>
+                    <?php if (!empty($change_actor_name) && $change_actor_name !== '-'): ?>
+                    <div class="info-item">
+                        <span class="info-label">Pelaku Asal</span>
+                        <span class="info-value text-primary fw-medium">
+                            <i class="fas fa-user-check me-1"></i>
+                            <?= htmlspecialchars($change_actor_name) ?>
+                        </span>
+                    </div>
+                    <?php endif; ?>
+                    <?php if (!empty($change_source_label) && $change_source_label !== '-'): ?>
+                    <div class="info-item">
+                        <span class="info-label">Sumber Perubahan</span>
+                        <span class="info-value">
+                            <i class="fas fa-search me-1"></i>
+                            <?= htmlspecialchars($change_source_label) ?>
+                        </span>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -381,7 +406,7 @@ if (!function_exists('compact_transaction_note')) {
     </div>
     <?php endif; ?>
 
-    <?php if (!empty($header['approval_reason']) && $header['status'] !== 'active'): ?>
+    <?php if (isset($header['approval_reason']) && $header['approval_reason'] !== '' && $header['status'] !== 'active'): ?>
     <div class="note-box mb-4 border-warning bg-warning-subtle">
         <div class="note-box-title text-warning">
             <i class="fas fa-history me-1"></i> Alasan Perubahan / History
@@ -392,16 +417,7 @@ if (!function_exists('compact_transaction_note')) {
     </div>
     <?php endif; ?>
 
-    <?php if ($header['status'] === 'pending_approval_spv' && !empty($header['alasan_keterlambatan'])): ?>
-    <div class="note-box mb-4 border-warning bg-warning-subtle">
-        <div class="note-box-title text-warning">
-            <i class="fas fa-clock me-1"></i> Alasan Backdate (Keterlambatan)
-        </div>
-        <div class="note-box-content text-dark fw-medium">
-            <?= nl2br(htmlspecialchars($header['alasan_keterlambatan'])) ?>
-        </div>
-    </div>
-    <?php endif; ?>
+
 
     <?php if ($has_history): ?>
     <div class="note-box mb-4 border-info bg-info-subtle">

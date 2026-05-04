@@ -359,22 +359,26 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
             $today = date('Y-m-d');
             $yesterday = date('Y-m-d', strtotime('-1 day'));
             $status = 'active';
-            $backdate_reason = null;
-            $change_source = null;
-            $change_actor = null;
-            $change_reason_code = null;
+            $backdate_reason = '';
+            $change_source = '';
+            $change_actor_name = '';
+            $change_reason_code = '';
 
             if ($tgl !== $today && $tgl !== $yesterday) {
                 $status = 'pending_approval_spv';
                 $backdate_reason = $_POST['backdate_reason'] ?? '';
                 $change_source = $_POST['change_source'] ?? '';
-                $change_actor = $_POST['change_actor'] ?? '';
+                $change_actor_name = $_POST['change_actor'] ?? '';
                 $change_reason_code = $_POST['change_reason_code'] ?? '';
             }
 
+            $change_actor_user_id = isset($_POST['change_actor_user_id']) && (int)$_POST['change_actor_user_id'] > 0 ? (int)$_POST['change_actor_user_id'] : null;
+
+            log_cloud("Save BHP: $nomor | Status: $status | Reason: $backdate_reason | Source: $change_source | Actor: $change_actor_name | ActorID: $change_actor_user_id | ReasonCode: $change_reason_code");
+
             // Insert Header
-            $st = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at, status, alasan_keterlambatan, change_source, change_actor_name, change_reason_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $st->bind_param("sssiisissssss", $nomor, $tgl, $jenis, $m['klinik_id'], $m['user_hc_id'], $note, $user_id, $created, $status, $backdate_reason, $change_source, $change_actor, $change_reason_code);
+            $st = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, user_hc_id, catatan_transaksi, created_by, created_at, status, approval_reason, change_source, change_actor_user_id, change_actor_name, change_reason_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $st->bind_param("sssiisississss", $nomor, $tgl, $jenis, $m['klinik_id'], $m['user_hc_id'], $note, $user_id, $created, $status, $backdate_reason, $change_source, $change_actor_user_id, $change_actor_name, $change_reason_code);
             $st->execute();
             $pid = $conn->insert_id;
 

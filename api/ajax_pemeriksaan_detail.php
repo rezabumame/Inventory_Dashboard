@@ -3,12 +3,9 @@ require_once __DIR__ . '/../config/database.php';
 
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-    exit;
-}
-if (!in_array($_SESSION['role'] ?? '', ['super_admin', 'admin_klinik', 'spv_klinik', 'cs'])) {
-    echo json_encode(['success' => false, 'message' => 'Access denied']);
+$role = trim((string)($_SESSION['role'] ?? ''));
+if (!isset($_SESSION['user_id']) || !in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik', 'cs'])) {
+    echo json_encode(['success' => false, 'message' => 'Unauthorized access: ' . $role]);
     exit;
 }
 
