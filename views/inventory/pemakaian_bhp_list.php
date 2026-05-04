@@ -243,6 +243,7 @@ if ($active_tab == 'list') {
             COALESCE(uc.multiplier, 1) AS uom_ratio,
             pbd.qty, 
             u_hc.nama_lengkap as hc_name,
+            u_created.nama_lengkap as created_by_name,
             k.nama_klinik,
             k.id as klinik_id
         FROM inventory_pemakaian_bhp pb
@@ -893,20 +894,20 @@ if ($default_modal_klinik_id) {
                     <thead>
                         <tr>
                             <th width="120"><i class="far fa-clock me-1"></i> Tgl Input</th>
-                            <th width="120"><i class="far fa-calendar-alt me-1"></i> Tgl Pemakaian BHP</th>
+                            <th width="110"><i class="far fa-calendar-alt me-1"></i> Tgl Pakai</th>
                             <th><i class="fas fa-user-md me-1"></i> PIC / Nakes / Klinik</th>
                             <th><i class="fas fa-box me-1"></i> Item</th>
-                            <th width="80" class="text-center">Qty (Unit)</th>
-                            <th width="100">UoM</th>
-                            <th width="100" class="text-center bg-light">Qty Odoo</th>
-                            <th width="80" class="bg-light">UoM Odoo</th>
-                            <th><i class="fas fa-info-circle me-1"></i> Status</th>
+                            <th width="65" class="text-center">Qty</th>
+                            <th width="65">UoM</th>
+                            <th width="65" class="text-center bg-light">Qty Odoo</th>
+                            <th width="65" class="bg-light">UoM Odoo</th>
+                            <th width="150"><i class="fas fa-hashtag me-1"></i> No. Pemakaian</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php while ($row = $result_out->fetch_assoc()):
                             $status_text = ($row['jenis_pemakaian'] === 'hc') ? 'Additional Used - From Tas HC' : 'Direct Used - On Site Klinik';
-                            $pic_name = ($row['jenis_pemakaian'] === 'hc') ? $row['hc_name'] : $row['nama_klinik'];
+                            $nakes_name = ($row['jenis_pemakaian'] === 'hc') ? $row['hc_name'] : '';
                             $badge_class = ($row['jenis_pemakaian'] === 'hc') ? 'badge-hc' : 'badge-klinik';
 
                             // Calculate Odoo Qty
@@ -918,9 +919,14 @@ if ($default_modal_klinik_id) {
                                 <td><?= date('d/m/Y H:i', strtotime($row['created_at'] ?? '')) ?></td>
                                 <td><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
                                 <td>
-                                    <div class="fw-500 text-dark">
-                                        <?= htmlspecialchars($pic_name) ?>
+                                    <div class="fw-bold text-dark" style="font-size: 0.85rem;">
+                                        <?= htmlspecialchars($row['nama_klinik'] ?? '-') ?>
                                     </div>
+                                    <?php if (!empty($nakes_name)): ?>
+                                        <div class="text-muted mt-1" style="font-size: 0.7rem;">
+                                            <i class="fas fa-user-md me-1"></i><?= htmlspecialchars($nakes_name) ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <div class="fw-600 text-dark">
@@ -928,18 +934,16 @@ if ($default_modal_klinik_id) {
                                     </div>
                                 </td>
                                 <td class="text-center fw-bold text-primary"><?= fmt_qty($row['qty']) ?></td>
-                                <td class="text-muted small">
-                                    <?= htmlspecialchars($row['satuan']) ?>
-                                </td>
+                                <td class="text-muted small"><?= htmlspecialchars($row['satuan']) ?></td>
                                 <td class="text-center fw-bold text-success bg-light"><?= fmt_qty($qty_odoo) ?></td>
                                 <td class="text-muted small bg-light"><?= htmlspecialchars($uom_odoo) ?></td>
                                 <td>
-                                    <div class="d-flex align-items-center">
-                                        <span class="status-dot <?= $badge_class ?> me-2"></span>
-                                        <span class="text-muted small" style="font-size: 0.7rem;">
-                                            <?= $status_text ?>
-                                        </span>
-                                    </div>
+                                    <div class="fw-600 text-dark" style="font-size: 0.75rem;"><?= htmlspecialchars($row['nomor_pemakaian']) ?></div>
+                                    <?php if (stripos($row['jenis_pemakaian'], 'hc') !== false): ?>
+                                        <span class="badge bg-warning" style="font-size: 0.6rem;">HC</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-info" style="font-size: 0.6rem;">KLINIK</span>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endwhile; ?>
@@ -1119,30 +1123,22 @@ if ($default_modal_klinik_id) {
                         <!-- Form Header Info -->
                         <div class="card border-0 shadow-sm mb-4">
                             <div class="card-body">
-                                <div class="row g-3">
+                                <div class="row g-2">
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold small mb-1">
-                                            <i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal Pemakaian BHP
-                                            <span class="text-danger">*</span>
+                                            <i class="fas fa-calendar-alt text-primary me-1"></i>Tgl Pakai BHP <span class="text-danger">*</span>
                                         </label>
-                                        <input type="date" name="tanggal" id="editTanggal" class="form-control"
-                                            required>
+                                        <input type="date" name="tanggal" id="editTanggal" class="form-control form-control-sm" required>
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold small mb-1">
-                                            <i class="fas fa-tags text-primary me-1"></i>Jenis Pemakaian <span
-                                                class="text-danger">*</span>
+                                            <i class="fas fa-tags text-primary me-1"></i>Jenis <span class="text-danger">*</span>
                                         </label>
-                                        <div class="jenis-segmented mt-1" id="editJenisSegmented">
-                                            <button type="button"
-                                                class="jenis-segment-btn <?= ($user_role === 'petugas_hc') ? '' : 'active' ?>"
-                                                data-value="klinik" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>Clinic</button>
-                                            <button type="button"
-                                                class="jenis-segment-btn <?= ($user_role === 'petugas_hc') ? 'active' : '' ?>"
-                                                data-value="hc" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>HC</button>
+                                        <div class="jenis-segmented" id="editJenisSegmented" style="padding: 2px;">
+                                            <button type="button" class="jenis-segment-btn py-1 <?= ($user_role === 'petugas_hc') ? '' : 'active' ?>" data-value="klinik" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?> style="font-size: 0.75rem;">Clinic</button>
+                                            <button type="button" class="jenis-segment-btn py-1 <?= ($user_role === 'petugas_hc') ? 'active' : '' ?>" data-value="hc" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?> style="font-size: 0.75rem;">HC</button>
                                         </div>
-                                        <select name="jenis_pemakaian" id="editJenisPemakaian" class="d-none" required
-                                            <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>
+                                        <select name="jenis_pemakaian" id="editJenisPemakaian" class="d-none" required <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>
                                             <option value="klinik">Pemakaian Klinik</option>
                                             <option value="hc">Pemakaian HC</option>
                                         </select>
@@ -1150,28 +1146,22 @@ if ($default_modal_klinik_id) {
                                             <input type="hidden" name="jenis_pemakaian" value="hc">
                                         <?php endif; ?>
                                     </div>
-
-                                    <div class="col-md-3">
+                                    <div class="col-md-6">
                                         <label class="form-label fw-semibold small mb-1">
                                             <i class="fas fa-hospital text-primary me-1"></i>Klinik
                                         </label>
-                                        <input type="text" class="form-control bg-light" id="editKlinikName" value=""
-                                            readonly>
+                                        <input type="text" class="form-control form-control-sm bg-light" id="editKlinikName" value="" readonly>
                                         <input type="hidden" name="klinik_id" id="editKlinikId" value="">
                                     </div>
-                                    <div class="col-md-3" id="editPetugasHcWrap"
-                                        style="<?= ($user_role === 'petugas_hc') ? 'display:block;' : 'display:none;' ?>">
+                                    <div class="col-md-3" id="editPetugasHcWrap" style="<?= ($user_role === 'petugas_hc') ? 'display:block;' : 'display:none;' ?>">
                                         <label class="form-label fw-semibold small mb-1">
-                                            <i class="fas fa-user-nurse text-primary me-1"></i>Petugas HC <span
-                                                class="text-danger">*</span>
+                                            <i class="fas fa-user-nurse text-primary me-1"></i>Petugas HC <span class="text-danger">*</span>
                                         </label>
                                         <?php if ($user_role === 'petugas_hc'): ?>
-                                            <input type="text" class="form-control bg-light"
-                                                value="<?= htmlspecialchars($_SESSION['nama_lengkap']) ?>" readonly>
-                                            <input type="hidden" name="user_hc_id" id="editUserHcIdHidden"
-                                                value="<?= (int) $_SESSION['user_id'] ?>">
+                                            <input type="text" class="form-control form-control-sm bg-light" value="<?= htmlspecialchars($_SESSION['nama_lengkap']) ?>" readonly>
+                                            <input type="hidden" name="user_hc_id" id="editUserHcIdHidden" value="<?= (int) $_SESSION['user_id'] ?>">
                                         <?php else: ?>
-                                            <select name="user_hc_id" id="editUserHcId" class="form-select">
+                                            <select name="user_hc_id" id="editUserHcId" class="form-select form-select-sm">
                                                 <option value="">- Pilih Petugas -</option>
                                             </select>
                                         <?php endif; ?>
@@ -1253,33 +1243,30 @@ if ($default_modal_klinik_id) {
                     <div class="card border-0 shadow-sm mb-4">
                         <div class="card-body">
                             <div class="row g-3">
-                                <div class="col-md-3">
+                                <div class="col-md-2">
                                     <label class="form-label fw-semibold small mb-1">
-                                        <i class="fas fa-clock text-muted me-1"></i>Tanggal Input
+                                        <i class="fas fa-clock text-muted me-1"></i>Tgl Input
                                     </label>
-                                    <input type="text" class="form-control bg-light" value="<?= date('d/m/Y H:i') ?>"
-                                        readonly>
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= date('d/m/Y H:i') ?>" readonly>
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label fw-semibold small mb-1">
-                                        <i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal Pemakaian BHP <span
-                                            class="text-danger">*</span>
+                                        <i class="fas fa-calendar-alt text-primary me-1"></i>Tgl Pakai BHP <span class="text-danger">*</span>
                                     </label>
-                                    <input type="date" name="tanggal" id="modalTambahTanggal" class="form-control"
-                                        value="" required>
+                                    <input type="date" name="tanggal" id="modalTambahTanggal" class="form-control form-control-sm" value="" required>
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label fw-semibold small mb-1">
-                                        <i class="fas fa-tags text-primary me-1"></i>Jenis Pemakaian <span
+                                        <i class="fas fa-tags text-primary me-1"></i>Jenis <span
                                             class="text-danger">*</span>
                                     </label>
-                                    <div class="jenis-segmented mt-1" id="modalJenisSegmented">
+                                    <div class="jenis-segmented" id="modalJenisSegmented" style="padding: 2px;">
                                         <button type="button"
-                                            class="jenis-segment-btn <?= ($user_role === 'petugas_hc') ? '' : 'active' ?>"
-                                            data-value="klinik" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>Clinic</button>
+                                            class="jenis-segment-btn py-1 <?= ($user_role === 'petugas_hc') ? '' : 'active' ?>"
+                                            data-value="klinik" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?> style="font-size: 0.75rem;">Clinic</button>
                                         <button type="button"
-                                            class="jenis-segment-btn <?= ($user_role === 'petugas_hc') ? 'active' : '' ?>"
-                                            data-value="hc" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>HC</button>
+                                            class="jenis-segment-btn py-1 <?= ($user_role === 'petugas_hc') ? 'active' : '' ?>"
+                                            data-value="hc" <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?> style="font-size: 0.75rem;">HC</button>
                                     </div>
                                     <select name="jenis_pemakaian" id="modalJenisPemakaian" class="d-none" required
                                         <?= ($user_role === 'petugas_hc') ? 'disabled' : '' ?>>
@@ -1292,12 +1279,12 @@ if ($default_modal_klinik_id) {
                                         <input type="hidden" name="jenis_pemakaian" value="hc">
                                     <?php endif; ?>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label fw-semibold small mb-1">
                                         <i class="fas fa-hospital text-primary me-1"></i>Klinik
                                     </label>
                                     <?php if ($can_choose_klinik): ?>
-                                        <select name="klinik_id" id="modalKlinikId" class="form-select" required>
+                                        <select name="klinik_id" id="modalKlinikId" class="form-select form-select-sm" required>
                                             <?php foreach ($klinik_options as $k): ?>
                                                 <option value="<?= (int) $k['id'] ?>" <?= ((int) $k['id'] === (int) $default_modal_klinik_id) ? 'selected' : '' ?>>
                                                     <?= htmlspecialchars($k['nama_klinik']) ?>
@@ -1305,7 +1292,7 @@ if ($default_modal_klinik_id) {
                                             <?php endforeach; ?>
                                         </select>
                                     <?php else: ?>
-                                        <input type="text" class="form-control bg-light"
+                                        <input type="text" class="form-control form-control-sm bg-light"
                                             value="<?= htmlspecialchars($klinik_name) ?>" readonly>
                                         <input type="hidden" name="klinik_id" id="modalKlinikIdHidden"
                                             value="<?= (int) $user_klinik_id ?>">
