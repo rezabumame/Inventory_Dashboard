@@ -41,6 +41,19 @@ function renderPagination($total_pages, $current_page) {
 
 
 $message = '';
+if (isset($_SESSION['success'])) {
+    $message = '<div class="alert alert-success">' . $_SESSION['success'] . '</div>';
+    unset($_SESSION['success']);
+}
+if (isset($_SESSION['error'])) {
+    $message = '<div class="alert alert-danger">' . $_SESSION['error'] . '</div>';
+    unset($_SESSION['error']);
+}
+if (isset($_SESSION['warning'])) {
+    $message = '<div class="alert alert-warning">' . $_SESSION['warning'] . '</div>';
+    unset($_SESSION['warning']);
+}
+
 $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
 $user_klinik = $_SESSION['klinik_id'];
@@ -178,8 +191,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
             }
 
             $conn->commit();
-            $message = '<div class="alert alert-success">Request berhasil dibuat: ' . $nomor_request . '</div>';
-            $active_tab = 'outgoing';
+            $_SESSION['success'] = 'Request berhasil dibuat: ' . $nomor_request;
+            redirect('index.php?page=request&tab=outgoing');
         } catch (Exception $e) {
             $conn->rollback();
             $message = '<div class="alert alert-danger">Error: ' . $e->getMessage() . '</div>';
@@ -228,7 +241,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
             $stmt = $conn->prepare("UPDATE inventory_request_barang SET status = 'pending', spv_approved_by = ?, spv_approved_at = NOW(), spv_qr_token = ? WHERE id = ?");
             $stmt->bind_param("isi", $user_id, $token, $request_id);
             $stmt->execute();
-            $message = '<div class="alert alert-success">Request disetujui oleh SPV/Manager dan diteruskan ke tujuan.</div>';
+            $_SESSION['success'] = 'Request disetujui oleh SPV/Manager dan diteruskan ke tujuan.';
+            redirect('index.php?page=request&tab=' . $active_tab);
         }
     } elseif ($can_approve) {
         if ($status_action == 'reject') {
@@ -266,7 +280,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                 $conn->query("UPDATE inventory_request_barang SET status = '$final_status', approved_by = $user_id WHERE id = $request_id");
 
                 $conn->commit();
-                $message = '<div class="alert alert-success">Permintaan barang telah disetujui. Silakan unggah dokumen untuk memproses pergerakan stok.</div>';
+                $_SESSION['success'] = 'Permintaan barang telah disetujui. Silakan unggah dokumen untuk memproses pergerakan stok.';
+                redirect('index.php?page=request&tab=' . $active_tab);
 
             } catch (Exception $e) {
                 $conn->rollback();
@@ -300,7 +315,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                 $stmt = $conn->prepare("UPDATE inventory_request_barang SET status = 'cancelled', cancelled_by = ?, cancelled_at = NOW() WHERE id = ?");
                 $stmt->bind_param("ii", $user_id, $request_id);
                 $stmt->execute();
-                $message = '<div class="alert alert-success">Request berhasil dibatalkan.</div>';
+                $_SESSION['success'] = 'Request berhasil dibatalkan.';
+                redirect('index.php?page=request&tab=' . $active_tab);
             } catch (Exception $e) {
                 $message = '<div class="alert alert-danger">Gagal membatalkan: ' . $e->getMessage() . '</div>';
             }
@@ -515,7 +531,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                             $stmt_dok->execute();
 
                             $conn->commit();
-                            $message = '<div class="alert alert-success">Dokumen berhasil diunggah. Pergerakan stok telah diproses.</div>';
+                            $_SESSION['success'] = 'Dokumen berhasil diunggah. Pergerakan stok telah diproses.';
+                            redirect('index.php?page=request&tab=' . $active_tab);
                         } catch (Exception $e) {
                             $conn->rollback();
                             $message = '<div class="alert alert-danger">Gagal memproses permintaan: ' . $e->getMessage() . '</div>';
@@ -540,7 +557,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
             $stmt = $conn->prepare("UPDATE inventory_request_barang SET status = 'completed', processed_by = ?, processed_at = NOW() WHERE id = ?");
             $stmt->bind_param("ii", $user_id, $request_id);
             if ($stmt->execute()) {
-                $message = '<div class="alert alert-success">Permintaan berhasil ditandai selesai. Sisa barang tidak akan diproses lagi.</div>';
+                $_SESSION['success'] = 'Permintaan berhasil ditandai selesai. Sisa barang tidak akan diproses lagi.';
+                redirect('index.php?page=request&tab=' . $active_tab);
             } else {
                 $message = '<div class="alert alert-danger">Gagal mengubah status.</div>';
             }
@@ -562,7 +580,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     if ($stmt->get_result()->num_rows > 0) {
         $cat = $conn->real_escape_string("Dibatalkan oleh pemohon");
         $conn->query("UPDATE inventory_request_barang SET status = 'rejected', catatan = CONCAT(COALESCE(catatan,''), '\n', '$cat') WHERE id = $request_id");
-        $message = '<div class="alert alert-success">Permintaan barang berhasil dibatalkan.</div>';
+        $_SESSION['success'] = 'Permintaan barang berhasil dibatalkan.';
+        redirect('index.php?page=request&tab=' . $active_tab);
     } else {
         $message = '<div class="alert alert-danger">Permintaan barang tidak dapat dibatalkan.</div>';
     }
