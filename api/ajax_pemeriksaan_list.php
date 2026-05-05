@@ -4,7 +4,7 @@ require_once __DIR__ . '/../config/database.php';
 header('Content-Type: application/json');
 
 $role = trim((string)($_SESSION['role'] ?? ''));
-if (!isset($_SESSION['user_id']) || !in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik', 'cs'])) {
+if (!isset($_SESSION['user_id']) || !in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik', 'cs', 'admin_hc'])) {
     // If it's spv_klinik and they are allowed as admin_klinik
     if ($role === 'spv_klinik') {
         // Pass

@@ -9,7 +9,7 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 $role = (string)($_SESSION['role'] ?? '');
-if (!in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik'], true)) {
+if (!in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'admin_hc'], true)) {
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }

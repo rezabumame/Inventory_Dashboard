@@ -10,7 +10,7 @@ require_once __DIR__ . '/../includes/history_helper.php';
 header('Content-Type: application/json');
 
 // Check role access
-check_role(['super_admin', 'admin_klinik', 'spv_klinik', 'cs']);
+check_role(['super_admin', 'admin_klinik', 'spv_klinik', 'cs', 'admin_hc']);
 
 $action = (string)($_POST['action'] ?? ($_GET['action'] ?? ''));
 $id = (int)($_POST['id'] ?? ($_GET['id'] ?? 0));
@@ -622,14 +622,31 @@ try {
             
         case 'move':
             // Move booking
-            if (!in_array($role, ['admin_klinik', 'spv_klinik', 'super_admin'], true)) {
+            if (!in_array($role, ['admin_klinik', 'spv_klinik', 'super_admin', 'admin_hc'], true)) {
                 throw new Exception('Access denied');
             }
             $new_status = (string)($_POST['new_status'] ?? ($_GET['new_status'] ?? ''));
             $new_status = trim($new_status);
+            $new_klinik_id = (int)($_POST['new_klinik_id'] ?? 0);
+
+            // Special restriction for admin_hc
+            if ($role === 'admin_hc') {
+                if (stripos($booking['status_booking'], 'HC') === false) {
+                    throw new Exception("Role Admin HC hanya dapat memindahkan booking berstatus HC");
+                }
+                if (stripos($new_status, 'HC') === false) {
+                    throw new Exception("Role Admin HC tidak dapat merubah status booking menjadi Clinic");
+                }
+                if ($new_klinik_id <= 0) {
+                    throw new Exception("Pilih klinik tujuan");
+                }
+            }
+
             if (!in_array($new_status, ['Reserved - Clinic', 'Reserved - HC'], true)) {
                 throw new Exception("Status baru tidak valid");
             }
+            
+            $target_klinik_id = $new_klinik_id > 0 ? $new_klinik_id : (int)($booking['klinik_id'] ?? 0);
             $target_is_hc = (stripos($new_status, 'HC') !== false);
             $lock_name = 'booking_action_' . (int)($booking['klinik_id'] ?? 0);
             $lock_esc = $conn->real_escape_string($lock_name);
@@ -643,7 +660,7 @@ try {
                     $barang_id = (int)($item['barang_id'] ?? 0);
                     $need = (float)($item['qty_gantung'] ?? 0);
                     if ($barang_id <= 0 || $need <= 0) continue;
-                    $ef = stock_effective($conn, (int)($booking['klinik_id'] ?? 0), $target_is_hc, $barang_id);
+                    $ef = stock_effective($conn, $target_klinik_id, $target_is_hc, $barang_id);
                     if (!$ef['ok']) continue;
                     $avail = (float)($ef['available'] ?? 0);
                     if ($avail < $need) {
@@ -657,6 +674,7 @@ try {
 
                 $conn->query("UPDATE inventory_booking_pemeriksaan SET 
                                 status_booking = '" . $conn->real_escape_string($new_status) . "',
+                                klinik_id = $target_klinik_id,
                                 is_out_of_stock = $is_oos,
                                 out_of_stock_items = " . ($oos_str ? "'" . $conn->real_escape_string($oos_str) . "'" : "NULL") . "
                               WHERE id = $id");
@@ -667,8 +685,17 @@ try {
                     $conn->query("UPDATE inventory_booking_detail SET qty_reserved_onsite = qty_gantung, qty_reserved_hc = 0 WHERE booking_id = $id");
                 }
                 
-                logBookingHistory($conn, $id, 'move', ['status_booking' => ['old' => $booking['status_booking'], 'new' => $new_status]], "Booking dipindahkan ke $new_status");
-                $msg = "Booking berhasil dipindahkan ke $new_status." . ($is_oos ? " (Peringatan: Stok tidak mencukupi di lokasi tujuan)" : "");
+                $log_msg = "Booking dipindahkan ke $new_status";
+                if ($new_klinik_id > 0 && $new_klinik_id != (int)$booking['klinik_id']) {
+                    $res_old_k = $conn->query("SELECT nama_klinik FROM inventory_klinik WHERE id = " . (int)$booking['klinik_id']);
+                    $res_new_k = $conn->query("SELECT nama_klinik FROM inventory_klinik WHERE id = $new_klinik_id");
+                    $old_k_name = $res_old_k->fetch_assoc()['nama_klinik'] ?? 'Unknown';
+                    $new_k_name = $res_new_k->fetch_assoc()['nama_klinik'] ?? 'Unknown';
+                    $log_msg .= " & dari klinik $old_k_name ke $new_k_name";
+                }
+
+                logBookingHistory($conn, $id, 'move', ['status_booking' => ['old' => $booking['status_booking'], 'new' => $new_status], 'klinik_id' => ['old' => $booking['klinik_id'], 'new' => $target_klinik_id]], $log_msg);
+                $msg = "Booking berhasil dipindahkan." . ($is_oos ? " (Peringatan: Stok tidak mencukupi di lokasi tujuan)" : "");
             } finally {
                 $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
             }

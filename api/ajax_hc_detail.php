@@ -11,7 +11,7 @@ if (!isset($_SESSION['user_id'])) {
         die("Access Denied");
     }
 } else {
-    check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'petugas_hc', 'cs']);
+    check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'petugas_hc', 'cs', 'admin_hc']);
 }
 
 // Get parameters

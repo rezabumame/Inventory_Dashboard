@@ -790,6 +790,17 @@ try {
         return "Changed to DATE";
     });
 
+    run_migration_task("Schema: Add role admin_hc to inventory_users", function() use ($conn) {
+        $res = $conn->query("SHOW COLUMNS FROM inventory_users LIKE 'role'");
+        $row = $res->fetch_assoc();
+        $type = $row['Type'];
+        if (strpos($type, 'admin_hc') !== false) return "Already exists";
+        
+        $new_type = str_replace(")", ",'admin_hc')", $type);
+        $conn->query("ALTER TABLE inventory_users MODIFY COLUMN role $new_type");
+        return "Role admin_hc added";
+    });
+
 } catch (Throwable $e) {
     if ($is_cli) {
         $stderr = defined('STDERR') ? STDERR : fopen('php://stderr', 'w');

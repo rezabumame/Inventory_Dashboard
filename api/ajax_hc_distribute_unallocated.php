@@ -24,7 +24,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $role = (string)($_SESSION['role'] ?? '');
-if (!in_array($role, ['super_admin', 'admin_klinik'], true)) {
+if (!in_array($role, ['super_admin', 'admin_klinik', 'admin_hc'], true)) {
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }

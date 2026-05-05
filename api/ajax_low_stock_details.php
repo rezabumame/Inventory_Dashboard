@@ -120,6 +120,25 @@ if ($role === 'super_admin') {
             $items[] = $row;
         }
     }
+} else if ($role === 'admin_hc') {
+    // Admin HC: see all homecare low stock items
+    $sql = "SELECT
+                b.id,
+                b.kode_barang,
+                b.nama_barang,
+                sm.qty as stok_saat_ini,
+                b.stok_minimum,
+                COALESCE(k.nama_klinik, TRIM(sm.location_code), '-') AS lokasi,
+                'hc' AS tipe_lokasi
+            FROM inventory_stock_mirror sm
+            JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang)
+            JOIN inventory_klinik k ON TRIM(sm.location_code) = TRIM(k.kode_homecare)
+            WHERE sm.qty <= b.stok_minimum
+            ORDER BY lokasi ASC, b.nama_barang ASC";
+    $res = $conn->query($sql);
+    while ($res && ($row = $res->fetch_assoc())) {
+        $items[] = $row;
+    }
 } else {
     echo json_encode(['success' => false, 'message' => 'Role not authorized for this view']);
     exit;

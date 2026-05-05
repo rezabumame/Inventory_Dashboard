@@ -173,6 +173,7 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
     .role-admin_klinik { background: #0ea5e9; color: white; }
     .role-spv_klinik { background: #6366f1; color: white; }
     .role-petugas_hc { background: #8b5cf6; color: white; }
+    .role-admin_hc { background: var(--bumame-blue); color: white; }
     .role-cs { background: #10b981; color: white; }
 
     /* Action Buttons */
@@ -293,6 +294,7 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                     <option value="admin_klinik" <?= $filter_role === 'admin_klinik' ? 'selected' : '' ?>>Admin Klinik</option>
                     <option value="spv_klinik" <?= $filter_role === 'spv_klinik' ? 'selected' : '' ?>>SPV Klinik</option>
                     <option value="petugas_hc" <?= $filter_role === 'petugas_hc' ? 'selected' : '' ?>>Petugas HC</option>
+                    <option value="admin_hc" <?= $filter_role === 'admin_hc' ? 'selected' : '' ?>>Admin HC</option>
                     <option value="cs" <?= $filter_role === 'cs' ? 'selected' : '' ?>>CS</option>
                 </select>
             </div>
@@ -487,6 +489,7 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                             <option value="admin_klinik">Admin Klinik</option>
                             <option value="spv_klinik">SPV Klinik</option>
                             <option value="petugas_hc">Petugas HC</option>
+                            <option value="admin_hc">Admin HC</option>
                             <option value="cs">CS</option>
                         </select>
                     </div>
@@ -547,6 +550,7 @@ while ($row = $res_k->fetch_assoc()) $kliniks[] = $row;
                             <option value="admin_klinik">Admin Klinik</option>
                             <option value="spv_klinik">SPV Klinik</option>
                             <option value="petugas_hc">Petugas HC</option>
+                            <option value="admin_hc">Admin HC</option>
                             <option value="cs">CS</option>
                         </select>
                     </div>

@@ -10,7 +10,7 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$allowed = ['cs', 'super_admin', 'admin_klinik'];
+$allowed = ['cs', 'super_admin', 'admin_klinik', 'admin_hc'];
 if (!in_array($_SESSION['role'] ?? '', $allowed, true)) {
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
@@ -25,6 +25,8 @@ if ($id <= 0) {
 $where = "b.id = ?";
 if (($_SESSION['role'] ?? '') === 'admin_klinik') {
     $where .= " AND b.klinik_id = " . (int)($_SESSION['klinik_id'] ?? 0);
+} else if (($_SESSION['role'] ?? '') === 'admin_hc') {
+    $where .= " AND b.status_booking LIKE '%HC%'";
 }
 
 $stmt = $conn->prepare("

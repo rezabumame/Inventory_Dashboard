@@ -106,6 +106,17 @@ if ($role === 'super_admin') {
 
     $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_booking_pemeriksaan WHERE tanggal_pemeriksaan = CURDATE() AND status = 'booked'");
     if ($res) $today_bookings = (int)($res->fetch_assoc()['cnt'] ?? 0);
+} elseif ($role === 'admin_hc') {
+    // ADMIN HC STATS
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_barang");
+    $total_barang = (int)($res->fetch_assoc()['cnt'] ?? 0);
+
+    $low_stock_label = 'Low Stock (Semua HC)';
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_stock_mirror sm JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang) JOIN inventory_klinik k ON TRIM(sm.location_code) = TRIM(k.kode_homecare) WHERE sm.qty <= b.stok_minimum");
+    $low_stock = (int)($res->fetch_assoc()['cnt'] ?? 0);
+
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_booking_pemeriksaan WHERE tanggal_pemeriksaan = CURDATE() AND status = 'booked' AND status_booking LIKE '%HC%'");
+    $today_bookings = (int)($res->fetch_assoc()['cnt'] ?? 0);
 }
 
 $upcoming_bookings = [];
@@ -113,6 +124,8 @@ $book_cond = "1=1";
 // Schedule only specific for clinic roles
 if (in_array($role, ['cs', 'admin_klinik', 'spv_klinik'], true) && $klinik_id > 0) {
     $book_cond = "b.klinik_id = $klinik_id";
+} elseif ($role === 'admin_hc') {
+    $book_cond = "b.status_booking LIKE '%HC%'";
 }
 $sql_book = "SELECT b.*, k.nama_klinik,
              (SELECT GROUP_CONCAT(bp.nama_pasien SEPARATOR ', ') FROM inventory_booking_pasien bp WHERE bp.booking_id = b.id) as nama_pasien_list
@@ -252,7 +265,7 @@ if ($role === 'super_admin') {
                     <i class="fas fa-plus-circle me-2"></i>Booking
                 </a>
             <?php endif; ?>
-            <?php if ($role !== 'cs'): ?>
+            <?php if (!in_array($role, ['cs', 'admin_hc'])): ?>
                 <a href="index.php?page=request" class="btn btn-outline-primary">
                     <i class="fas fa-exchange-alt me-2"></i>Request
                 </a>

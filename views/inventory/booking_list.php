@@ -1,5 +1,5 @@
 <?php
-check_role(['cs', 'super_admin', 'admin_klinik', 'spv_klinik']);
+check_role(['cs', 'super_admin', 'admin_klinik', 'spv_klinik', 'admin_hc']);
 require_once __DIR__ . '/../../lib/stock.php';
 
 
@@ -42,13 +42,17 @@ if (!$has_filters) {
 }
 if ($show_all)
     $filter_today = false;
-$reset_url = ($role === 'admin_klinik' || $role === 'spv_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
+$reset_url = in_array($role, ['admin_klinik', 'spv_klinik'], true) ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
 
 // Fetch Bookings
 $where = "1=1";
-if (in_array($_SESSION['role'], ['admin_klinik', 'spv_klinik'], true)) {
-    $where .= " AND b.klinik_id = " . (int)$_SESSION['klinik_id'];
-    // Allow admin_klinik & spv_klinik to see completed bookings as well
+if (in_array($_SESSION['role'], ['admin_klinik', 'spv_klinik', 'admin_hc'], true)) {
+    if ($_SESSION['role'] !== 'admin_hc') {
+        $where .= " AND b.klinik_id = " . (int)$_SESSION['klinik_id'];
+    } else {
+        $where .= " AND b.status_booking LIKE '%HC%'";
+    }
+    // Allow admin roles to see completed bookings as well
     $where .= " AND b.status IN ('booked', 'rescheduled', 'completed') AND LOWER(COALESCE(b.booking_type, 'keep')) IN ('keep','fixed')";
 }
 if ($filter_q !== '') {
@@ -912,6 +916,7 @@ if (!empty($booking_ids)) {
                                     $is_spv_klinik = ($_SESSION['role'] ?? '') === 'spv_klinik';
                                     $is_super_admin = ($_SESSION['role'] ?? '') === 'super_admin';
                                     $is_cs = ($_SESSION['role'] ?? '') === 'cs';
+                                    $is_admin_hc = ($_SESSION['role'] ?? '') === 'admin_hc';
                                     ?>
 
                                     <?php if (in_array($row['status'], ['booked', 'rescheduled', 'pending_edit', 'pending_delete', 'rejected'])): ?>
@@ -922,11 +927,13 @@ if (!empty($booking_ids)) {
 
                                         <div class="action-drawer">
                                             <?php if (in_array($row['status'], ['booked', 'rescheduled'])): ?>
-                                                <?php if ($is_super_admin || $is_admin_klinik || $is_spv_klinik): ?>
+                                                <?php if ($is_super_admin || $is_admin_klinik || $is_spv_klinik || $is_admin_hc): ?>
                                                     <button type="button" class="btn-drawer-icon text-info" title="Move"
-                                                        onclick="openMoveModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>', '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>');">
+                                                        onclick="openMoveModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>', '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>', <?= (int)$row['klinik_id'] ?>);">
                                                         <i class="fas fa-exchange-alt"></i>
                                                     </button>
+                                                <?php endif; ?>
+                                                <?php if ($is_super_admin || $is_admin_klinik || $is_spv_klinik): ?>
                                                     <button type="button" class="btn-drawer-icon text-info" title="Adjust Pax"
                                                         onclick="openAdjustModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nomor_booking'], ENT_QUOTES) ?>', <?= $row['jumlah_pax'] ?? 1 ?>, <?= (int) $row['klinik_id'] ?>, '<?= htmlspecialchars($row['status_booking'] ?? 'Reserved - Clinic', ENT_QUOTES) ?>');">
                                                         <i class="fas fa-user-plus"></i>
@@ -2159,38 +2166,85 @@ if (!empty($booking_ids)) {
             return false;
         };
 
-        window.openMoveModal = function (id, currentStatus, nomorBooking) {
+        window.openMoveModal = function (id, currentStatus, nomorBooking, currentKlinikId) {
             $('#moveBookingId').val(id);
             $('#moveNomorBooking').text(nomorBooking);
             $('#moveCurrentStatus').text(currentStatus);
 
-            // Determine target status
-            let target = '';
-            let label = '';
-            if (currentStatus.toLowerCase().includes('clinic')) {
-                target = 'Reserved - HC';
-                label = 'Homecare (HC)';
-            } else {
-                target = 'Reserved - Clinic';
-                label = 'Klinik (Clinic)';
+            // Hide current clinic from selection
+            $('#moveKlinikId option').show();
+            if (currentKlinikId) {
+                $('#moveKlinikId option[value="' + currentKlinikId + '"]').hide();
             }
+            $('#moveKlinikId').val('');
 
-            $('#moveNewStatus').val(target);
-            $('#moveTargetLabel').text(label);
+            const isAdminHC = <?= json_encode($is_admin_hc) ?>;
+            const isSuperAdmin = <?= json_encode($is_super_admin) ?>;
+            
+            if (isAdminHC || isSuperAdmin) {
+                $('#moveKlinikSelection').show();
+                $('#moveNewStatus').val(currentStatus);
+                
+                if (isAdminHC) {
+                    $('#moveNewStatus').val('Reserved - HC').prop('disabled', true);
+                    $('#moveStatusSelection').hide();
+                    $('#moveTargetLabel').text('Pindah Klinik (HC)');
+                    $('#moveTargetInfo').text('Booking HC akan dipindahkan ke klinik lain.');
+                } else {
+                    $('#moveNewStatus').prop('disabled', false);
+                    $('#moveStatusSelection').show();
+                    $('#moveTargetLabel').text('Pindah Status / Klinik');
+                    $('#moveTargetInfo').text('Ubah status atau pindahkan lokasi pemeriksaan.');
+                }
+            } else {
+                $('#moveKlinikSelection').hide();
+                $('#moveStatusSelection').hide();
+                $('#moveNewStatus').prop('disabled', false); // Ensure it's enabled for simple toggle
+                
+                let target = '';
+                let label = '';
+                if (currentStatus.toLowerCase().includes('clinic')) {
+                    target = 'Reserved - HC';
+                    label = 'Ubah ke Homecare (HC)';
+                } else {
+                    target = 'Reserved - Clinic';
+                    label = 'Ubah ke Klinik (Clinic)';
+                }
+                $('#moveNewStatus').val(target);
+                $('#moveTargetLabel').text(label);
+                $('#moveTargetInfo').text('Stok akan dialokasikan ulang sesuai lokasi baru.');
+            }
 
             bootstrap.Modal.getOrCreateInstance(document.getElementById('modalMove')).show();
         };
 
         window.submitMove = function () {
             const id = $('#moveBookingId').val();
-            const newStatus = $('#moveNewStatus').val();
+            // Get value even if disabled (for admin_hc)
+            const newStatus = $('#moveNewStatus').val() || $('#moveNewStatus').attr('value'); 
             const targetLabel = $('#moveTargetLabel').text();
+            const klinikId = $('#moveKlinikId').val();
+            
+            const isAdminHC = <?= json_encode($is_admin_hc) ?>;
+            const isSuperAdmin = <?= json_encode($is_super_admin) ?>;
+            
+            if (isAdminHC && !klinikId) {
+                Swal.fire('Perhatian', 'Silakan pilih klinik tujuan pemindahan HC.', 'warning');
+                return;
+            }
+            
+            // If superadmin didn't pick clinic, but also didn't change status, warn them
+            if (isSuperAdmin && !klinikId && newStatus === $('#moveCurrentStatus').text()) {
+                Swal.fire('Info', 'Tidak ada perubahan status atau klinik yang dipilih.', 'info');
+                return;
+            }
 
             showConfirm(`Pindahkan booking ini ke ${targetLabel}?`, 'Konfirmasi Perpindahan', function () {
                 postBookingAction({
                     action: 'move',
                     id: id,
-                    new_status: newStatus
+                    new_status: newStatus,
+                    new_klinik_id: klinikId
                 });
                 bootstrap.Modal.getOrCreateInstance(document.getElementById('modalMove')).hide();
             });
@@ -2611,7 +2665,7 @@ if (!empty($booking_ids)) {
                 // 2. Move (Super/Admin Klinik)
                 if (canSuperAdmin || canAdminKlinik) {
                     html += `
-                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openMoveModal(${data.id}, '${data.status_booking}', '${data.nomor_booking}'); return false;">
+                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openMoveModal(${data.id}, '${data.status_booking}', '${data.nomor_booking}', ${data.klinik_id}); return false;">
                     <div class="action-hub-icon bg-light-info text-info"><i class="fas fa-exchange-alt"></i></div>
                     <div class="action-hub-text">
                         <span class="action-hub-label">Pindahkan Lokasi</span>
@@ -2857,38 +2911,79 @@ if (!empty($booking_ids)) {
 
     <!-- Modal Move -->
     <div class="modal fade" id="modalMove" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header" style="background-color: #204EAB;">
-                    <h5 class="modal-title text-white">
-                        <i class="fas fa-exchange-alt"></i> Pindahkan Booking
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
+                <div class="modal-header border-0 py-3" style="background: linear-gradient(135deg, #204EAB 0%, #3b82f6 100%);">
+                    <h5 class="modal-title fw-bold text-white">
+                        <i class="fas fa-exchange-alt me-2"></i>Pindahkan Booking
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body p-4">
                     <input type="hidden" id="moveBookingId">
-                    <input type="hidden" id="moveNewStatus">
 
-                    <div class="alert alert-info mb-0">
-                        <div class="mb-2"><strong>Booking:</strong> <span id="moveNomorBooking"></span></div>
-                        <div class="mb-2"><strong>Status Saat Ini:</strong> <span id="moveCurrentStatus"
-                                class="badge bg-light text-dark border"></span></div>
-                        <hr>
-                        <div class="d-flex align-items-center text-primary">
-                            <i class="fas fa-info-circle me-2 fa-lg"></i>
-                            <div>
-                                Booking ini akan dipindahkan ke <strong><span id="moveTargetLabel"></span></strong>.
-                                <br><small class="text-muted">Stok akan dialokasikan ulang sesuai lokasi baru.</small>
+                    <div class="card border-0 bg-primary bg-opacity-10 mb-4" style="border-radius: 15px;">
+                        <div class="card-body p-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="small text-muted fw-bold text-uppercase">Booking</span>
+                                <span class="fw-bold text-primary" id="moveNomorBooking">-</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="small text-muted fw-bold text-uppercase">Status Saat Ini</span>
+                                <span id="moveCurrentStatus" class="badge rounded-pill bg-white text-primary border border-primary px-3">Reserved - HC</span>
                             </div>
                         </div>
                     </div>
+
+                    <div class="mb-4" id="moveStatusSelection">
+                        <label class="form-label fw-bold text-dark mb-2" style="font-size: 0.9rem;">
+                            <i class="fas fa-tag me-1 text-primary"></i> Status Booking Baru
+                        </label>
+                        <select id="moveNewStatus" class="form-select form-select-lg shadow-sm" style="border-radius: 12px; font-size: 0.9rem; border-color: #e2e8f0;">
+                            <option value="Reserved - Clinic">Reserved - Clinic</option>
+                            <option value="Reserved - HC">Reserved - HC</option>
+                        </select>
+                    </div>
+
+                    <div class="info-box d-flex align-items-center p-3 mb-4" style="background-color: #f0f9ff; border-left: 4px solid #0ea5e9; border-radius: 12px;">
+                        <div class="icon-circle bg-info text-white rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; min-width: 40px;">
+                            <i class="fas fa-info-circle"></i>
+                        </div>
+                        <div>
+                            <div class="fw-bold text-info" style="font-size: 0.9rem;"><span id="moveTargetLabel">Ubah Booking</span></div>
+                            <div class="small text-muted" id="moveTargetInfo" style="font-size: 0.8rem;">Stok akan dialokasikan ulang sesuai lokasi baru.</div>
+                        </div>
+                    </div>
+
+                    <div id="moveKlinikSelection" style="display:none;">
+                        <label class="form-label fw-bold text-dark mb-2" style="font-size: 0.9rem;">
+                            <i class="fas fa-hospital me-1 text-primary"></i> Pilih Klinik Tujuan
+                        </label>
+                        <div class="input-group input-group-lg shadow-sm" style="border-radius: 12px; overflow: hidden;">
+                            <span class="input-group-text bg-white border-0 ps-3 text-muted">
+                                <i class="fas fa-search-location"></i>
+                            </span>
+                            <select id="moveKlinikId" class="form-select border-0 fs-6 py-3" style="box-shadow: none;">
+                                <option value="">Pilih Klinik...</option>
+                                <?php
+                                $klinik_res_move = $conn->query("SELECT * FROM inventory_klinik WHERE status = 'active' ORDER BY nama_klinik");
+                                while ($k = $klinik_res_move->fetch_assoc()):
+                                    ?>
+                                    <option value="<?= $k['id'] ?>"><?= $k['nama_klinik'] ?></option>
+                                <?php endwhile; ?>
+                            </select>
+                        </div>
+                        <div class="mt-2 text-end">
+                            <small class="text-muted italic" style="font-size: 0.75rem;">*Klinik asal otomatis disembunyikan</small>
+                        </div>
+                    </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times"></i> Batal
+                <div class="modal-footer border-0 p-4 pt-0">
+                    <button type="button" class="btn btn-light rounded-pill px-4 fw-bold text-secondary" data-bs-dismiss="modal">
+                        Batal
                     </button>
-                    <button type="button" class="btn btn-info" onclick="submitMove()">
-                        <i class="fas fa-exchange-alt"></i> Pindahkan
+                    <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow" onclick="submitMove()" style="background: linear-gradient(135deg, #204EAB 0%, #3b82f6 100%); border: none;">
+                        <i class="fas fa-check-circle me-2"></i>Konfirmasi Pindah
                     </button>
                 </div>
             </div>

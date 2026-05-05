@@ -1,5 +1,5 @@
 <?php
-check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'petugas_hc', 'cs', 'b2b_ops']);
+check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'petugas_hc', 'cs', 'b2b_ops', 'admin_hc']);
 
 $user_id = $_SESSION['user_id'];
 $message = '';

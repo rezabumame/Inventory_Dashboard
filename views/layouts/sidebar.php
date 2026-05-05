@@ -72,14 +72,18 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['cs', 'super_admin', 'admin_klinik', 'spv_klinik'])): ?>
-        <?php $booking_url = in_array($role, ['admin_klinik', 'spv_klinik'], true) ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1'; ?>
+        <?php if (in_array($role, ['cs', 'super_admin', 'admin_klinik', 'spv_klinik', 'admin_hc'])): ?>
+        <?php 
+            // Admin HC, Super Admin, CS, etc should see ALL by default.
+            // Admin Klinik & SPV Klinik see Today by default.
+            $booking_url = in_array($role, ['admin_klinik', 'spv_klinik'], true) ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1'; 
+        ?>
         <a href="<?= $booking_url ?>" class="sidebar-link <?= $current_page == 'booking' ? 'active' : '' ?>">
             <i class="fas fa-calendar-check"></i> CS Booking
         </a>
         <?php endif; ?>
 
-        <?php if (!in_array($role, ['cs', 'petugas_hc'])): ?>
+        <?php if (!in_array($role, ['cs', 'petugas_hc', 'admin_hc'])): ?>
         <a href="index.php?page=request" class="sidebar-link <?= $current_page == 'request' ? 'active' : '' ?>">
             <div class="d-flex w-100 align-items-center justify-content-between">
                 <div><i class="fas fa-exchange-alt"></i> Request Barang</div>
@@ -149,8 +153,6 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
             <i class="fas fa-file-invoice"></i> Format Odoo
         </a>
         <?php endif; ?>
-
-
 
         <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'])): ?>
         <div class="sidebar-heading">LAPORAN</div>
