@@ -174,7 +174,8 @@ if ($req['ke_level'] == 'klinik') {
                 <th width="110">KODE BARANG</th>
                 <th>NAMA BARANG</th>
                 <th width="80">SATUAN</th>
-                <th width="80" style="text-align: center;">QTY REQ</th>
+                <th width="60" style="text-align: center;">QTY REQ</th>
+                <th width="60" style="text-align: center;">QTY ACC</th>
             </tr>
         </thead>
         <tbody>
@@ -186,7 +187,8 @@ if ($req['ke_level'] == 'klinik') {
                 <td><?= htmlspecialchars($item['kode_barang']) ?></td>
                 <td><?= htmlspecialchars($item['nama_barang']) ?></td>
                 <td><?= htmlspecialchars($item['satuan']) ?></td>
-                <td style="text-align: center; font-weight: bold;"><?= $item['qty_request'] ?></td>
+                <td style="text-align: center;"><?= $item['qty_request'] ?></td>
+                <td style="text-align: center; font-weight: bold;"><?= $item['qty_approved'] ?></td>
             </tr>
             <?php endwhile; ?>
         </tbody>
