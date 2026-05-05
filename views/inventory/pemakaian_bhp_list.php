@@ -484,6 +484,7 @@ if ($default_modal_klinik_id) {
         <form action="index.php" method="GET" class="row g-3 align-items-end">
             <input type="hidden" name="page" value="pemakaian_bhp_list">
             <input type="hidden" name="tab" value="<?= $active_tab ?>">
+            <input type="hidden" name="view" value="<?= $view_mode ?>">
 
             <div class="col-md-3">
                 <label class="form-label small fw-bold text-muted">Dari Tanggal</label>
@@ -497,7 +498,7 @@ if ($default_modal_klinik_id) {
                 <button type="submit" class="btn btn-primary px-4">
                     <i class="fas fa-filter me-2"></i>Filter
                 </button>
-                <a href="index.php?page=pemakaian_bhp_list&tab=<?= $active_tab ?>"
+                <a href="index.php?page=pemakaian_bhp_list&tab=<?= $active_tab ?>&view=<?= $view_mode ?>"
                     class="btn btn-outline-secondary px-4">
                     <i class="fas fa-undo me-2"></i>Reset
                 </a>
