@@ -619,8 +619,19 @@ try {
         $pemakaian_id = $conn->insert_id;
     }
 
-    // Delete temporary auto-deduction data if any (for the same clinic and date)
-    if (!$edit_id) {
+    // --- TARGETED CLEANUP AUTO-DEDUCTION (REFERENCE BASED) ---
+    $realized_auto_ids = $_POST['realized_auto_ids'] ?? '';
+    if (!empty($realized_auto_ids)) {
+        $ids_to_delete = array_filter(array_map('intval', explode(',', $realized_auto_ids)));
+        foreach ($ids_to_delete as $temp_id) {
+            if ($temp_id <= 0) continue;
+            // Clear details and transaction history (Note: Auto-BHP no longer has stock records, but we clear just in case)
+            $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $temp_id");
+            $conn->query("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = $temp_id");
+            $conn->query("DELETE FROM inventory_pemakaian_bhp WHERE id = $temp_id AND is_auto = 1");
+        }
+    } elseif (!$edit_id) {
+        // --- FALLBACK: GLOBAL CLEANUP BY DATE & CLINIC (Only for new records) ---
         $date_only = date('Y-m-d', strtotime($tanggal));
         
         // Cari ID pemakaian temporary
@@ -632,9 +643,6 @@ try {
         
         while ($row_temp = $res_temp->fetch_assoc()) {
             $temp_id = (int)$row_temp['id'];
-            
-            // --- SKIP REVERSE STOCK ---
-            // (We no longer deduct stock for Auto-BHP, so we don't need to return it)
             
             // Clear details and transaction history
             $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $temp_id");

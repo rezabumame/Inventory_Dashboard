@@ -537,8 +537,33 @@ if ($default_modal_klinik_id) {
         overflow: hidden;
     }
 
+    .select2-container--bootstrap-5 .select2-results__option--highlighted[aria-selected],
     .select2-container--bootstrap-5 .select2-results__option--highlighted {
         background-color: #204EAB !important;
+        color: #ffffff !important;
+    }
+
+    .select2-container--bootstrap-5 .select2-results__option[aria-selected="true"] {
+        background-color: #eef2fa !important;
+        color: #204EAB !important;
+    }
+
+    .select2-container--bootstrap-5 .select2-selection {
+        border-radius: 12px !important;
+        border-color: #dee2e6 !important;
+        padding-top: 4px !important;
+        padding-bottom: 4px !important;
+        transition: all 0.2s ease !important;
+    }
+
+    .select2-container--bootstrap-5.select2-container--focus .select2-selection {
+        border-color: #204EAB !important;
+        box-shadow: 0 0 0 0.25rem rgba(32, 78, 171, 0.15) !important;
+    }
+
+    .select2-search__field {
+        border-radius: 8px !important;
+        margin-bottom: 8px !important;
     }
 
     .jenis-segmented {
@@ -1238,6 +1263,7 @@ if ($default_modal_klinik_id) {
             </div>
             <form id="formPemakaianBHP" method="POST" action="actions/process_pemakaian_bhp.php">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
+                <input type="hidden" name="realized_auto_ids" id="modalRealizedAutoIds" value="">
                 <div class="modal-body p-4 bg-light">
                     <!-- Form Header Info -->
                     <div class="card border-0 shadow-sm mb-4">
@@ -3134,6 +3160,7 @@ if ($default_modal_klinik_id) {
             // Selalu bersihkan alert dan catatan auto-deduction setiap kali fungsi ini dipanggil
             // agar tidak "nyangkut" saat parameter berubah
             $('#autoDeductionAlert').remove();
+            $('#modalRealizedAutoIds').val('');
             clearModalAutoDeductionNote();
 
             if (!klinikId || !jenis) return;
@@ -3162,9 +3189,15 @@ if ($default_modal_klinik_id) {
                         $('#modalItemTableBody').empty();
                         modalRowIndex = 0;
                         const noteLines = [];
+                        const allSourceIds = [];
 
                         res.data.forEach(function (item) {
                             const idx = modalRowIndex;
+                            if (item.source_ids) {
+                                item.source_ids.split(',').forEach(id => {
+                                    if (id && !allSourceIds.includes(id)) allSourceIds.push(id);
+                                });
+                            }
 
                             const optionsHtmlBase = buildOptionsHtml(klinikId, jenis);
                             const hasOpt = optionsHtmlBase.indexOf('value="' + String(item.barang_id) + '"') !== -1;
@@ -3221,18 +3254,35 @@ if ($default_modal_klinik_id) {
 
                         const $catatan = $modal.find('textarea[name="catatan_transaksi"]');
                         if ($catatan.length) {
-                            const uniq = Array.from(new Set(noteLines.map(s => String(s || '').trim()).filter(Boolean)));
-                            if (uniq.length > 0) {
+                            // Extract unique booking numbers from all reference strings
+                            let allBookingNumbers = [];
+                            noteLines.forEach(line => {
+                                // Remove "Auto: " prefix and split by comma
+                                const clean = line.replace(/^Auto:\s*/i, '');
+                                if (clean) {
+                                    clean.split(',').forEach(num => {
+                                        const trimmed = num.trim();
+                                        if (trimmed && !allBookingNumbers.includes(trimmed)) {
+                                            allBookingNumbers.push(trimmed);
+                                        }
+                                    });
+                                }
+                            });
+
+                            if (allBookingNumbers.length > 0) {
                                 const currentNote = $modal.find('textarea[name="catatan_transaksi"]').val();
                                 const baseNote = stripAutoDeductionNote(currentNote);
 
-                                // Compact horizontal format
-                                const autoBlock = 'Auto Deduction (' + uniq.length + ' Bookings):\n' + uniq.join(', ');
+                                // Single "Auto:" prefix followed by all unique booking numbers
+                                const autoBlock = 'Auto Deduction (' + allBookingNumbers.length + ' Bookings):\nAuto: ' + allBookingNumbers.join(', ');
 
                                 const finalNote = baseNote ? (baseNote + '\n\n' + autoBlock) : autoBlock;
                                 $modal.find('textarea[name="catatan_transaksi"]').val(finalNote);
                             }
                         }
+
+                        // Set realized auto IDs to the hidden input
+                        $('#modalRealizedAutoIds').val(allSourceIds.join(','));
 
                         updateModalRemoveButtons();
                     }

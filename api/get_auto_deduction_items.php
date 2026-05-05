@@ -31,7 +31,8 @@ try {
             b.kode_barang,
             SUM(pbd.qty) as total_qty,
             MAX(pbd.satuan) as satuan,
-            GROUP_CONCAT(DISTINCT bp.nomor_booking SEPARATOR ', ') as referensi_booking
+            GROUP_CONCAT(DISTINCT bp.nomor_booking SEPARATOR ', ') as referensi_booking,
+            GROUP_CONCAT(DISTINCT pb.id SEPARATOR ',') as source_ids
         FROM inventory_pemakaian_bhp pb
         JOIN inventory_pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
         JOIN inventory_barang b ON pbd.barang_id = b.id
@@ -57,7 +58,8 @@ try {
             'kode_barang' => $row['kode_barang'],
             'qty' => (float)$row['total_qty'],
             'satuan' => $row['satuan'],
-            'referensi' => $row['referensi_booking'] ? 'Auto: ' . $row['referensi_booking'] : 'Auto Deduction'
+            'referensi' => $row['referensi_booking'] ? 'Auto: ' . $row['referensi_booking'] : 'Auto Deduction',
+            'source_ids' => $row['source_ids']
         ];
     }
 
