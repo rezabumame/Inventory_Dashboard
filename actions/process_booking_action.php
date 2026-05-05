@@ -20,7 +20,8 @@ if ($action === '' || $id <= 0) {
         exit;
     }
     $_SESSION['error'] = 'Invalid request';
-    redirect('index.php?page=booking');
+    $dest = $_POST['redirect'] ?? ($_GET['redirect'] ?? 'index.php?page=booking');
+    redirect($dest);
 }
 
 require_csrf();
@@ -35,13 +36,15 @@ if (!$booking || !in_array($booking['status'], ['booked', 'rescheduled', 'pendin
         exit;
     }
     $_SESSION['error'] = 'Booking tidak ditemukan atau sudah diproses';
-    redirect('index.php?page=booking');
+    $dest = $_POST['redirect'] ?? ($_GET['redirect'] ?? 'index.php?page=booking');
+    redirect($dest);
 }
 if ($role === 'admin_klinik' || $role === 'spv_klinik') {
     $userKlinik = (int)($_SESSION['klinik_id'] ?? 0);
     if ((int)($booking['klinik_id'] ?? 0) !== $userKlinik) {
         $_SESSION['error'] = 'Access denied';
-        redirect('index.php?page=booking');
+        $dest = $_POST['redirect'] ?? ($_GET['redirect'] ?? 'index.php?page=booking');
+        redirect($dest);
     }
 }
 
@@ -56,7 +59,8 @@ if (!empty($_SESSION['_dedup'][$dedup_key]) && ($now - (int)$_SESSION['_dedup'][
         exit;
     }
     $_SESSION['error'] = $msg_dedup;
-    redirect('index.php?page=booking');
+    $dest = $_POST['redirect'] ?? ($_GET['redirect'] ?? 'index.php?page=booking');
+    redirect($dest);
 }
 $_SESSION['_dedup'][$dedup_key] = $now;
 
@@ -775,7 +779,7 @@ try {
     // Notify Google Sheets
     notify_gsheet_booking($conn, $id, 'booking_updated');
 
-    $return_url = ($role === 'admin_klinik' || $role === 'spv_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
+    $return_url = $_POST['redirect'] ?? ($_GET['redirect'] ?? (($role === 'admin_klinik' || $role === 'spv_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1'));
     
     if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
         $response = ['success' => true, 'message' => $msg, 'redirect' => $return_url];
@@ -792,7 +796,7 @@ try {
 } catch (Exception $e) {
     $conn->rollback();
     $msg_err = $e->getMessage();
-    $return_url = ($role === 'admin_klinik' || $role === 'spv_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1';
+    $return_url = $_POST['redirect'] ?? ($_GET['redirect'] ?? (($role === 'admin_klinik' || $role === 'spv_klinik') ? 'index.php?page=booking&filter_today=1' : 'index.php?page=booking&show_all=1'));
     
     if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
         echo json_encode(['success' => false, 'message' => $msg_err]);

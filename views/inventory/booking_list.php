@@ -1355,9 +1355,11 @@ if (!empty($booking_ids)) {
                                 timer: 1500,
                                 showConfirmButton: false
                             }).then(() => {
-                                // Redirect with trigger_detail to show detail after reload
+                                // Redirect preserving current filters
+                                let currentUrl = new URL(window.location.href);
                                 if (response.booking_id) {
-                                    location.href = 'index.php?page=booking&trigger_detail=' + response.booking_id;
+                                    currentUrl.searchParams.set('trigger_detail', response.booking_id);
+                                    location.href = currentUrl.toString();
                                 } else {
                                     location.reload();
                                 }
@@ -1627,7 +1629,10 @@ if (!empty($booking_ids)) {
         });
 
         window.postBookingAction = function (params) {
-            const payload = Object.assign({ _csrf: BOOKING_CSRF }, params || {});
+            // Get current URL and remove trigger_detail to avoid duplication
+            let currentUrl = new URL(window.location.href);
+            currentUrl.searchParams.delete('trigger_detail');
+            const payload = Object.assign({ _csrf: BOOKING_CSRF, redirect: currentUrl.toString() }, params || {});
 
             // Tampilkan loading
             Swal.fire({
@@ -1800,7 +1805,10 @@ if (!empty($booking_ids)) {
                         dataType: 'json',
                         success: function (res) {
                             if (res.success) {
-                                Swal.fire('Berhasil', res.message, 'success').then(() => { location.reload(); });
+                                Swal.fire('Berhasil', res.message, 'success').then(() => { 
+                                    let currentUrl = new URL(window.location.href);
+                                    location.href = currentUrl.toString(); 
+                                });
                             } else {
                                 Swal.fire('Gagal', res.message, 'error');
                             }
@@ -1836,7 +1844,10 @@ if (!empty($booking_ids)) {
                         dataType: 'json',
                         success: function (res) {
                             if (res.success) {
-                                Swal.fire('Berhasil', res.message, 'success').then(() => { location.reload(); });
+                                Swal.fire('Berhasil', res.message, 'success').then(() => { 
+                                    let currentUrl = new URL(window.location.href);
+                                    location.href = currentUrl.toString(); 
+                                });
                             } else {
                                 Swal.fire('Gagal', res.message, 'error');
                             }
