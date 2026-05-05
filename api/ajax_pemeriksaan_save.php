@@ -17,6 +17,8 @@ $qtys = $_POST['qtys'] ?? [];
 $id_biosys_list = $_POST['id_biosys_list'] ?? [];
 $layanan_list = $_POST['layanan_list'] ?? [];
 
+$old_id = trim((string)($_POST['old_id'] ?? ''));
+
 if (empty($id_paket)) {
     echo json_encode(['success' => false, 'message' => 'ID Paket wajib diisi']);
     exit;
@@ -26,38 +28,60 @@ if (empty($nama)) {
     exit;
 }
 
-if (empty($barang_ids) || (count($barang_ids) === 1 && empty($barang_ids[0]))) {
+// Minimal items only required for NEW records or if barang_ids is provided
+$is_new = empty($old_id);
+if ($is_new && (empty($barang_ids) || (count($barang_ids) === 1 && empty($barang_ids[0])))) {
     echo json_encode(['success' => false, 'message' => 'Minimal pilih 1 item barang']);
     exit;
 }
 
-// Check if ID Paket exists
-$stmt_check = $conn->prepare("SELECT id FROM inventory_pemeriksaan_grup WHERE id = ?");
-$stmt_check->bind_param("s", $id_paket);
-$stmt_check->execute();
-$is_exists = ($stmt_check->get_result()->num_rows > 0);
-
 $conn->begin_transaction();
 try {
-    $ket = '';
-    if ($is_exists) {
+    if (!$is_new) {
         // UPDATE existing
-        $stmt = $conn->prepare("UPDATE inventory_pemeriksaan_grup SET nama_pemeriksaan = ? WHERE id = ?");
-        $stmt->bind_param("ss", $nama, $id_paket);
-        if (!$stmt->execute()) {
-            throw new Exception('Gagal memperbarui data pemeriksaan: ' . $stmt->error);
+        // If ID changed, we need to update the ID itself
+        if ($old_id !== $id_paket) {
+            // Check if NEW ID already exists
+            $stmt_check = $conn->prepare("SELECT id FROM inventory_pemeriksaan_grup WHERE id = ?");
+            $stmt_check->bind_param("s", $id_paket);
+            $stmt_check->execute();
+            if ($stmt_check->get_result()->num_rows > 0) {
+                throw new Exception('ID Paket baru "' . $id_paket . '" sudah digunakan.');
+            }
+
+            // Update parent ID and name
+            $stmt = $conn->prepare("UPDATE inventory_pemeriksaan_grup SET id = ?, nama_pemeriksaan = ? WHERE id = ?");
+            $stmt->bind_param("sss", $id_paket, $nama, $old_id);
+            if (!$stmt->execute()) {
+                throw new Exception('Gagal memperbarui ID Paket: ' . $stmt->error);
+            }
+
+            // Update details foreign key (in case no ON UPDATE CASCADE)
+            $stmt_upd_detail = $conn->prepare("UPDATE inventory_pemeriksaan_grup_detail SET pemeriksaan_grup_id = ? WHERE pemeriksaan_grup_id = ?");
+            $stmt_upd_detail->bind_param("ss", $id_paket, $old_id);
+            $stmt_upd_detail->execute();
+        } else {
+            // Only update name
+            $stmt = $conn->prepare("UPDATE inventory_pemeriksaan_grup SET nama_pemeriksaan = ? WHERE id = ?");
+            $stmt->bind_param("ss", $nama, $id_paket);
+            if (!$stmt->execute()) {
+                throw new Exception('Gagal memperbarui nama pemeriksaan: ' . $stmt->error);
+            }
         }
         
-        // Clear existing details for update
-        $stmt_del = $conn->prepare("DELETE FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ?");
-        $stmt_del->bind_param("s", $id_paket);
-        $stmt_del->execute();
+        // If barang_ids is provided, refresh details
+        if (!empty($barang_ids) && !(count($barang_ids) === 1 && empty($barang_ids[0]))) {
+            $stmt_del = $conn->prepare("DELETE FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = ?");
+            $stmt_del->bind_param("s", $id_paket);
+            $stmt_del->execute();
+        }
     } else {
         // INSERT new
+        $ket = '';
         $stmt = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup (id, nama_pemeriksaan, keterangan) VALUES (?, ?, ?)");
         $stmt->bind_param("sss", $id_paket, $nama, $ket);
         if (!$stmt->execute()) {
-            throw new Exception('Gagal menyimpan data pemeriksaan: ' . $stmt->error);
+            throw new Exception('Gagal menyimpan data pemeriksaan baru: ' . $stmt->error);
         }
     }
 

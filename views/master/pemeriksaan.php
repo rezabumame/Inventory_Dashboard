@@ -319,7 +319,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <input type="hidden" id="detailGrupId" value="">
+                <input type="hidden" id="detailGrupIdHidden" value="">
                 <div class="row g-3">
                     <div class="col-lg-8">
                         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -348,7 +348,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                         <div class="border rounded-3 p-3 bg-light">
                             <div class="fw-bold mb-2 text-primary"><i class="fas fa-cog me-1"></i> Pengaturan</div>
                             <label class="form-label mb-1 small fw-bold">ID Paket</label>
-                            <input type="text" class="form-control mb-3" id="detailGrupId" readonly>
+                            <input type="text" class="form-control mb-3" id="detailGrupIdInput" <?= $can_edit ? '' : 'readonly' ?>>
                             
                             <label class="form-label mb-1 small fw-bold">Nama Paket</label>
                             <div class="input-group mb-4">
@@ -511,7 +511,8 @@ function loadDetail(grupId) {
                 $('#detailItemsBody').html('<tr><td colspan="6" class="text-center text-danger py-3">' + (res && res.message ? res.message : 'Gagal memuat') + '</td></tr>');
                 return;
             }
-            $('#detailGrupId').val(res.grup.id);
+            $('#detailGrupIdHidden').val(res.grup.id);
+            $('#detailGrupIdInput').val(res.grup.id);
             $('#detailGrupNama').val(res.grup.nama_pemeriksaan);
             $('#detailTitle').text('Edit: [' + res.grup.id + '] ' + res.grup.nama_pemeriksaan);
             const rows = [];
@@ -1236,7 +1237,7 @@ $(document).ready(function() {
 
     $('#formAddMapping').on('submit', function(e) {
         e.preventDefault();
-        const grupId = $('#detailGrupId').val();
+        const grupId = $('#detailGrupIdHidden').val();
         const barangId = $('#detailBarangId').val();
         const qty = $('#detailQty').val();
         const idBiosys = $('#detailIdBiosys').val();
@@ -1275,7 +1276,7 @@ $(document).ready(function() {
 
     $('#detailItemsBody').on('click', '.btnDeleteDetail', function() {
         const detailId = $(this).data('detail-id');
-        const grupId = $('#detailGrupId').val();
+        const grupId = $('#detailGrupIdHidden').val();
         if (!confirm('Hapus item mapping ini?')) return;
         $.ajax({
             url: 'api/ajax_pemeriksaan_detail_delete.php',
@@ -1296,26 +1297,47 @@ $(document).ready(function() {
     });
 
     $('#btnSaveNama').on('click', function() {
-        const grupId = $('#detailGrupId').val();
+        const oldId = $('#detailGrupIdHidden').val();
+        const newId = ($('#detailGrupIdInput').val() || '').trim();
         const nama = ($('#detailGrupNama').val() || '').trim();
-        if (!grupId || !nama) return;
+        if (!oldId || !newId || !nama) return;
+        
+        const btn = $(this);
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+
         $.ajax({
             url: 'api/ajax_pemeriksaan_save.php',
             method: 'POST',
             dataType: 'json',
-            data: { id: grupId, nama_pemeriksaan: nama, _csrf: PEMERIKSAAN_CSRF },
+            data: { 
+                id_paket: newId, 
+                old_id: oldId, 
+                nama_pemeriksaan: nama, 
+                _csrf: PEMERIKSAAN_CSRF 
+            },
             success: function(res) {
+                btn.prop('disabled', false).html('<i class="fas fa-save"></i>');
                 if (!res || !res.success) {
                     alert(res && res.message ? res.message : 'Gagal menyimpan');
                     return;
                 }
-                const id = res.id;
+                const newId = res.id;
                 const nm = res.nama_pemeriksaan;
-                const row = getRowByGrupId(id);
-                row.data('grup-nama', nm);
-                row.attr('data-grup-nama', nm);
-                row.find('td').eq(2).text(nm); // Index 2 is Nama Paket
-                $('#detailTitle').text('Edit: ' + nm);
+                const row = getRowByGrupId(oldId);
+                
+                if (row.length) {
+                    row.data('grup-id', newId);
+                    row.attr('data-grup-id', newId);
+                    row.data('grup-nama', nm);
+                    row.attr('data-grup-nama', nm);
+                    
+                    row.find('td').eq(1).html('<span class="fw-bold text-primary">' + newId + '</span>');
+                    row.find('td').eq(2).html('<span class="fw-semibold">' + nm + '</span>');
+                }
+                
+                $('#detailGrupIdHidden').val(newId);
+                $('#detailTitle').text('Edit: [' + newId + '] ' + nm);
+                alert('Berhasil disimpan');
             },
             error: function() {
                 alert('Gagal menyimpan');

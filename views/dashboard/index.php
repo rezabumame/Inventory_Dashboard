@@ -164,7 +164,7 @@ if ($role === 'super_admin') {
             WHERE sm.qty <= (b.stok_minimum * 0.5)
         ) x
         ORDER BY (x.stok_saat_ini / NULLIF(x.stok_minimum, 0)) ASC, x.stok_saat_ini ASC
-        LIMIT 5
+        LIMIT 3
     ";
     $r_critical = $conn->query($sql_critical);
     while ($r_critical && ($row = $r_critical->fetch_assoc())) $critical_low_stock[] = $row;
@@ -181,7 +181,7 @@ if ($role === 'super_admin') {
         JOIN inventory_barang b ON b.id = s.barang_id
         WHERE s.qty <= (b.stok_minimum * 0.5)
         ORDER BY (s.qty / NULLIF(b.stok_minimum, 0)) ASC, s.qty ASC
-        LIMIT 5
+        LIMIT 3
     ";
     $r_critical = $conn->query($sql_critical);
     while ($r_critical && ($row = $r_critical->fetch_assoc())) $critical_low_stock[] = $row;
@@ -216,7 +216,7 @@ if ($role === 'super_admin') {
             WHERE ($where_loc)
               AND sm.qty <= (b.stok_minimum * 0.5)
             ORDER BY (sm.qty / NULLIF(b.stok_minimum, 0)) ASC, sm.qty ASC
-            LIMIT 5
+            LIMIT 3
         ";
         $r_critical = $conn->query($sql_critical);
         while ($r_critical && ($row = $r_critical->fetch_assoc())) $critical_low_stock[] = $row;
@@ -347,7 +347,10 @@ if ($role === 'super_admin') {
             <div class="card-body p-0">
                 <?php if (!empty($upcoming_bookings)): ?>
                     <div class="list-group list-group-flush">
-                        <?php foreach ($upcoming_bookings as $b): ?>
+                        <?php 
+                        $display_bookings = array_slice($upcoming_bookings, 0, 3);
+                        foreach ($display_bookings as $b): 
+                        ?>
                         <?php
                             $sb = (string)($b['status_booking'] ?? '');
                             $is_hc_booking = (stripos($sb, 'HC') !== false);
@@ -394,14 +397,14 @@ if ($role === 'super_admin') {
             </div>
             <?php if (!empty($upcoming_bookings)): ?>
             <div class="card-footer bg-white border-0 text-center py-3" style="border-radius:0 0 16px 16px;">
-                <a href="index.php?page=booking" class="text-decoration-none small fw-bold">Lihat Semua Jadwal <i class="fas fa-arrow-right ms-1"></i></a>
+                <a href="index.php?page=booking" class="text-decoration-none small fw-bold">Tampilkan Semua <i class="fas fa-arrow-right ms-1"></i></a>
             </div>
             <?php endif; ?>
         </div>
 
         <div class="card border-0 shadow-sm" style="border-radius:16px;">
             <div class="card-header bg-white fw-bold py-3 d-flex justify-content-between align-items-center" style="border-radius:16px 16px 0 0;">
-                <span><i class="fas fa-radiation-alt text-danger me-2"></i> Low Stock Kritis (Top 5)</span>
+                <span><i class="fas fa-radiation-alt text-danger me-2"></i> Low Stock Kritis (Top 3)</span>
                 <span class="badge bg-light text-dark fw-normal">&le; 50% Min</span>
             </div>
             <div class="card-body p-0">
