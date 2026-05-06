@@ -871,7 +871,6 @@ try {
         return "Updated";
     });
 
-    });
 
 } catch (Throwable $e) {
     if ($is_cli) {
