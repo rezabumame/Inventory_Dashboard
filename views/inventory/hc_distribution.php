@@ -113,9 +113,19 @@ check_role(['super_admin', 'admin_hc']);
     }
 
     .fc-timegrid-event {
-        border-radius: 8px !important;
-        border: none !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(32, 78, 171, 0.1) !important;
+        border-left: 4px solid var(--bumame-blue) !important;
+        box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.1) !important;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        background: #fff !important;
+    }
+
+    .fc-timegrid-event:hover {
+        z-index: 100 !important;
+        transform: translateY(-2px) scale(1.02);
+        box-shadow: 0 12px 20px -5px rgba(0, 0, 0, 0.15) !important;
+        cursor: pointer;
     }
 
     .fc-daygrid-day-number {
@@ -405,7 +415,7 @@ check_role(['super_admin', 'admin_hc']);
             slotMinTime: '07:00:00',
             slotMaxTime: '20:00:00',
             allDaySlot: false,
-            slotEventOverlap: false,
+            slotEventOverlap: true,
             dayMaxEvents: 3,
             height: 'auto',
             events: [],
@@ -505,14 +515,29 @@ check_role(['super_admin', 'admin_hc']);
         });
     }
 
+    function moment_add_minutes(timeStr, mins) {
+        if (!timeStr) return '01:00:00';
+        const parts = timeStr.split(':');
+        const h = parseInt(parts[0]);
+        const m = parseInt(parts[1]);
+        const s = parts[2] ? parseInt(parts[2]) : 0;
+        
+        const date = new Date();
+        date.setHours(h, m + mins, s);
+        return date.getHours().toString().padStart(2, '0') + ':' + 
+               date.getMinutes().toString().padStart(2, '0') + ':' + 
+               date.getSeconds().toString().padStart(2, '0');
+    }
+
     function updateCalendarEvents() {
         const events = allBookings.map(b => ({
             id: b.id,
             title: b.nama_pemesan,
             start: `${b.tanggal_pemeriksaan}T${b.jam_layanan || '00:00:00'}`,
-            backgroundColor: '#eef2ff',
-            borderColor: '#c7d2fe',
-            textColor: '#3730a3',
+            end: `${b.tanggal_pemeriksaan}T${moment_add_minutes(b.jam_layanan || '00:00:00', 45)}`, // Give it some duration
+            backgroundColor: '#ffffff',
+            borderColor: '#204EAB',
+            textColor: '#1e293b',
             extendedProps: {
                 jam: b.jam_layanan ? b.jam_layanan.substring(0, 5) : 'Anytime',
                 klinik: b.nama_klinik,
