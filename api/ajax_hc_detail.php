@@ -215,11 +215,14 @@ if (!empty($petugas)) {
     while ($rs && ($row = $rs->fetch_assoc())) $sellout_rows[] = $row;
 
     if ($sellout_total > 0.0001) {
+        $collapse_id = "sellout_collapse_" . bin2hex(random_bytes(4));
         echo '<div class="mt-3 p-3 border rounded-3 bg-light">';
-        echo '<div class="d-flex justify-content-between align-items-center mb-2">';
-        echo '<div class="fw-bold"><i class="fas fa-minus-circle text-danger me-2"></i>Sellout HC (setelah refresh)</div>';
+        echo '<div class="d-flex justify-content-between align-items-center" style="cursor:pointer;" onclick="var el = document.getElementById(\'' . $collapse_id . '\'); el.style.display = (el.style.display === \'none\') ? \'block\' : \'none\'; this.querySelector(\'.fa-chevron-down\').style.transform = (el.style.display === \'none\') ? \'rotate(0deg)\' : \'rotate(180deg)\';">';
+        echo '<div class="fw-bold"><i class="fas fa-minus-circle text-danger me-2"></i>Sellout HC (setelah refresh) <i class="fas fa-chevron-down ms-2 text-muted small" style="transition: transform 0.2s;"></i></div>';
         echo '<div class="fw-bold text-danger">' . htmlspecialchars(fmt_qty($sellout_total)) . ' <small class="text-muted">' . htmlspecialchars((string)$b['satuan']) . '</small></div>';
         echo '</div>';
+        
+        echo '<div id="' . $collapse_id . '" style="display:none; margin-top: 10px;">';
         echo '<div class="small text-muted mb-2">Berikut transaksi pemakaian HC yang mengurangi stok setelah mirror terakhir di-refresh.</div>';
         echo '<div class="table-responsive">';
         echo '<table class="table table-sm mb-0">';
@@ -240,6 +243,7 @@ if (!empty($petugas)) {
             echo '</tr>';
         }
         echo '</tbody></table></div></div>';
+        echo '</div>';
     }
 } else {
     if ($klinik_id === 0) {
