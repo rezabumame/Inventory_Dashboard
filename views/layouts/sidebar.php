@@ -100,7 +100,7 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'petugas_hc', 'cs'])): ?>
+        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'petugas_hc'])): ?>
         <a href="index.php?page=pemakaian_bhp_list" class="sidebar-link <?= $current_page == 'pemakaian_bhp_list' ? 'active' : '' ?>">
             <div class="d-flex w-100 align-items-center justify-content-between">
                 <div><i class="fas fa-clipboard-list"></i> Pemakaian BHP</div>

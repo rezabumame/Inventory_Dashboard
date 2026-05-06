@@ -42,6 +42,8 @@ $month_start_ts = $month_start . ' 00:00:00';
 $filter_end_ts = $filter_date . ' 23:59:59';
 $is_history_date = ($filter_date !== $today_date);
 $filter_date_label = date('d M Y', strtotime($filter_date));
+$can_use_zero_filter = in_array($_SESSION['role'], ['super_admin', 'admin_gudang', 'admin_klinik']);
+$show_zero = isset($_GET['show_zero']) ? ($_GET['show_zero'] == '1') : false;
 
 // Fetch Kliniks
 $kliniks = [];
@@ -455,22 +457,32 @@ if ($active_tab == 'stok') {
                     $conn->query("SET SQL_BIG_SELECTS=1");
                     $result = $conn->query($query);
                     while ($r = $result->fetch_assoc()) {
+                        // Calculate On Hand logic to check zero filter
+                        $cur_stok_onsite = (float)($r['qty'] ?? 0);
+                        $cur_stok_hc = (float)($r['stok_hc'] ?? 0);
                         if ($is_history_date) {
-                            // In history mode, we keep sellout/transfer for display purposes,
-                            // but they don't affect the reconstructed 'qty' (Odoo On Hand)
+                            $cur_stok_onsite += (float)($r['rb_out_transfer'] ?? 0) - (float)($r['rb_in_transfer'] ?? 0) + (float)($r['rb_sellout_klinik'] ?? 0);
+                            $cur_stok_hc += (float)($r['rb_out_transfer_hc'] ?? 0) - (float)($r['rb_in_transfer_hc'] ?? 0) + (float)($r['rb_sellout_hc'] ?? 0);
+                            $cur_on_hand = $cur_stok_onsite + ($show_hc ? $cur_stok_hc : 0);
+                        } else {
+                            $cur_stok_onsite += (float)($r['in_transfer'] ?? 0) - (float)($r['out_transfer'] ?? 0);
+                            $cur_stok_hc += (float)($r['in_transfer_hc'] ?? 0) - (float)($r['out_transfer_hc'] ?? 0);
+                            $cur_total_sellout = (float)($r['sellout_klinik'] ?? 0) + ($show_hc ? (float)($r['sellout_hc'] ?? 0) : 0);
+                            $cur_on_hand = ($cur_stok_onsite + ($show_hc ? $cur_stok_hc : 0)) - $cur_total_sellout;
                         }
+
+                        if (!$show_zero && $can_use_zero_filter && $cur_on_hand <= 0) {
+                            continue;
+                        }
+
                         $rows[] = $r;
                         $summary_stok['total_items']++;
                         if ($is_history_date) {
-                            $adj_qty = (float)($r['qty'] ?? 0) + (float)($r['rb_out_transfer'] ?? 0) - (float)($r['rb_in_transfer'] ?? 0) + (float)($r['rb_sellout_klinik'] ?? 0);
-                            $adj_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['rb_out_transfer_hc'] ?? 0) - (float)($r['rb_in_transfer_hc'] ?? 0) + (float)($r['rb_sellout_hc'] ?? 0);
-                            $summary_stok['total_qty'] += $adj_qty;
-                            $summary_stok['total_qty_hc'] += $adj_hc;
+                            $summary_stok['total_qty'] += $cur_stok_onsite;
+                            $summary_stok['total_qty_hc'] += $cur_stok_hc;
                         } else {
-                            $eff_qty = (float)($r['qty'] ?? 0) + (float)($r['in_transfer'] ?? 0) - (float)($r['out_transfer'] ?? 0);
-                            $eff_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['in_transfer_hc'] ?? 0) - (float)($r['out_transfer_hc'] ?? 0);
-                            $summary_stok['total_qty'] += $eff_qty;
-                            $summary_stok['total_qty_hc'] += $eff_hc;
+                            $summary_stok['total_qty'] += $cur_stok_onsite;
+                            $summary_stok['total_qty_hc'] += $cur_stok_hc;
                         }
                         $summary_stok['reserve_onsite'] += (float)($r['reserve_onsite'] ?? 0);
                         $summary_stok['reserve_hc'] += (float)($r['reserve_hc'] ?? 0);
@@ -589,14 +601,25 @@ if ($active_tab == 'stok') {
                 </label>
                 <input type="date" name="tanggal" class="form-control" value="<?= htmlspecialchars($filter_date) ?>" min="<?= htmlspecialchars($min_filter_date) ?>" max="<?= htmlspecialchars($today_date) ?>" onchange="this.form.submit()">
             </div>
+            <?php if ($can_use_zero_filter): ?>
+            <div class="col-md-2">
+                <label class="form-label fw-bold small mb-1">
+                    <i class="fas fa-eye text-primary"></i> Stok Kosong
+                </label>
+                <div class="form-check form-switch pt-1">
+                    <input class="form-check-input" type="checkbox" name="show_zero" id="showZero" value="1" <?= $show_zero ? 'checked' : '' ?> onchange="this.form.submit()">
+                    <label class="form-check-label small" for="showZero">Tampilkan Semua</label>
+                </div>
+            </div>
+            <?php endif; ?>
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-            <div class="col-md-6">
-                <div class="d-flex flex-column align-items-end">
-                    <button type="button" class="btn btn-outline-primary refresh-btn d-flex align-items-center justify-content-center gap-2" onclick="confirmSync(this)" <?= $is_history_date ? 'disabled' : '' ?>>
-                        <i class="fas fa-sync-alt"></i><span>Refresh dari Odoo</span>
+            <div class="col-md-4">
+                <div class="d-flex flex-column align-items-end pt-1">
+                    <button type="button" class="btn btn-outline-primary btn-sm refresh-btn d-flex align-items-center justify-content-center gap-2 py-2" onclick="confirmSync(this)" <?= $is_history_date ? 'disabled' : '' ?>>
+                        <i class="fas fa-sync-alt"></i><span>Refresh Odoo</span>
                     </button>
-                    <div class="last-update mt-1" id="lastUpdateText">Terakhir update: <?= htmlspecialchars($last_update_text ?? '-') ?></div>
-                    <small class="text-muted d-block" id="syncStatus" style="min-height: 1rem;"></small>
+                    <div class="last-update mt-1 text-end" id="lastUpdateText" style="font-size: 0.7rem;">Last Sync: <?= htmlspecialchars($last_update_text ?? '-') ?></div>
+                    <small class="text-muted d-block text-end" id="syncStatus" style="min-height: 0.8rem; font-size: 0.6rem;"></small>
                 </div>
             </div>
             <?php endif; ?>
@@ -713,7 +736,7 @@ if ($active_tab == 'stok') {
     <?php endif; ?>
 </div>
 
-<?php if ($selected_klinik && !$is_cs): ?>
+<?php if ($selected_klinik): ?>
 <div class="modal fade" id="modalStokBreakdown" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
