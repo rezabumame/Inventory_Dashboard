@@ -810,11 +810,11 @@ try {
     run_migration_task("Table: inventory_barang_lokal", function() use ($conn) { 
         return m_ensure_table($conn, "inventory_barang_lokal", "CREATE TABLE IF NOT EXISTS inventory_barang_lokal (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            kode_item VARCHAR(50) NULL AFTER id,
+            kode_item VARCHAR(50) NULL,
             nama_item VARCHAR(255) NOT NULL,
             uom VARCHAR(50) NOT NULL,
-            kategori VARCHAR(50) NULL AFTER uom,
-            odoo_id INT NULL AFTER kategori COMMENT 'ID dari inventory_barang jika di-import',
+            kategori VARCHAR(50) NULL,
+            odoo_id INT NULL COMMENT 'ID dari inventory_barang jika di-import',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
@@ -826,7 +826,7 @@ try {
             barang_lokal_id INT NOT NULL,
             klinik_id INT NOT NULL,
             qty DECIMAL(18,4) NOT NULL DEFAULT 0,
-            qty_gantung DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER qty,
+            qty_gantung DECIMAL(18,4) NOT NULL DEFAULT 0,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uniq_barang_klinik (barang_lokal_id, klinik_id),
             KEY idx_barang (barang_lokal_id),
@@ -845,7 +845,7 @@ try {
             qty_sesudah DECIMAL(18,4) NOT NULL DEFAULT 0,
             status ENUM('pending', 'approved', 'rejected', 'completed') DEFAULT 'completed',
             keterangan TEXT NULL,
-            reference_id INT NULL AFTER keterangan COMMENT 'ID dari inventory_pemakaian_bhp jika tipe=pakai',
+            reference_id INT NULL COMMENT 'ID dari inventory_pemakaian_bhp jika tipe=pakai',
             created_by INT NOT NULL,
             approved_by INT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
