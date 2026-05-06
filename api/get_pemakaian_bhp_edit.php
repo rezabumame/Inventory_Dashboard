@@ -68,9 +68,13 @@ if (isset($header['tanggal'])) {
 
 // Get details
 $stmt_d = $conn->prepare("
-    SELECT pbd.*, b.nama_barang, b.kode_barang
+    SELECT 
+        pbd.*, 
+        COALESCE(bl.nama_item, b.nama_barang) as nama_barang,
+        COALESCE(b.kode_barang, 'LOCAL') as kode_barang
     FROM inventory_pemakaian_bhp_detail pbd
-    JOIN inventory_barang b ON pbd.barang_id = b.id
+    LEFT JOIN inventory_barang b ON pbd.barang_id = b.id AND pbd.is_lokal = 0
+    LEFT JOIN inventory_barang_lokal bl ON pbd.barang_id = bl.id AND pbd.is_lokal = 1
     WHERE pbd.pemakaian_bhp_id = ?
 ");
 $stmt_d->bind_param("i", $id);

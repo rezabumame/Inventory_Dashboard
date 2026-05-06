@@ -88,4 +88,28 @@ if ($jenis === 'hc' && $user_hc_id > 0) {
     }
 }
 
+// 4. BHP Non-Odoo (Lokal)
+// Only include local items if we are in Klinik mode (as local items are usually per clinic)
+if ($jenis !== 'hc' || $user_hc_id <= 0) {
+    $res_lok = $conn->query("
+        SELECT bl.id as barang_id, bl.nama_item as nama_barang, sl.qty, bl.uom as satuan
+        FROM inventory_stok_lokal sl
+        JOIN inventory_barang_lokal bl ON sl.barang_lokal_id = bl.id
+        WHERE sl.klinik_id = $klinik_id AND sl.qty > 0
+        ORDER BY bl.nama_item ASC
+    ");
+    while ($row = $res_lok->fetch_assoc()) {
+        $items[] = [
+            'barang_id' => (int)$row['barang_id'],
+            'nama_barang' => (string)$row['nama_barang'],
+            'kode_barang' => 'LOKAL-' . $row['barang_id'],
+            'satuan' => (string)$row['satuan'],
+            'uom_odoo' => '',
+            'uom_ratio' => 1,
+            'qty' => (float)$row['qty'],
+            'is_lokal' => true
+        ];
+    }
+}
+
 echo json_encode(['success' => true, 'items' => $items]);

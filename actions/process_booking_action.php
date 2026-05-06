@@ -121,16 +121,18 @@ try {
                 $pid = trim((string)$pasien['pemeriksaan_grup_id']);
                 
                 // Ambil SEMUA item dari master grup (Core & Support)
-                $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid'");
+                $res_items = $conn->query("SELECT barang_id, is_lokal, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid'");
                 while ($item = $res_items->fetch_assoc()) {
                     $bid = (int)$item['barang_id'];
+                    $isl = (int)$item['is_lokal'];
                     $qty = (float)$item['qty_per_pemeriksaan'];
                     
                     if ($qty > 0) {
-                        if (!isset($items_to_deduct[$bid])) {
-                            $items_to_deduct[$bid] = 0;
+                        $key = "$bid|$isl";
+                        if (!isset($items_to_deduct[$key])) {
+                            $items_to_deduct[$key] = 0;
                         }
-                        $items_to_deduct[$bid] += $qty;
+                        $items_to_deduct[$key] += $qty;
                     }
                 }
             }
@@ -150,33 +152,41 @@ try {
                 $pemakaian_id = $conn->insert_id;
 
                 // Insert details and record transactions
-                $stmt_d = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan) VALUES (?, ?, ?, ?)");
+                $stmt_d = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, is_lokal, qty, satuan) VALUES (?, ?, ?, ?, ?)");
                 
                 // For Auto-deductions, we always deduct from the global clinic pool (level = 'klinik')
                 // and avoid assigning to a specific petugas HC until manual/Excel realization.
                 $level = 'klinik';
                 $level_id = $klinik_id;
 
-                foreach ($items_to_deduct as $bid => $qty) {
+                foreach ($items_to_deduct as $key => $qty) {
+                    list($bid, $isl) = explode('|', $key);
                     $bid = (int)$bid;
+                    $isl = (int)$isl;
                     $qty = (float)$qty;
 
                     // --- RACE CONDITION FIX: LOCK THE STOCK ROW ---
-                    if ($is_hc && $level_id !== $klinik_id) {
-                        // Lock HC Stock
-                        $conn->query("INSERT IGNORE INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty) VALUES ($bid, $level_id, $klinik_id, 0)");
-                        $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = $bid AND user_id = $level_id AND klinik_id = $klinik_id FOR UPDATE");
-                    } else {
-                        // Lock Clinic Stock
-                        $conn->query("INSERT IGNORE INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES ($bid, $klinik_id, 0)");
-                        $conn->query("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = $bid AND klinik_id = $klinik_id FOR UPDATE");
+                    if (!$isl) { // Only Odoo items have global/hc stock for now in this logic
+                        if ($is_hc && $level_id !== $klinik_id) {
+                            // Lock HC Stock
+                            $conn->query("INSERT IGNORE INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty) VALUES ($bid, $level_id, $klinik_id, 0)");
+                            $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = $bid AND user_id = $level_id AND klinik_id = $klinik_id FOR UPDATE");
+                        } else {
+                            // Lock Clinic Stock
+                            $conn->query("INSERT IGNORE INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES ($bid, $klinik_id, 0)");
+                            $conn->query("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = $bid AND klinik_id = $klinik_id FOR UPDATE");
+                        }
                     }
 
                     // Cari satuan barang
-                    $res_b = $conn->query("SELECT satuan FROM inventory_barang WHERE id = $bid LIMIT 1");
+                    if ($isl) {
+                        $res_b = $conn->query("SELECT uom as satuan FROM inventory_barang_lokal WHERE id = $bid LIMIT 1");
+                    } else {
+                        $res_b = $conn->query("SELECT satuan FROM inventory_barang WHERE id = $bid LIMIT 1");
+                    }
                     $satuan = $res_b->num_rows > 0 ? $res_b->fetch_assoc()['satuan'] : 'PCS';
                     
-                    $stmt_d->bind_param("iids", $pemakaian_id, $bid, $qty, $satuan);
+                    $stmt_d->bind_param("iiids", $pemakaian_id, $bid, $isl, $qty, $satuan);
                     $stmt_d->execute();
 
                     // Record Transaction for Dashboard Sellout
@@ -287,12 +297,14 @@ try {
                 if ($p_row = $res_p->fetch_assoc()) {
                     $gid = $p_row['pemeriksaan_grup_id'];
                     $gid_esc = $conn->real_escape_string($gid);
-                    $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$gid_esc'");
+                    $res_items = $conn->query("SELECT barang_id, is_lokal, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$gid_esc'");
                     while ($i_row = $res_items->fetch_assoc()) {
                         $bid = (int)$i_row['barang_id'];
+                        $isl = (int)$i_row['is_lokal'];
                         $qty = (float)$i_row['qty_per_pemeriksaan'];
                         if ($qty > 0) {
-                            $items_to_deduct[$bid] = ($items_to_deduct[$bid] ?? 0) + $qty;
+                            $key = "$bid|$isl";
+                            $items_to_deduct[$key] = ($items_to_deduct[$key] ?? 0) + $qty;
                         }
                     }
                     $conn->query("UPDATE inventory_booking_pasien SET status = 'done', done_at = NOW() WHERE id = $pid");
@@ -326,22 +338,33 @@ try {
                     if ($res_u && $u_row = $res_u->fetch_assoc()) $level_id = (int)$u_row['id'];
                 }
 
-                $stmt_d = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan) VALUES (?, ?, ?, ?)");
+                $stmt_d = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, is_lokal, qty, satuan) VALUES (?, ?, ?, ?, ?)");
                 $stmt_trans = $conn->prepare("INSERT INTO inventory_transaksi_stok (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at) VALUES (?, ?, ?, 'out', ?, ?, ?, 'pemakaian_bhp', ?, ?, ?, NOW())");
 
-                foreach ($items_to_deduct as $bid => $qty) {
+                foreach ($items_to_deduct as $key => $qty) {
+                    list($bid, $isl) = explode('|', $key);
+                    $bid = (int)$bid;
+                    $isl = (int)$isl;
+                    $qty = (float)$qty;
+
                     // --- RACE CONDITION FIX: LOCK THE STOCK ROW ---
-                    if ($is_hc && $level_id !== $klinik_id) {
-                        $conn->query("INSERT IGNORE INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty) VALUES ($bid, $level_id, $klinik_id, 0)");
-                        $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = $bid AND user_id = $level_id AND klinik_id = $klinik_id FOR UPDATE");
-                    } else {
-                        $conn->query("INSERT IGNORE INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES ($bid, $klinik_id, 0)");
-                        $conn->query("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = $bid AND klinik_id = $klinik_id FOR UPDATE");
+                    if (!$isl) {
+                        if ($is_hc && $level_id !== $klinik_id) {
+                            $conn->query("INSERT IGNORE INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty) VALUES ($bid, $level_id, $klinik_id, 0)");
+                            $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = $bid AND user_id = $level_id AND klinik_id = $klinik_id FOR UPDATE");
+                        } else {
+                            $conn->query("INSERT IGNORE INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES ($bid, $klinik_id, 0)");
+                            $conn->query("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = $bid AND klinik_id = $klinik_id FOR UPDATE");
+                        }
                     }
 
-                    $res_b = $conn->query("SELECT satuan FROM inventory_barang WHERE id = $bid LIMIT 1");
+                    if ($isl) {
+                        $res_b = $conn->query("SELECT uom as satuan FROM inventory_barang_lokal WHERE id = $bid LIMIT 1");
+                    } else {
+                        $res_b = $conn->query("SELECT satuan FROM inventory_barang WHERE id = $bid LIMIT 1");
+                    }
                     $satuan = $res_b->num_rows > 0 ? $res_b->fetch_assoc()['satuan'] : 'PCS';
-                    $stmt_d->bind_param("iids", $pemakaian_id, $bid, $qty, $satuan);
+                    $stmt_d->bind_param("iiids", $pemakaian_id, $bid, $isl, $qty, $satuan);
                     $stmt_d->execute();
 
                     // Get effective stock for dashboard history reconstruction
@@ -445,11 +468,11 @@ try {
                     if ($p_row = $res_p->fetch_assoc()) {
                         $gid = $p_row['pemeriksaan_grup_id'];
                         $gid_esc = $conn->real_escape_string($gid);
-                        $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$gid_esc'");
+                        $res_items = $conn->query("SELECT barang_id, is_lokal, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$gid_esc'");
                         while($i_row = $res_items->fetch_assoc()) {
-                            $bid = (int)$i_row['barang_id']; $qty = (float)$i_row['qty_per_pemeriksaan'];
+                            $bid = (int)$i_row['barang_id']; $isl = (int)$i_row['is_lokal']; $qty = (float)$i_row['qty_per_pemeriksaan'];
                             $q_onsite = $is_hc ? 0 : $qty; $q_hc = $is_hc ? $qty : 0;
-                            $conn->query("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES ($new_booking_id, $new_pid, $bid, $qty, $q_onsite, $q_hc)");
+                            $conn->query("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, is_lokal, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES ($new_booking_id, $new_pid, $bid, $isl, $qty, $q_onsite, $q_hc)");
                         }
                     }
                 }
@@ -532,24 +555,33 @@ try {
                     $p_exams = $p['exams'] ?? [];
                     foreach ($p_exams as $pid) {
                         $pid_esc = $conn->real_escape_string(trim((string)$pid));
-                        $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc' AND is_mandatory = 1");
+                        $res = $conn->query("SELECT barang_id, is_lokal, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc' AND is_mandatory = 1");
                         while($row = $res->fetch_assoc()) {
                             $bid = intval($row['barang_id']);
+                            $isl = intval($row['is_lokal']);
                             $qty = (float)$row['qty_per_pemeriksaan'];
-                            $total_needed[$bid] = ($total_needed[$bid] ?? 0) + $qty;
+                            $key = "$bid|$isl";
+                            $total_needed[$key] = ($total_needed[$key] ?? 0) + $qty;
                         }
                     }
                 }
                 
                 $out_of_stock_items = [];
                 $is_hc = (stripos($target_status_booking, 'HC') !== false);
-                foreach ($total_needed as $bid => $qty_need) {
-                    $ef = stock_effective($conn, (int)$target_klinik_id, $is_hc, $bid);
-                    if (!$ef['ok']) continue;
-                    $avail = (float)($ef['available'] ?? 0);
-                    if ($avail < $qty_need) {
-                        $nm = (string)($ef['barang_name'] ?? ("ID:$bid"));
-                        $out_of_stock_items[] = "$nm (Sisa: $avail, Butuh: $qty_need)";
+                foreach ($total_needed as $key => $qty_need) {
+                    list($bid, $isl) = explode('|', $key);
+                    $bid = (int)$bid;
+                    $isl = (int)$isl;
+                    $qty_need = (float)$qty_need;
+                    
+                    if (!$isl) { // Only check OOS for Odoo items for now as per existing logic
+                        $ef = stock_effective($conn, (int)$target_klinik_id, $is_hc, $bid);
+                        if (!$ef['ok']) continue;
+                        $avail = (float)($ef['available'] ?? 0);
+                        if ($avail < $qty_need) {
+                            $nm = (string)($ef['barang_name'] ?? ("ID:$bid"));
+                            $out_of_stock_items[] = "$nm (Sisa: $avail, Butuh: $qty_need)";
+                        }
                     }
                 }
                 $is_oos = !empty($out_of_stock_items) ? 1 : 0;
@@ -575,7 +607,7 @@ try {
                 $conn->query("DELETE FROM inventory_booking_pasien WHERE booking_id = $id");
 
                 $stmt_pasien = $conn->prepare("INSERT INTO inventory_booking_pasien (booking_id, nama_pasien, pemeriksaan_grup_id, nomor_tlp, tanggal_lahir) VALUES (?, ?, ?, ?, ?)");
-                $stmt_detail = $conn->prepare("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt_detail = $conn->prepare("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, is_lokal, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?, ?)");
 
                 foreach ($patients as $idx => $p) {
                     $pnama = !empty($p['nama']) ? $p['nama'] : "Pasien " . ($idx + 1);
@@ -590,14 +622,15 @@ try {
                         $pasien_id = $conn->insert_id;
 
                         $pid_esc = $conn->real_escape_string($pid);
-                        $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc' AND is_mandatory = 1");
+                        $res_items = $conn->query("SELECT barang_id, is_lokal, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc' AND is_mandatory = 1");
                         while ($i_row = $res_items->fetch_assoc()) {
                             $bid = (int)$i_row['barang_id'];
+                            $isl = (int)$i_row['is_lokal'];
                             $qty_unit = (float)$i_row['qty_per_pemeriksaan'];
                             $qty_onsite = $is_hc ? 0 : $qty_unit;
                             $qty_hc = $is_hc ? $qty_unit : 0;
 
-                            $stmt_detail->bind_param("iiiddd", $id, $pasien_id, $bid, $qty_unit, $qty_onsite, $qty_hc);
+                            $stmt_detail->bind_param("iiiiddd", $id, $pasien_id, $bid, $isl, $qty_unit, $qty_onsite, $qty_hc);
                             $stmt_detail->execute();
                         }
                     }
@@ -728,30 +761,39 @@ try {
                 $p_exams = $p['exams'] ?? [];
                 foreach ($p_exams as $pid) {
                     $pid_esc = $conn->real_escape_string(trim((string)$pid));
-                    $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
+                    $res = $conn->query("SELECT barang_id, is_lokal, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
                     while($row = $res->fetch_assoc()) {
                         $bid = (int)$row['barang_id'];
+                        $isl = (int)$row['is_lokal'];
                         $qty = (float)$row['qty_per_pemeriksaan'];
-                        $total_needed[$bid] = ($total_needed[$bid] ?? 0) + $qty;
+                        $key = "$bid|$isl";
+                        $total_needed[$key] = ($total_needed[$key] ?? 0) + $qty;
                     }
                 }
             }
 
             // 2. Check stock for ALL needed items (allow even if empty following new policy)
             $out_of_stock_items = [];
-            foreach ($total_needed as $bid => $qty_need) {
-                $ef = stock_effective($conn, $target_klinik_id, $is_hc, $bid);
-                if (!$ef['ok']) continue;
-                $avail = (float)($ef['available'] ?? 0);
-                if ($avail < $qty_need) {
-                    $nm = (string)($ef['barang_name'] ?? ("ID:$bid"));
-                    $out_of_stock_items[] = "$nm (Sisa: $avail, Butuh: $qty_need)";
+            foreach ($total_needed as $key => $qty_need) {
+                list($bid, $isl) = explode('|', $key);
+                $bid = (int)$bid;
+                $isl = (int)$isl;
+                $qty_need = (float)$qty_need;
+                
+                if (!$isl) {
+                    $ef = stock_effective($conn, $target_klinik_id, $is_hc, $bid);
+                    if (!$ef['ok']) continue;
+                    $avail = (float)($ef['available'] ?? 0);
+                    if ($avail < $qty_need) {
+                        $nm = (string)($ef['barang_name'] ?? ("ID:$bid"));
+                        $out_of_stock_items[] = "$nm (Sisa: $avail, Butuh: $qty_need)";
+                    }
                 }
             }
 
             // 3. Process insertion
             $stmt_pasien = $conn->prepare("INSERT INTO inventory_booking_pasien (booking_id, nama_pasien, pemeriksaan_grup_id) VALUES (?, ?, ?)");
-            $stmt_detail = $conn->prepare("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt_detail = $conn->prepare("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, is_lokal, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?, ?)");
 
             foreach ($additional_patients as $p) {
                 $p_nama = $p['nama'];
@@ -764,16 +806,17 @@ try {
                     $pasien_row_id = (int)$conn->insert_id;
 
                     $pid_esc = $conn->real_escape_string($pid);
-                    $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
+                    $res_items = $conn->query("SELECT barang_id, is_lokal, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
                     while ($i_row = $res_items->fetch_assoc()) {
                         $bid = (int)$i_row['barang_id'];
+                        $isl = (int)$i_row['is_lokal'];
                         $qty_unit = (float)$i_row['qty_per_pemeriksaan'];
                         
                         $qty_onsite = 0; $qty_hc = 0;
                         if (!$is_hc) $qty_onsite = $qty_unit;
                         else $qty_hc = $qty_unit;
 
-                        $stmt_detail->bind_param("iiiddd", $id, $pasien_row_id, $bid, $qty_unit, $qty_onsite, $qty_hc);
+                        $stmt_detail->bind_param("iiiiddd", $id, $pasien_row_id, $bid, $isl, $qty_unit, $qty_onsite, $qty_hc);
                         $stmt_detail->execute();
                     }
                 }

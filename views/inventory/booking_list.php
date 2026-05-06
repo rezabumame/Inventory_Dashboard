@@ -630,8 +630,10 @@ if (!empty($booking_ids)) {
                                 <select name="klinik_id" class="form-select">
                                     <option value="">Semua Klinik</option>
                                     <?php
+                                    $clinics_data = [];
                                     $clinics = $conn->query("SELECT id, nama_klinik FROM inventory_klinik ORDER BY nama_klinik ASC");
                                     while ($c = $clinics->fetch_assoc()):
+                                        $clinics_data[] = $c;
                                         ?>
                                         <option value="<?= $c['id'] ?>" <?= $filter_klinik == $c['id'] ? 'selected' : '' ?>>
                                             <?= htmlspecialchars($c['nama_klinik']) ?>
@@ -668,37 +670,131 @@ if (!empty($booking_ids)) {
 
             <script>
                 function exportExcel() {
-                    const form = document.querySelector('form[method="GET"]');
+                    // Pre-fill modal with current dashboard filter values
+                    const currentTujuan = document.querySelector('input[name="tujuan"]:checked')?.value || '';
+                    const currentStatus = document.querySelector('input[name="status"]:checked')?.value || '';
+                    const currentTipe = document.querySelector('input[name="tipe"]:checked')?.value || '';
+                    const currentKlinik = document.querySelector('select[name="klinik_id"]')?.value || '';
+
+                    if (document.getElementById('exportTujuan')) document.getElementById('exportTujuan').value = currentTujuan;
+                    if (document.getElementById('exportStatus')) document.getElementById('exportStatus').value = currentStatus;
+                    if (document.getElementById('exportTipe')) document.getElementById('exportTipe').value = currentTipe;
+                    if (document.getElementById('exportKlinikId')) document.getElementById('exportKlinikId').value = currentKlinik;
+
+                    const modal = new bootstrap.Modal(document.getElementById('modalExportBooking'));
+                    modal.show();
+                }
+
+                function executeExport() {
+                    const start = document.getElementById('exportStartDate').value;
+                    const end = document.getElementById('exportEndDate').value;
+                    
+                    if (!start || !end) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Perhatian',
+                            text: 'Silakan pilih range tanggal terlebih dahulu'
+                        });
+                        return;
+                    }
+
                     const url = new URL('actions/export_booking.php', window.location.href);
-
-                    // Get values safely from radio buttons and other inputs
-                    const getVal = (name) => {
-                        const el = form.elements[name];
-                        if (el instanceof RadioNodeList) return el.value;
-                        return el ? el.value : '';
-                    };
-
-                    const qVal = document.querySelector('input[name="q"]')?.value || '';
-
-                    url.searchParams.append('start_date', getVal('start_date'));
-                    url.searchParams.append('end_date', getVal('end_date'));
-                    url.searchParams.append('tujuan', getVal('tujuan'));
-                    url.searchParams.append('status', getVal('status'));
-                    url.searchParams.append('tipe', getVal('tipe'));
-                    url.searchParams.append('fu', getVal('fu'));
-                    url.searchParams.append('klinik_id', getVal('klinik_id'));
-                    url.searchParams.append('q', qVal);
-
-                    <?php if ($filter_today): ?>
-                        url.searchParams.append('filter_today', '1');
-                    <?php endif; ?>
-                    <?php if ($show_all): ?>
-                        url.searchParams.append('show_all', '1');
-                    <?php endif; ?>
+                    url.searchParams.append('is_input_date', '1');
+                    url.searchParams.append('start_date', start);
+                    url.searchParams.append('end_date', end);
+                    
+                    url.searchParams.append('tujuan', document.getElementById('exportTujuan').value);
+                    url.searchParams.append('status', document.getElementById('exportStatus').value);
+                    url.searchParams.append('tipe', document.getElementById('exportTipe').value);
+                    
+                    const kid = document.getElementById('exportKlinikId')?.value || document.querySelector('select[name="klinik_id"]')?.value || '';
+                    if (kid) url.searchParams.append('klinik_id', kid);
 
                     window.open(url.toString(), '_blank');
+                    bootstrap.Modal.getInstance(document.getElementById('modalExportBooking')).hide();
                 }
             </script>
+
+            <!-- Modal Export Booking -->
+            <div class="modal fade" id="modalExportBooking" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content border-0 shadow-lg">
+                        <div class="modal-header bg-success text-white py-3">
+                            <h5 class="modal-title fw-bold"><i class="fas fa-file-excel me-2"></i>Export Booking</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body p-4">
+                            <div class="mb-4">
+                                <label class="form-label fw-bold text-muted mb-2">Pilih Range Tanggal Input</label>
+                                <div class="row g-3 mb-4">
+                                    <div class="col-6">
+                                        <label class="x-small fw-bold text-uppercase text-muted d-block mb-1">Dari Tanggal</label>
+                                        <input type="date" id="exportStartDate" class="form-control shadow-sm" value="<?= date('Y-m-d', strtotime('-1 month')) ?>">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="x-small fw-bold text-uppercase text-muted d-block mb-1">Sampai Tanggal</label>
+                                        <input type="date" id="exportEndDate" class="form-control shadow-sm" value="<?= date('Y-m-d') ?>">
+                                    </div>
+                                </div>
+
+                                <label class="form-label fw-bold text-muted mb-2">Filter Tambahan (Opsional)</label>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="x-small fw-bold text-uppercase text-muted d-block mb-1">Tujuan</label>
+                                        <select id="exportTujuan" class="form-select form-select-sm shadow-sm">
+                                            <option value="">Semua Tujuan</option>
+                                            <option value="clinic">Clinic</option>
+                                            <option value="hc">Homecare (HC)</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="x-small fw-bold text-uppercase text-muted d-block mb-1">Status</label>
+                                        <select id="exportStatus" class="form-select form-select-sm shadow-sm">
+                                            <option value="">Semua Status</option>
+                                            <option value="booked">Booked</option>
+                                            <option value="completed">Completed</option>
+                                            <option value="rescheduled">Rescheduled</option>
+                                            <option value="cancelled">Cancelled</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="x-small fw-bold text-uppercase text-muted d-block mb-1">Tipe</label>
+                                        <select id="exportTipe" class="form-select form-select-sm shadow-sm">
+                                            <option value="">Semua Tipe</option>
+                                            <option value="keep">Keep</option>
+                                            <option value="fixed">Fixed</option>
+                                        </select>
+                                    </div>
+                                    <?php if (in_array($role, ['super_admin', 'cs'], true)): ?>
+                                    <div class="col-md-6">
+                                        <label class="x-small fw-bold text-uppercase text-muted d-block mb-1">Klinik</label>
+                                        <select id="exportKlinikId" class="form-select form-select-sm shadow-sm">
+                                            <option value="">Semua Klinik</option>
+                                            <?php foreach ($clinics_data as $c): ?>
+                                                <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['nama_klinik']) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+
+                                <div class="mt-4 p-3 bg-light rounded-3 border">
+                                    <small class="text-muted d-block">
+                                        <i class="fas fa-info-circle text-primary me-1"></i>
+                                        Export akan menarik data berdasarkan <b>Tanggal Input</b>. Filter di atas akan mempersempit hasil export Anda.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer bg-light border-0 py-3">
+                            <button type="button" class="btn btn-link text-muted fw-bold text-decoration-none px-4" data-bs-dismiss="modal">Batal</button>
+                            <button type="button" class="btn btn-success px-5 py-2 fw-bold shadow-sm rounded-pill" onclick="executeExport()">
+                                <i class="fas fa-download me-2"></i>Download Excel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
 
 

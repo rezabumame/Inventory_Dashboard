@@ -82,10 +82,9 @@ $search_types = "";
 if ($filter_q !== '') {
     $q_param = "%$filter_q%";
     // We need 5 params now: nomor, klinik, created_by, hc_name, item_name/code
-    $search_params = [$q_param, $q_param, $q_param, $q_param, $q_param, $q_param];
-    $search_types = "ssssss";
-
-    $search_where_list = " AND (pb.nomor_pemakaian LIKE ? OR k.nama_klinik LIKE ? OR u_created.nama_lengkap LIKE ? OR u_hc.nama_lengkap LIKE ? OR EXISTS (SELECT 1 FROM inventory_pemakaian_bhp_detail pbd2 JOIN inventory_barang b2 ON pbd2.barang_id = b2.id WHERE pbd2.pemakaian_bhp_id = pb.id AND (b2.nama_barang LIKE ? OR b2.kode_barang LIKE ?)))";
+    $search_where_list = " AND (pb.nomor_pemakaian LIKE ? OR k.nama_klinik LIKE ? OR u_created.nama_lengkap LIKE ? OR u_hc.nama_lengkap LIKE ? OR EXISTS (SELECT 1 FROM inventory_pemakaian_bhp_detail pbd2 LEFT JOIN inventory_barang b2 ON pbd2.barang_id = b2.id AND pbd2.is_lokal = 0 LEFT JOIN inventory_barang_lokal bl2 ON pbd2.barang_id = bl2.id AND pbd2.is_lokal = 1 WHERE pbd2.pemakaian_bhp_id = pb.id AND (b2.nama_barang LIKE ? OR b2.kode_barang LIKE ? OR bl2.nama_item LIKE ?)))";
+    $search_params = [$q_param, $q_param, $q_param, $q_param, $q_param, $q_param, $q_param];
+    $search_types = "sssssss";
     $search_where_out = " AND (pb.nomor_pemakaian LIKE ? OR k.nama_klinik LIKE ? OR u_created.nama_lengkap LIKE ? OR u_hc.nama_lengkap LIKE ? OR b.nama_barang LIKE ? OR b.kode_barang LIKE ?)";
 }
 
@@ -215,7 +214,7 @@ if ($active_tab == 'list') {
                         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
                         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
                         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
-                        WHERE $base_where $search_where_out AND (pb.is_auto = 0 OR '$user_role' = 'super_admin') AND pb.status = 'active'";
+                        WHERE $base_where $search_where_out AND (pb.is_auto = 0 OR '$user_role' = 'super_admin') AND pb.status = 'active' AND pbd.is_lokal = 0";
 
     $stmt_count_out = $conn->prepare($count_query_out);
     $all_params_out_c = array_merge($base_params, $search_params);
@@ -253,7 +252,7 @@ if ($active_tab == 'list') {
         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
         JOIN inventory_klinik k ON pb.klinik_id = k.id
         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
-        WHERE $base_where $search_where_out AND pb.is_auto = 0 AND pb.status = 'active'
+        WHERE $base_where $search_where_out AND pb.is_auto = 0 AND pb.status = 'active' AND pbd.is_lokal = 0
         ORDER BY pb.created_at DESC, pb.nomor_pemakaian DESC
         LIMIT ? OFFSET ?
     ";
@@ -1357,19 +1356,18 @@ if ($default_modal_klinik_id) {
 
                     <!-- Item Table -->
                     <div class="card border-0 shadow-sm">
-                        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-                            <h6 class="mb-0 fw-bold text-primary"><i class="fas fa-boxes me-2"></i>Daftar Item Barang
-                            </h6>
-                            <button type="button" class="btn btn-success btn-sm" id="modalAddRowBtn">
-                                <i class="fas fa-plus-circle me-1"></i> Tambah Item
-                            </button>
+                        <div class="card-header bg-white py-3">
+                            <h6 class="mb-0 fw-bold text-primary"><i class="fas fa-boxes me-2"></i>Daftar Item Barang</h6>
+                        </div>
+                        <div id="modalDateAlert" class="alert alert-info border-0 rounded-0 m-0 py-2 small" style="display: block;">
+                            <i class="fas fa-info-circle me-2"></i>Silakan pilih <b>Tanggal Pakai BHP</b> terlebih dahulu untuk mulai memilih barang.
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive">
                                 <table class="table table-hover align-middle mb-0" id="modalItemTable">
                                     <thead class="bg-light">
                                         <tr>
-                                            <th width="50%" class="py-3 text-muted small fw-bold">Item Barang <span
+                                            <th width="50%" class="py-3 text-muted small fw-bold text-center">Barang <span
                                                     class="text-danger">*</span></th>
                                             <th width="15%" class="py-3 text-muted small fw-bold">Qty <span
                                                     class="text-danger">*</span></th>
@@ -1382,7 +1380,7 @@ if ($default_modal_klinik_id) {
                                         <tr class="modal-item-row">
                                             <td class="p-2">
                                                 <select name="items[0][barang_id]"
-                                                    class="form-select form-select-sm modal-barang-select" required>
+                                                    class="form-select form-select-sm modal-barang-select" required disabled>
                                                     <option value="">-- Pilih Barang --</option>
                                                 </select>
                                             </td>
@@ -1398,17 +1396,23 @@ if ($default_modal_klinik_id) {
                                                 </select>
                                                 <input type="hidden" name="items[0][satuan]"
                                                     class="modal-satuan-hidden">
+                                                <input type="hidden" name="items[0][is_lokal]" class="modal-is-lokal-hidden" value="0">
                                                 <input type="hidden" name="items[0][catatan_item]" value="">
                                             </td>
                                             <td class="text-center border-start">
                                                 <button type="button"
-                                                    class="btn btn-sm btn-link text-danger modal-remove-row" disabled>
-                                                    <i class="fas fa-trash-alt"></i>
+                                                    class="btn btn-sm btn-danger modal-remove-row rounded-3 shadow-sm" disabled>
+                                                    <i class="fas fa-times"></i>
                                                 </button>
                                             </td>
                                         </tr>
                                     </tbody>
                                 </table>
+                            </div>
+                            <div class="p-3 border-top">
+                                <button type="button" class="btn btn-success btn-sm px-3 fw-bold rounded-pill" id="modalAddRowBtn">
+                                    <i class="fas fa-plus me-1"></i> Tambah Baris
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -1687,8 +1691,9 @@ if ($default_modal_klinik_id) {
                 const safeName = String(it.name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const safeSatuan = String(satuan).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const qtyText = fmtQty(displayQty);
+                const isLokal = it.is_lokal ? '1' : '0';
 
-                html += `<option value="${it.id}" data-satuan="${safeSatuan}" data-raw-qty="${it.rawQty}">${safeName} (Stok: ${qtyText})</option>`;
+                html += `<option value="${it.id}|${isLokal}" data-satuan="${safeSatuan}" data-raw-qty="${it.rawQty}" data-is-lokal="${isLokal}">${safeName} (Stok: ${qtyText})</option>`;
             });
             return html;
         }
@@ -1731,12 +1736,14 @@ if ($default_modal_klinik_id) {
                     availableItemsMap = {};
                     if (res.success && Array.isArray(res.items)) {
                         res.items.forEach(it => {
-                            availableItemsMap[it.barang_id] = {
+                            const isl = it.is_lokal ? 1 : 0;
+                            availableItemsMap[it.barang_id + '_' + isl] = {
                                 id: it.barang_id,
                                 name: it.nama_barang,
                                 satuan: it.satuan,
                                 uom_ratio: it.uom_ratio,
-                                rawQty: it.qty
+                                rawQty: it.qty,
+                                is_lokal: isl
                             };
                         });
                     }
@@ -2030,7 +2037,7 @@ if ($default_modal_klinik_id) {
             const rowHtml = `
             <tr class="modal-item-row">
                 <td class="p-2">
-                    <select name="items[0][barang_id]" class="form-select form-select-sm modal-barang-select" required>
+                    <select name="items[0][barang_id]" class="form-select form-select-sm modal-barang-select" required ${$('#modalTambahTanggal').val() ? '' : 'disabled'}>
                         ${optionsHtml}
                     </select>
                 </td>
@@ -2042,11 +2049,12 @@ if ($default_modal_klinik_id) {
                         <option value="oper">-</option>
                     </select>
                     <input type="hidden" name="items[0][satuan]" class="modal-satuan-hidden">
+                    <input type="hidden" name="items[0][is_lokal]" class="modal-is-lokal-hidden" value="0">
                     <input type="hidden" name="items[0][catatan_item]" value="">
                 </td>
                 <td class="text-center border-start">
-                    <button type="button" class="btn btn-sm btn-link text-danger modal-remove-row" disabled>
-                        <i class="fas fa-trash-alt"></i>
+                    <button type="button" class="btn btn-sm btn-danger modal-remove-row rounded-3 shadow-sm" disabled>
+                        <i class="fas fa-times"></i>
                     </button>
                 </td>
             </tr>
@@ -2061,10 +2069,13 @@ if ($default_modal_klinik_id) {
         $(document).on('change', '.modal-uom-select, .edit-uom-select', function () {
             const row = $(this).closest('tr');
             const $barangSelect = row.find('.modal-barang-select, .edit-barang-select');
-            const barangId = $barangSelect.val();
-            if (!barangId) return;
+            const rawVal = $barangSelect.val();
+            if (!rawVal) return;
+            const parts = rawVal.split('|');
+            const id = parts[0];
+            const isLokal = parts[1] === '1';
 
-            const master = barangMaster[barangId] || {};
+            const master = (id && !isLokal && barangMaster[id]) ? barangMaster[id] : {};
             const ratio = Number(master.uom_ratio) || 1;
             const uomMode = $(this).val(); // 'oper' or 'odoo'
 
@@ -2081,7 +2092,7 @@ if ($default_modal_klinik_id) {
 
             // Update teks di option
             const qtyText = Number(displayQty).toLocaleString('id-ID');
-            const baseName = master.name || barangId;
+            const baseName = $selectedOption.text().split(' (Stok:')[0];
             const newText = `${baseName} (Stok: ${qtyText})`;
 
             $selectedOption.text(newText);
@@ -2099,11 +2110,21 @@ if ($default_modal_klinik_id) {
 
         // Handle barang selection in modal
         $(document).on('change', '.modal-barang-select', function () {
-            const id = $(this).val();
+            const val = $(this).val();
+            if (!val) return;
+            const parts = val.split('|');
+            const id = parts[0];
+            const isLokal = parts[1] === '1';
             const row = $(this).closest('tr');
-            const satuan = (id && barangMaster[id] && barangMaster[id].satuan) ? barangMaster[id].satuan : '';
-            const uomOdoo = (id && barangMaster[id] && barangMaster[id].uom_odoo) ? barangMaster[id].uom_odoo : '';
-            const ratio = (id && barangMaster[id] && barangMaster[id].uom_ratio) ? Number(barangMaster[id].uom_ratio) : 1;
+            const itemKey = id + '_' + (isLokal ? '1' : '0');
+            const item = availableItemsMap[itemKey];
+
+            const master = (id && !isLokal && barangMaster[id]) ? barangMaster[id] : {};
+            const $selectedOption = $(this).find('option:selected');
+            const satuan = item ? item.satuan : ($selectedOption.attr('data-satuan') || master.satuan || '');
+            const uomOdoo = master.uom_odoo || '';
+            const ratio = Number(master.uom_ratio) || 1;
+            
             const $uomSelect = row.find('.modal-uom-select');
             const $hiddenSatuan = row.find('.modal-satuan-hidden');
 
@@ -2118,6 +2139,9 @@ if ($default_modal_klinik_id) {
                 $uomSelect.prop('disabled', true);
             }
             $uomSelect.html(opts).val('oper');
+
+            // Set is_lokal hidden input
+            row.find('.modal-is-lokal-hidden, .edit-is-lokal-hidden').val(isLokal ? 1 : 0);
         });
 
         // Add row in modal
@@ -2128,7 +2152,7 @@ if ($default_modal_klinik_id) {
             const newRow = `
             <tr class="modal-item-row">
                 <td class="p-2">
-                    <select name="items[${modalRowIndex}][barang_id]" class="form-select form-select-sm modal-barang-select" required>
+                    <select name="items[${modalRowIndex}][barang_id]" class="form-select form-select-sm modal-barang-select" required ${$('#modalTambahTanggal').val() ? '' : 'disabled'}>
                         ${optionsHtml}
                     </select>
                 </td>
@@ -2140,11 +2164,12 @@ if ($default_modal_klinik_id) {
                         <option value="oper">-</option>
                     </select>
                     <input type="hidden" name="items[${modalRowIndex}][satuan]" class="modal-satuan-hidden">
+                    <input type="hidden" name="items[${modalRowIndex}][is_lokal]" class="modal-is-lokal-hidden" value="0">
                     <input type="hidden" name="items[${modalRowIndex}][catatan_item]" value="">
                 </td>
                 <td class="text-center border-start">
-                    <button type="button" class="btn btn-sm btn-link text-danger modal-remove-row">
-                        <i class="fas fa-trash-alt"></i>
+                    <button type="button" class="btn btn-sm btn-danger modal-remove-row rounded-3 shadow-sm">
+                        <i class="fas fa-times"></i>
                     </button>
                 </td>
             </tr>
@@ -2198,7 +2223,7 @@ if ($default_modal_klinik_id) {
         // --- MODAL EDIT LOGIC ---
         let editRowIndex = 0;
 
-        function makeEditRow(idx, barangId, qty, satuan, catatan, uomMode, detailId, isExisting) {
+        function makeEditRow(idx, barangId, qty, satuan, catatan, uomMode, detailId, isExisting, isLokal = 0) {
             const formattedQty = qty ? fmtQty(qty) : '';
             const existing = isExisting ? 1 : 0;
             const lockExistingAttr = isExisting ? 'disabled' : '';
@@ -2223,6 +2248,7 @@ if ($default_modal_klinik_id) {
                         <option value="oper">-</option>
                     </select>
                     <input type="hidden" name="items[${idx}][satuan]" class="edit-satuan-hidden" value="${satuan || ''}">
+                    <input type="hidden" name="items[${idx}][is_lokal]" class="edit-is-lokal-hidden" value="${isLokal}">
                     <input type="hidden" name="items[${idx}][catatan_item]" value="${catatan || ''}">
                     <input type="hidden" class="edit-detail-id" value="${detailId || ''}">
                 </td>
@@ -2313,39 +2339,44 @@ if ($default_modal_klinik_id) {
                             availableItemsMap = {};
                             if (stockRes.success && Array.isArray(stockRes.items)) {
                                 stockRes.items.forEach(it => {
-                                    availableItemsMap[it.barang_id] = {
+                                    const isl = it.is_lokal ? 1 : 0;
+                                    availableItemsMap[it.barang_id + '_' + isl] = {
                                         id: it.barang_id,
                                         name: it.nama_barang,
                                         satuan: it.satuan,
                                         uom_ratio: it.uom_ratio,
-                                        rawQty: it.qty
+                                        rawQty: it.qty,
+                                        is_lokal: isl
                                     };
                                 });
                             }
 
                             // Ensure edited items are in the list (even if out of stock now)
                             res.details.forEach(function (d) {
-                                if (!availableItemsMap[d.barang_id]) {
-                                    availableItemsMap[d.barang_id] = {
+                                const isl_d = d.is_lokal ? 1 : 0;
+                                const dKey = d.barang_id + '_' + isl_d;
+                                if (!availableItemsMap[dKey]) {
+                                    availableItemsMap[dKey] = {
                                         id: d.barang_id,
                                         name: d.nama_barang,
                                         satuan: d.satuan,
                                         uom_ratio: 1, // Will be updated by barangMaster if available
-                                        rawQty: 0
+                                        rawQty: 0,
+                                        is_lokal: isl_d
                                     };
                                 }
                             });
 
                             editRowIndex = 0;
                             res.details.forEach(function (d) {
-                                const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, d.catatan_item, d.uom_mode, d.id, true);
+                                const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, d.catatan_item, d.uom_mode, d.id, true, d.is_lokal || 0);
                                 $('#editItemTableBody').append(rowHtml);
                                 const $row = $('#editItemTableBody tr:last');
                                 const $barangSelect = $row.find('.edit-barang-select');
 
                                 // Re-build options with the current availableItemsMap
                                 $barangSelect.html(buildOptionsHtml(h.klinik_id, h.jenis_pemakaian, userHcId));
-                                $barangSelect.val(String(d.barang_id));
+                                $barangSelect.val(String(d.barang_id) + '|' + (d.is_lokal ? '1' : '0'));
 
                                 initBarangSelect2($barangSelect);
 
@@ -2385,12 +2416,21 @@ if ($default_modal_klinik_id) {
 
         // Barang change in edit modal
         $(document).on('change', '.edit-barang-select', function () {
-            const id = $(this).val();
+            const val = $(this).val();
+            if (!val) return;
+            const parts = val.split('|');
+            const id = parts[0];
+            const isLokal = parts[1] === '1';
             const row = $(this).closest('tr');
-            const master = barangMaster[id] || {};
-            const satuan = master.satuan || '';
+            const itemKey = id + '_' + (isLokal ? '1' : '0');
+            const item = availableItemsMap[itemKey];
+
+            const master = (id && !isLokal && barangMaster[id]) ? barangMaster[id] : {};
+            const $selectedOption = $(this).find('option:selected');
+            const satuan = item ? item.satuan : ($selectedOption.attr('data-satuan') || master.satuan || '');
             const uomOdoo = master.uom_odoo || '';
             const ratio = Number(master.uom_ratio) || 1;
+            
             const $uomSelect = row.find('.edit-uom-select');
             const $hiddenSatuan = row.find('.edit-satuan-hidden');
 
@@ -2405,7 +2445,10 @@ if ($default_modal_klinik_id) {
                 $uomSelect.prop('disabled', true);
             }
             $uomSelect.html(opts).val('oper');
-            $uomSelect.trigger('change'); // trigger stock label update
+            $uomSelect.trigger('change');
+
+            // Set is_lokal hidden input
+            row.find('.modal-is-lokal-hidden, .edit-is-lokal-hidden').val(isLokal ? 1 : 0);
         });
 
         // Add row in edit modal
@@ -2643,7 +2686,11 @@ if ($default_modal_klinik_id) {
                 const op = String($row.find('.edit-op-select').val() || '');
                 const isExisting = String($row.data('existing') || '0') === '1';
                 const detailId = Number($row.find('.edit-detail-id').val() || 0);
-                const barangId = Number($row.find('.edit-barang-select').val() || 0);
+                const rawVal = $row.find('.edit-barang-select').val() || '';
+                const parts = rawVal.split('|');
+                const barangId = Number(parts[0] || 0);
+                const isLokal = parts[1] === '1' ? 1 : 0;
+                
                 const qty = Number(parseFloat(String($row.find('input[name*="[qty]"]').val() || '0').replace(',', '.')) || 0);
                 const satuan = String($row.find('.edit-satuan-hidden').val() || '');
                 const catatanItem = String($row.find('input[name*="[catatan_item]"]').val() || '');
@@ -2675,9 +2722,9 @@ if ($default_modal_klinik_id) {
                         invalid = 'Detail item ubah tidak valid.';
                         return false;
                     }
-                    ops.push({ op: 'update', detail_id: detailId, barang_id: barangId, qty: qty, satuan: satuan, catatan_item: catatanItem });
+                    ops.push({ op: 'update', detail_id: detailId, barang_id: barangId, is_lokal: isLokal, qty: qty, satuan: satuan, catatan_item: catatanItem });
                 } else if (op === 'add') {
-                    ops.push({ op: 'add', barang_id: barangId, qty: qty, satuan: satuan, catatan_item: catatanItem });
+                    ops.push({ op: 'add', barang_id: barangId, is_lokal: isLokal, qty: qty, satuan: satuan, catatan_item: catatanItem });
                 } else {
                     invalid = 'Operasi item tidak valid.';
                     return false;
@@ -3165,9 +3212,6 @@ if ($default_modal_klinik_id) {
             clearModalAutoDeductionNote();
 
             if (!klinikId || !jenis) return;
-            if (jenis !== 'klinik') {
-                return;
-            }
 
             // Ensure available items are loaded before building auto deduction rows
             loadAvailableItems(function () {
@@ -3201,16 +3245,17 @@ if ($default_modal_klinik_id) {
                             }
 
                             const optionsHtmlBase = buildOptionsHtml(klinikId, jenis);
-                            const hasOpt = optionsHtmlBase.indexOf('value="' + String(item.barang_id) + '"') !== -1;
+                            const compositeVal = String(item.barang_id) + '|' + (item.is_lokal == '1' || item.is_lokal === true ? '1' : '0');
+                            const hasOpt = optionsHtmlBase.indexOf('value="' + compositeVal + '"') !== -1;
                             const safeName = String(item.nama_barang || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
                             let optionsHtml = optionsHtmlBase;
                             if (!hasOpt) {
                                 if (optionsHtmlBase.startsWith('<option value="">')) {
                                     const firstEnd = optionsHtmlBase.indexOf('</option>') + 9;
-                                    optionsHtml = optionsHtmlBase.substring(0, firstEnd) + '<option value="' + String(item.barang_id) + '">' + safeName + '</option>' + optionsHtmlBase.substring(firstEnd);
+                                    optionsHtml = optionsHtmlBase.substring(0, firstEnd) + '<option value="' + compositeVal + '" data-is-lokal="' + (item.is_lokal ? '1' : '0') + '" data-satuan="' + (item.satuan || '') + '">' + safeName + ' (Stok: 0)</option>' + optionsHtmlBase.substring(firstEnd);
                                 } else {
-                                    optionsHtml = '<option value="' + String(item.barang_id) + '">' + safeName + '</option>' + optionsHtmlBase;
+                                    optionsHtml = '<option value="' + compositeVal + '" data-is-lokal="' + (item.is_lokal ? '1' : '0') + '" data-satuan="' + (item.satuan || '') + '">' + safeName + ' (Stok: 0)</option>' + optionsHtmlBase;
                                 }
                             }
 
@@ -3247,7 +3292,8 @@ if ($default_modal_klinik_id) {
                             const $select = $row.find('.modal-barang-select');
 
                             // Set value BEFORE init select2 so it picks it up correctly
-                            $select.val(String(item.barang_id)).trigger('change');
+                            const compositeValSet = String(item.barang_id) + '|' + (item.is_lokal == '1' || item.is_lokal === true ? '1' : '0');
+                            $select.val(compositeValSet).trigger('change');
                             initBarangSelect2($select);
 
                             modalRowIndex++;
@@ -3295,6 +3341,10 @@ if ($default_modal_klinik_id) {
             loadAutoDeductionIntoModal();
         });
         $('#modalTambah').on('change', 'input[name="tanggal"]', function () {
+            const hasDate = !!$(this).val();
+            $('.modal-barang-select').prop('disabled', !hasDate);
+            $('#modalDateAlert').toggle(!hasDate);
+
             clearModalAutoDeductionNote();
             resetModalItemRows();
             loadAutoDeductionIntoModal();

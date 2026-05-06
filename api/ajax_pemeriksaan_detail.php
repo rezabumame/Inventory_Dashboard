@@ -28,19 +28,21 @@ $stmt = $conn->prepare("
     SELECT 
         d.id,
         d.barang_id,
+        d.is_lokal,
         d.qty_per_pemeriksaan,
         d.id_biosys,
         d.nama_layanan,
-        b.kode_barang,
+        COALESCE(b.kode_barang, '-') AS kode_barang,
         b.odoo_product_id,
-        b.nama_barang,
-        COALESCE(NULLIF(uc.to_uom, ''), b.satuan) AS satuan,
-        b.tipe
+        COALESCE(b.nama_barang, bl.nama_item) AS nama_barang,
+        COALESCE(NULLIF(uc.to_uom, ''), b.satuan, bl.uom) AS satuan,
+        COALESCE(b.tipe, 'Support') AS tipe
     FROM inventory_pemeriksaan_grup_detail d
-    JOIN inventory_barang b ON d.barang_id = b.id
+    LEFT JOIN inventory_barang b ON d.barang_id = b.id AND d.is_lokal = 0
+    LEFT JOIN inventory_barang_lokal bl ON d.barang_id = bl.id AND d.is_lokal = 1
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     WHERE d.pemeriksaan_grup_id = ?
-    ORDER BY d.nama_layanan ASC, b.nama_barang ASC
+    ORDER BY d.nama_layanan ASC, COALESCE(b.nama_barang, bl.nama_item) ASC
 ");
 $stmt->bind_param("s", $grup_id);
 $stmt->execute();

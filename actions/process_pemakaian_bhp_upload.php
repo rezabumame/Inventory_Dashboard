@@ -310,24 +310,27 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
     $locks = acquire_named_locks($conn, ['inventory_bhp_process']);
     
     try {
-        // --- CLEANUP AUTO-DEDUCTION BY DATE & CLINIC ---
-        // Collect all unique clinic + date combinations from the transactions
+        // --- CLEANUP AUTO-DEDUCTION BY DATE, CLINIC & TYPE ---
+        // Collect all unique clinic + date + jenis combinations from the transactions
         $cleanup_targets = [];
         foreach ($transactions as $tx) {
             $m = $tx['meta'];
             $tgl = date('Y-m-d', strtotime($m['tanggal_full']));
             $kid = (int)$m['klinik_id'];
-            $cleanup_targets[$kid . '|' . $tgl] = [
+            $jenis = $m['jenis']; // 'hc' or 'klinik'
+            $cleanup_targets[$kid . '|' . $tgl . '|' . $jenis] = [
                 'klinik_id' => $kid,
-                'tanggal' => $tgl
+                'tanggal' => $tgl,
+                'jenis' => $jenis
             ];
         }
 
         foreach ($cleanup_targets as $target) {
             $kid = $target['klinik_id'];
             $tgl = $target['tanggal'];
-            // Find and Delete ALL Auto BHP records for this Clinic and Date (Both HC & Clinic)
-            $res_auto = $conn->query("SELECT id FROM inventory_pemakaian_bhp WHERE is_auto = 1 AND klinik_id = $kid AND tanggal LIKE '$tgl%'");
+            $jenis = $conn->real_escape_string($target['jenis']);
+            // Find and Delete Auto BHP records for this Clinic, Date and Type
+            $res_auto = $conn->query("SELECT id FROM inventory_pemakaian_bhp WHERE is_auto = 1 AND klinik_id = $kid AND tanggal = '$tgl' AND jenis_pemakaian = '$jenis'");
             while ($auto_row = $res_auto->fetch_assoc()) {
                 $auto_id = $auto_row['id'];
                 $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $auto_id");

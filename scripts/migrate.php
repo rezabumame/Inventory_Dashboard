@@ -566,6 +566,11 @@ try {
         ['inventory_booking_pasien', 'status', "ENUM('booked', 'done', 'rescheduled', 'cancelled') DEFAULT 'booked' AFTER tanggal_lahir"],
         ['inventory_booking_pasien', 'remark', "TEXT NULL AFTER status"],
         ['inventory_booking_pasien', 'done_at', "DATETIME NULL AFTER remark"],
+        ['inventory_barang_lokal', 'kode_item', "VARCHAR(50) NULL AFTER id"],
+        ['inventory_barang_lokal', 'kategori', "VARCHAR(50) NULL AFTER uom"],
+        ['inventory_barang_lokal', 'odoo_id', "INT NULL AFTER kategori COMMENT 'ID dari inventory_barang jika di-import'"],
+        ['inventory_stok_lokal', 'qty_gantung', "DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER qty"],
+        ['inventory_history_lokal', 'reference_id', "INT NULL AFTER keterangan COMMENT 'ID dari inventory_pemakaian_bhp jika tipe=pakai'"],
     ];
 
     foreach ($cols as $c) {
@@ -798,7 +803,77 @@ try {
         
         $new_type = str_replace(")", ",'admin_hc')", $type);
         $conn->query("ALTER TABLE inventory_users MODIFY COLUMN role $new_type");
-        return "Role admin_hc added";
+        return "Updated";
+    });
+
+    // BHP Non-Odoo (Local Items)
+    run_migration_task("Table: inventory_barang_lokal", function() use ($conn) { 
+        return m_ensure_table($conn, "inventory_barang_lokal", "CREATE TABLE IF NOT EXISTS inventory_barang_lokal (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            kode_item VARCHAR(50) NULL AFTER id,
+            nama_item VARCHAR(255) NOT NULL,
+            uom VARCHAR(50) NOT NULL,
+            kategori VARCHAR(50) NULL AFTER uom,
+            odoo_id INT NULL AFTER kategori COMMENT 'ID dari inventory_barang jika di-import',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    run_migration_task("Table: inventory_stok_lokal", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_stok_lokal", "CREATE TABLE IF NOT EXISTS inventory_stok_lokal (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            barang_lokal_id INT NOT NULL,
+            klinik_id INT NOT NULL,
+            qty DECIMAL(18,4) NOT NULL DEFAULT 0,
+            qty_gantung DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER qty,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_barang_klinik (barang_lokal_id, klinik_id),
+            KEY idx_barang (barang_lokal_id),
+            KEY idx_klinik (klinik_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    run_migration_task("Table: inventory_history_lokal", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_history_lokal", "CREATE TABLE IF NOT EXISTS inventory_history_lokal (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            barang_lokal_id INT NOT NULL,
+            klinik_id INT NOT NULL,
+            tipe ENUM('TAMBAH', 'KURANG', 'PAKAI') NOT NULL,
+            qty_sebelum DECIMAL(18,4) NOT NULL DEFAULT 0,
+            qty_perubahan DECIMAL(18,4) NOT NULL DEFAULT 0,
+            qty_sesudah DECIMAL(18,4) NOT NULL DEFAULT 0,
+            status ENUM('pending', 'approved', 'rejected', 'completed') DEFAULT 'completed',
+            keterangan TEXT NULL,
+            reference_id INT NULL AFTER keterangan COMMENT 'ID dari inventory_pemakaian_bhp jika tipe=pakai',
+            created_by INT NOT NULL,
+            approved_by INT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            approved_at DATETIME NULL,
+            KEY idx_barang (barang_lokal_id),
+            KEY idx_klinik (klinik_id),
+            KEY idx_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    run_migration_task("Schema: Update inventory_history_lokal tipe ENUM", function() use ($conn) {
+        if (!table_exists($conn, "inventory_history_lokal")) return "Skipped";
+        $res = $conn->query("SHOW COLUMNS FROM inventory_history_lokal LIKE 'tipe'");
+        if (!$res) return "Error";
+        $row = $res->fetch_assoc();
+        $type = $row['Type'];
+        if (strpos($type, 'TAMBAH') !== false) return "Already exists";
+        
+        $conn->query("ALTER TABLE inventory_history_lokal MODIFY COLUMN tipe ENUM('TAMBAH', 'KURANG', 'PAKAI') NOT NULL");
+        return "Updated";
+    });
+
+    run_migration_task("Schema: Add is_lokal to inventory_pemakaian_bhp_detail", function() use ($conn) {
+        $res = $conn->query("SHOW COLUMNS FROM inventory_pemakaian_bhp_detail LIKE 'is_lokal'");
+        if ($res && $res->num_rows > 0) return "Already exists";
+        
+        $conn->query("ALTER TABLE inventory_pemakaian_bhp_detail ADD COLUMN is_lokal TINYINT(1) NOT NULL DEFAULT 0 AFTER barang_id");
+        return "Added";
     });
 
 } catch (Throwable $e) {

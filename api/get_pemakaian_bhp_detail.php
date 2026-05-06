@@ -76,11 +76,12 @@ $original_details_data = [];
 $stmt_original = $conn->prepare("
     SELECT 
         pbd.*,
-        COALESCE(b.kode_barang, '') AS kode_barang,
-        COALESCE(b.nama_barang, '') AS nama_barang,
-        COALESCE(NULLIF(pbd.satuan, ''), uc.to_uom, b.satuan, '') AS satuan_display
+        COALESCE(b.kode_barang, bl.kode_item, 'LOCAL') AS kode_barang,
+        COALESCE(bl.nama_item, b.nama_barang, '') AS nama_barang,
+        COALESCE(NULLIF(pbd.satuan, ''), bl.uom, uc.to_uom, b.satuan, '') AS satuan_display
     FROM inventory_pemakaian_bhp_detail pbd
-    LEFT JOIN inventory_barang b ON pbd.barang_id = b.id
+    LEFT JOIN inventory_barang b ON pbd.barang_id = b.id AND pbd.is_lokal = 0
+    LEFT JOIN inventory_barang_lokal bl ON pbd.barang_id = bl.id AND pbd.is_lokal = 1
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang AND uc.from_uom = b.satuan
     WHERE pbd.pemakaian_bhp_id = ?
     ORDER BY pbd.id
@@ -89,7 +90,8 @@ $stmt_original->bind_param("i", $id);
 $stmt_original->execute();
 $original_details_result = $stmt_original->get_result();
 while ($row = $original_details_result->fetch_assoc()) {
-    $original_details_data[$row['barang_id']] = $row;
+    $key = $row['barang_id'] . '_' . ($row['is_lokal'] ?? 0);
+    $original_details_data[$key] = $row;
 }
 
 // If pending edit or has history, prepare the "diff" view
@@ -126,7 +128,12 @@ if ($has_history && $pending_payload) {
             // New logic for Revision (Delta-based)
             foreach ($delta_items as $d_it) {
                 $bid = (int)($d_it['barang_id'] ?? 0);
-                $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = " . $bid . " LIMIT 1");
+                $is_lokal_d = (int)($d_it['is_lokal'] ?? 0);
+                if ($is_lokal_d) {
+                    $b_res = $conn->query("SELECT kode_item as kode_barang, nama_item as nama_barang, uom as satuan FROM inventory_barang_lokal WHERE id = " . $bid . " LIMIT 1");
+                } else {
+                    $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = " . $bid . " LIMIT 1");
+                }
                 $b = $b_res ? $b_res->fetch_assoc() : [];
                 $qty_delta = (float)($d_it['qty'] ?? 0);
                 
@@ -150,7 +157,12 @@ if ($has_history && $pending_payload) {
             $op_type = (string)($op['op'] ?? '');
             if ($op_type === 'add') {
                 $bid = (int)($op['barang_id'] ?? 0);
-                $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = " . $bid . " LIMIT 1");
+                $is_lokal_op = (int)($op['is_lokal'] ?? 0);
+                if ($is_lokal_op) {
+                    $b_res = $conn->query("SELECT kode_item as kode_barang, nama_item as nama_barang, uom as satuan FROM inventory_barang_lokal WHERE id = " . $bid . " LIMIT 1");
+                } else {
+                    $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = " . $bid . " LIMIT 1");
+                }
                 $b = $b_res ? $b_res->fetch_assoc() : [];
                 $display_details[] = [
                     'change_type' => 'added',
@@ -177,7 +189,12 @@ if ($has_history && $pending_payload) {
                 $after = $op['after'] ?? [];
                 if (!$row) continue;
                 $bid_after = (int)($after['barang_id'] ?? 0);
-                $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = " . $bid_after . " LIMIT 1");
+                $is_lokal_after = (int)($after['is_lokal'] ?? (isset($row['is_lokal']) ? $row['is_lokal'] : 0));
+                if ($is_lokal_after) {
+                    $b_res = $conn->query("SELECT kode_item as kode_barang, nama_item as nama_barang, uom as satuan FROM inventory_barang_lokal WHERE id = " . $bid_after . " LIMIT 1");
+                } else {
+                    $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = " . $bid_after . " LIMIT 1");
+                }
                 $b = $b_res ? $b_res->fetch_assoc() : [];
                 $display_details[] = [
                     'change_type' => 'changed',
@@ -200,9 +217,16 @@ if ($has_history && $pending_payload) {
         if (isset($pending_payload['items']) && is_array($pending_payload['items'])) {
             foreach ($pending_payload['items'] as $it) {
                 $bid = (int)$it['barang_id'];
-                $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = $bid")->fetch_assoc();
-                $proposed_items_map[$bid] = [
+                $is_lokal_it = (int)($it['is_lokal'] ?? 0);
+                if ($is_lokal_it) {
+                    $b_res = $conn->query("SELECT kode_item as kode_barang, nama_item as nama_barang, uom as satuan FROM inventory_barang_lokal WHERE id = $bid")->fetch_assoc();
+                } else {
+                    $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = $bid")->fetch_assoc();
+                }
+                $key = $bid . '_' . $is_lokal_it;
+                $proposed_items_map[$key] = [
                     'barang_id' => $bid,
+                    'is_lokal' => $is_lokal_it,
                     'kode_barang' => $b_res['kode_barang'] ?? '-',
                     'nama_barang' => $b_res['nama_barang'] ?? 'Unknown Item',
                     'qty' => (float)$it['qty'],
@@ -211,9 +235,9 @@ if ($has_history && $pending_payload) {
                 ];
             }
         }
-        foreach ($proposed_items_map as $bid => $proposed_item) {
-            if (isset($original_details_data[$bid])) {
-                $original_item = $original_details_data[$bid];
+        foreach ($proposed_items_map as $key => $proposed_item) {
+            if (isset($original_details_data[$key])) {
+                $original_item = $original_details_data[$key];
                 $is_qty_changed = (float)$original_item['qty'] !== (float)$proposed_item['qty'];
                 $is_satuan_changed = trim((string)$original_item['satuan_display']) !== trim((string)$proposed_item['satuan_display']);
                 $is_catatan_changed = trim((string)($original_item['catatan_item'] ?? '')) !== trim((string)($proposed_item['catatan_item'] ?? ''));
@@ -226,7 +250,7 @@ if ($has_history && $pending_payload) {
                     $proposed_item['change_type'] = 'unchanged';
                 }
                 $display_details[] = $proposed_item;
-                unset($original_details_data[$bid]);
+                unset($original_details_data[$key]);
             } else {
                 $proposed_item['change_type'] = 'added';
                 $display_details[] = $proposed_item;
@@ -513,7 +537,13 @@ if (!function_exists('compact_transaction_note')) {
                     ?>
                     <tr class="<?= $row_class ?>">
                         <td class="text-center text-muted"><?= $no++ ?></td>
-                        <td><span class="badge bg-light text-dark border"><?= htmlspecialchars(!empty($detail['kode_barang']) ? $detail['kode_barang'] : '-') ?></span></td>
+                        <td>
+                            <?php if (($detail['is_lokal'] ?? 0) == 1): ?>
+                                <span class="badge bg-info text-dark border"><?= htmlspecialchars(!empty($detail['kode_barang']) ? $detail['kode_barang'] : 'LOCAL') ?></span>
+                            <?php else: ?>
+                                <span class="badge bg-light text-dark border"><?= htmlspecialchars(!empty($detail['kode_barang']) ? $detail['kode_barang'] : '-') ?></span>
+                            <?php endif; ?>
+                        </td>
                         <td class="fw-medium text-dark"><?= $change_indicator ?><?= htmlspecialchars($detail['nama_barang']) ?></td>
                         <td class="text-center"><span class="qty-pill"><?= $qty_display ?></span></td>
                         <td><span class="text-muted small"><?= $satuan_display ?></span></td>

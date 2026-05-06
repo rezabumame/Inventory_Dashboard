@@ -94,12 +94,32 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'])): ?>
         <a href="index.php?page=pemakaian_bhp_list" class="sidebar-link <?= $current_page == 'pemakaian_bhp_list' ? 'active' : '' ?>">
             <div class="d-flex w-100 align-items-center justify-content-between">
                 <div><i class="fas fa-clipboard-list"></i> Pemakaian BHP</div>
                 <?php if ($badge_bhp_pending > 0): ?>
                     <span class="badge bg-danger rounded-pill"><?= $badge_bhp_pending ?></span>
+                <?php endif; ?>
+            </div>
+        </a>
+
+        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'])): ?>
+        <?php
+            $badge_lokal_pending = 0;
+            if (in_array($u_role, ['super_admin', 'spv_klinik'], true)) {
+                $where_lokal = "status = 'pending'";
+                if ($u_role !== 'super_admin') {
+                    $where_lokal .= " AND klinik_id = $u_klinik_id";
+                }
+                $q_lokal = $conn->query("SELECT COUNT(*) as cnt FROM inventory_history_lokal WHERE $where_lokal");
+                $badge_lokal_pending = (int)($q_lokal->fetch_assoc()['cnt'] ?? 0);
+            }
+        ?>
+        <a href="index.php?page=bhp_lokal" class="sidebar-link <?= $current_page == 'bhp_lokal' ? 'active' : '' ?>">
+            <div class="d-flex w-100 align-items-center justify-content-between">
+                <div><i class="fas fa-box-open"></i> BHP Non-Odoo</div>
+                <?php if ($badge_lokal_pending > 0): ?>
+                    <span class="badge bg-danger rounded-pill"><?= $badge_lokal_pending ?></span>
                 <?php endif; ?>
             </div>
         </a>

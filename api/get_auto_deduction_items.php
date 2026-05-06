@@ -27,26 +27,28 @@ try {
     $query = "
         SELECT 
             pbd.barang_id, 
-            b.nama_barang, 
-            b.kode_barang,
+            pbd.is_lokal,
+            COALESCE(b.nama_barang, bl.nama_item) as nama_barang, 
+            COALESCE(b.kode_barang, '') as kode_barang,
             SUM(pbd.qty) as total_qty,
             MAX(pbd.satuan) as satuan,
             GROUP_CONCAT(DISTINCT bp.nomor_booking SEPARATOR ', ') as referensi_booking,
             GROUP_CONCAT(DISTINCT pb.id SEPARATOR ',') as source_ids
         FROM inventory_pemakaian_bhp pb
         JOIN inventory_pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
-        JOIN inventory_barang b ON pbd.barang_id = b.id
+        LEFT JOIN inventory_barang b ON pbd.barang_id = b.id AND pbd.is_lokal = 0
+        LEFT JOIN inventory_barang_lokal bl ON pbd.barang_id = bl.id AND pbd.is_lokal = 1
         LEFT JOIN inventory_booking_pemeriksaan bp ON pb.booking_id = bp.id
         WHERE pb.klinik_id = ? 
           AND pb.is_auto = 1 
           AND DATE(pb.tanggal) = ?
-          AND pb.jenis_pemakaian = ?
-        GROUP BY pbd.barang_id, b.nama_barang, b.kode_barang
+          AND (pb.jenis_pemakaian = ? OR (pb.jenis_pemakaian = 'clinic' AND ? = 'klinik') OR (pb.jenis_pemakaian = 'klinik' AND ? = 'clinic'))
+        GROUP BY pbd.barang_id, pbd.is_lokal
         HAVING total_qty > 0
     ";
 
     $stmt = $conn->prepare($query);
-    $stmt->bind_param("iss", $klinik_id, $date_only, $jenis_pemakaian);
+    $stmt->bind_param("issss", $klinik_id, $date_only, $jenis_pemakaian, $jenis_pemakaian, $jenis_pemakaian);
     $stmt->execute();
     $result = $stmt->get_result();
 
@@ -54,7 +56,8 @@ try {
     while ($row = $result->fetch_assoc()) {
         $items[] = [
             'barang_id' => (int)$row['barang_id'],
-            'nama_barang' => $row['nama_barang'],
+            'is_lokal' => (int)$row['is_lokal'],
+            'nama_barang' => $row['nama_barang'] . ($row['is_lokal'] ? ' (Lokal)' : ''),
             'kode_barang' => $row['kode_barang'],
             'qty' => (float)$row['total_qty'],
             'satuan' => $row['satuan'],

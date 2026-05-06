@@ -16,6 +16,7 @@ $barang_ids = $_POST['barang_ids'] ?? [];
 $qtys = $_POST['qtys'] ?? [];
 $id_biosys_list = $_POST['id_biosys_list'] ?? [];
 $layanan_list = $_POST['layanan_list'] ?? [];
+$is_lokal_list = $_POST['is_lokal_list'] ?? [];
 
 $old_id = trim((string)($_POST['old_id'] ?? ''));
 
@@ -86,14 +87,15 @@ try {
     }
 
     if (!empty($barang_ids)) {
-        $stmt_detail = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup_detail (pemeriksaan_grup_id, id_biosys, nama_layanan, barang_id, qty_per_pemeriksaan) VALUES (?, ?, ?, ?, ?)");
+        $stmt_detail = $conn->prepare("INSERT INTO inventory_pemeriksaan_grup_detail (pemeriksaan_grup_id, id_biosys, nama_layanan, barang_id, is_lokal, qty_per_pemeriksaan) VALUES (?, ?, ?, ?, ?, ?)");
         foreach ($barang_ids as $index => $barang_id) {
             $barang_id = (int)$barang_id;
             $qty = (float)($qtys[$index] ?? 1);
+            $is_lokal = (int)($is_lokal_list[$index] ?? 0);
             $id_biosys = trim((string)($id_biosys_list[$index] ?? ''));
             $layanan = trim((string)($layanan_list[$index] ?? ''));
             if ($barang_id > 0 && $qty > 0) {
-                $stmt_detail->bind_param("sssid", $id_paket, $id_biosys, $layanan, $barang_id, $qty);
+                $stmt_detail->bind_param("sssidi", $id_paket, $id_biosys, $layanan, $barang_id, $is_lokal, $qty);
                 $stmt_detail->execute();
             }
         }
