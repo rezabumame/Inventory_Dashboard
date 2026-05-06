@@ -127,7 +127,7 @@ while ($res_k && ($row = $res_k->fetch_assoc())) {
             .page-link { border-radius: 8px !important; margin: 0 3px !important; border: none !important; color: #204EAB !important; }
 
             /* Premium Filter Style */
-            .filter-card-header { padding: 1.25rem 1.5rem !important; }
+            .filter-card-header { padding: 1rem 1.5rem 0.5rem 1.5rem !important; }
             .filter-group {
                 display: flex;
                 align-items: center;
@@ -210,62 +210,64 @@ while ($res_k && ($row = $res_k->fetch_assoc())) {
             <div class="tab-pane fade" id="pills-history" role="tabpanel">
                 <div class="card shadow-sm">
                     <div class="card-header bg-white border-0 filter-card-header">
-                        <div class="row g-3">
-                            <div class="col-12 d-flex justify-content-between align-items-center">
-                                <h6 class="fw-bold mb-0 text-dark"><i class="fas fa-history text-primary me-2"></i>Riwayat Transaksi Stok</h6>
-                                <button type="button" id="btnExportHistory" class="btn btn-sm btn-success px-4 shadow-sm rounded-pill py-2">
-                                    <i class="fas fa-file-excel me-1"></i> Export Excel
-                                </button>
-                            </div>
-                            <div class="col-12">
-                                <div class="d-flex flex-wrap gap-3 align-items-center">
-                                    <?php if ($is_admin_gudang_or_sa): ?>
-                                    <div>
-                                        <div class="filter-label">Klinik</div>
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                            <h6 class="fw-bold mb-0 text-dark"><i class="fas fa-history text-primary me-2"></i>Riwayat Transaksi Stok</h6>
+                            <div class="d-flex flex-wrap gap-3 align-items-center">
+                                <?php if ($is_admin_gudang_or_sa): ?>
+                                <div>
+                                    <div class="filter-label">Klinik</div>
+                                    <div class="filter-group">
+                                        <i class="fas fa-hospital"></i>
+                                        <select id="filterKlinikHistory" style="width: 180px;">
+                                            <option value="">Semua Klinik</option>
+                                            <?php foreach ($kliniks as $k): ?>
+                                            <option value="<?= $k['id'] ?>"><?= htmlspecialchars($k['nama_klinik']) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <div>
+                                    <div class="filter-label">Rentang Tanggal</div>
+                                    <div class="filter-group">
+                                        <i class="fas fa-calendar-alt"></i>
+                                        <input type="date" id="filterDateStart" style="width: 135px;" value="<?= date('Y-m-01') ?>">
+                                        <span class="text-muted mx-1">s/d</span>
+                                        <input type="date" id="filterDateEnd" style="width: 135px;" value="<?= date('Y-m-d') ?>">
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div class="filter-label">Tipe Transaksi</div>
+                                    <div class="d-flex align-items-center gap-2">
                                         <div class="filter-group">
-                                            <i class="fas fa-hospital"></i>
-                                            <select id="filterKlinikHistory" style="width: 180px;">
-                                                <option value="">Semua Klinik</option>
-                                                <?php foreach ($kliniks as $k): ?>
-                                                <option value="<?= $k['id'] ?>"><?= htmlspecialchars($k['nama_klinik']) ?></option>
-                                                <?php endforeach; ?>
+                                            <i class="fas fa-tags"></i>
+                                            <select id="filterType" style="width: 130px;">
+                                                <option value="">All Types</option>
+                                                <option value="tambah">IN</option>
+                                                <option value="kurang">OUT</option>
+                                                <option value="pakai">USAGE</option>
                                             </select>
                                         </div>
-                                    </div>
-                                    <?php endif; ?>
-                                    
-                                    <div>
-                                        <div class="filter-label">Rentang Tanggal</div>
+                                        
                                         <div class="filter-group">
-                                            <i class="fas fa-calendar-alt"></i>
-                                            <input type="date" id="filterDateStart" style="width: 135px;" value="<?= date('Y-m-01') ?>">
-                                            <span class="text-muted mx-1">s/d</span>
-                                            <input type="date" id="filterDateEnd" style="width: 135px;" value="<?= date('Y-m-d') ?>">
+                                            <i class="fas fa-search"></i>
+                                            <input type="text" id="customSearchHistory" placeholder="Cari..." style="width: 150px;">
                                         </div>
-                                    </div>
 
-                                    <div>
-                                        <div class="filter-label">Tipe Transaksi</div>
-                                        <div class="d-flex align-items-center gap-2">
-                                            <div class="filter-group">
-                                                <i class="fas fa-tags"></i>
-                                                <select id="filterType" style="width: 130px;">
-                                                    <option value="">Semua Tipe</option>
-                                                    <option value="tambah">Tambah</option>
-                                                    <option value="kurang">Kurang</option>
-                                                    <option value="pakai">Pakai</option>
-                                                </select>
-                                            </div>
-                                            <button type="button" id="btnResetHistoryFilter" class="btn btn-sm btn-light border shadow-sm px-3 rounded-pill text-muted">
-                                                <i class="fas fa-undo-alt me-1"></i> Reset
-                                            </button>
-                                        </div>
+                                        <button type="button" id="btnResetHistoryFilter" class="btn btn-sm btn-light border shadow-sm px-3 rounded-pill text-muted">
+                                            <i class="fas fa-undo-alt me-1"></i> Reset
+                                        </button>
+                                        <button type="button" id="btnExportHistory" class="btn btn-sm btn-success px-4 shadow-sm rounded-pill py-2">
+                                            <i class="fas fa-file-excel me-1"></i> Export Excel
+                                        </button>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body pt-0">
                         <div class="table-responsive">
                             <table id="tableHistoryLokal" class="table table-hover align-middle datatable" style="width:100%">
                                 <thead class="bg-primary text-white">
@@ -458,6 +460,7 @@ $(document).ready(function() {
 
     // 3. History Table
     var tableHistory = $('#tableHistoryLokal').DataTable({
+        dom: 'rtip', // Hide default search box
         ajax: {
             url: 'api/ajax_bhp_lokal.php?action=list_history',
             data: function(d) { 
@@ -477,9 +480,15 @@ $(document).ready(function() {
                 render: function(data, type, row) {
                     var label = data.toUpperCase();
                     if (label === 'ADJUST') {
-                        label = (parseFloat(row.qty_perubahan) >= 0 ? 'TAMBAH' : 'KURANG');
+                        label = (parseFloat(row.qty_perubahan) >= 0 ? 'IN' : 'OUT');
+                    } else if (label === 'TAMBAH') {
+                        label = 'IN';
+                    } else if (label === 'KURANG') {
+                        label = 'OUT';
+                    } else if (label === 'PAKAI') {
+                        label = 'USAGE';
                     }
-                    var cls = label === 'TAMBAH' ? 'success' : (label === 'PAKAI' || label === 'KURANG' ? 'danger' : 'warning');
+                    var cls = label === 'IN' ? 'success' : (label === 'USAGE' ? 'info' : (label === 'OUT' ? 'danger' : 'warning'));
                     return '<span class="badge bg-' + cls + '-subtle text-' + cls + ' text-uppercase" style="font-size:0.7rem">' + label + '</span>';
                 }
             },
@@ -527,11 +536,17 @@ $(document).ready(function() {
         tableHistory.ajax.reload();
     });
 
+    $('#customSearchHistory').on('keyup', function() {
+        tableHistory.search(this.value).draw();
+    });
+
     $('#btnResetHistoryFilter').click(function() {
         $('#filterKlinikHistory').val('');
         $('#filterDateStart').val('<?= date('Y-m-01') ?>');
         $('#filterDateEnd').val('<?= date('Y-m-d') ?>');
         $('#filterType').val('');
+        $('#customSearchHistory').val('');
+        tableHistory.search('').draw();
         tableHistory.ajax.reload();
     });
 

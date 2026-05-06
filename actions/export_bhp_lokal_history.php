@@ -60,10 +60,21 @@ use Shuchkin\SimpleXLSXGen;
 $header = ['Tanggal', 'Item', 'Klinik', 'Tipe', 'Stok Sebelum', 'Perubahan', 'Stok Sesudah', 'Status', 'Keterangan'];
 $data = [$header];
 
+$res = $conn->query($query);
+if (!$res) {
+    die("Query Error: " . $conn->error);
+}
+
 while ($row = $res->fetch_assoc()) {
     $label = strtoupper($row['tipe']);
     if ($label === 'ADJUST') {
-        $label = ($row['qty_perubahan'] >= 0 ? 'TAMBAH' : 'KURANG');
+        $label = ($row['qty_perubahan'] >= 0 ? 'IN' : 'OUT');
+    } elseif ($label === 'TAMBAH' || $label === 'TAMBAH') {
+        $label = 'IN';
+    } elseif ($label === 'KURANG') {
+        $label = 'OUT';
+    } elseif ($label === 'PAKAI') {
+        $label = 'USAGE';
     }
     
     $val = (float)$row['qty_perubahan'];
