@@ -233,6 +233,108 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
     while ($r && ($row = $r->fetch_assoc())) $rb['events']['transfers'][] = $row;
 }
 
+if (!$is_history && $max_u !== '') {
+    $sync_buffer_ts = $max_u;
+    $rs = $conn->real_escape_string($sync_buffer_ts);
+    $ms = $conn->real_escape_string($month_start_ts);
+
+    // Today Onsite Transfers
+    $r = $conn->query("
+        SELECT COALESCE(SUM(ts.qty), 0) AS qty
+        FROM inventory_transaksi_stok ts
+        WHERE ts.barang_id = $barang_id
+          AND ts.level = 'klinik'
+          AND ts.level_id = $klinik_id
+          AND ts.tipe_transaksi = 'out'
+          AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
+          AND ts.created_at > '$rs'
+          AND ts.created_at >= '$ms'
+    ");
+    if ($r && $r->num_rows > 0) $rb['out_transfer'] = (float)($r->fetch_assoc()['qty'] ?? 0);
+
+    $r = $conn->query("
+        SELECT COALESCE(SUM(ts.qty), 0) AS qty
+        FROM inventory_transaksi_stok ts
+        WHERE ts.barang_id = $barang_id
+          AND ts.level = 'klinik'
+          AND ts.level_id = $klinik_id
+          AND ts.tipe_transaksi = 'in'
+          AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
+          AND ts.created_at > '$rs'
+          AND ts.created_at >= '$ms'
+    ");
+    if ($r && $r->num_rows > 0) $rb['in_transfer'] = (float)($r->fetch_assoc()['qty'] ?? 0);
+
+    // Today HC Transfers
+    $r = $conn->query("
+        SELECT COALESCE(SUM(ts.qty), 0) AS qty
+        FROM inventory_transaksi_stok ts
+        WHERE ts.barang_id = $barang_id
+          AND ts.level = 'hc'
+          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id = $klinik_id)
+          AND ts.tipe_transaksi = 'out'
+          AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
+          AND ts.created_at > '$rs'
+          AND ts.created_at >= '$ms'
+    ");
+    if ($r && $r->num_rows > 0) $rb['out_transfer_hc'] = (float)($r->fetch_assoc()['qty'] ?? 0);
+
+    $r = $conn->query("
+        SELECT COALESCE(SUM(ts.qty), 0) AS qty
+        FROM inventory_transaksi_stok ts
+        WHERE ts.barang_id = $barang_id
+          AND ts.level = 'hc'
+          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id = $klinik_id)
+          AND ts.tipe_transaksi = 'in'
+          AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
+          AND ts.created_at > '$rs'
+          AND ts.created_at >= '$ms'
+    ");
+    if ($r && $r->num_rows > 0) $rb['in_transfer_hc'] = (float)($r->fetch_assoc()['qty'] ?? 0);
+
+    // Today Pemakaian (Sellout)
+    $r = $conn->query("
+        SELECT 
+            pb.id,
+            pb.nomor_pemakaian,
+            pb.tanggal,
+            pb.created_at,
+            pb.jenis_pemakaian,
+            SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) AS qty
+        FROM inventory_pemakaian_bhp pb
+        JOIN inventory_transaksi_stok ts ON ts.referensi_id = pb.id
+        WHERE pb.klinik_id = $klinik_id
+          AND ts.barang_id = $barang_id
+          AND ts.referensi_tipe = 'pemakaian_bhp'
+          AND pb.created_at > '$rs'
+          AND pb.tanggal >= '$ms'
+          AND pb.status = 'active'
+        GROUP BY pb.id, pb.nomor_pemakaian, pb.tanggal, pb.created_at, pb.jenis_pemakaian
+        ORDER BY pb.created_at ASC, pb.id ASC
+    ");
+    while ($r && ($row = $r->fetch_assoc())) {
+        $qty = (float)($row['qty'] ?? 0);
+        $rb['events']['pemakaian'][] = $row;
+        if ((string)($row['jenis_pemakaian'] ?? '') === 'hc') $rb['sellout_hc'] += $qty;
+        else $rb['sellout_klinik'] += $qty;
+    }
+
+    // Today Transfers List
+    $r = $conn->query("
+        SELECT ts.referensi_id AS transfer_id, ts.tipe_transaksi, ts.level, SUM(ts.qty) AS qty, MIN(ts.created_at) AS first_at, MAX(ts.created_at) AS last_at
+        FROM inventory_transaksi_stok ts
+        WHERE ts.barang_id = $barang_id
+          AND ((ts.level = 'klinik' AND ts.level_id = $klinik_id) OR (ts.level = 'hc' AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id = $klinik_id)))
+          AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
+          AND ts.created_at > '$rs'
+          AND ts.created_at >= '$ms'
+        GROUP BY ts.referensi_id, ts.tipe_transaksi, ts.level
+        ORDER BY last_at ASC
+        LIMIT 50
+    ");
+    while ($r && ($row = $r->fetch_assoc())) $rb['events']['transfers'][] = $row;
+}
+
 $reserve = [
     'onsite' => 0.0,
     'hc' => 0.0,
@@ -286,6 +388,9 @@ $stock_as_of_hc = $baseline_hc;
 if ($is_history) {
     $stock_as_of_onsite = $baseline_onsite + $rb['out_transfer'] - $rb['in_transfer'] + $rb['sellout_klinik'];
     $stock_as_of_hc = $baseline_hc + $rb['out_transfer_hc'] - $rb['in_transfer_hc'] + $rb['sellout_hc'];
+} else {
+    $stock_as_of_onsite = $baseline_onsite - ($rb['out_transfer'] - $rb['in_transfer'] + $rb['sellout_klinik']);
+    $stock_as_of_hc = $baseline_hc - ($rb['out_transfer_hc'] - $rb['in_transfer_hc'] + $rb['sellout_hc']);
 }
 
 // Period usage (1st of month until selected date)

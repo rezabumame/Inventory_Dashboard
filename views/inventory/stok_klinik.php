@@ -713,7 +713,7 @@ if ($active_tab == 'stok') {
     <?php endif; ?>
 </div>
 
-<?php if ($selected_klinik && $is_history_date && !$is_cs): ?>
+<?php if ($selected_klinik && !$is_cs): ?>
 <div class="modal fade" id="modalStokBreakdown" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
@@ -745,7 +745,7 @@ function fmtNum(v) {
     return s === "" ? "0" : s;
 }
 
-function openStokBreakdown(barangId, namaBarang) {
+function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
     var modalEl = document.getElementById('modalStokBreakdown');
     var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
@@ -799,45 +799,58 @@ function openStokBreakdown(barangId, namaBarang) {
             return '<tr><td class="ps-3 text-muted">#' + (t.transfer_id || '-') + '</td><td>' + (t.tipe_transaksi || '-') + ' ' + level + '</td><td>' + $('<div>').text(t.last_at || '').html() + '</td><td class="text-end pe-3 fw-semibold">' + fmtNum(t.qty || 0) + '</td></tr>';
         }).join('') : '<tr><td colspan="4" class="text-center text-muted py-2">Tidak ada transaksi transfer</td></tr>';
 
+        var isHistory = (window.__stokKlinikContext.tanggal !== new Date().toISOString().split('T')[0]);
+        var adjLabel = isHistory ? 'Penyesuaian (Rollback):' : 'Sellout:';
+        var adjClass = isHistory ? 'text-success' : 'text-primary';
+
+        var titleIcon = type === 'onhand' ? 'fas fa-box' : 'fas fa-calendar-check';
+        var titleText = type === 'onhand' ? 'Detail Stok On Hand' : 'Detail Stok Available';
+        document.querySelector('#modalStokBreakdown .modal-title').innerHTML = `<i class="${titleIcon} me-2 text-primary-custom"></i>${titleText}`;
+
         body.innerHTML = `
-            <div class="mb-3 text-center">
-                <div class="small text-muted mb-1 text-uppercase fw-bold letter-spacing-05">Barang</div>
-                <div class="h5 fw-bold text-primary-custom mb-0">${$('<div>').text((b.kode_barang || '-') + ' - ' + (b.nama_barang || namaBarang)).html()}</div>
-            </div>
-
-            <!-- Hasil Akhir (To the point) -->
-            <div class="row g-2 mb-4">
-                <div class="col-md-6">
-                    <div class="p-3 bg-light border rounded text-center h-100">
-                        <div class="small text-muted mb-1 fw-semibold text-uppercase">Stok Akhir (On Hand)</div>
-                        <div class="h3 mb-0 fw-bold text-dark">${fmtNum(result.stock_total || 0)}</div>
-                        <div class="small text-muted mt-1">Per ${$('<div>').text(window.__stokKlinikContext.tanggalLabel).html()}</div>
+            <!-- Ultra Compact Header -->
+            <div class="border rounded bg-light p-2 mb-2">
+                <div class="row g-0 align-items-center">
+                    <div class="col-8 border-end pe-2">
+                        <div class="x-small text-muted text-uppercase fw-bold" style="font-size: 0.65rem;">Barang</div>
+                        <div class="fw-bold text-primary-custom text-truncate small" title="${$('<div>').text((b.kode_barang || '-') + ' - ' + (b.nama_barang || namaBarang)).html()}">
+                            ${$('<div>').text((b.kode_barang || '-') + ' - ' + (b.nama_barang || namaBarang)).html()}
+                        </div>
+                    </div>
+                    <div class="col-4 ps-2 text-center">
+                        ${type === 'onhand' ? `
+                            <div class="x-small text-muted text-uppercase fw-bold" style="font-size: 0.65rem;">On Hand Total</div>
+                            <div class="h5 mb-0 fw-bold text-dark">${fmtNum(result.stock_total || 0)}</div>
+                        ` : `
+                            <div class="x-small text-primary-custom text-uppercase fw-bold" style="font-size: 0.65rem;">Available Stok</div>
+                            <div class="h5 mb-0 fw-bold text-primary-custom">${fmtNum(result.tersedia || 0)}</div>
+                        `}
                     </div>
                 </div>
-                <div class="col-md-6">
-                    <div class="p-3 bg-primary-light border border-primary-custom rounded text-center h-100">
-                        <div class="small text-primary-custom mb-1 fw-semibold text-uppercase">Tersedia (Siap Pakai)</div>
-                        <div class="h3 mb-0 fw-bold text-primary-custom">${fmtNum(result.tersedia || 0)}</div>
-                        <div class="small text-primary-custom mt-1">Setelah dikurangi Reservasi</div>
-                    </div>
-                </div>
             </div>
 
-            <div class="row g-3 mb-4">
+            ${type === 'onhand' ? `
+            <div class="row g-2 mb-3">
                 <!-- Breakdown Onsite -->
                 <div class="col-md-6">
-                    <div class="card shadow-none border-0 h-100">
-                        <div class="card-body p-3 border rounded bg-light-subtle">
-                            <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-hospital me-2"></i>Stok Onsite</h6>
-                            <div class="d-flex justify-content-between mb-2 small text-muted">
-                                <span>Stok Odoo Sekarang:</span>
+                    <div class="card shadow-none border rounded bg-light-subtle">
+                        <div class="card-body p-2">
+                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-hospital me-1"></i>Stok Onsite</h6>
+                            <div class="d-flex justify-content-between mb-1 x-small text-muted">
+                                <span>Stok Odoo:</span>
                                 <span>${fmtNum(baseOn)}</span>
                             </div>
-                            <div class="d-flex justify-content-between mb-2 small text-success">
-                                <span>Penyesuaian (Rollback):</span>
-                                <span class="fw-bold">+ ${fmtNum((rb.out_transfer || 0) - (rb.in_transfer || 0) + (rb.sellout_klinik || 0))}</span>
+                            <div class="d-flex justify-content-between mb-1 x-small ${adjClass}">
+                                <span>${adjLabel}</span>
+                                <span class="fw-bold">
+                                    ${(function(){
+                                        var val = (rb.out_transfer || 0) - (rb.in_transfer || 0) + (rb.sellout_klinik || 0);
+                                        if (isHistory) return (val >= 0 ? '+' : '-') + ' ' + fmtNum(Math.abs(val));
+                                        else return (val >= 0 ? '-' : '+') + ' ' + fmtNum(Math.abs(val));
+                                    })()}
+                                </span>
                             </div>
-                            <div class="d-flex justify-content-between pt-2 border-top fw-bold text-dark">
+                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-dark">
                                 <span>Total Onsite:</span>
                                 <span>${fmtNum(result.stock_onsite || 0)}</span>
                             </div>
@@ -846,18 +859,24 @@ function openStokBreakdown(barangId, namaBarang) {
                 </div>
                 <!-- Breakdown HC -->
                 <div class="col-md-6">
-                    <div class="card shadow-none border-0 h-100">
-                        <div class="card-body p-3 border rounded bg-light-subtle">
-                            <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-user-nurse me-2"></i>Stok Home Care (HC)</h6>
-                            <div class="d-flex justify-content-between mb-2 small text-muted">
-                                <span>Stok Odoo Sekarang:</span>
+                    <div class="card shadow-none border rounded bg-light-subtle">
+                        <div class="card-body p-2">
+                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-user-nurse me-1"></i>Stok HC</h6>
+                            <div class="d-flex justify-content-between mb-1 x-small text-muted">
+                                <span>Stok Odoo:</span>
                                 <span>${fmtNum(baseHc)}</span>
                             </div>
-                            <div class="d-flex justify-content-between mb-2 small text-success">
-                                <span>Penyesuaian (Rollback):</span>
-                                <span class="fw-bold">+ ${fmtNum((rb.out_transfer_hc || 0) - (rb.in_transfer_hc || 0) + (rb.sellout_hc || 0))}</span>
+                            <div class="d-flex justify-content-between mb-1 x-small ${adjClass}">
+                                <span>${adjLabel}</span>
+                                <span class="fw-bold">
+                                    ${(function(){
+                                        var val = (rb.out_transfer_hc || 0) - (rb.in_transfer_hc || 0) + (rb.sellout_hc || 0);
+                                        if (isHistory) return (val >= 0 ? '+' : '-') + ' ' + fmtNum(Math.abs(val));
+                                        else return (val >= 0 ? '-' : '+') + ' ' + fmtNum(Math.abs(val));
+                                    })()}
+                                </span>
                             </div>
-                            <div class="d-flex justify-content-between pt-2 border-top fw-bold text-dark">
+                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-dark">
                                 <span>Total HC:</span>
                                 <span>${fmtNum(result.stock_hc || 0)}</span>
                             </div>
@@ -865,43 +884,52 @@ function openStokBreakdown(barangId, namaBarang) {
                     </div>
                 </div>
             </div>
-
-            <div class="row g-3 mb-4">
-                <!-- Reservasi Detail -->
+            ` : `
+            <div class="row g-2 mb-3">
+                <!-- Breakdown Onsite Available -->
                 <div class="col-md-6">
-                    <div class="card shadow-none border-0 h-100">
-                        <div class="card-body p-3 border rounded">
-                            <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-calendar-check me-2"></i>Reservasi Booking</h6>
-                            <div class="d-flex justify-content-between mb-2 small text-muted">
-                                <span>Booking Onsite:</span>
-                                <span class="fw-bold text-danger">-${fmtNum(reserveOn)}</span>
+                    <div class="card shadow-none border rounded bg-light-subtle">
+                        <div class="card-body p-2">
+                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-hospital me-1"></i>Available Onsite</h6>
+                            <div class="d-flex justify-content-between mb-1 x-small text-muted">
+                                <span>On Hand Onsite:</span>
+                                <span>${fmtNum(result.stock_onsite || 0)}</span>
                             </div>
-                            <div class="d-flex justify-content-between mb-2 small text-muted">
-                                <span>Booking HC:</span>
-                                <span class="fw-bold text-danger">-${fmtNum(reserveHc)}</span>
+                            <div class="d-flex justify-content-between mb-1 x-small text-danger">
+                                <span>Reservasi:</span>
+                                <span class="fw-bold">-${fmtNum(reserveOn)}</span>
                             </div>
-                            <div class="d-flex justify-content-between pt-2 border-top fw-bold text-danger">
-                                <span>Total Reservasi:</span>
-                                <span>-${fmtNum(reserveOn + reserveHc)}</span>
+                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-primary-custom">
+                                <span>Total Available:</span>
+                                <span>${fmtNum((result.stock_onsite || 0) - reserveOn)}</span>
                             </div>
                         </div>
                     </div>
                 </div>
-                <!-- Info Sync -->
+                <!-- Breakdown HC Available -->
                 <div class="col-md-6">
-                    <div class="card shadow-none border-0 h-100">
-                        <div class="card-body p-3 border rounded d-flex flex-column justify-content-center">
-                            <div class="text-center">
-                                <i class="fas fa-sync-alt fa-2x text-muted mb-2"></i>
-                                <div class="small text-muted">Data Odoo terakhir diupdate pada:</div>
-                                <div class="fw-bold text-dark">${lastU}</div>
-                                <div class="x-small text-muted mt-1 fst-italic">Sync otomatis berjalan setiap 1 jam atau manual.</div>
+                    <div class="card shadow-none border rounded bg-light-subtle">
+                        <div class="card-body p-2">
+                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-user-nurse me-1"></i>Available HC</h6>
+                            <div class="d-flex justify-content-between mb-1 x-small text-muted">
+                                <span>On Hand HC:</span>
+                                <span>${fmtNum(result.stock_hc || 0)}</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1 x-small text-danger">
+                                <span>Reservasi:</span>
+                                <span class="fw-bold">-${fmtNum(reserveHc)}</span>
+                            </div>
+                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-primary-custom">
+                                <span>Total Available:</span>
+                                <span>${fmtNum((result.stock_hc || 0) - reserveHc)}</span>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+            `}
 
+            ${type === 'onhand' ? `
             <div class="accordion" id="accordionDetailTrans">
                 <div class="accordion-item border rounded mb-2 overflow-hidden">
                     <h2 class="accordion-header">
@@ -936,6 +964,52 @@ function openStokBreakdown(barangId, namaBarang) {
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+            ` : `
+            <div class="accordion" id="accordionReserve">
+                <div class="accordion-item border rounded mb-2 overflow-hidden">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed py-2 small fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReserve">
+                            <i class="fas fa-history me-2"></i> Lihat Daftar Reservasi Booking
+                        </button>
+                    </h2>
+                    <div id="collapseReserve" class="accordion-collapse collapse" data-bs-parent="#accordionReserve">
+                        <div class="accordion-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th class="ps-3">No. Booking</th>
+                                            <th>Tgl Periksa</th>
+                                            <th>Status</th>
+                                            <th class="text-end pe-3">Qty</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="small">
+                                        ${reserve.events && reserve.events.length ? reserve.events.map(function(ev){
+                                            return `<tr>
+                                                <td class="ps-3">${$('<div>').text(ev.nomor_booking || '-').html()}</td>
+                                                <td>${$('<div>').text(ev.tanggal_pemeriksaan || '-').html()}</td>
+                                                <td><span class="badge bg-info-subtle text-info border-info-subtle x-small">${$('<div>').text(ev.status_booking || '-').html()}</span></td>
+                                                <td class="text-end pe-3 fw-bold">${fmtNum(ev.qty || 0)}</td>
+                                            </tr>`;
+                                        }).join('') : '<tr><td colspan="4" class="text-center text-muted py-2">Tidak ada reservasi aktif</td></tr>'}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            `}
+
+
+            <div class="mt-2 py-2 border-top text-center">
+                <div class="x-small text-muted">
+                    ${type === 'onhand' ? `Per ${$('<div>').text(window.__stokKlinikContext.tanggalLabel).html()}` : 'Sudah dikurangi Reservasi'}
+                    <span class="mx-2">|</span>
+                    Sync Odoo: <span class="fw-bold text-dark">${lastU}</span>
                 </div>
             </div>
         `;
@@ -1107,15 +1181,15 @@ function openStokBreakdown(barangId, namaBarang) {
                                 <?= fmt_qty($reserve_hc) ?>
                             </td>
                             <?php endif; ?>
-                            <td class="text-center <?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>">
+                            <td class="text-center <?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'onhand')">
                                 <?= fmt_qty($on_hand) ?>
                             </td>
-                            <td class="text-center <?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>">
+                            <td class="text-center <?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'available')">
                                 <?= fmt_qty($available) ?>
                             </td>
                             <?php if ($is_history_date): ?>
                             <td class="text-center">
-                                <a href="javascript:void(0)" class="text-decoration-none" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>'); return false;">
+                                <a href="javascript:void(0)" class="text-decoration-none" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'onhand'); return false;">
                                     <i class="fas fa-info-circle"></i>
                                 </a>
                             </td>
