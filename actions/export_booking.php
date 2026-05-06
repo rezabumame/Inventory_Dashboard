@@ -158,15 +158,17 @@ if ($result && $result->num_rows > 0) {
     }
 }
 
-// Fetch all patients for these bookings to show individual rows
+// Fetch all patients for these bookings to show individual rows (grouped by patient identity)
 $patients_data = [];
 if (!empty($booking_ids)) {
     $ids_str = implode(',', $booking_ids);
-    $p_res = $conn->query("SELECT bp.*, pg.nama_pemeriksaan 
+    $p_res = $conn->query("SELECT bp.booking_id, bp.nama_pasien, bp.nomor_tlp, bp.tanggal_lahir, 
+                          GROUP_CONCAT(pg.nama_pemeriksaan SEPARATOR ', ') as all_exams
                           FROM inventory_booking_pasien bp
                           LEFT JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
                           WHERE bp.booking_id IN ($ids_str)
-                          ORDER BY bp.id ASC");
+                          GROUP BY bp.booking_id, bp.nama_pasien, bp.nomor_tlp, bp.tanggal_lahir
+                          ORDER BY MIN(bp.id) ASC");
     if ($p_res) {
         while ($p = $p_res->fetch_assoc()) {
             $patients_data[(int)$p['booking_id']][] = $p;
@@ -223,7 +225,7 @@ foreach ($rows as $row) {
                 $p['nomor_tlp'] ?? '-',
                 $p['tanggal_lahir'] ?? '-',
                 $total_pax,
-                $p['nama_pemeriksaan'] ?? '-',
+                $p['all_exams'] ?? '-',
                 $jf,
                 $row['cs_name'] ?? '-',
                 ucfirst($row['status'] ?? ''),
