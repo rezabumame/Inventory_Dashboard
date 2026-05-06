@@ -112,35 +112,96 @@ check_role(['super_admin', 'admin_hc']);
         text-transform: uppercase;
     }
 
-    .fc-timegrid-event {
-        border-radius: 10px !important;
-        border: 1px solid rgba(32, 78, 171, 0.1) !important;
-        border-left: 4px solid var(--bumame-blue) !important;
-        box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.1) !important;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        background: #fff !important;
+    .fc-popover {
+        z-index: 1040 !important;
+        border-radius: 12px !important;
+        border: none !important;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2) !important;
     }
 
-    .fc-timegrid-event:hover {
-        z-index: 100 !important;
-        transform: translateY(-2px) scale(1.02);
-        box-shadow: 0 12px 20px -5px rgba(0, 0, 0, 0.15) !important;
-        cursor: pointer;
+    .fc-popover-body {
+        max-height: 350px !important;
+        overflow-y: auto !important;
+        padding: 10px !important;
+    }
+
+    /* Fix for modal overlay */
+    .modal-backdrop {
+        z-index: 1050 !important;
+    }
+    #modalMoveBooking {
+        z-index: 1060 !important;
     }
 
     .fc-daygrid-day-number {
         font-weight: 600 !important;
         font-size: 0.85rem !important;
         color: #475569 !important;
-        padding: 8px !important;
+        padding: 2px 6px !important; /* Extremely tight */
+        line-height: 1 !important;
+    }
+
+    .fc-daygrid-day-top {
+        display: flex !important;
+        justify-content: flex-end !important;
     }
 
     .fc-day-today {
         background: rgba(32, 78, 171, 0.03) !important;
     }
 
-    .fc-event-main {
-        padding: 4px !important;
+    .fc-timegrid-event {
+        border-radius: 6px !important;
+        border: 1px solid rgba(32, 78, 171, 0.15) !important;
+        border-left: 3px solid var(--bumame-blue) !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+        transition: all 0.2s ease;
+        background: #ffffff !important;
+    }
+
+    .fc-timegrid-event:hover {
+        z-index: 100 !important;
+        transform: scale(1.05);
+        box-shadow: 0 8px 15px -5px rgba(0, 0, 0, 0.1) !important;
+        cursor: pointer;
+    }
+
+    .fc-daygrid-day-bottom {
+        display: flex !important;
+        justify-content: center !important;
+        padding: 2px 0 !important;
+    }
+
+    .fc-daygrid-more-link {
+        display: inline-block !important; /* Changed from block to inline-block */
+        text-align: center !important;
+        background: rgba(32, 78, 171, 0.08) !important;
+        color: var(--bumame-blue) !important;
+        font-weight: 700 !important;
+        font-size: 0.7rem !important; /* Smaller */
+        padding: 2px 8px !important; /* More compact */
+        margin: 2px 6px !important; /* Minimal margin */
+        border-radius: 20px !important;
+        transition: all 0.2s ease !important;
+        border: 1px solid rgba(32, 78, 171, 0.1) !important;
+    }
+
+    .fc-daygrid-event {
+        margin-bottom: 0px !important; /* No margin */
+        border-bottom: 1px solid rgba(0,0,0,0.1) !important; /* More visible separator */
+    }
+
+    .fc-event-main-frame {
+        padding: 2px 6px !important; /* More compact */
+    }
+
+    .fc-daygrid-day-events {
+        margin-top: -4px !important; /* Negative margin to pull list up */
+        margin-bottom: 0 !important;
+    }
+
+    .fc-daygrid-day-frame {
+        padding-bottom: 2px !important;
     }
 
     /* Kanban Styling */
@@ -274,7 +335,8 @@ check_role(['super_admin', 'admin_hc']);
         display: flex;
         flex-direction: column;
         height: 100%;
-        padding: 6px 8px;
+        padding: 4px 6px;
+        width: 100%; /* Force full width */
     }
 </style>
 
@@ -303,25 +365,32 @@ check_role(['super_admin', 'admin_hc']);
         </div>
     </div>
 
-    <!-- Filters -->
     <div class="distribution-card p-3 mb-4">
-        <div class="row g-3 align-items-center">
-            <div class="col-md-3">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
                 <label class="form-label small fw-bold text-muted mb-1">Range Tanggal</label>
-                <div class="input-group input-group-sm">
-                    <input type="date" id="filter-start" class="form-control" value="<?= date('Y-m-d') ?>" onchange="updateUrlParams()">
-                    <span class="input-group-text">s/d</span>
-                    <input type="date" id="filter-end" class="form-control" value="<?= date('Y-m-d', strtotime('+7 days')) ?>" onchange="updateUrlParams()">
+                <div class="input-group input-group-sm shadow-sm-hover">
+                    <input type="date" id="filter-start" class="form-control border-end-0" value="<?= date('Y-m-d') ?>" onchange="updateUrlParams()">
+                    <span class="input-group-text bg-white border-start-0 border-end-0 text-muted small">s/d</span>
+                    <input type="date" id="filter-end" class="form-control border-start-0" value="<?= date('Y-m-d', strtotime('+7 days')) ?>" onchange="updateUrlParams()">
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <label class="form-label small fw-bold text-muted mb-1">Cari Pasien</label>
-                <input type="text" id="filter-q" class="form-control form-control-sm" placeholder="Nama, No. Booking, Order ID...">
+                <div class="input-group input-group-sm shadow-sm-hover">
+                    <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted opacity-50"></i></span>
+                    <input type="text" id="filter-q" class="form-control border-start-0 ps-0" placeholder="Nama, No. Booking, Order ID...">
+                </div>
             </div>
-            <div class="col-md-auto pt-4">
-                <button class="btn btn-sm text-white px-3" style="background: var(--bumame-blue);" onclick="loadData()">
-                    <i class="fas fa-sync-alt me-1"></i> Refresh
-                </button>
+            <div class="col-md-4">
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-primary flex-fill fw-bold py-2" id="btn-toggle-date" onclick="toggleDateFilter()">
+                        <i class="fas fa-calendar-day me-1"></i> Hari Ini
+                    </button>
+                    <button class="btn btn-sm text-white flex-fill fw-bold py-2" style="background: var(--bumame-blue);" onclick="loadData()">
+                        <i class="fas fa-sync-alt me-1"></i> Refresh
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -386,9 +455,42 @@ check_role(['super_admin', 'admin_hc']);
     let clinics = [];
     let eventSource;
 
+    function toggleDateFilter() {
+        const start = document.getElementById('filter-start').value;
+        const end = document.getElementById('filter-end').value;
+        const today = new Date().toLocaleDateString('en-CA');
+        
+        if (start === today && end === today) {
+            // Is today, switch to 7 days
+            const nextWeek = new Date();
+            nextWeek.setDate(nextWeek.getDate() + 7);
+            document.getElementById('filter-end').value = nextWeek.toLocaleDateString('en-CA');
+        } else {
+            // Is not today, switch to today
+            document.getElementById('filter-start').value = today;
+            document.getElementById('filter-end').value = today;
+        }
+        updateButtonState();
+        updateUrlParams();
+        loadData();
+    }
+
+    function updateButtonState() {
+        const start = document.getElementById('filter-start').value;
+        const end = document.getElementById('filter-end').value;
+        const today = new Date().toLocaleDateString('en-CA');
+        const btn = document.getElementById('btn-toggle-date');
+        
+        if (start === today && end === today) {
+            btn.innerHTML = '<i class="fas fa-calendar-week me-1"></i> 7 Hari';
+        } else {
+            btn.innerHTML = '<i class="fas fa-calendar-day me-1"></i> Hari Ini';
+        }
+    }
+
     function initCalendar() {
         const urlParams = new URLSearchParams(window.location.search);
-        const savedView = urlParams.get('calView') || 'timeGridWeek';
+        const savedView = urlParams.get('calView') || 'dayGridMonth';
         
         const calendarEl = document.getElementById('calendar');
         calendar = new FullCalendar.Calendar(calendarEl, {
@@ -397,7 +499,7 @@ check_role(['super_admin', 'admin_hc']);
             headerToolbar: {
                 left: 'prev,next today',
                 center: 'title',
-                right: 'dayGridMonth,timeGridWeek,timeGridDay'
+                right: 'dayGridMonth,dayGridWeek,timeGridDay'
             },
             buttonText: {
                 today: 'Hari Ini',
@@ -415,8 +517,9 @@ check_role(['super_admin', 'admin_hc']);
             slotMinTime: '07:00:00',
             slotMaxTime: '20:00:00',
             allDaySlot: false,
-            slotEventOverlap: true,
+            slotEventOverlap: false,
             dayMaxEvents: 3,
+            moreLinkClick: 'popover',
             height: 'auto',
             events: [],
             eventMinHeight: 50,
@@ -432,13 +535,13 @@ check_role(['super_admin', 'admin_hc']);
                             <div class="fw-bold text-truncate" style="font-size: ${isSmall ? '10px' : '11px'}; color: #1e293b;">
                                 ${arg.event.title}
                             </div>
-                            <div class="text-truncate" style="font-size: 9px; color: #64748b;">
-                                <i class="fas fa-hospital me-1"></i>${b.klinik}
-                            </div>
-                            <div class="d-flex align-items-center justify-content-between mt-auto">
-                                <span style="font-size: 9px; font-weight: 700; color: var(--bumame-blue);">#${b.order_id || arg.event.id}</span>
-                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 8px; padding: 1px 4px;">${b.pax} Pax</span>
-                            </div>
+                                <div class="d-flex align-items-center mb-1" style="font-size: 9px; color: #64748b;">
+                                    <i class="fas fa-hospital me-1 opacity-75"></i> <span class="text-truncate">${b.klinik || 'Unassigned'}</span>
+                                </div>
+                                <div class="d-flex align-items-center justify-content-between" style="width: 100%;">
+                                    <span style="font-size: 9px; color: #204EAB; font-weight: 700;">#${b.order_id || 'N/A'}</span>
+                                    <span class="badge rounded-pill bg-light text-primary border" style="font-size: 8px; padding: 2px 6px;">${b.pax} Pax</span>
+                                </div>
                         </div>
                     `
                 };
@@ -504,6 +607,7 @@ check_role(['super_admin', 'admin_hc']);
                     
                     updateCalendarEvents();
                     renderKanban();
+                    updateButtonState();
                 }
             },
             error: function() {
@@ -534,7 +638,7 @@ check_role(['super_admin', 'admin_hc']);
             id: b.id,
             title: b.nama_pemesan,
             start: `${b.tanggal_pemeriksaan}T${b.jam_layanan || '00:00:00'}`,
-            end: `${b.tanggal_pemeriksaan}T${moment_add_minutes(b.jam_layanan || '00:00:00', 45)}`, // Give it some duration
+            end: `${b.tanggal_pemeriksaan}T${moment_add_minutes(b.jam_layanan || '00:00:00', 30)}`, // 30 min duration
             backgroundColor: '#ffffff',
             borderColor: '#204EAB',
             textColor: '#1e293b',

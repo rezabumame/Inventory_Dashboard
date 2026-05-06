@@ -868,6 +868,14 @@ try {
         return "Updated";
     });
 
+    run_migration_task("Schema: Add is_lokal to inventory_booking_detail", function() use ($conn) {
+        $res = $conn->query("SHOW COLUMNS FROM inventory_booking_detail LIKE 'is_lokal'");
+        if ($res && $res->num_rows > 0) return "Already exists";
+        
+        $conn->query("ALTER TABLE inventory_booking_detail ADD COLUMN is_lokal TINYINT(1) NOT NULL DEFAULT 0 AFTER barang_id");
+        return "Added";
+    });
+
     run_migration_task("Schema: Add is_lokal to inventory_pemakaian_bhp_detail", function() use ($conn) {
         $res = $conn->query("SHOW COLUMNS FROM inventory_pemakaian_bhp_detail LIKE 'is_lokal'");
         if ($res && $res->num_rows > 0) return "Already exists";
