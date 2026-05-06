@@ -128,15 +128,17 @@ use Shuchkin\SimpleXLSXGen;
 
 $header = [
     'No. Booking',
+    'ID Order',
+    'Status Tujuan',
+    'Klinik',
     'Tanggal Pemeriksaan',
     'Jam Layanan',
     'Nama Pasien',
+    'Flag Pasien',
     'Nomor Tlp',
     'Tgl Lahir',
     'Total Pax',
-    'Jenis Pemeriksaan',
-    'Klinik',
-    'Status Tujuan',
+    'Pemeriksaan Pasien',
     'Jotform',
     'CS',
     'Status Data',
@@ -153,21 +155,51 @@ if ($result && $result->num_rows > 0) {
     while ($row = $result->fetch_assoc()) {
         $booking_ids[] = (int)$row['id'];
         $rows[] = $row;
-        
-        $jf = (int)($row['jotform_submitted'] ?? 0) === 1 ? 'Sudah' : 'Belum';
-        $fu = (int)($row['butuh_fu'] ?? 0) === 1 ? 'Ya' : 'Tidak';
-        
+    }
+}
+
+// Fetch all patients for these bookings to show individual rows
+$patients_data = [];
+if (!empty($booking_ids)) {
+    $ids_str = implode(',', $booking_ids);
+    $p_res = $conn->query("SELECT bp.*, pg.nama_pemeriksaan 
+                          FROM inventory_booking_pasien bp
+                          LEFT JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
+                          WHERE bp.booking_id IN ($ids_str)
+                          ORDER BY bp.id ASC");
+    if ($p_res) {
+        while ($p = $p_res->fetch_assoc()) {
+            $patients_data[(int)$p['booking_id']][] = $p;
+        }
+    }
+}
+
+foreach ($rows as $row) {
+    $bid = (int)$row['id'];
+    $p_list = $patients_data[$bid] ?? [];
+    $total_pax = count($p_list);
+    
+    $jf = (int)($row['jotform_submitted'] ?? 0) === 1 ? 'Sudah' : 'Belum';
+    $fu = (int)($row['butuh_fu'] ?? 0) === 1 ? 'Ya' : 'Tidak';
+    
+    $st = (string)($row['status_booking'] ?? '');
+    $st_short = (stripos($st, 'HC') !== false) ? 'HC' : ((stripos($st, 'Clinic') !== false) ? 'Clinic' : $st);
+
+    if (empty($p_list)) {
+        // Fallback to header info if no patients found in sub-table
         $data[] = [
             $row['nomor_booking'] ?? '-',
+            $row['order_id'] ?? '-',
+            $st_short,
+            $row['nama_klinik'] ?? '-',
             $row['tanggal_pemeriksaan'] ?? '-',
             $row['jam_layanan'] ?? '-',
             $row['nama_pemesan'] ?? '-',
+            '1 dari 1',
             $row['nomor_tlp'] ?? '',
             $row['tanggal_lahir'] ?? '-',
             (int)($row['jumlah_pax'] ?? 0),
             $row['jenis_pemeriksaan'] ?? '-',
-            $row['nama_klinik'] ?? '-',
-            $row['status_booking'] ?? '-',
             $jf,
             $row['cs_name'] ?? '-',
             ucfirst($row['status'] ?? ''),
@@ -175,6 +207,31 @@ if ($result && $result->num_rows > 0) {
             $fu,
             $row['created_at'] ?? '-'
         ];
+    } else {
+        foreach ($p_list as $i => $p) {
+            $flag = ($i + 1) . " dari " . $total_pax;
+            
+            $data[] = [
+                $row['nomor_booking'] ?? '-',
+                $row['order_id'] ?? '-',
+                $st_short,
+                $row['nama_klinik'] ?? '-',
+                $row['tanggal_pemeriksaan'] ?? '-',
+                $row['jam_layanan'] ?? '-',
+                $p['nama_pasien'] ?? '-',
+                $flag,
+                $p['nomor_tlp'] ?? '-',
+                $p['tanggal_lahir'] ?? '-',
+                $total_pax,
+                $p['nama_pemeriksaan'] ?? '-',
+                $jf,
+                $row['cs_name'] ?? '-',
+                ucfirst($row['status'] ?? ''),
+                ucfirst(strtolower($row['booking_type'] ?? 'keep')),
+                $fu,
+                $row['created_at'] ?? '-'
+            ];
+        }
     }
 }
 
