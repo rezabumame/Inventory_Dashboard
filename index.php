@@ -86,6 +86,9 @@ switch ($page) {
     case 'booking_edit':
         include 'views/inventory/booking_edit.php';
         break;
+    case 'hc_distribution':
+        include 'views/inventory/hc_distribution.php';
+        break;
     // Pemakaian BHP
     case 'pemakaian_bhp_list':
         include 'views/inventory/pemakaian_bhp_list.php';

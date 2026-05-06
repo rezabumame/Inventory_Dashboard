@@ -11,6 +11,12 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Check role: admin_hc cannot access BHP usage
+if (in_array($_SESSION['role'] ?? '', ['admin_hc'])) {
+    echo json_encode(['success' => false, 'message' => 'Access Denied']);
+    exit;
+}
+
 $klinik_id = (int)($_POST['klinik_id'] ?? 0);
 $jenis = (string)($_POST['jenis'] ?? 'klinik'); // klinik or hc
 $user_hc_id = (int)($_POST['user_hc_id'] ?? 0);

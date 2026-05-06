@@ -9,6 +9,12 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Check role: admin_hc cannot access BHP usage
+if (in_array($_SESSION['role'] ?? '', ['admin_hc'])) {
+    echo json_encode(['success' => false, 'message' => 'Access Denied']);
+    exit;
+}
+
 $id = intval($_GET['id'] ?? 0);
 if (!$id) {
     echo json_encode(['success' => false, 'message' => 'ID tidak valid']);

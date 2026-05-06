@@ -9,6 +9,12 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Check role: admin_hc cannot access BHP usage
+if (in_array($_SESSION['role'] ?? '', ['admin_hc'])) {
+    echo '<div class="alert alert-danger">Access Denied</div>';
+    exit;
+}
+
 $id = $_GET['id'] ?? 0;
 
 // Get header data
