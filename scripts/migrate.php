@@ -560,6 +560,7 @@ try {
         ['inventory_pemeriksaan_grup_detail', 'is_mandatory', "TINYINT(1) NOT NULL DEFAULT 1"],
         ['inventory_pemeriksaan_grup_detail', 'id_biosys', "VARCHAR(50) DEFAULT NULL AFTER pemeriksaan_grup_id"],
         ['inventory_pemeriksaan_grup_detail', 'nama_layanan', "VARCHAR(255) DEFAULT NULL AFTER id_biosys"],
+        ['inventory_pemeriksaan_grup_detail', 'is_lokal', "TINYINT(1) NOT NULL DEFAULT 0 AFTER barang_id"],
         ['inventory_pemeriksaan_grup', 'created_at', "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"],
         ['inventory_pemakaian_bhp', 'user_hc_id', "INT NULL AFTER klinik_id"],
         ['inventory_booking_pemeriksaan', 'reschedule_reason', "TEXT NULL AFTER out_of_stock_items"],
@@ -571,6 +572,8 @@ try {
         ['inventory_barang_lokal', 'odoo_id', "INT NULL AFTER kategori COMMENT 'ID dari inventory_barang jika di-import'"],
         ['inventory_stok_lokal', 'qty_gantung', "DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER qty"],
         ['inventory_history_lokal', 'reference_id', "INT NULL AFTER keterangan COMMENT 'ID dari inventory_pemakaian_bhp jika tipe=pakai'"],
+        ['inventory_booking_detail', 'is_lokal', "TINYINT(1) NOT NULL DEFAULT 0 AFTER barang_id"],
+        ['inventory_pemakaian_bhp_detail', 'is_lokal', "TINYINT(1) NOT NULL DEFAULT 0 AFTER barang_id"],
     ];
 
     foreach ($cols as $c) {
@@ -868,20 +871,6 @@ try {
         return "Updated";
     });
 
-    run_migration_task("Schema: Add is_lokal to inventory_booking_detail", function() use ($conn) {
-        $res = $conn->query("SHOW COLUMNS FROM inventory_booking_detail LIKE 'is_lokal'");
-        if ($res && $res->num_rows > 0) return "Already exists";
-        
-        $conn->query("ALTER TABLE inventory_booking_detail ADD COLUMN is_lokal TINYINT(1) NOT NULL DEFAULT 0 AFTER barang_id");
-        return "Added";
-    });
-
-    run_migration_task("Schema: Add is_lokal to inventory_pemakaian_bhp_detail", function() use ($conn) {
-        $res = $conn->query("SHOW COLUMNS FROM inventory_pemakaian_bhp_detail LIKE 'is_lokal'");
-        if ($res && $res->num_rows > 0) return "Already exists";
-        
-        $conn->query("ALTER TABLE inventory_pemakaian_bhp_detail ADD COLUMN is_lokal TINYINT(1) NOT NULL DEFAULT 0 AFTER barang_id");
-        return "Added";
     });
 
 } catch (Throwable $e) {
