@@ -104,7 +104,10 @@ $query = "SELECT b.*, k.nama_klinik, u.nama_lengkap as creator_name,
           (SELECT GROUP_CONCAT(DISTINCT pg.nama_pemeriksaan ORDER BY pg.nama_pemeriksaan SEPARATOR ', ')
            FROM inventory_booking_pasien bp
            JOIN inventory_pemeriksaan_grup pg ON bp.pemeriksaan_grup_id = pg.id
-           WHERE bp.booking_id = b.id) as jenis_pemeriksaan
+           WHERE bp.booking_id = b.id) as jenis_pemeriksaan,
+          (SELECT GROUP_CONCAT(CONCAT(bp.nama_pasien, '|', COALESCE(bp.nomor_tlp, ''), '|', COALESCE(bp.tanggal_lahir, '')) SEPARATOR ';;')
+           FROM inventory_booking_pasien bp
+           WHERE bp.booking_id = b.id) as list_pasien_full
           FROM inventory_booking_pemeriksaan b 
           JOIN inventory_klinik k ON b.klinik_id = k.id 
           LEFT JOIN inventory_users u ON b.created_by = u.id
@@ -846,7 +849,7 @@ if (!empty($booking_ids)) {
                     <thead>
                         <tr>
                             <th>Tipe</th>
-                            <th>Pasien</th>
+                            <th>Identitas Pasien</th>
                             <th>Jenis Pemeriksaan</th>
                             <th>Tujuan</th>
                             <th>Jadwal</th>
@@ -888,21 +891,57 @@ if (!empty($booking_ids)) {
                                         <?= htmlspecialchars($row['nomor_booking'] ?? '-') ?></div>
                                 </td>
                                 <td>
-                                    <div class="fw-bold">
-                                        <?= htmlspecialchars($row['nama_pemesan'] ?? 'N/A') ?>
+                                    <?php
+                                    $pax_list = !empty($row['list_pasien_full']) ? explode(';;', $row['list_pasien_full']) : [];
+                                    if (!empty($pax_list)):
+                                        foreach ($pax_list as $idx => $pax_raw):
+                                            $p_parts = explode('|', $pax_raw);
+                                            $p_nama = $p_parts[0] ?? 'N/A';
+                                            $p_tlp = $p_parts[1] ?? '';
+                                            $p_dob = $p_parts[2] ?? '';
+                                            ?>
+                                            <div class="mb-2">
+                                                <div class="small fw-bold text-dark">
+                                                    <?= ($idx + 1) ?>. <?= htmlspecialchars($p_nama) ?>
+                                                </div>
+                                                <?php if ($p_tlp || $p_dob): ?>
+                                                    <div class="d-flex flex-wrap gap-1 mt-1">
+                                                        <?php if ($p_tlp): ?>
+                                                            <span class="badge bg-light text-muted border fw-normal" style="font-size: 0.65rem;">
+                                                                <i class="fas fa-phone me-1"></i><?= htmlspecialchars($p_tlp) ?>
+                                                            </span>
+                                                        <?php endif; ?>
+                                                        <?php if ($p_dob && $p_dob !== '0000-00-00'): ?>
+                                                            <span class="badge bg-light text-muted border fw-normal" style="font-size: 0.65rem;">
+                                                                <i class="fas fa-birthday-cake me-1"></i><?= date('d/m/Y', strtotime($p_dob)) ?>
+                                                            </span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php 
+                                        endforeach;
+                                    else:
+                                        ?>
+                                        <div class="fw-bold"><?= htmlspecialchars($row['nama_pemesan'] ?? 'N/A') ?></div>
+                                        <?php if (!empty($row['nomor_tlp'])): ?>
+                                            <div class="booking-muted"><i class="fas fa-phone me-1"></i><?= htmlspecialchars($row['nomor_tlp']) ?></div>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                    <div class="booking-muted x-small mt-1 d-flex align-items-center justify-content-between">
+                                        <span><i class="fas fa-users me-1"></i>Total Pax: <?= (int)($row['jumlah_pax'] ?? 1) ?></span>
                                         <?php
                                         $bid = (int) $row['id'];
                                         $f = $fulfillment_map[$bid] ?? null;
                                         if ($row['status'] === 'booked' && $f):
                                             if ($f['is_short']):
                                                 ?>
-                                                <span class="ms-1 text-danger"
+                                                <span class="text-danger ms-2"
                                                     title="STOK KURANG: <?= htmlspecialchars($f['short_items']) ?>">
                                                     <i class="fas fa-exclamation-triangle"></i>
                                                 </span>
-                                            <?php else: // If not currently short
-                                                ?>
-                                                <span class="ms-1 text-success" title="Stok sudah terpenuhi (Siap Layanan)">
+                                            <?php else: ?>
+                                                <span class="text-success ms-2" title="Stok sudah terpenuhi (Siap Layanan)">
                                                     <i class="fas fa-check-circle"></i>
                                                 </span>
                                             <?php
@@ -910,12 +949,6 @@ if (!empty($booking_ids)) {
                                         endif;
                                         ?>
                                     </div>
-                                    <?php if (!empty($row['nomor_tlp'])): ?>
-                                        <div class="booking-muted"><i
-                                                class="fas fa-phone me-1"></i><?= htmlspecialchars($row['nomor_tlp']) ?></div>
-                                    <?php endif; ?>
-                                    <div class="booking-muted"><i class="fas fa-users me-1"></i>Pax:
-                                        <?= (int) ($row['jumlah_pax'] ?? 1) ?></div>
                                 </td>
                                 <td><small
                                         class="text-muted"><?= htmlspecialchars($row['jenis_pemeriksaan'] ?? '-') ?></small>
