@@ -113,16 +113,26 @@ check_role(['super_admin', 'admin_hc']);
     }
 
     .fc-popover {
+        background: #ffffff !important;
         z-index: 1040 !important;
         border-radius: 12px !important;
-        border: none !important;
+        border: 1px solid #e2e8f0 !important;
         box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2) !important;
+        overflow: hidden !important;
+    }
+
+    .fc-popover-header {
+        background: #f8fafc !important;
+        padding: 10px 14px !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        font-weight: 700 !important;
     }
 
     .fc-popover-body {
         max-height: 350px !important;
         overflow-y: auto !important;
-        padding: 10px !important;
+        padding: 8px !important;
+        background: #ffffff !important;
     }
 
     /* Fix for modal overlay */
