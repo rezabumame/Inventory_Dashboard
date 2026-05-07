@@ -64,7 +64,6 @@ function notify_gsheet_booking(mysqli $conn, int $booking_id, string $event) {
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
         curl_setopt($ch, CURLOPT_TIMEOUT_MS, 2000); // 2 seconds timeout
         curl_exec($ch);
-        curl_close($ch);
 
     } catch (\Throwable $e) {
         // Silently fail to not break the main flow
@@ -134,5 +133,72 @@ function notify_lark_booking(mysqli $conn, int $booking_id, string $event, strin
 
     } catch (\Throwable $e) {
         error_log("Lark Webhook Error: " . $e->getMessage());
+    }
+}
+
+/**
+ * Notify Lark about GSheet Synchronization Summary
+ */
+function notify_lark_inventory_sync(array $summary) {
+    try {
+        $webhook = trim((string)get_setting('webhook_lark_url', ''));
+        if ($webhook === '') return;
+
+        $title = "🔄 GSheet Sync Summary";
+        $theme = "blue";
+        
+        $lines = [];
+        $lines[] = "**Waktu:** " . date('d M Y H:i:s');
+        
+        if (!empty($summary['new_exams'])) {
+            $lines[] = "---";
+            $lines[] = "📦 **PAKET BARU (" . count($summary['new_exams']) . "):**";
+            foreach (array_slice($summary['new_exams'], 0, 10) as $name) {
+                $lines[] = "• {$name}";
+            }
+            if (count($summary['new_exams']) > 10) $lines[] = "• ... dan " . (count($summary['new_exams']) - 10) . " lainnya";
+        }
+
+        if (!empty($summary['updated_exams'])) {
+            $lines[] = "---";
+            $lines[] = "📝 **PAKET DIUPDATE (" . count($summary['updated_exams']) . "):**";
+            foreach (array_slice($summary['updated_exams'], 0, 5, true) as $name => $diff) {
+                $diff_text = [];
+                if (!empty($diff['added'])) $diff_text[] = "➕ " . count($diff['added']) . " item";
+                if (!empty($diff['removed'])) $diff_text[] = "➖ " . count($diff['removed']) . " item";
+                if (!empty($diff['changed'])) $diff_text[] = "🔄 " . count($diff['changed']) . " qty/item";
+                
+                $lines[] = "• **{$name}** (" . implode(', ', $diff_text) . ")";
+                
+                // Optional: show first 3 changes if only 1 package updated
+                if (count($summary['updated_exams']) === 1) {
+                    foreach (array_slice($diff['added'], 0, 3) as $item) $lines[] = "  └ ➕ *{$item}*";
+                    foreach (array_slice($diff['removed'], 0, 3) as $item) $lines[] = "  └ ➖ *{$item}*";
+                    foreach (array_slice($diff['changed'], 0, 3) as $item) $lines[] = "  └ 🔄 *{$item}*";
+                }
+            }
+            if (count($summary['updated_exams']) > 5) $lines[] = "• ... dan " . (count($summary['updated_exams']) - 5) . " lainnya";
+        }
+
+        if (!empty($summary['missing_items'])) {
+            $lines[] = "---";
+            $lines[] = "⚠️ **ITEM TIDAK DITEMUKAN (" . count($summary['missing_items']) . "):**";
+            $lines[] = "*Segera daftarkan kode berikut di Database Barang:*";
+            foreach (array_slice($summary['missing_items'], 0, 15) as $code) {
+                $lines[] = "• `{$code}`";
+            }
+            if (count($summary['missing_items']) > 15) $lines[] = "• ... dan " . (count($summary['missing_items']) - 15) . " lainnya";
+            $theme = "orange";
+        }
+
+        if (empty($summary['new_exams']) && empty($summary['updated_exams']) && empty($summary['missing_items'])) {
+            $lines[] = "---";
+            $lines[] = "✅ Tidak ada perubahan data.";
+        }
+
+        lark_post_card($webhook, $title, $lines, $theme);
+
+    } catch (\Throwable $e) {
+        error_log("Lark Sync Webhook Error: " . $e->getMessage());
     }
 }

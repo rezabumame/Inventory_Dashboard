@@ -25,51 +25,43 @@ if (!$is_https && !empty($_SERVER['HTTP_FORWARDED'])) {
 }
 $protocol = $is_https ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? (getenv('APP_HOST') ?: 'localhost');
-$base_dir = trim((string)(getenv('APP_BASE_DIR') ?: ''));
-// Detect base path correctly for local and hosting (like InfinityFree)
-if ($base_dir === '') {
-    // Check if we are on InfinityFree by looking for specific server patterns
-    $is_infinityfree = isset($_SERVER['HTTP_X_FORWARDED_HOST']) || 
-                       (isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'fwh.is') !== false) ||
-                       (isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'infinityfree') !== false);
 
-    if ($is_infinityfree) {
-        $base_dir = '/';
-    } else {
-        // Fallback for local subfolders or other environments
-        // Instead of dirname($_SERVER['SCRIPT_NAME']), we want the project root.
-        // We assume the project root is where index.php is.
-        $script_name = $_SERVER['SCRIPT_NAME'] ?? ''; // e.g., /bumame_iventory2/actions/process_barang_min_stok.php
-        $script_path = explode('/', trim($script_name, '/'));
-        
-        // Find 'bumame_iventory2' (the project folder name) or use a more robust way
-        // Let's use the first segment if it's not 'index.php' or 'actions' etc.
-        // A better way: find where this file (config.php) is relative to the root.
-        // This file is in /config/config.php, so root is two levels up.
-        $abs_path = str_replace('\\', '/', __DIR__); // /c:/xampp/htdocs/bumame_iventory2/config
-        $root_path = dirname($abs_path); // /c:/xampp/htdocs/bumame_iventory2
-        
-        $doc_root = str_replace('\\', '/', $_SERVER['DOCUMENT_ROOT'] ?? ''); 
-        $rel_path = ($doc_root !== '') ? str_replace($doc_root, '', $root_path) : ''; 
-        
-        $base_dir = rtrim($rel_path, '/') . '/';
-        if ($base_dir === '//' || $base_dir === '\\' || $base_dir === '' || $base_dir === '/') $base_dir = '/';
-        
-        // Final sanity check for local XAMPP
-        if (strpos($base_dir, 'htdocs/') !== false) {
-            $base_dir = str_replace('htdocs/', '/', $base_dir);
+// --- ROBUST BASE DIRECTORY DETECTION ---
+$base_dir = trim((string)(getenv('APP_BASE_DIR') ?: ''));
+
+if ($base_dir === '') {
+    // 1. Detect relative path from Document Root
+    $abs_path = str_replace('\\', '/', __DIR__); 
+    $root_path = dirname($abs_path); // Project Root (e.g. C:/xampp/htdocs/bumame_iventory2)
+    $doc_root = str_replace('\\', '/', $_SERVER['DOCUMENT_ROOT'] ?? ''); 
+
+    if ($doc_root !== '') {
+        $base_dir = str_ireplace($doc_root, '', $root_path);
+    }
+    
+    // 2. Fallback for XAMPP subfolders if direct replacement failed
+    if ($base_dir === '' || $base_dir === '/' || $base_dir === $root_path) {
+        if (strpos($root_path, '/htdocs/') !== false) {
+            $parts = explode('/htdocs/', $root_path);
+            if (isset($parts[1])) $base_dir = '/' . ltrim($parts[1], '/');
         }
-        $base_dir = '/' . ltrim($base_dir, '/');
     }
 }
+
+// 3. Normalize and Force Ngrok if needed
+$base_dir = '/' . trim(str_replace('\\', '/', $base_dir), '/') . '/';
+if ($base_dir === '//') $base_dir = '/';
+
+if (strpos($host, 'ngrok') !== false && strpos($base_dir, 'bumame_iventory2') === false) {
+    $base_dir = '/bumame_iventory2/';
+}
+
 define('BASE_URL', $protocol . '://' . $host . $base_dir);
 define('APP_NAME', 'Bumame Inventory');
 
 function base_url($path = '') {
     $p = (string)$path;
-    // Remove index.php prefix for cleaner URLs if requested
     if ($p === 'index.php') $p = '';
-    // Use relative path if the base URL detection is still messy
     return BASE_URL . ltrim($p, '/');
 }
 
@@ -125,6 +117,8 @@ function csrf_validate(?string $token): bool {
     if ($t === '' || $s === '') return false;
     return hash_equals($s, $t);
 }
+
+define('GS_SYNC_KEY', 'BUMAME_SYNC_SECRET_2026'); // Secret key for GSheet Push Sync
 
 function require_csrf(): void {
     $token = $_POST['_csrf'] ?? ($_GET['_csrf'] ?? '');

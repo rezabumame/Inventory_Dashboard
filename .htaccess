@@ -1,12 +1,7 @@
 <IfModule mod_rewrite.c>
 RewriteEngine On
-RewriteBase /
 
-# Force non-index.php URLs
-RewriteCond %{THE_REQUEST} \s/+index\.php[?\s] [NC]
-RewriteRule ^index\.php$ / [R=301,L,QSA]
-
-# Standard routing
+# Standard routing - No aggressive redirects for now
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule . index.php [L,QSA]
