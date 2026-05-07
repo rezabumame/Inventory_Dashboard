@@ -148,6 +148,7 @@ check_role(['super_admin', 'admin_hc']);
     }
     .modal-body {
         overflow: visible !important;
+        min-height: 280px !important; /* Added min-height to provide space for dropdown */
     }
     .modal-header.bg-primary-custom {
         background-color: var(--bumame-blue) !important;
@@ -186,8 +187,7 @@ check_role(['super_admin', 'admin_hc']);
 
     .fc-timegrid-event:hover {
         z-index: 100 !important;
-        transform: scale(1.05);
-        box-shadow: 0 8px 15px -5px rgba(0, 0, 0, 0.1) !important;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
         cursor: pointer;
     }
 
@@ -458,7 +458,7 @@ check_role(['super_admin', 'admin_hc']);
                         <span class="input-group-text bg-white border-end-0 text-muted">
                             <i class="fas fa-hospital"></i>
                         </span>
-                        <select id="move-target-klinik" class="form-select border-start-0 ps-0 shadow-none">
+                        <select id="move-target-klinik" class="form-select border-start-0 ps-0 shadow-none no-select2">
                             <!-- Options filled via JS -->
                         </select>
                     </div>
@@ -761,7 +761,25 @@ check_role(['super_admin', 'admin_hc']);
             `<option value="${c.id}" ${c.id == b.klinik_id ? 'selected disabled' : ''}>${c.nama_klinik}</option>`
         ).join('');
 
-        const modal = new bootstrap.Modal(document.getElementById('modalMoveBooking'));
+        const modalEl = document.getElementById('modalMoveBooking');
+        const modal = new bootstrap.Modal(modalEl);
+        
+        // Init Select2 specifically for this modal to handle overflow
+        $(modalEl).on('shown.bs.modal', function () {
+            $('#move-target-klinik').select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                dropdownParent: $('#modalMoveBooking .modal-body')
+            });
+        });
+
+        // Destroy Select2 on hide to prevent duplicate init
+        $(modalEl).on('hidden.bs.modal', function () {
+            if ($('#move-target-klinik').data('select2')) {
+                $('#move-target-klinik').select2('destroy');
+            }
+        });
+
         modal.show();
     }
 
