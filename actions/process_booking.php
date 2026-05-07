@@ -16,7 +16,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 // Check role
-if (!in_array($_SESSION['role'], ['cs', 'super_admin'])) {
+if (!in_array($_SESSION['role'], ['cs', 'super_admin', 'admin_klinik', 'spv_klinik'])) {
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }
@@ -138,7 +138,8 @@ try {
     }
     
     $book_id = $conn->insert_id;
-    $nomor_final = "BK-" . str_pad((string)$book_id, 6, '0', STR_PAD_LEFT);
+    $prefix = (in_array($_SESSION['role'], ['admin_klinik', 'spv_klinik'])) ? "WI-" : "BK-";
+    $nomor_final = $prefix . str_pad((string)$book_id, 6, '0', STR_PAD_LEFT);
     $conn->query("UPDATE inventory_booking_pemeriksaan SET nomor_booking = '$nomor_final' WHERE id = $book_id");
 
     // 4. Insert Patients + Details

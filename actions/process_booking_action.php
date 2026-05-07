@@ -79,8 +79,18 @@ try {
 
     switch ($action) {
         case 'cancel':
-            if (!in_array($role, ['cs', 'super_admin'], true)) {
+            if (!in_array($role, ['cs', 'super_admin', 'admin_klinik', 'spv_klinik'], true)) {
                 throw new Exception('Access denied');
+            }
+            // Prefix-based access control
+            $nomor_booking = (string)($booking['nomor_booking'] ?? '');
+            if ($role !== 'super_admin') {
+                if (strpos($nomor_booking, 'WI-') === 0 && in_array($role, ['cs'], true)) {
+                    throw new Exception('Akses pembatalan booking WI ditolak untuk CS.');
+                }
+                if (strpos($nomor_booking, 'BK-') === 0 && in_array($role, ['admin_klinik', 'spv_klinik'], true)) {
+                    throw new Exception('Akses pembatalan booking BK ditolak untuk Admin Klinik.');
+                }
             }
             $setType = ($role === 'cs') ? ", booking_type = 'cancel'" : "";
             $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'cancelled', butuh_fu = 0 $setType WHERE id = $id");

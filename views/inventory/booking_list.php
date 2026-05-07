@@ -180,7 +180,7 @@ if (!empty($booking_ids)) {
                 </ol>
             </nav>
         </div>
-        <?php if (in_array($_SESSION['role'], ['super_admin', 'cs'])): ?>
+        <?php if (in_array($_SESSION['role'], ['super_admin', 'cs', 'admin_klinik', 'spv_klinik'])): ?>
             <div class="col-auto">
                 <button type="button" class="btn shadow-sm text-white px-4" style="background-color: #204EAB;"
                     data-bs-toggle="modal" data-bs-target="#modalBookingBaru">
@@ -1036,7 +1036,14 @@ if (!empty($booking_ids)) {
                                                     </button>
                                                 <?php endif; ?>
 
-                                                <?php if ($is_super_admin || $is_cs): ?>
+                                                <?php 
+                                                $can_edit = $is_super_admin;
+                                                if (!$can_edit) {
+                                                    $is_wi = (strpos($row['nomor_booking'] ?? '', 'WI-') === 0);
+                                                    if ($is_wi && ($is_admin_klinik || $is_spv_klinik)) $can_edit = true;
+                                                    if (!$is_wi && $is_cs) $can_edit = true;
+                                                }
+                                                if ($can_edit): ?>
                                                     <button type="button" class="btn-drawer-icon text-warning" title="Edit"
                                                         onclick="openEditBooking(<?= (int) $row['id'] ?>)">
                                                         <i class="fas fa-edit"></i>
@@ -1060,7 +1067,14 @@ if (!empty($booking_ids)) {
                                                     </button>
                                                 <?php endif; ?>
 
-                                                <?php if ($is_super_admin || $is_cs): ?>
+                                                <?php 
+                                                $can_cancel = $is_super_admin;
+                                                if (!$can_cancel) {
+                                                    $is_wi = (strpos($row['nomor_booking'] ?? '', 'WI-') === 0);
+                                                    if ($is_wi && ($is_admin_klinik || $is_spv_klinik)) $can_cancel = true;
+                                                    if (!$is_wi && $is_cs) $can_cancel = true;
+                                                }
+                                                if ($can_cancel): ?>
                                                     <button type="button" class="btn-drawer-icon text-danger" title="Cancel"
                                                         onclick="return confirmCancel(<?= (int) $row['id'] ?>);">
                                                         <i class="fas fa-times"></i>
@@ -1184,16 +1198,25 @@ if (!empty($booking_ids)) {
                                             <div class="col-md-4">
                                                 <label class="form-label fw-semibold">Klinik <span
                                                         class="text-danger">*</span></label>
+                                                <?php
+                                                $u_role = $_SESSION['role'] ?? '';
+                                                $u_klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
+                                                $is_clinic_role = in_array($u_role, ['admin_klinik', 'spv_klinik']);
+                                                ?>
                                                 <select name="klinik_id" id="klinik_id_modal" class="form-select"
-                                                    required>
+                                                    required <?= $is_clinic_role ? 'disabled' : '' ?>>
                                                     <option value="">Pilih Klinik...</option>
                                                     <?php
                                                     $klinik_res = $conn->query("SELECT * FROM inventory_klinik WHERE status = 'active' ORDER BY nama_klinik");
                                                     while ($k = $klinik_res->fetch_assoc()):
+                                                        $selected = ($is_clinic_role && (int)$k['id'] === $u_klinik_id) ? 'selected' : '';
                                                         ?>
-                                                        <option value="<?= $k['id'] ?>"><?= $k['nama_klinik'] ?></option>
+                                                        <option value="<?= $k['id'] ?>" <?= $selected ?>><?= $k['nama_klinik'] ?></option>
                                                     <?php endwhile; ?>
                                                 </select>
+                                                <?php if ($is_clinic_role): ?>
+                                                    <input type="hidden" name="klinik_id" value="<?= $u_klinik_id ?>">
+                                                <?php endif; ?>
                                             </div>
                                             <div class="col-md-2">
                                                 <label class="form-label fw-semibold">Jumlah Pax</label>
@@ -2744,8 +2767,9 @@ if (!empty($booking_ids)) {
         window.openActionHub = function (data) {
             let html = '';
             const canSuperAdmin = (data.role === 'super_admin');
-            const canAdminKlinik = (data.role === 'admin_klinik');
+            const canAdminKlinik = (data.role === 'admin_klinik' || data.role === 'spv_klinik');
             const canCS = (data.role === 'cs');
+            const isWI = (data.nomor_booking || '').startsWith('WI-');
 
             // 1. Detail (Always)
             html += `
@@ -2779,8 +2803,14 @@ if (!empty($booking_ids)) {
                 </a>`;
                 }
 
-                // 3. Edit (Super/CS)
-                if (canSuperAdmin || canCS) {
+                // 3. Edit (Super/CS/Admin Klinik)
+                let canEdit = canSuperAdmin;
+                if (!canEdit) {
+                    if (canCS && !isWI) canEdit = true;
+                    if (canAdminKlinik && isWI) canEdit = true;
+                }
+
+                if (canEdit) {
                     html += `
                 <a href="index.php?page=booking_edit&id=${data.id}" class="action-hub-item">
                     <div class="action-hub-icon bg-light-warning text-warning"><i class="fas fa-edit"></i></div>
@@ -2826,8 +2856,14 @@ if (!empty($booking_ids)) {
                 </a>`;
                 }
 
-                // 6. Cancel (Super/CS)
-                if (canSuperAdmin || canCS) {
+                // 6. Cancel (Super/CS/Admin Klinik)
+                let canCancel = canSuperAdmin;
+                if (!canCancel) {
+                    if (canCS && !isWI) canCancel = true;
+                    if (canAdminKlinik && isWI) canCancel = true;
+                }
+
+                if (canCancel) {
                     html += `
                 <a href="#" class="action-hub-item text-danger" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); confirmCancel(${data.id}); return false;">
                     <div class="action-hub-icon bg-light-danger text-danger"><i class="fas fa-times"></i></div>

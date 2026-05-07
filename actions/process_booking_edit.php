@@ -15,7 +15,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $role = (string)($_SESSION['role'] ?? '');
-if (!in_array($role, ['cs', 'super_admin'], true)) {
+if (!in_array($role, ['cs', 'super_admin', 'admin_klinik', 'spv_klinik'], true)) {
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }
@@ -97,9 +97,15 @@ try {
     
     $is_past_day = date('Y-m-d', strtotime($booking['tanggal_pemeriksaan'])) < $today;
     
-    // Admin Klinik and SPV Klinik are no longer allowed to edit or request edit.
-    if ($role === 'admin_klinik' || $role === 'spv_klinik') {
-        throw new Exception('Akses edit booking dinonaktifkan untuk role Anda.');
+    // Prefix-based access control
+    $nomor_booking = (string)($booking['nomor_booking'] ?? '');
+    if ($role !== 'super_admin') {
+        if (strpos($nomor_booking, 'WI-') === 0 && in_array($role, ['cs'], true)) {
+            throw new Exception('Akses edit booking WI ditolak untuk CS.');
+        }
+        if (strpos($nomor_booking, 'BK-') === 0 && in_array($role, ['admin_klinik', 'spv_klinik'], true)) {
+            throw new Exception('Akses edit booking BK ditolak untuk Admin Klinik.');
+        }
     }
 
     $klinik_id = (int)($booking['klinik_id'] ?? 0);
