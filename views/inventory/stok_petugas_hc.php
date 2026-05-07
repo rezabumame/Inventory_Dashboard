@@ -53,6 +53,9 @@ $history_to = (string)($_GET['history_to'] ?? '');
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $history_from)) $history_from = '';
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $history_to)) $history_to = '';
 
+$history_view = (string)($_GET['history_view'] ?? 'detail');
+if (!in_array($history_view, ['detail', 'rekap'])) $history_view = 'detail';
+
 if ($klinik_row && !empty($klinik_row['kode_homecare'])) {
     $loc_hc = $conn->real_escape_string((string)$klinik_row['kode_homecare']);
     $loc_onsite = $conn->real_escape_string((string)($klinik_row['kode_klinik'] ?? ''));
@@ -681,10 +684,20 @@ if ($bulk_cancel) {
             <div class="tab-pane fade <?= $active_tab === 'history' ? 'show active' : '' ?>" id="tabpane-history" role="tabpanel" aria-labelledby="tab-history">
                 <div class="card shadow-sm">
                     <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
                             <div>
                                 <div class="fw-semibold">History Transfer</div>
-                                <div class="text-muted small">Ikuti filter Klinik/Petugas di atas. Limit 200 data.</div>
+                                <div class="text-muted small">Ikuti filter Klinik/Petugas di atas. Limit 500 data.</div>
+                            </div>
+                            <div class="btn-group btn-group-sm shadow-sm">
+                                <a href="index.php?page=stok_petugas_hc&tab=history&history_view=detail&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>&history_from=<?= $history_from ?>&history_to=<?= $history_to ?>" 
+                                   class="btn <?= $history_view === 'detail' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                                    <i class="fas fa-list me-1"></i> Detail
+                                </a>
+                                <a href="index.php?page=stok_petugas_hc&tab=history&history_view=rekap&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>&history_from=<?= $history_from ?>&history_to=<?= $history_to ?>" 
+                                   class="btn <?= $history_view === 'rekap' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                                    <i class="fas fa-th-list me-1"></i> Rekap Per Hari
+                                </a>
                             </div>
                         </div>
 
@@ -709,61 +722,277 @@ if ($bulk_cancel) {
                                 <button type="submit" class="btn btn-primary">Filter</button>
                             </div>
                             <div class="col-md-auto">
-                                <a class="btn btn-outline-secondary" href="index.php?page=stok_petugas_hc&tab=history<?= $role !== 'petugas_hc' ? ('&petugas_user_id=' . (int)$petugas_user_id) : '' ?><?= (in_array($role, ['super_admin', 'admin_gudang'], true) ? ('&klinik_id=' . (int)$selected_klinik) : '') ?>">Reset</a>
+                                <a class="btn btn-outline-secondary" href="index.php?page=stok_petugas_hc&tab=history&history_view=<?= $history_view ?><?= $role !== 'petugas_hc' ? ('&petugas_user_id=' . (int)$petugas_user_id) : '' ?><?= (in_array($role, ['super_admin', 'admin_gudang'], true) ? ('&klinik_id=' . (int)$selected_klinik) : '') ?>">Reset</a>
                             </div>
                         </form>
 
                         <?php if (empty($history)): ?>
                             <div class="text-muted small">Belum ada history untuk filter saat ini.</div>
-                        <?php else: ?>
+                        <?php elseif ($history_view === 'detail'): ?>
+                            <?php
+                            $reversed_ids = [];
+                            // Pre-scan to find all IDs that have been reversed
+                            foreach ($history as $h) {
+                                $qty_val = (float)($h['qty'] ?? 0);
+                                if ($qty_val < 0) {
+                                    // Match "#123" in catatan
+                                    if (preg_match('/#(\d+)/', (string)$h['catatan'], $matches)) {
+                                        $orig_id = (int)$matches[1];
+                                        $reversed_ids[$orig_id] = true;
+                                    }
+                                }
+                            }
+                            ?>
+                            <style>
+                                .row-muted { background-color: rgba(0,0,0,0.03) !important; transition: all 0.2s ease; }
+                                .row-muted td { color: #999 !important; text-decoration: line-through; }
+                                .row-muted .badge, .row-muted .btn, .row-muted .form-check { opacity: 0.3; text-decoration: none !important; pointer-events: none; }
+                                .row-muted-hidden { display: none !important; }
+                                .row-reversal { border-left: 3px solid #dc3545; } /* Optional: mark the negative row with a red left border */
+                            </style>
+
+                            <form id="formBulkHistory" method="POST" action="actions/bulk_reverse_hc_transfer.php">
+                                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
+                                <input type="hidden" name="klinik_id" value="<?= (int)$selected_klinik ?>">
+                                <input type="hidden" name="tab" value="history">
+                                <input type="hidden" name="history_view" value="detail">
+
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <div class="d-flex align-items-center">
+                                        <div class="form-check form-switch me-3 p-0" style="padding-left: 2.5em !important;">
+                                            <input class="form-check-input" type="checkbox" id="toggleShowReversed" checked style="cursor:pointer;">
+                                            <label class="form-check-label small fw-bold text-muted" for="toggleShowReversed" style="cursor:pointer;">Tampilkan Item Terbatal</label>
+                                        </div>
+                                        <div class="small text-muted" id="selectedCountText">0 item terpilih</div>
+                                    </div>
+                                    <button type="submit" id="btnBulkCancel" class="btn btn-sm btn-danger shadow-sm" style="display:none;" onclick="return confirm('Batalkan semua transfer yang dipilih? Stok tas petugas akan dikurangi.');">
+                                        <i class="fas fa-trash-alt me-1"></i> Batal Terpilih
+                                    </button>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table table-hover datatable align-middle mb-0" id="tableHistoryDetail">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th style="width:40px;">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="checkAllHistory">
+                                                    </div>
+                                                </th>
+                                                <th>Waktu</th>
+                                                <th>Tipe</th>
+                                                <th>Petugas</th>
+                                                <th>Barang</th>
+                                                <th class="text-end">Qty</th>
+                                                <th>Catatan</th>
+                                                <th class="text-end">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($history as $h): 
+                                                $hid = (int)$h['id'];
+                                                $is_reversal = ((float)($h['qty'] ?? 0) < 0);
+                                                $is_reversed = isset($reversed_ids[$hid]);
+                                                $muted_class = ($is_reversal || $is_reversed) ? 'row-muted' : '';
+                                                $can_cancel = (($h['tipe'] ?? '') === 'transfer' && (float)($h['qty'] ?? 0) > 0 && !$is_reversed);
+                                            ?>
+                                                <tr class="<?= $muted_class ?>" data-is-reversed="<?= ($is_reversal || $is_reversed) ? '1' : '0' ?>">
+                                                    <td>
+                                                        <?php if ($can_cancel): ?>
+                                                            <div class="form-check">
+                                                                <input class="form-check-input check-history" type="checkbox" name="transfer_ids[]" value="<?= (int)$h['id'] ?>">
+                                                            </div>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td class="small text-muted"><?= date('d M Y H:i', strtotime((string)$h['created_at'])) ?></td>
+                                                    <td>
+                                                        <?php if (($h['tipe'] ?? '') === 'transfer'): ?>
+                                                            <span class="badge bg-primary">Transfer</span>
+                                                        <?php else: ?>
+                                                            <span class="badge bg-outline-primary border text-primary">Allocasi</span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td><?= htmlspecialchars((string)($petugas_name_map[(int)($h['user_hc_id'] ?? 0)] ?? '-')) ?></td>
+                                                    <td><?= htmlspecialchars((string)($barang_name_map[(int)($h['barang_id'] ?? 0)] ?? '-')) ?></td>
+                                                    <td class="text-end fw-semibold">
+                                                        <?php if ($is_reversal): ?>
+                                                            <span class="text-danger"><?= fmt_qty($h['qty'] ?? 0) ?></span>
+                                                        <?php else: ?>
+                                                            <?= fmt_qty($h['qty'] ?? 0) ?>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td class="small text-muted">
+                                                        <?php if ($is_reversed): ?>
+                                                            <span class="badge bg-secondary-soft text-secondary border-0 small" style="background-color:#e9ecef; color:#6c757d; font-size:10px;">DIBATALKAN</span>
+                                                        <?php endif; ?>
+                                                        <?= htmlspecialchars((string)($h['catatan'] ?? '')) ?>
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <?php if ($can_cancel): ?>
+                                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="cancelSingleTransfer(<?= (int)$h['id'] ?>)">
+                                                                Batal
+                                                            </button>
+                                                        <?php elseif ($is_reversed): ?>
+                                                            <span class="badge bg-light text-muted border fw-normal" style="font-style: italic;">Selesai / Kembali</span>
+                                                        <?php else: ?>
+                                                            <span class="text-muted">-</span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </form>
+
+                            <form id="formSingleCancel" method="POST" action="actions/reverse_hc_transfer.php" style="display:none;">
+                                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
+                                <input type="hidden" name="transfer_id" id="singleCancelId">
+                                <input type="hidden" name="klinik_id" value="<?= (int)$selected_klinik ?>">
+                                <input type="hidden" name="petugas_user_id" value="<?= (int)$petugas_user_id ?>">
+                                <input type="hidden" name="tab" value="history">
+                                <input type="hidden" name="history_from" value="<?= htmlspecialchars($history_from) ?>">
+                                <input type="hidden" name="history_to" value="<?= htmlspecialchars($history_to) ?>">
+                            </form>
+
+                            <script>
+                            function cancelSingleTransfer(id) {
+                                if (confirm('Batalkan transfer ini? Stok tas petugas akan dikurangi.')) {
+                                    document.getElementById('singleCancelId').value = id;
+                                    document.getElementById('formSingleCancel').submit();
+                                }
+                            }
+
+                            document.addEventListener('DOMContentLoaded', function() {
+                                const checkAll = document.getElementById('checkAllHistory');
+                                const checks = document.querySelectorAll('.check-history');
+                                const btnBulk = document.getElementById('btnBulkCancel');
+                                const countText = document.getElementById('selectedCountText');
+                                const toggleReversed = document.getElementById('toggleShowReversed');
+
+                                function updateBulkUI() {
+                                    const checkedCount = document.querySelectorAll('.check-history:checked').length;
+                                    countText.innerText = checkedCount + ' item terpilih';
+                                    btnBulk.style.display = checkedCount > 0 ? 'block' : 'none';
+                                }
+
+                                if (toggleReversed) {
+                                    toggleReversed.addEventListener('change', function() {
+                                        const rows = document.querySelectorAll('#tableHistoryDetail tbody tr[data-is-reversed="1"]');
+                                        rows.forEach(r => {
+                                            if (this.checked) {
+                                                r.classList.remove('row-muted-hidden');
+                                            } else {
+                                                r.classList.add('row-muted-hidden');
+                                            }
+                                        });
+                                    });
+                                }
+
+                                if (checkAll) {
+                                    checkAll.addEventListener('change', function() {
+                                        checks.forEach(c => {
+                                            const row = c.closest('tr');
+                                            if (!row.classList.contains('row-muted-hidden')) {
+                                                c.checked = this.checked;
+                                            } else {
+                                                c.checked = false;
+                                            }
+                                        });
+                                        updateBulkUI();
+                                    });
+                                }
+
+                                checks.forEach(c => {
+                                    c.addEventListener('change', updateBulkUI);
+                                });
+                            });
+                            </script>
+                        <?php else: // Rekap View ?>
+                            <?php
+                            $rekap = [];
+                            foreach ($history as $h) {
+                                $date = date('Y-m-d', strtotime((string)$h['created_at']));
+                                $uid = (int)($h['user_hc_id'] ?? 0);
+                                $key = $date . '_' . $uid;
+                                
+                                if (!isset($rekap[$key])) {
+                                    $rekap[$key] = [
+                                        'date' => $date,
+                                        'user_id' => $uid,
+                                        'petugas' => $petugas_name_map[$uid] ?? '-',
+                                        'barang_ids' => [],
+                                        'total_qty' => 0,
+                                        'catatan' => (string)($h['catatan'] ?? '')
+                                    ];
+                                }
+                                
+                                // Hitung total qty (netto)
+                                $rekap[$key]['total_qty'] += (float)$h['qty'];
+                                
+                                // Hitung jenis barang (hanya yang positif / original transfer)
+                                if ((float)$h['qty'] > 0) {
+                                    $rekap[$key]['barang_ids'][(int)$h['barang_id']] = true;
+                                }
+
+                                if (trim((string)($h['catatan'] ?? '')) !== '' && strpos((string)$h['catatan'], 'Reversal') === false) {
+                                    $rekap[$key]['catatan'] = (string)$h['catatan'];
+                                }
+                            }
+                            ?>
                             <div class="table-responsive">
-                                <table class="table table-hover datatable align-middle mb-0">
+                                <table class="table table-hover align-middle mb-0">
                                     <thead class="table-light">
                                         <tr>
-                                            <th>Waktu</th>
-                                            <th>Tipe</th>
+                                            <th>Tanggal</th>
                                             <th>Petugas</th>
-                                            <th>Barang</th>
-                                            <th class="text-end">Qty</th>
-                                            <th>Catatan</th>
+                                            <th class="text-center">Jumlah Jenis Barang</th>
+                                            <th class="text-center">Total Qty</th>
+                                            <th>Sampel Catatan</th>
                                             <th class="text-end">Aksi</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <?php foreach ($history as $h): ?>
-                                            <tr>
-                                                <td class="small text-muted"><?= date('d M Y H:i', strtotime((string)$h['created_at'])) ?></td>
-                                                <td>
-                                                    <?php if (($h['tipe'] ?? '') === 'transfer'): ?>
-                                                        <span class="badge bg-primary">Transfer</span>
-                                                    <?php else: ?>
-                                                        <span class="badge bg-outline-primary border text-primary">Allocasi</span>
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td><?= htmlspecialchars((string)($petugas_name_map[(int)($h['user_hc_id'] ?? 0)] ?? '-')) ?></td>
-                                                <td><?= htmlspecialchars((string)($barang_name_map[(int)($h['barang_id'] ?? 0)] ?? '-')) ?></td>
-                                                <td class="text-end fw-semibold"><?= fmt_qty($h['qty'] ?? 0) ?></td>
-                                                <td class="small text-muted"><?= htmlspecialchars((string)($h['catatan'] ?? '')) ?></td>
-                                                <td class="text-end">
-                                                    <?php if (($h['tipe'] ?? '') === 'transfer' && (int)($h['qty'] ?? 0) > 0): ?>
-                                                        <form method="POST" action="actions/reverse_hc_transfer.php" class="d-inline">
-                                                            <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
-                                                            <input type="hidden" name="transfer_id" value="<?= (int)$h['id'] ?>">
-                                                            <input type="hidden" name="klinik_id" value="<?= (int)$selected_klinik ?>">
-                                                            <input type="hidden" name="petugas_user_id" value="<?= (int)$petugas_user_id ?>">
-                                                            <input type="hidden" name="tab" value="history">
-                                                            <input type="hidden" name="history_from" value="<?= htmlspecialchars($history_from) ?>">
-                                                            <input type="hidden" name="history_to" value="<?= htmlspecialchars($history_to) ?>">
-                                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Batalkan transfer ini? Stok tas petugas akan dikurangi dan transaksi onsite/HC akan direkonstruksi sebagai reversal.');">
-                                                                Batal
-                                                            </button>
-                                                        </form>
-                                                    <?php else: ?>
-                                                        <span class="text-muted">-</span>
-                                                    <?php endif; ?>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
+                                        <?php if (empty($rekap)): ?>
+                                            <tr><td colspan="6" class="text-center text-muted">Tidak ada data transfer untuk direkap.</td></tr>
+                                        <?php else: ?>
+                                            <?php foreach ($rekap as $r): 
+                                                $is_cleared = ($r['total_qty'] <= 0.00005);
+                                            ?>
+                                                <tr>
+                                                    <td class="fw-semibold"><?= date('d M Y', strtotime($r['date'])) ?></td>
+                                                    <td><?= htmlspecialchars($r['petugas']) ?></td>
+                                                    <td class="text-center"><?= count($r['barang_ids']) ?></td>
+                                                    <td class="text-center">
+                                                        <?php if ($is_cleared): ?>
+                                                            <span class="badge bg-success-soft text-success" style="background-color: #e8f5e9; color: #2e7d32;">
+                                                                <i class="fas fa-check-circle me-1"></i> 0 (Sudah Kembali)
+                                                            </span>
+                                                        <?php else: ?>
+                                                            <span class="fw-bold" style="color:#204EAB;"><?= fmt_qty($r['total_qty']) ?></span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td class="small text-muted"><?= htmlspecialchars($r['catatan']) ?></td>
+                                                    <td class="text-end">
+                                                        <?php if (!$is_cleared): ?>
+                                                            <form method="POST" action="actions/bulk_reverse_hc_transfer.php" class="d-inline">
+                                                                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
+                                                                <input type="hidden" name="date" value="<?= $r['date'] ?>">
+                                                                <input type="hidden" name="user_hc_id" value="<?= $r['user_id'] ?>">
+                                                                <input type="hidden" name="klinik_id" value="<?= (int)$selected_klinik ?>">
+                                                                <input type="hidden" name="tab" value="history">
+                                                                <input type="hidden" name="history_view" value="rekap">
+                                                                <button type="submit" class="btn btn-sm btn-danger shadow-sm" onclick="return confirm('⚠️ PERINGATAN: Batalkan SEMUA transfer untuk <?= htmlspecialchars($r['petugas']) ?> pada tanggal <?= date('d M Y', strtotime($r['date'])) ?>? Stok tas petugas akan ditarik kembali.');">
+                                                                    <i class="fas fa-trash-alt me-1"></i> Batal Semua
+                                                                </button>
+                                                            </form>
+                                                        <?php else: ?>
+                                                            <span class="text-muted small italic">Semua sudah dikembalikan</span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
                                     </tbody>
                                 </table>
                             </div>
