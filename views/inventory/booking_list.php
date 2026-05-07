@@ -23,6 +23,12 @@ if ($need_norm > 0) {
 $filter_today = isset($_GET['filter_today']) ? ($_GET['filter_today'] == '1') : false;
 $show_all = isset($_GET['show_all']) && $_GET['show_all'] == '1';
 $role = (string) ($_SESSION['role'] ?? '');
+$is_admin_klinik = $role === 'admin_klinik';
+$is_spv_klinik = $role === 'spv_klinik';
+$is_super_admin = $role === 'super_admin';
+$is_cs = $role === 'cs';
+$is_admin_hc = $role === 'admin_hc';
+
 $filter_tujuan = (string) ($_GET['tujuan'] ?? '');
 $filter_status = (string) ($_GET['status'] ?? '');
 $filter_tipe = (string) ($_GET['tipe'] ?? '');
@@ -185,7 +191,7 @@ if (!empty($booking_ids)) {
         </div>
         <?php if (in_array($_SESSION['role'], ['super_admin', 'cs', 'admin_klinik', 'spv_klinik'])): ?>
             <div class="col-auto">
-                <button type="button" class="btn shadow-sm text-white px-4" style="background-color: #204EAB;"
+                <button type="button" class="btn shadow-sm text-white px-4 btn-booking-baru-trigger" style="background-color: #204EAB;"
                     data-bs-toggle="modal" data-bs-target="#modalBookingBaru">
                     <i class="fas fa-plus me-2"></i>Booking Baru
                 </button>
@@ -1041,11 +1047,6 @@ if (!empty($booking_ids)) {
                                     <?php
                                     $is_today = date('Y-m-d', strtotime($row['tanggal_pemeriksaan'])) === date('Y-m-d');
                                     $is_past = date('Y-m-d', strtotime($row['tanggal_pemeriksaan'])) < date('Y-m-d');
-                                    $is_admin_klinik = ($_SESSION['role'] ?? '') === 'admin_klinik';
-                                    $is_spv_klinik = ($_SESSION['role'] ?? '') === 'spv_klinik';
-                                    $is_super_admin = ($_SESSION['role'] ?? '') === 'super_admin';
-                                    $is_cs = ($_SESSION['role'] ?? '') === 'cs';
-                                    $is_admin_hc = ($_SESSION['role'] ?? '') === 'admin_hc';
                                     ?>
 
                                     <?php if (in_array($row['status'], ['booked', 'rescheduled', 'pending_edit', 'pending_delete', 'rejected'])): ?>
@@ -1417,17 +1418,32 @@ if (!empty($booking_ids)) {
                 }
             });
 
-            $('#modalBookingBaru').on('shown.bs.modal', function () {
+            // Robust Modal Initialization
+            function initBookingModal() {
+                console.log("DEBUG: Initializing Booking Modal...");
                 $('#client_request_id').val((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2)));
                 $('#btnSubmitBooking').prop('disabled', false).html('<i class="fas fa-save"></i> Simpan Booking');
 
                 var klinikId = $('#klinik_id_modal').val();
-                if (klinikId) loadExamOptions(klinikId);
-
-                if ($('#paxSectionsWrapper').is(':empty')) {
-                    renderPaxSections($('#jumlah_pax').val());
+                if (klinikId) {
+                    console.log("DEBUG: Auto-loading exams for clinic:", klinikId);
+                    loadExamOptions(klinikId);
                 }
+
+                var pax = parseInt($('#jumlah_pax').val()) || 1;
+                if ($('#paxSectionsWrapper').children().length === 0) {
+                    console.log("DEBUG: Wrapper empty, rendering pax:", pax);
+                    renderPaxSections(pax);
+                }
+            }
+
+            $('.btn-booking-baru-trigger').on('click', function() {
+                // Pre-check before modal opens
+                setTimeout(initBookingModal, 50);
             });
+
+            $('#modalBookingBaru').on('show.bs.modal', initBookingModal);
+            $('#modalBookingBaru').on('shown.bs.modal', initBookingModal);
 
             $('#modalBookingBaru').on('hidden.bs.modal', function () {
                 $('#formBooking')[0].reset();
@@ -2796,121 +2812,6 @@ if (!empty($booking_ids)) {
         </div>
     </div>
 
-    <script>
-        window.openActionHub = function (data) {
-            let html = '';
-            const canSuperAdmin = (data.role === 'super_admin');
-            const canAdminKlinik = (data.role === 'admin_klinik' || data.role === 'spv_klinik');
-            const canCS = (data.role === 'cs');
-            const isWI = (data.nomor_booking || '').startsWith('WI-');
-
-            // 1. Detail (Always)
-            html += `
-        <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openBookingDetail(${data.id}); return false;">
-            <div class="action-hub-icon bg-light-primary text-primary"><i class="fas fa-list"></i></div>
-            <div class="action-hub-text">
-                <span class="action-hub-label">Lihat Detail</span>
-                <span class="action-hub-desc">Cek rincian item & pasien</span>
-            </div>
-        </a>`;
-
-            if (data.status === 'booked' || data.status === 'rescheduled') {
-                // 2. Move (Super/Admin Klinik)
-                if (canSuperAdmin || canAdminKlinik) {
-                    html += `
-                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openMoveModal(${data.id}, '${data.status_booking}', '${data.nomor_booking}', ${data.klinik_id}); return false;">
-                    <div class="action-hub-icon bg-light-info text-info"><i class="fas fa-exchange-alt"></i></div>
-                    <div class="action-hub-text">
-                        <span class="action-hub-label">Pindahkan Lokasi</span>
-                        <span class="action-hub-desc">Ubah ke Klinik / HC</span>
-                    </div>
-                </a>`;
-
-                    html += `
-                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openAdjustModal(${data.id}, '${data.nomor_booking}', ${data.jumlah_pax}, ${data.klinik_id}, '${data.status_booking}'); return false;">
-                    <div class="action-hub-icon bg-light-info text-info"><i class="fas fa-user-plus"></i></div>
-                    <div class="action-hub-text">
-                        <span class="action-hub-label">Sesuaikan Pax</span>
-                        <span class="action-hub-desc">Tambah jumlah pasien</span>
-                    </div>
-                </a>`;
-                }
-
-                // 3. Edit (Super/CS/Admin Klinik)
-                let canEdit = canSuperAdmin;
-                if (!canEdit) {
-                    if (canCS && !isWI) canEdit = true;
-                    if (canAdminKlinik && isWI) canEdit = true;
-                }
-
-                if (canEdit) {
-                    html += `
-                <a href="index.php?page=booking_edit&id=${data.id}" class="action-hub-item">
-                    <div class="action-hub-icon bg-light-warning text-warning"><i class="fas fa-edit"></i></div>
-                    <div class="action-hub-text">
-                        <span class="action-hub-label">Edit Booking</span>
-                        <span class="action-hub-desc">Ubah data inputan</span>
-                    </div>
-                </a>`;
-                }
-
-                // 4. FU & Complete (Super/Admin Klinik)
-                if (canSuperAdmin || canAdminKlinik) {
-                    if (data.butuh_fu === 0) {
-                        html += `
-                    <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); confirmButuhFU(${data.id}); return false;">
-                        <div class="action-hub-icon bg-light-danger text-danger"><i class="fas fa-phone"></i></div>
-                        <div class="action-hub-text">
-                            <span class="action-hub-label">Butuh Follow Up</span>
-                            <span class="action-hub-desc">Tanya jadwal kedatangan</span>
-                        </div>
-                    </a>`;
-                    }
-
-                    html += `
-                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openCompletionModal(${data.id}, '${data.nomor_booking}'); return false;">
-                    <div class="action-hub-icon bg-light-success text-success"><i class="fas fa-check-double"></i></div>
-                    <div class="action-hub-text">
-                        <span class="action-hub-label text-success">Selesaikan Booking</span>
-                        <span class="action-hub-desc">Pilih pasien yang selesai</span>
-                    </div>
-                </a>`;
-                }
-
-                // 5. Reschedule (Super/Admin Klinik/CS)
-                if (canSuperAdmin || canAdminKlinik || canCS) {
-                    html += `
-                <a href="#" class="action-hub-item" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); openRescheduleModal(${data.id}, '${data.nomor_booking}', '${data.tanggal_pemeriksaan}'); return false;">
-                    <div class="action-hub-icon bg-light-warning text-warning"><i class="fas fa-calendar-alt"></i></div>
-                    <div class="action-hub-text">
-                        <span class="action-hub-label text-warning">Reschedule</span>
-                        <span class="action-hub-desc">Ubah tanggal & alasan</span>
-                    </div>
-                </a>`;
-                }
-
-                // 6. Cancel (Super/CS/Admin Klinik)
-                let canCancel = canSuperAdmin;
-                if (!canCancel) {
-                    if (canCS && !isWI) canCancel = true;
-                    if (canAdminKlinik && isWI) canCancel = true;
-                }
-
-                if (canCancel) {
-                    html += `
-                <a href="#" class="action-hub-item text-danger" onclick="bootstrap.Modal.getInstance(document.getElementById('modalActionHub')).hide(); confirmCancel(${data.id}); return false;">
-                    <div class="action-hub-icon bg-light-danger text-danger"><i class="fas fa-times"></i></div>
-                    <div class="action-hub-text">
-                        <span class="action-hub-label text-danger">Batalkan Booking</span>
-                        <span class="action-hub-desc text-danger">Batalkan & lepas stok</span>
-                    </div>
-                </a>`;
-                }
-            }
-
-            $('#actionHubBody').html(html);
-            new bootstrap.Modal(document.getElementById('modalActionHub')).show();
-        };
     </script>
 
 
