@@ -142,6 +142,21 @@ check_role(['super_admin', 'admin_hc']);
     #modalMoveBooking {
         z-index: 1060 !important;
     }
+    .modal-content {
+        border-radius: 16px !important;
+        overflow: visible !important;
+    }
+    .modal-body {
+        overflow: visible !important;
+    }
+    .modal-header.bg-primary-custom {
+        background-color: var(--bumame-blue) !important;
+        color: white !important;
+        border-bottom: none !important;
+    }
+    .modal-header.bg-primary-custom .btn-close {
+        filter: brightness(0) invert(1);
+    }
 
     .fc-daygrid-day-number {
         font-weight: 600 !important;
@@ -424,8 +439,8 @@ check_role(['super_admin', 'admin_hc']);
 <div class="modal fade" id="modalMoveBooking" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content rounded-4 border-0 shadow-lg">
-            <div class="modal-header bg-white border-bottom py-3">
-                <h5 class="modal-title fw-bold" style="color: var(--bumame-blue);"><i class="fas fa-exchange-alt me-2"></i>Pindahkan Booking</h5>
+            <div class="modal-header bg-primary-custom py-3">
+                <h5 class="modal-title fw-bold text-white"><i class="fas fa-exchange-alt me-2"></i>Pindahkan Booking</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
