@@ -148,6 +148,12 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
+        <?php if ($role === 'spv_klinik'): ?>
+        <a href="index.php?page=daily_usage_config" class="sidebar-link <?= $current_page == 'daily_usage_config' ? 'active' : '' ?>">
+            <i class="fas fa-calendar-alt"></i> Kalender Klinik
+        </a>
+        <?php endif; ?>
+
         <?php if ($role === 'super_admin' || in_array($role, ['admin_klinik', 'spv_klinik', 'cs'])): ?>
         <div class="sidebar-heading">MASTER DATA</div>
         <a href="index.php?page=pemeriksaan" class="sidebar-link <?= $current_page == 'pemeriksaan' ? 'active' : '' ?>">

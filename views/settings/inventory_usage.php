@@ -1,9 +1,21 @@
 <?php
 require_once __DIR__ . '/../../lib/usage.php';
-check_role(['super_admin']);
+check_role(['super_admin', 'spv_klinik']);
 
-$active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'usage';
+$is_spv = $_SESSION['role'] === 'spv_klinik';
+$spv_klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
+
+// Default tab and clinic based on role
+$active_tab = isset($_GET['tab']) ? $_GET['tab'] : ($is_spv ? 'operational_calendar' : 'usage');
 $selected_klinik = isset($_GET['klinik_id']) ? (int)$_GET['klinik_id'] : 0;
+
+if ($is_spv) {
+    $selected_klinik = $spv_klinik_id;
+    // SPV only allowed to see calendar tab
+    if ($active_tab !== 'operational_calendar') {
+        $active_tab = 'operational_calendar';
+    }
+}
 
 $success = $_SESSION['success'] ?? '';
 $error = $_SESSION['error'] ?? '';
@@ -158,17 +170,18 @@ $last_sync = get_setting('daily_usage_auto_last_sync', '-');
     <div class="row mb-4 align-items-center">
         <div class="col-md-6">
             <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
-                <i class="fas fa-calendar-alt me-2"></i>Daily Usage & Calendar
+                <i class="fas fa-calendar-alt me-2"></i><?= $is_spv ? 'Kalender Klinik' : 'Daily Usage & Calendar' ?>
             </h1>
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-0">
                     <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
-                    <li class="breadcrumb-item active">Daily Usage Configuration</li>
+                    <li class="breadcrumb-item active"><?= $is_spv ? 'Kalender Operasional' : 'Daily Usage Configuration' ?></li>
                 </ol>
             </nav>
         </div>
         <div class="col-md-6 text-md-end">
             <div class="d-flex flex-column align-items-md-end">
+                <?php if (!$is_spv): ?>
                 <div class="d-flex gap-2">
                     <button type="button" class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#modalImport">
                         <i class="fas fa-file-import me-1"></i> Import / Export Manual Usage
@@ -180,6 +193,7 @@ $last_sync = get_setting('daily_usage_auto_last_sync', '-');
                         </button>
                     </form>
                 </div>
+                <?php endif; ?>
                 <small class="text-muted mt-1" style="font-size: 0.7rem;">Last Sync: <?= htmlspecialchars($last_sync) ?></small>
             </div>
         </div>
@@ -205,7 +219,7 @@ $last_sync = get_setting('daily_usage_auto_last_sync', '-');
                 <div class="card-body d-flex justify-content-between align-items-end">
                     <div class="flex-grow-1 me-4">
                         <label class="form-label fw-bold small text-muted text-uppercase mb-2">Pilih Klinik</label>
-                        <select class="form-select select2" onchange="window.location.href='index.php?page=daily_usage_config&tab=<?= $active_tab ?>&klinik_id=' + this.value">
+                        <select class="form-select select2" <?= $is_spv ? 'disabled' : 'onchange="window.location.href=\'index.php?page=daily_usage_config&tab=\' + \'' . $active_tab . '\' + \'&klinik_id=\' + this.value"' ?>>
                             <?php foreach($kliniks as $k): ?>
                                 <option value="<?= $k['id'] ?>" <?= $selected_klinik == $k['id'] ? 'selected' : '' ?>><?= htmlspecialchars($k['nama_klinik']) ?></option>
                             <?php endforeach; ?>
@@ -238,11 +252,13 @@ $last_sync = get_setting('daily_usage_auto_last_sync', '-');
     <div class="card shadow-sm border-0 overflow-hidden">
         <div class="card-header bg-white p-0">
             <ul class="nav nav-tabs nav-fill border-bottom-0" id="usageTabs" role="tablist">
+                <?php if (!$is_spv): ?>
                 <li class="nav-item">
                     <a class="nav-link py-3 fw-bold <?= $active_tab == 'usage' ? 'active text-primary' : 'text-muted' ?>" href="index.php?page=daily_usage_config&tab=usage&klinik_id=<?= $selected_klinik ?>">
                         <i class="fas fa-chart-line me-2"></i>Konfigurasi Daily Usage
                     </a>
                 </li>
+                <?php endif; ?>
                 <li class="nav-item">
                     <a class="nav-link py-3 fw-bold <?= $active_tab == 'operational_calendar' ? 'active text-primary' : 'text-muted' ?>" href="index.php?page=daily_usage_config&tab=operational_calendar&klinik_id=<?= $selected_klinik ?>">
                         <i class="fas fa-calendar-alt me-2"></i>Kalender Operasional
