@@ -1,6 +1,7 @@
 <?php
 require_once 'config/config.php';
 require_once 'config/database.php';
+require_once 'config/settings.php';
 
 $page = isset($_GET['page']) ? $_GET['page'] : 'dashboard';
 
@@ -14,6 +15,12 @@ $action = isset($_GET['action']) ? $_GET['action'] : '';
 $public_pages = ['login', 'logout', 'qr_verify_rab', 'stok_klinik_publik'];
 if (!in_array($page, $public_pages) && !isset($_SESSION['user_id'])) {
     redirect('index.php?page=login');
+}
+
+// Auto sync daily usage if month changed
+if (isset($_SESSION['user_id'])) {
+    require_once 'lib/usage.php';
+    maybe_auto_sync();
 }
 
 // Layout structure
@@ -108,6 +115,9 @@ switch ($page) {
         break;
     case 'odoo_format_config':
         include 'views/settings/odoo_format_config.php';
+        break;
+    case 'daily_usage_config':
+        include 'views/settings/inventory_usage.php';
         break;
     case 'mcu_realization':
         include 'views/mcu/realization.php';

@@ -371,32 +371,30 @@ if ($role === 'super_admin') {
                             $layanan_label = $is_hc_booking ? 'HC' : 'Onsite';
                         ?>
                         <div class="list-group-item border-0 px-3 py-3 border-bottom">
-                            <div class="d-flex w-100 justify-content-between align-items-center mb-2">
+                            <div class="d-flex w-100 justify-content-between align-items-start mb-1">
                                 <div>
                                     <h6 class="mb-0 fw-bold text-dark"><?= htmlspecialchars($b['nama_pasien_list'] ?? 'Tanpa Nama') ?></h6>
                                     <small class="text-secondary mt-1 d-block"><i class="fas fa-hospital me-1"></i> <?= htmlspecialchars($b['nama_klinik'] ?? '-') ?></small>
-                                    <div class="mt-1">
-                                        <span class="badge rounded-pill small <?= $layanan_badge_class ?>">
+                                    <div class="mt-2 d-flex align-items-center flex-wrap gap-2">
+                                        <span class="badge rounded-pill small <?= $layanan_badge_class ?>" style="font-size: 0.7rem; padding: 0.25rem 0.6rem;">
                                             <?= $is_hc_booking ? '<i class="fas fa-briefcase-medical me-1"></i>' : '<i class="fas fa-clinic-medical me-1"></i>' ?>
                                             <?= htmlspecialchars($layanan_label) ?>
                                         </span>
+                                        <small class="text-muted border-start ps-2" style="font-size: 0.75rem;"><i class="fas fa-hashtag me-1"></i><?= htmlspecialchars((string)($b['nomor_booking'] ?? '')) ?></small>
+                                        <small class="text-muted border-start ps-2" style="font-size: 0.75rem;"><i class="fas fa-clock me-1"></i>Status: <span class="text-primary fw-semibold"><?= ucfirst((string)($b['status'] ?? '')) ?></span></small>
                                     </div>
                                 </div>
-                                <?php
-                                $date = date('Y-m-d', strtotime($b['tanggal_pemeriksaan']));
-                                if ($date == date('Y-m-d')) echo '<span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3">Hari Ini</span>';
-                                elseif ($date == date('Y-m-d', strtotime('+1 day'))) echo '<span class="badge bg-info bg-opacity-10 text-info rounded-pill px-3">Besok</span>';
-                                else echo '<span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill">' . date('d M', strtotime($b['tanggal_pemeriksaan'])) . '</span>';
-                                ?>
-                            </div>
-                            <div class="d-flex justify-content-between align-items-end">
-                                <div>
-                                    <small class="text-muted d-block"><i class="fas fa-hashtag me-1"></i> <?= htmlspecialchars((string)($b['nomor_booking'] ?? '')) ?></small>
-                                    <small class="text-muted"><i class="fas fa-clock me-1"></i> Status: <span class="text-primary"><?= ucfirst((string)($b['status'] ?? '')) ?></span></small>
+                                <div class="d-flex flex-column align-items-end gap-2">
+                                    <?php
+                                    $date = date('Y-m-d', strtotime($b['tanggal_pemeriksaan']));
+                                    if ($date == date('Y-m-d')) echo '<span class="badge bg-success bg-opacity-10 text-success rounded-pill px-2 small" style="font-size:0.65rem">Hari Ini</span>';
+                                    elseif ($date == date('Y-m-d', strtotime('+1 day'))) echo '<span class="badge bg-info bg-opacity-10 text-info rounded-pill px-2 small" style="font-size:0.65rem">Besok</span>';
+                                    else echo '<span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill px-2 small" style="font-size:0.65rem">' . date('d M', strtotime($b['tanggal_pemeriksaan'])) . '</span>';
+                                    ?>
+                                    <a href="index.php?page=booking&id=<?= $b['id'] ?>" class="btn btn-sm btn-light rounded-circle shadow-sm" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-chevron-right text-muted" style="font-size: 0.7rem;"></i>
+                                    </a>
                                 </div>
-                                <a href="index.php?page=booking&id=<?= $b['id'] ?>" class="btn btn-sm btn-light rounded-circle shadow-sm" style="width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center;">
-                                    <i class="fas fa-chevron-right text-muted small"></i>
-                                </a>
                             </div>
                         </div>
                         <?php endforeach; ?>
@@ -522,6 +520,9 @@ function showLowStockDetails() {
                     body.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Tidak ada item low stock. Aman!</td></tr>';
                     return;
                 }
+                
+                // Sort by Kode Barang
+                res.data.sort((a, b) => (a.kode_barang || '').localeCompare(b.kode_barang || ''));
                 
                 let html = '';
                 res.data.forEach(item => {

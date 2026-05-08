@@ -23,18 +23,22 @@ if (!$is_public && !in_array($role, ['super_admin', 'admin_gudang', 'admin_klini
     exit;
 }
 
-$klinik_id = (int)($_POST['klinik_id'] ?? 0);
+$klinik_id_raw = $_POST['klinik_id'] ?? 0;
+$is_all_klinik = ($klinik_id_raw === 'all' || (int)$klinik_id_raw === 0);
+$klinik_id = $is_all_klinik ? 0 : (int)$klinik_id_raw;
 $barang_id = (int)($_POST['barang_id'] ?? 0);
 $tanggal = (string)($_POST['tanggal'] ?? '');
 
-if ($klinik_id <= 0 || $barang_id <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal)) {
+if ($barang_id <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal)) {
     echo json_encode(['success' => false, 'message' => 'Invalid parameters'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-if ($role === 'admin_klinik' && (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_id) {
-    echo json_encode(['success' => false, 'message' => 'Access denied'], JSON_UNESCAPED_UNICODE);
-    exit;
+if ($role === 'admin_klinik') {
+    if ($is_all_klinik || (int)($_SESSION['klinik_id'] ?? 0) !== $klinik_id) {
+        echo json_encode(['success' => false, 'message' => 'Access denied'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
 }
 
 $today = date('Y-m-d');
@@ -46,10 +50,18 @@ $month_end = date('Y-m-t', strtotime($tanggal));
 $tanggal_end_ts = $tanggal . ' 23:59:59';
 $month_start_ts = $month_start . ' 00:00:00';
 
-$kl = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
-if (!$kl) {
-    echo json_encode(['success' => false, 'message' => 'Klinik not found'], JSON_UNESCAPED_UNICODE);
-    exit;
+$active_kliniks = [];
+if ($is_all_klinik) {
+    $res_k = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM inventory_klinik WHERE status = 'active'");
+    while($rk = $res_k->fetch_assoc()) $active_kliniks[] = $rk;
+    $kl = ['id' => 0, 'nama_klinik' => 'Semua Klinik', 'kode_klinik' => '', 'kode_homecare' => ''];
+} else {
+    $kl = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+    if (!$kl) {
+        echo json_encode(['success' => false, 'message' => 'Klinik not found'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $active_kliniks[] = $kl;
 }
 
 $b = $conn->query("SELECT id, kode_barang, odoo_product_id, nama_barang, satuan FROM inventory_barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
@@ -68,22 +80,27 @@ $conv = $conn->query("
 $multiplier = (float)($conv['multiplier'] ?? 1);
 if ($multiplier <= 0) $multiplier = 1;
 
-$kode_klinik = (string)($kl['kode_klinik'] ?? '');
-$kode_homecare = (string)($kl['kode_homecare'] ?? '');
-$kode_barang = trim((string)($b['kode_barang'] ?? ''));
-$odoo_product_id = trim((string)($b['odoo_product_id'] ?? ''));
+$loc_k_list = [];
+$loc_h_list = [];
+$klinik_ids_list = [];
+foreach ($active_kliniks as $ak) {
+    $klinik_ids_list[] = (int)$ak['id'];
+    if (!empty($ak['kode_klinik'])) $loc_k_list[] = "'" . $conn->real_escape_string(trim($ak['kode_klinik'])) . "'";
+    if (!empty($ak['kode_homecare'])) $loc_h_list[] = "'" . $conn->real_escape_string(trim($ak['kode_homecare'])) . "'";
+}
 
-$loc_k = $conn->real_escape_string($kode_klinik);
-$loc_h = $conn->real_escape_string($kode_homecare);
+$klinik_ids_str = implode(',', $klinik_ids_list);
+$loc_k_str = !empty($loc_k_list) ? implode(',', $loc_k_list) : "''";
+$loc_h_str = !empty($loc_h_list) ? implode(',', $loc_h_list) : "''";
 
 $last_update_klinik = '';
-if ($kode_klinik !== '') {
-    $r = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE location_code = '$loc_k'");
+if ($loc_k_str !== "''") {
+    $r = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE location_code IN ($loc_k_str)");
     if ($r && $r->num_rows > 0) $last_update_klinik = (string)($r->fetch_assoc()['last_update'] ?? '');
 }
 $last_update_hc = '';
-if ($kode_homecare !== '') {
-    $r = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE location_code = '$loc_h'");
+if ($loc_h_str !== "''") {
+    $r = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror WHERE location_code IN ($loc_h_str)");
     if ($r && $r->num_rows > 0) $last_update_hc = (string)($r->fetch_assoc()['last_update'] ?? '');
 }
 
@@ -92,23 +109,45 @@ $max_u = $last_update_klinik;
 if ($last_update_hc !== '' && ($max_u === '' || strtotime($last_update_hc) > strtotime($max_u))) $max_u = $last_update_hc;
 if ($max_u !== '') $last_update_text = date('d M Y H:i', strtotime($max_u));
 
-$kb_esc = $conn->real_escape_string($kode_barang);
-$oid_esc = $conn->real_escape_string($odoo_product_id);
+$kb_esc = $conn->real_escape_string(trim($b['kode_barang'] ?? ''));
+$oid_esc = $conn->real_escape_string(trim($b['odoo_product_id'] ?? ''));
 $match = [];
-if ($kode_barang !== '') $match[] = "TRIM(kode_barang) = '$kb_esc'";
-if ($odoo_product_id !== '') $match[] = "TRIM(odoo_product_id) = '$oid_esc'";
+if ($kb_esc !== '') $match[] = "TRIM(kode_barang) = '$kb_esc'";
+if ($oid_esc !== '') $match[] = "TRIM(odoo_product_id) = '$oid_esc'";
 if (empty($match)) $match[] = "1=0";
 $match_sql = '(' . implode(' OR ', $match) . ')';
 
 $baseline_onsite = 0.0;
-if ($kode_klinik !== '') {
-    $r = $conn->query("SELECT COALESCE(qty,0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc_k' AND $match_sql ORDER BY updated_at DESC LIMIT 1");
-    if ($r && $r->num_rows > 0) $baseline_onsite = (float)($r->fetch_assoc()['qty'] ?? 0);
+if ($loc_k_str !== "''") {
+    $r = $conn->query("
+        SELECT SUM(qty) as total_qty FROM (
+            SELECT location_code, qty FROM inventory_stock_mirror sm1
+            JOIN (
+                SELECT TRIM(location_code) as loc, MAX(updated_at) as max_up 
+                FROM inventory_stock_mirror 
+                WHERE TRIM(location_code) IN ($loc_k_str) AND $match_sql
+                GROUP BY TRIM(location_code)
+            ) last_sm ON TRIM(sm1.location_code) = last_sm.loc AND sm1.updated_at = last_sm.max_up
+            WHERE TRIM(sm1.location_code) IN ($loc_k_str) AND $match_sql
+        ) combined
+    ");
+    if ($r && $r->num_rows > 0) $baseline_onsite = (float)($r->fetch_assoc()['total_qty'] ?? 0);
 }
 $baseline_hc = 0.0;
-if ($kode_homecare !== '') {
-    $r = $conn->query("SELECT COALESCE(qty,0) AS qty FROM inventory_stock_mirror WHERE TRIM(location_code) = '$loc_h' AND $match_sql ORDER BY updated_at DESC LIMIT 1");
-    if ($r && $r->num_rows > 0) $baseline_hc = (float)($r->fetch_assoc()['qty'] ?? 0);
+if ($loc_h_str !== "''") {
+    $r = $conn->query("
+        SELECT SUM(qty) as total_qty FROM (
+            SELECT location_code, qty FROM inventory_stock_mirror sm1
+            JOIN (
+                SELECT TRIM(location_code) as loc, MAX(updated_at) as max_up 
+                FROM inventory_stock_mirror 
+                WHERE TRIM(location_code) IN ($loc_h_str) AND $match_sql
+                GROUP BY TRIM(location_code)
+            ) last_sm ON TRIM(sm1.location_code) = last_sm.loc AND sm1.updated_at = last_sm.max_up
+            WHERE TRIM(sm1.location_code) IN ($loc_h_str) AND $match_sql
+        ) combined
+    ");
+    if ($r && $r->num_rows > 0) $baseline_hc = (float)($r->fetch_assoc()['total_qty'] ?? 0);
 }
 $baseline_onsite = $baseline_onsite / $multiplier;
 $baseline_hc = $baseline_hc / $multiplier;
@@ -144,7 +183,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'klinik'
-          AND ts.level_id = $klinik_id
+          AND ts.level_id IN ($klinik_ids_str)
           AND ts.tipe_transaksi = 'out'
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs' AND ts.created_at <= '$re'
@@ -157,7 +196,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'klinik'
-          AND ts.level_id = $klinik_id
+          AND ts.level_id IN ($klinik_ids_str)
           AND ts.tipe_transaksi = 'in'
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs' AND ts.created_at <= '$re'
@@ -171,7 +210,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'hc'
-          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id = $klinik_id)
+          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id IN ($klinik_ids_str))
           AND ts.tipe_transaksi = 'out'
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs' AND ts.created_at <= '$re'
@@ -184,7 +223,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'hc'
-          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id = $klinik_id)
+          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id IN ($klinik_ids_str))
           AND ts.tipe_transaksi = 'in'
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs' AND ts.created_at <= '$re'
@@ -202,7 +241,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
             SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) AS qty
         FROM inventory_pemakaian_bhp pb
         JOIN inventory_transaksi_stok ts ON ts.referensi_id = pb.id
-        WHERE pb.klinik_id = $klinik_id
+        WHERE pb.klinik_id IN ($klinik_ids_str)
           AND ts.barang_id = $barang_id
           AND ts.referensi_tipe = 'pemakaian_bhp'
           AND pb.tanggal > '$rs' AND pb.tanggal <= '$re'
@@ -222,7 +261,7 @@ if ($is_history && $max_u !== '' && strtotime($tanggal_end_ts) < strtotime($max_
         SELECT ts.referensi_id AS transfer_id, ts.tipe_transaksi, ts.level, SUM(ts.qty) AS qty, MIN(ts.created_at) AS first_at, MAX(ts.created_at) AS last_at
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
-          AND ts.level_id = $klinik_id
+          AND ((ts.level = 'klinik' AND ts.level_id IN ($klinik_ids_str)) OR (ts.level = 'hc' AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id IN ($klinik_ids_str))))
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs' AND ts.created_at <= '$re'
           AND ts.created_at >= '$ms'
@@ -244,7 +283,7 @@ if (!$is_history && $max_u !== '') {
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'klinik'
-          AND ts.level_id = $klinik_id
+          AND ts.level_id IN ($klinik_ids_str)
           AND ts.tipe_transaksi = 'out'
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs'
@@ -257,7 +296,7 @@ if (!$is_history && $max_u !== '') {
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'klinik'
-          AND ts.level_id = $klinik_id
+          AND ts.level_id IN ($klinik_ids_str)
           AND ts.tipe_transaksi = 'in'
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs'
@@ -271,7 +310,7 @@ if (!$is_history && $max_u !== '') {
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'hc'
-          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id = $klinik_id)
+          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id IN ($klinik_ids_str))
           AND ts.tipe_transaksi = 'out'
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs'
@@ -284,7 +323,7 @@ if (!$is_history && $max_u !== '') {
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
           AND ts.level = 'hc'
-          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id = $klinik_id)
+          AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id IN ($klinik_ids_str))
           AND ts.tipe_transaksi = 'in'
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs'
@@ -303,7 +342,7 @@ if (!$is_history && $max_u !== '') {
             SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) AS qty
         FROM inventory_pemakaian_bhp pb
         JOIN inventory_transaksi_stok ts ON ts.referensi_id = pb.id
-        WHERE pb.klinik_id = $klinik_id
+        WHERE pb.klinik_id IN ($klinik_ids_str)
           AND ts.barang_id = $barang_id
           AND ts.referensi_tipe = 'pemakaian_bhp'
           AND pb.created_at > '$rs'
@@ -324,7 +363,7 @@ if (!$is_history && $max_u !== '') {
         SELECT ts.referensi_id AS transfer_id, ts.tipe_transaksi, ts.level, SUM(ts.qty) AS qty, MIN(ts.created_at) AS first_at, MAX(ts.created_at) AS last_at
         FROM inventory_transaksi_stok ts
         WHERE ts.barang_id = $barang_id
-          AND ((ts.level = 'klinik' AND ts.level_id = $klinik_id) OR (ts.level = 'hc' AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id = $klinik_id)))
+          AND ((ts.level = 'klinik' AND ts.level_id IN ($klinik_ids_str)) OR (ts.level = 'hc' AND EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id IN ($klinik_ids_str))))
           AND ts.referensi_tipe IN ('transfer', 'hc_petugas_transfer')
           AND ts.created_at > '$rs'
           AND ts.created_at >= '$ms'
@@ -347,7 +386,7 @@ $r = $conn->query("
     FROM inventory_booking_detail bd
     JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
     WHERE bd.barang_id = $barang_id
-      AND bp.klinik_id = $klinik_id
+      AND bp.klinik_id IN ($klinik_ids_str)
       AND bp.status = 'booked'
       AND bp.status_booking LIKE '%Clinic%'
       AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($tanggal) . "'
@@ -360,7 +399,7 @@ $r = $conn->query("
     FROM inventory_booking_detail bd
     JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
     WHERE bd.barang_id = $barang_id
-      AND bp.klinik_id = $klinik_id
+      AND bp.klinik_id IN ($klinik_ids_str)
       AND bp.status = 'booked'
       AND bp.status_booking LIKE '%HC%'
       AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($tanggal) . "'
@@ -373,7 +412,7 @@ $r = $conn->query("
     FROM inventory_booking_detail bd
     JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
     WHERE bd.barang_id = $barang_id
-      AND bp.klinik_id = $klinik_id
+      AND bp.klinik_id IN ($klinik_ids_str)
       AND bp.status = 'booked'
       AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($tanggal) . "'
       AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'
@@ -406,7 +445,7 @@ $p_res = $conn->query("
         SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) AS qty
     FROM inventory_pemakaian_bhp pb
     JOIN inventory_transaksi_stok ts ON ts.referensi_id = pb.id
-    WHERE pb.klinik_id = $klinik_id
+    WHERE pb.klinik_id IN ($klinik_ids_str)
       AND ts.barang_id = $barang_id
       AND ts.referensi_tipe = 'pemakaian_bhp'
       AND pb.tanggal >= '$ms_q 00:00:00' AND pb.created_at <= '$t_q 23:59:59'
@@ -425,8 +464,8 @@ echo json_encode([
     'klinik' => [
         'id' => (int)$kl['id'],
         'nama_klinik' => (string)($kl['nama_klinik'] ?? ''),
-        'kode_klinik' => $kode_klinik,
-        'kode_homecare' => $kode_homecare
+        'kode_klinik' => (string)($kl['kode_klinik'] ?? ''),
+        'kode_homecare' => (string)($kl['kode_homecare'] ?? '')
     ],
     'barang' => [
         'id' => (int)$b['id'],

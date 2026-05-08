@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../config/settings.php';
 require_once __DIR__ . '/../../lib/stock.php';
+require_once __DIR__ . '/../../lib/usage.php';
 check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'cs', 'petugas_hc']);
 try {
     $conn->query("
@@ -457,9 +458,15 @@ if ($active_tab == 'stok') {
                     $conn->query("SET SQL_BIG_SELECTS=1");
                     $result = $conn->query($query);
                     while ($r = $result->fetch_assoc()) {
-                        // Calculate On Hand logic to check zero filter
                         $cur_stok_onsite = (float)($r['qty'] ?? 0);
                         $cur_stok_hc = (float)($r['stok_hc'] ?? 0);
+                        
+                        // Daily Usage Accumulation
+                        $item_daily_usage = 0;
+                        if (!$is_history_date && $selected_klinik !== 'gudang_utama' && $selected_klinik !== '') {
+                            $item_daily_usage = calculate_accumulated_usage($selected_klinik, $r['barang_id']);
+                        }
+
                         if ($is_history_date) {
                             $cur_stok_onsite += (float)($r['rb_out_transfer'] ?? 0) - (float)($r['rb_in_transfer'] ?? 0) + (float)($r['rb_sellout_klinik'] ?? 0);
                             $cur_stok_hc += (float)($r['rb_out_transfer_hc'] ?? 0) - (float)($r['rb_in_transfer_hc'] ?? 0) + (float)($r['rb_sellout_hc'] ?? 0);
@@ -468,7 +475,7 @@ if ($active_tab == 'stok') {
                             $cur_stok_onsite += (float)($r['in_transfer'] ?? 0) - (float)($r['out_transfer'] ?? 0);
                             $cur_stok_hc += (float)($r['in_transfer_hc'] ?? 0) - (float)($r['out_transfer_hc'] ?? 0);
                             $cur_total_sellout = (float)($r['sellout_klinik'] ?? 0) + ($show_hc ? (float)($r['sellout_hc'] ?? 0) : 0);
-                            $cur_on_hand = ($cur_stok_onsite + ($show_hc ? $cur_stok_hc : 0)) - $cur_total_sellout;
+                            $cur_on_hand = ($cur_stok_onsite + ($show_hc ? $cur_stok_hc : 0)) - $cur_total_sellout - $item_daily_usage;
                         }
 
                         if (!$show_zero && $can_use_zero_filter && $cur_on_hand <= 0) {
@@ -477,6 +484,8 @@ if ($active_tab == 'stok') {
 
                         $rows[] = $r;
                         $summary_stok['total_items']++;
+                        $summary_stok['total_daily_usage'] = ($summary_stok['total_daily_usage'] ?? 0) + $item_daily_usage;
+
                         if ($is_history_date) {
                             $summary_stok['total_qty'] += $cur_stok_onsite;
                             $summary_stok['total_qty_hc'] += $cur_stok_hc;
@@ -556,6 +565,44 @@ if ($active_tab == 'stok') {
     .datatable-stok tbody tr:hover {
         background-color: #f8fafc !important;
     }
+
+    /* Rounded Pagination */
+    .dataTables_wrapper .pagination { gap: 6px; padding-top: 15px; justify-content: flex-end; }
+    .dataTables_wrapper .pagination .page-item .page-link { 
+        border-radius: 50% !important; 
+        width: 36px; 
+        height: 36px; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        border: 1px solid #e2e8f0; 
+        color: #64748b; 
+        font-size: 0.85rem; 
+        font-weight: 500; 
+        margin: 0 2px;
+        padding: 0;
+        transition: all 0.2s ease;
+        background: #ffffff;
+    }
+    .dataTables_wrapper .pagination .page-item.active .page-link { 
+        background-color: #eff6ff !important; 
+        color: #204EAB !important; 
+        border-color: #dbeafe !important; 
+        font-weight: 700;
+        box-shadow: 0 2px 6px rgba(32, 78, 171, 0.12);
+    }
+    .dataTables_wrapper .pagination .page-item:hover:not(.active):not(.disabled) .page-link {
+        background-color: #f8fafc;
+        border-color: #cbd5e1;
+        color: #1e293b;
+        transform: translateY(-1px);
+    }
+    .dataTables_wrapper .pagination .page-item.disabled .page-link {
+        opacity: 0.35;
+        background: #f8fafc;
+        border-color: #f1f5f9;
+    }
+    .dataTables_info { font-size: 0.8rem; color: #94a3b8; padding-top: 15px; }
 </style>
 
 <!-- TAB CONTENT: STOK KLINIK -->
@@ -569,7 +616,7 @@ if ($active_tab == 'stok') {
             <input type="hidden" name="tab" value="stok">
             
             <?php if ($can_filter_klinik): ?>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label fw-bold small mb-1">
                     <i class="fas fa-hospital text-primary"></i> Klinik <span class="text-danger">*</span>
                 </label>
@@ -613,7 +660,7 @@ if ($active_tab == 'stok') {
             </div>
             <?php endif; ?>
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-            <div class="col-md-4">
+            <div class="col-md-5">
                 <div class="d-flex flex-column align-items-end pt-1">
                     <button type="button" class="btn btn-outline-primary btn-sm refresh-btn d-flex align-items-center justify-content-center gap-2 py-2" onclick="confirmSync(this)" <?= $is_history_date ? 'disabled' : '' ?>>
                         <i class="fas fa-sync-alt"></i><span>Refresh Odoo</span>
@@ -644,7 +691,7 @@ if ($active_tab == 'stok') {
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="text-muted small text-uppercase fw-semibold">Jenis Barang</div>
+                        <div class="text-muted text-uppercase fw-semibold" style="font-size: 0.65rem;">Jenis Barang</div>
                         <div class="h4 mb-0 fw-bold"><?= $summary_stok['total_items'] ?></div>
                     </div>
                     <i class="fas fa-boxes fa-lg text-primary-custom" style="opacity: 0.6;"></i>
@@ -657,7 +704,7 @@ if ($active_tab == 'stok') {
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="text-muted small text-uppercase fw-semibold">Stok On Site</div>
+                        <div class="text-muted text-uppercase fw-semibold" style="font-size: 0.65rem;">Stock Clinic</div>
                         <div class="h4 mb-0 fw-bold"><?= fmt_qty($summary_stok['total_qty'] ?? 0) ?></div>
                     </div>
                     <i class="fas fa-cubes fa-lg text-primary-custom" style="opacity: 0.6;"></i>
@@ -671,7 +718,7 @@ if ($active_tab == 'stok') {
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="text-muted small text-uppercase fw-semibold">Stok HC</div>
+                        <div class="text-muted text-uppercase fw-semibold" style="font-size: 0.65rem;">Stock HC</div>
                         <div class="h4 mb-0 fw-bold"><?= fmt_qty($summary_stok['total_qty_hc'] ?? 0) ?></div>
                     </div>
                     <i class="fas fa-user-nurse fa-lg text-primary-custom" style="opacity: 0.6;"></i>
@@ -685,7 +732,7 @@ if ($active_tab == 'stok') {
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="text-muted small text-uppercase fw-semibold">Sellout Onsite</div>
+                        <div class="text-muted text-uppercase fw-semibold" style="font-size: 0.65rem;">Sellout Clinic</div>
                         <div class="h4 mb-0 fw-bold"><?= fmt_qty($summary_stok['total_sellout_klinik'] ?? 0) ?></div>
                     </div>
                     <i class="fas fa-history fa-lg text-primary-custom" style="opacity: 0.6;"></i>
@@ -693,12 +740,27 @@ if ($active_tab == 'stok') {
             </div>
         </div>
     </div>
+    <?php if ($show_hc): ?>
     <div class="col-md">
         <div class="card h-100">
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="text-muted small text-uppercase fw-semibold">Reserve Onsite</div>
+                        <div class="text-muted text-uppercase fw-semibold" style="font-size: 0.65rem;">Sellout HC</div>
+                        <div class="h4 mb-0 fw-bold"><?= fmt_qty($summary_stok['total_sellout_hc'] ?? 0) ?></div>
+                    </div>
+                    <i class="fas fa-user-nurse fa-lg text-primary-custom" style="opacity: 0.6;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+    <div class="col-md">
+        <div class="card h-100">
+            <div class="card-body p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted text-uppercase fw-semibold" style="font-size: 0.65rem;">Reserve Clinic</div>
                         <div class="h4 mb-0 fw-bold"><?= fmt_qty($summary_stok['reserve_onsite'] ?? 0) ?></div>
                     </div>
                     <i class="fas fa-hospital fa-lg text-primary-custom" style="opacity: 0.6;"></i>
@@ -712,20 +774,7 @@ if ($active_tab == 'stok') {
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="text-muted small text-uppercase fw-semibold">Sellout HC</div>
-                        <div class="h4 mb-0 fw-bold"><?= fmt_qty($summary_stok['total_sellout_hc'] ?? 0) ?></div>
-                    </div>
-                    <i class="fas fa-user-nurse fa-lg text-primary-custom" style="opacity: 0.6;"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md">
-        <div class="card h-100">
-            <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small text-uppercase fw-semibold">Reserve HC</div>
+                        <div class="text-muted text-uppercase fw-semibold" style="font-size: 0.65rem;">Reserve HC</div>
                         <div class="h4 mb-0 fw-bold"><?= fmt_qty($summary_stok['reserve_hc'] ?? 0) ?></div>
                     </div>
                     <i class="fas fa-user-nurse fa-lg text-primary-custom" style="opacity: 0.6;"></i>
@@ -734,6 +783,19 @@ if ($active_tab == 'stok') {
         </div>
     </div>
     <?php endif; ?>
+    <div class="col-md">
+        <div class="card h-100" style="background-color: #f1f5f9;">
+            <div class="card-body p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase fw-semibold" style="color: #64748b; font-size: 0.65rem;">Daily Usage</div>
+                        <div class="h4 mb-0 fw-bold" style="color: #334155;"><?= fmt_qty($summary_stok['total_daily_usage'] ?? 0) ?></div>
+                    </div>
+                    <i class="fas fa-clock fa-lg" style="color: #94a3b8; opacity: 0.5;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <?php if ($selected_klinik): ?>
@@ -858,7 +920,7 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                 <div class="col-md-6">
                     <div class="card shadow-none border rounded bg-light-subtle">
                         <div class="card-body p-2">
-                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-hospital me-1"></i>Stok Onsite</h6>
+                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-hospital me-1"></i>Stok Clinic</h6>
                             <div class="d-flex justify-content-between mb-1 x-small text-muted">
                                 <span>Stok Odoo:</span>
                                 <span>${fmtNum(baseOn)}</span>
@@ -874,7 +936,7 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                                 </span>
                             </div>
                             <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-dark">
-                                <span>Total Onsite:</span>
+                                <span>Total Clinic:</span>
                                 <span>${fmtNum(result.stock_onsite || 0)}</span>
                             </div>
                         </div>
@@ -884,7 +946,7 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                 <div class="col-md-6">
                     <div class="card shadow-none border rounded bg-light-subtle">
                         <div class="card-body p-2">
-                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-user-nurse me-1"></i>Stok HC</h6>
+                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-user-nurse me-1"></i>Stock HC</h6>
                             <div class="d-flex justify-content-between mb-1 x-small text-muted">
                                 <span>Stok Odoo:</span>
                                 <span>${fmtNum(baseHc)}</span>
@@ -909,13 +971,13 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
             </div>
             ` : `
             <div class="row g-2 mb-3">
-                <!-- Breakdown Onsite Available -->
+                <!-- Breakdown Clinic Available -->
                 <div class="col-md-6">
                     <div class="card shadow-none border rounded bg-light-subtle">
                         <div class="card-body p-2">
-                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-hospital me-1"></i>Available Onsite</h6>
+                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-hospital me-1"></i>Available Clinic</h6>
                             <div class="d-flex justify-content-between mb-1 x-small text-muted">
-                                <span>On Hand Onsite:</span>
+                                <span>On Hand Clinic:</span>
                                 <span>${fmtNum(result.stock_onsite || 0)}</span>
                             </div>
                             <div class="d-flex justify-content-between mb-1 x-small text-danger">
@@ -1061,15 +1123,16 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                 <table class="table table-hover datatable-stok">
                     <thead>
                         <tr>
-                            <th style="width: 110px;">Kode Barang</th>
+                            <th class="text-center" style="width: 80px;">Kode Barang</th>
                             <th>Nama Barang</th>
-                            <th>Satuan</th>
-                            <th class="text-center">Stock On Site</th>
-                            <?php if ($show_hc): ?><th class="text-center">Stok HC</th><?php endif; ?>
-                            <th class="text-center">Sellout Onsite</th>
+                            <th class="text-center">Satuan</th>
+                            <th class="text-center">Stock Clinic</th>
+                            <?php if ($show_hc): ?><th class="text-center">Stock HC</th><?php endif; ?>
+                            <th class="text-center">Sellout Clinic</th>
                             <?php if ($show_hc): ?><th class="text-center">Sellout HC</th><?php endif; ?>
-                            <th class="text-center">Reserve Onsite</th>
+                            <th class="text-center">Reserve Clinic</th>
                             <?php if ($show_hc): ?><th class="text-center">Reserve HC</th><?php endif; ?>
+                             <th class="text-center">Daily Usage</th>
                             <th class="text-center">On Hand Stok</th>
                             <th class="text-center">Available Stok</th>
                             <?php if ($is_history_date): ?><th>Detail</th><?php endif; ?>
@@ -1096,30 +1159,33 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                                 $stok_hc = $stok_hc + (float)$in_transfer_hc - (float)$out_transfer_hc;
                             }
                             
-                            $total_stok = $stok_onsite + ($show_hc ? $stok_hc : 0);
+                             $total_stok = $stok_onsite + ($show_hc ? $stok_hc : 0);
                             
-                            // Task Fix: In history mode, $stok_onsite is already the reconstructed "End of Day" stock.
-                            // The historical sellout is NOT subtracted again because the baseline (Current Odoo) already reflects it.
-                            // In normal mode (Today), $total_sellout is the local pemakaian since the last sync, so it MUST be subtracted.
+                            // Daily Usage logic
+                            $acc_daily_usage = 0;
+                            if (!$is_history_date && $selected_klinik !== 'gudang_utama') {
+                                $acc_daily_usage = calculate_accumulated_usage($selected_klinik, $row['barang_id']);
+                            }
+
                             $total_sellout = $sellout + ($show_hc ? $sellout_hc : 0);
                             if ($is_history_date) {
                                 $on_hand = $total_stok;
                             } else {
-                                $on_hand = $total_stok - $total_sellout;
+                                $on_hand = $total_stok - $total_sellout - $acc_daily_usage;
                             }
                             $available = $on_hand - $reserve_total;
                         ?>
                         <tr>
-                            <td>
-                                <div class="text-truncate" style="max-width: 110px;" title="<?= htmlspecialchars(!empty($row['kode_barang_master']) ? $row['kode_barang_master'] : ($row['kode_barang'] ?? '-')) ?>">
+                            <td class="text-center">
+                                <div class="text-truncate mx-auto" style="max-width: 80px;" title="<?= htmlspecialchars(!empty($row['kode_barang_master']) ? $row['kode_barang_master'] : ($row['kode_barang'] ?? '-')) ?>">
                                     <?= htmlspecialchars(!empty($row['kode_barang_master']) ? $row['kode_barang_master'] : ($row['kode_barang'] ?? '-')) ?>
                                 </div>
                             </td>
                             <td><?= htmlspecialchars($row['nama_barang']) ?></td>
-                            <td class="small">
+                            <td class="small text-center">
                                 <div><?= htmlspecialchars($row['satuan']) ?></div>
                                 <?php if (!empty($row['uom_odoo']) && (float)($row['uom_multiplier'] ?? 1) != 1.0): ?>
-                                    <div class="text-muted small">1 <?= htmlspecialchars($row['satuan']) ?> = <?= htmlspecialchars(fmt_qty($row['uom_multiplier'])) ?> <?= htmlspecialchars($row['uom_odoo']) ?></div>
+                                    <div class="text-muted" style="font-size: 0.6rem; line-height: 1.1;">1 <?= htmlspecialchars($row['satuan']) ?> = <?= htmlspecialchars(fmt_qty($row['uom_multiplier'])) ?> <?= htmlspecialchars($row['uom_odoo']) ?></div>
                                 <?php endif; ?>
                             </td>
                             <td class="text-center">
@@ -1204,6 +1270,9 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                                 <?= fmt_qty($reserve_hc) ?>
                             </td>
                             <?php endif; ?>
+                            <td class="text-center" style="background-color: #f1f5f9;">
+                                <div style="color: #334155;" class="<?= $acc_daily_usage > 0 ? 'fw-bold' : '' ?>"><?= fmt_qty($acc_daily_usage) ?></div>
+                            </td>
                             <td class="text-center <?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'onhand')">
                                 <?= fmt_qty($on_hand) ?>
                             </td>

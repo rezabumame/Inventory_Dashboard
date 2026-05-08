@@ -569,9 +569,9 @@ try {
         ['inventory_booking_pasien', 'done_at', "DATETIME NULL AFTER remark"],
         ['inventory_barang_lokal', 'kode_item', "VARCHAR(50) NULL AFTER id"],
         ['inventory_barang_lokal', 'kategori', "VARCHAR(50) NULL AFTER uom"],
-        ['inventory_barang_lokal', 'odoo_id', "INT NULL AFTER kategori COMMENT 'ID dari inventory_barang jika di-import'"],
+        ['inventory_barang_lokal', 'odoo_id', "INT NULL COMMENT 'ID dari inventory_barang jika di-import' AFTER kategori"],
         ['inventory_stok_lokal', 'qty_gantung', "DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER qty"],
-        ['inventory_history_lokal', 'reference_id', "INT NULL AFTER keterangan COMMENT 'ID dari inventory_pemakaian_bhp jika tipe=pakai'"],
+        ['inventory_history_lokal', 'reference_id', "INT NULL COMMENT 'ID dari inventory_pemakaian_bhp jika tipe=pakai' AFTER keterangan"],
         ['inventory_booking_detail', 'is_lokal', "TINYINT(1) NOT NULL DEFAULT 0 AFTER barang_id"],
         ['inventory_pemakaian_bhp_detail', 'is_lokal', "TINYINT(1) NOT NULL DEFAULT 0 AFTER barang_id"],
     ];
@@ -858,19 +858,51 @@ try {
             KEY idx_status (status)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
     });
-
-    run_migration_task("Schema: Update inventory_history_lokal tipe ENUM", function() use ($conn) {
-        if (!table_exists($conn, "inventory_history_lokal")) return "Skipped";
-        $res = $conn->query("SHOW COLUMNS FROM inventory_history_lokal LIKE 'tipe'");
-        if (!$res) return "Error";
-        $row = $res->fetch_assoc();
-        $type = $row['Type'];
-        if (strpos($type, 'TAMBAH') !== false) return "Already exists";
-        
-        $conn->query("ALTER TABLE inventory_history_lokal MODIFY COLUMN tipe ENUM('TAMBAH', 'KURANG', 'PAKAI') NOT NULL");
-        return "Updated";
+    // Daily Usage & Operational Calendar
+    run_migration_task("Table: inventory_daily_usage_config", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_daily_usage_config", "CREATE TABLE IF NOT EXISTS inventory_daily_usage_config (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            klinik_id INT NOT NULL,
+            barang_id INT NOT NULL,
+            mode ENUM('auto', 'manual') DEFAULT 'auto',
+            manual_value DECIMAL(18,4) DEFAULT 0,
+            last_calculated_rate DECIMAL(18,4) DEFAULT 0,
+            last_realization_date DATE NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_klinik_barang (klinik_id, barang_id),
+            KEY idx_klinik (klinik_id),
+            KEY idx_barang (barang_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
     });
 
+    run_migration_task("Table: inventory_operational_schedule", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_operational_schedule", "CREATE TABLE IF NOT EXISTS inventory_operational_schedule (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            klinik_id INT NOT NULL,
+            day_of_week TINYINT NOT NULL COMMENT '0=Sunday, 1=Monday, ..., 6=Saturday',
+            is_open TINYINT(1) DEFAULT 1,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_klinik_day (klinik_id, day_of_week)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    run_migration_task("Table: inventory_operational_calendar", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_operational_calendar", "CREATE TABLE IF NOT EXISTS inventory_operational_calendar (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            klinik_id INT NOT NULL,
+            date DATE NOT NULL,
+            is_operational TINYINT(1) DEFAULT 0 COMMENT '0=Libur, 1=Buka Override',
+            notes VARCHAR(255) NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_klinik_date (klinik_id, date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    run_migration_task("Data: Daily Usage Settings", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_app_settings')) return "Table not found";
+        $conn->query("INSERT IGNORE INTO inventory_app_settings (k, v) VALUES ('daily_usage_auto_last_sync', '')");
+        return "Settings Initialized";
+    });
 
 } catch (Throwable $e) {
     if ($is_cli) {

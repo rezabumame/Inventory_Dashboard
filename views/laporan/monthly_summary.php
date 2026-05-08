@@ -316,7 +316,7 @@ if (!empty($all_barang_ids)) {
         font-size: 0.75rem;
         letter-spacing: 0.05em;
         border: 1px solid rgba(255,255,255,0.2); /* Clearer border for header */
-        padding: 0.85rem 1rem;
+        padding: 0.5rem 0.75rem;
     }
 
     .table-recap tbody tr:hover {
@@ -324,11 +324,11 @@ if (!empty($all_barang_ids)) {
     }
 
     .table-recap td {
-        padding: 0.85rem 1rem;
+        padding: 0.6rem 0.75rem;
         border-bottom: 1px solid #cbd5e1;
         border-right: 1px solid #cbd5e1; /* Darker vertical line */
         vertical-align: middle;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
     }
 
     .table-recap td:first-child {
@@ -378,9 +378,22 @@ if (!empty($all_barang_ids)) {
     .val-nonzero { font-weight: 700; color: #1e293b; }
 
     .col-data-width {
-        width: 85px !important;
-        min-width: 85px !important;
-        max-width: 85px !important;
+        width: 65px !important;
+        min-width: 65px !important;
+        max-width: 65px !important;
+        text-align: center !important;
+        font-size: 0.85rem !important;
+        padding-left: 0.35rem !important;
+        padding-right: 0.35rem !important;
+    }
+
+    #tableSummary {
+        width: 100% !important;
+        margin-bottom: 0 !important;
+    }
+
+    #tableSummary td:nth-child(2) {
+        width: 40% !important;
     }
 
     .btn-refresh-odoo {
@@ -404,6 +417,44 @@ if (!empty($all_barang_ids)) {
     .form-control-with-icon {
         border-left: none;
     }
+
+    /* Rounded Pagination */
+    .dataTables_wrapper .pagination { gap: 6px; padding-top: 15px; justify-content: flex-end; }
+    .dataTables_wrapper .pagination .page-item .page-link { 
+        border-radius: 50% !important; 
+        width: 36px; 
+        height: 36px; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        border: 1px solid #e2e8f0; 
+        color: #64748b; 
+        font-size: 0.85rem; 
+        font-weight: 500; 
+        margin: 0 2px;
+        padding: 0;
+        transition: all 0.2s ease;
+        background: #ffffff;
+    }
+    .dataTables_wrapper .pagination .page-item.active .page-link { 
+        background-color: #eff6ff !important; 
+        color: #204EAB !important; 
+        border-color: #dbeafe !important; 
+        font-weight: 700;
+        box-shadow: 0 2px 6px rgba(32, 78, 171, 0.12);
+    }
+    .dataTables_wrapper .pagination .page-item:hover:not(.active):not(.disabled) .page-link {
+        background-color: #f8fafc;
+        border-color: #cbd5e1;
+        color: #1e293b;
+        transform: translateY(-1px);
+    }
+    .dataTables_wrapper .pagination .page-item.disabled .page-link {
+        opacity: 0.35;
+        background: #f8fafc;
+        border-color: #f1f5f9;
+    }
+    .dataTables_info { font-size: 0.8rem; color: #94a3b8; padding-top: 15px; }
 </style>
 
 <div class="monthly-summary-container p-3">
@@ -411,12 +462,12 @@ if (!empty($all_barang_ids)) {
     <div class="row mb-3 align-items-start">
         <div class="col page-header">
             <h1 class="mb-0">
-                <i class="fas fa-hospital-user me-2"></i>Rekapitulasi Aktivitas Bulanan
+                <i class="fas fa-hospital-user me-2"></i>Rekapitulasi Pemakaian Bulanan
             </h1>
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-0" style="font-size: 0.85rem;">
                     <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
-                    <li class="breadcrumb-item active">Rekap Bulanan</li>
+                    <li class="breadcrumb-item active">Rekap Pemakaian</li>
                 </ol>
             </nav>
         </div>
@@ -572,9 +623,9 @@ if (!empty($all_barang_ids)) {
                 <table class="table table-recap mb-0" id="tableSummary">
                     <thead>
                         <tr>
-                            <th rowspan="2" style="width: 100px;">Kode Barang</th>
-                            <th rowspan="2">Nama Barang</th>
-                            <th rowspan="2" class="text-center">Satuan</th>
+                            <th rowspan="2" style="width: 80px; white-space: nowrap;">Kode Barang</th>
+                            <th rowspan="2" style="width: 40%;">Nama Barang</th>
+                            <th rowspan="2" class="text-center" style="width: 70px; white-space: nowrap;">Satuan</th>
                             <th colspan="3" class="text-center">Sellout</th>
                             <th colspan="2" class="text-center">Non-Reserve</th>
                             <th colspan="2" class="text-center">Reserve-Sold</th>
@@ -582,13 +633,13 @@ if (!empty($all_barang_ids)) {
                         </tr>
                         <tr>
                             <th class="text-center bg-total col-data-width">Total</th>
-                            <th class="text-center bg-onsite col-data-width">Onsite</th>
+                            <th class="text-center bg-onsite col-data-width">Clinic</th>
                             <th class="text-center bg-hc col-data-width">HC</th>
-                            <th class="text-center bg-onsite col-data-width">Onsite</th>
+                            <th class="text-center bg-onsite col-data-width">Clinic</th>
                             <th class="text-center bg-hc col-data-width">HC</th>
-                            <th class="text-center bg-onsite col-data-width">Onsite</th>
+                            <th class="text-center bg-onsite col-data-width">Clinic</th>
                             <th class="text-center bg-hc col-data-width">HC</th>
-                            <th class="text-center bg-reference-onsite col-data-width">Onsite</th>
+                            <th class="text-center bg-reference-onsite col-data-width">Clinic</th>
                             <th class="text-center bg-reference-hc col-data-width">HC</th>
                         </tr>
                     </thead>
@@ -658,6 +709,25 @@ $(document).ready(function() {
             width: '100%'
         });
     }
+
+    // Initialise DataTable
+    const table = $('#tableSummary').DataTable({
+        pageLength: 10,
+        dom: 'rtp',
+        autoWidth: false,
+        ordering: true,
+        order: [[ 0, "asc" ]],
+        language: {
+            paginate: {
+                previous: "<i class='fas fa-chevron-left'></i>",
+                next: "<i class='fas fa-chevron-right'></i>"
+            }
+        }
+    });
+
+    $('#customSearch').on('keyup', function() {
+        table.search(this.value).draw();
+    });
 
     $('#btnExportExcel').on('click', function() {
         const data = <?= json_encode($final_data) ?>;

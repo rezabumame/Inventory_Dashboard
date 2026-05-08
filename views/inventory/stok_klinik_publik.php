@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../config/settings.php';
 require_once __DIR__ . '/../../lib/stock.php';
+require_once __DIR__ . '/../../lib/usage.php';
 
 // PUBLIC ACCESS CHECK
 $token = $_GET['token'] ?? '';
@@ -66,7 +67,8 @@ if ($active_tab === 'stok') {
         'reserve_onsite' => 0,
         'reserve_hc' => 0,
         'total_sellout_klinik' => 0,
-        'total_sellout_hc' => 0
+        'total_sellout_hc' => 0,
+        'total_daily_usage' => 0
     ];
 
     if ($selected_klinik !== '') {
@@ -326,6 +328,10 @@ if ($active_tab === 'stok') {
                     $summary_stok['reserve_hc'] += (float)($r['reserve_hc'] ?? 0);
                     $summary_stok['total_sellout_klinik'] += (float)($r['sellout_klinik'] ?? 0);
                     $summary_stok['total_sellout_hc'] += (float)($r['sellout_hc'] ?? 0);
+                    
+                    if ($selected_klinik !== 'gudang_utama') {
+                        $summary_stok['total_daily_usage'] += calculate_accumulated_usage($selected_klinik, $r['barang_id']);
+                    }
                 }
             } catch (Exception $e) { die("Query Error: " . $e->getMessage()); }
         }
@@ -434,7 +440,7 @@ if ($active_tab === 'rekap') {
         .last-update { font-size: 0.875rem; color: #6c757d; }
         .card-summary { border: 1px solid #eef0f2; transition: all 0.2s; }
         .card-summary:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        .summary-label { font-size: 0.7rem; font-weight: 700; color: #6c757d; text-transform: uppercase; letter-spacing: 0.5px; }
+        .summary-label { font-size: 0.65rem; font-weight: 700; color: #6c757d; text-transform: uppercase; letter-spacing: 0.5px; }
         .summary-value { font-size: 1.5rem; font-weight: 700; color: #333; }
         .summary-icon { opacity: 0.4; font-size: 1.25rem; }
         .table thead th { background-color: #204EAB; color: white; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; border: 1px solid rgba(255,255,255,0.1); vertical-align: middle; white-space: nowrap; }
@@ -445,6 +451,8 @@ if ($active_tab === 'rekap') {
         .nav-tabs { border-bottom: 2px solid #e2e8f0; }
         .nav-link { font-weight: 600; color: #64748b; border: none !important; padding: 1rem 1.5rem; }
         .nav-link.active { color: #204EAB !important; border-bottom: 2px solid #204EAB !important; background: transparent !important; }
+        .text-reserve-onsite { color: #0891b2 !important; }
+        .text-reserve-hc { color: #0891b2 !important; }
         
         /* Recap Specific Styles */
         .stat-card { border: none; border-radius: 16px; padding: 1.25rem; background: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); transition: transform 0.2s; position: relative; overflow: hidden; height: 100%; }
@@ -464,9 +472,46 @@ if ($active_tab === 'rekap') {
         .val-zero { color: #94a3b8; font-weight: 400; }
         .val-nonzero { font-weight: 700; color: #1e293b; }
 
-        /* Pagination Circular Styling */
-        .dataTables_wrapper .pagination .page-item .page-link { width: 32px; height: 32px; border-radius: 50% !important; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 13px; border: 1px solid #e5e7eb; color: #6b7280; background-color: transparent; }
-        .dataTables_wrapper .pagination .page-item.active .page-link { background-color: #eff6ff !important; color: #204EAB !important; font-weight: 600; border-color: #dbeafe !important; }
+        /* Rounded Pagination */
+        .dataTables_wrapper .pagination { gap: 6px; padding-top: 15px; justify-content: flex-end; }
+        .dataTables_wrapper .pagination .page-item .page-link { 
+            border-radius: 50% !important; 
+            width: 36px; 
+            height: 36px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            border: 1px solid #e2e8f0; 
+            color: #64748b; 
+            font-size: 0.85rem; 
+            font-weight: 500; 
+            margin: 0 2px;
+            padding: 0;
+            transition: all 0.2s ease;
+            background: #ffffff;
+        }
+        .dataTables_wrapper .pagination .page-item.active .page-link { 
+            background-color: #eff6ff !important; 
+            color: #204EAB !important; 
+            border-color: #dbeafe !important; 
+            font-weight: 700;
+            box-shadow: 0 2px 6px rgba(32, 78, 171, 0.12);
+        }
+        .dataTables_wrapper .pagination .page-item:hover:not(.active):not(.disabled) .page-link {
+            background-color: #f8fafc;
+            border-color: #cbd5e1;
+            color: #1e293b;
+            transform: translateY(-1px);
+        }
+        .dataTables_wrapper .pagination .page-item.disabled .page-link {
+            opacity: 0.35;
+            background: #f8fafc;
+            border-color: #f1f5f9;
+        }
+        .dataTables_info { font-size: 0.8rem; color: #94a3b8; padding-top: 15px; }
+        
+        /* Form Switch Custom */
+        .form-check-input:checked { background-color: #204EAB; border-color: #204EAB; }
     </style>
 </head>
 <body>
@@ -488,7 +533,7 @@ if ($active_tab === 'rekap') {
         </li>
         <li class="nav-item">
             <a class="nav-link <?= $active_tab === 'rekap' ? 'active' : '' ?>" href="?page=stok_klinik_publik&token=<?= $token ?>&tab=rekap&klinik_id=<?= $selected_klinik ?>">
-                <i class="fas fa-chart-line me-2"></i>Rekapitulasi Aktivitas Bulanan
+                <i class="fas fa-chart-line me-2"></i>Rekapitulasi Pemakaian Bulanan
             </a>
         </li>
     </ul>
@@ -498,32 +543,49 @@ if ($active_tab === 'rekap') {
     <div class="card mb-4">
         <div class="card-body py-3">
             <div class="row g-3 align-items-end">
-                <div class="col-md-4">
-                    <label class="form-label fw-bold small mb-1"><i class="fas fa-hospital text-primary me-1"></i>Klinik</label>
-                    <form method="GET">
+                <div class="col-md-3">
+                    <form method="GET" id="filterForm">
                         <input type="hidden" name="page" value="stok_klinik_publik">
-                        <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>"><input type="hidden" name="tab" value="stok">
-                        <select name="klinik_id" class="form-select" onchange="this.form.submit()">
-                            <option value="all" <?= $selected_klinik === 'all' ? 'selected' : '' ?>>Semua Klinik</option>
-                            <?php if (!empty($gudang_utama_loc)): ?>
-                                <option value="gudang_utama" <?= $selected_klinik === 'gudang_utama' ? 'selected' : '' ?>>Gudang Utama</option>
+                        <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
+                        <input type="hidden" name="tab" value="<?= htmlspecialchars($active_tab) ?>">
+                        
+                        <div class="d-flex align-items-end gap-3">
+                            <div style="flex: 1;">
+                                <label class="form-label fw-bold small mb-1"><i class="fas fa-hospital text-primary me-1"></i>Klinik</label>
+                                <select name="klinik_id" class="form-select" onchange="this.form.submit()">
+                                    <option value="all" <?= $selected_klinik === 'all' ? 'selected' : '' ?>>Semua Klinik</option>
+                                    <?php if (!empty($gudang_utama_loc)): ?>
+                                        <option value="gudang_utama" <?= $selected_klinik === 'gudang_utama' ? 'selected' : '' ?>>Gudang Utama</option>
+                                    <?php endif; ?>
+                                    <?php foreach ($kliniks as $k): ?>
+                                        <option value="<?= $k['id'] ?>" <?= $selected_klinik == $k['id'] ? 'selected' : '' ?>><?= $k['nama_klinik'] ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            
+                            <?php if ($selected_klinik === 'all' && !empty($gudang_utama_loc)): ?>
+                                <div class="pb-1">
+                                    <div class="form-check form-switch mb-1">
+                                        <input class="form-check-input" type="checkbox" name="include_gudang" value="1" id="includeGudang" <?= $include_gudang ? 'checked' : '' ?> onchange="this.form.submit()">
+                                        <label class="form-check-label small fw-bold" for="includeGudang">Include Gudang Utama</label>
+                                    </div>
+                                </div>
                             <?php endif; ?>
-                            <?php foreach ($kliniks as $k): ?>
-                                <option value="<?= $k['id'] ?>" <?= $selected_klinik == $k['id'] ? 'selected' : '' ?>><?= $k['nama_klinik'] ?></option>
-                            <?php endforeach; ?>
-                        </select>
+                        </div>
                     </form>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label fw-bold small mb-1"><i class="fas fa-calendar-alt text-primary me-1"></i>Tanggal</label>
                     <form method="GET">
                         <input type="hidden" name="page" value="stok_klinik_publik">
-                        <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>"><input type="hidden" name="tab" value="stok">
+                        <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
+                        <input type="hidden" name="tab" value="stok">
                         <input type="hidden" name="klinik_id" value="<?= htmlspecialchars($selected_klinik) ?>">
+                        <?php if ($include_gudang): ?><input type="hidden" name="include_gudang" value="1"><?php endif; ?>
                         <input type="date" name="tanggal" class="form-control" value="<?= htmlspecialchars($filter_date) ?>" min="<?= htmlspecialchars($min_filter_date) ?>" max="<?= htmlspecialchars($today_date) ?>" onchange="this.form.submit()">
                     </form>
                 </div>
-                <div class="col-md-5 text-end"><div class="last-update mb-2">Terakhir update: <?= htmlspecialchars($last_update_text ?? '-') ?></div></div>
+                <div class="col-md-7 text-end"><div class="last-update mb-2">Terakhir update: <?= htmlspecialchars($last_update_text ?? '-') ?></div></div>
             </div>
         </div>
     </div>
@@ -535,22 +597,30 @@ if ($active_tab === 'rekap') {
         </div>
     <?php endif; ?>
 
-    <div class="row mb-4 g-3">
-        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Items</div><div class="summary-value"><?= $summary_stok['total_items'] ?></div></div><i class="fas fa-boxes summary-icon text-primary-custom"></i></div></div></div>
-        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">On Site</div><div class="summary-value"><?= fmt_qty($summary_stok['total_qty']) ?></div></div><i class="fas fa-cubes summary-icon text-primary-custom"></i></div></div></div>
-        <?php if ($show_hc): ?><div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">HC</div><div class="summary-value"><?= fmt_qty($summary_stok['total_qty_hc']) ?></div></div><i class="fas fa-user-nurse summary-icon text-primary-custom"></i></div></div></div><?php endif; ?>
-        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Sellout</div><div class="summary-value"><?= fmt_qty($summary_stok['total_sellout_klinik']) ?></div></div><i class="fas fa-history summary-icon text-primary-custom"></i></div></div></div>
-        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Reserve</div><div class="summary-value"><?= fmt_qty($summary_stok['reserve_onsite']) ?></div></div><i class="fas fa-hospital summary-icon text-primary-custom"></i></div></div></div>
+    <div class="row mb-4 g-2">
+        <div class="col-md"><div class="card card-summary h-100"><div class="card-body p-3 d-flex justify-content-between align-items-center"><div><div class="summary-label">Jenis Barang</div><div class="summary-value"><?= $summary_stok['total_items'] ?></div></div><i class="fas fa-boxes summary-icon text-primary-custom"></i></div></div></div>
+        <div class="col-md"><div class="card card-summary h-100"><div class="card-body p-3 d-flex justify-content-between align-items-center"><div><div class="summary-label">Stock Clinic</div><div class="summary-value"><?= fmt_qty($summary_stok['total_qty']) ?></div></div><i class="fas fa-cubes summary-icon text-primary-custom"></i></div></div></div>
+        <?php if ($show_hc): ?><div class="col-md"><div class="card card-summary h-100"><div class="card-body p-3 d-flex justify-content-between align-items-center"><div><div class="summary-label">Stock HC</div><div class="summary-value"><?= fmt_qty($summary_stok['total_qty_hc']) ?></div></div><i class="fas fa-user-nurse summary-icon text-primary-custom"></i></div></div></div><?php endif; ?>
+        <div class="col-md"><div class="card card-summary h-100"><div class="card-body p-3 d-flex justify-content-between align-items-center"><div><div class="summary-label">Sellout Clinic</div><div class="summary-value"><?= fmt_qty($summary_stok['total_sellout_klinik']) ?></div></div><i class="fas fa-history summary-icon text-primary-custom"></i></div></div></div>
+        <?php if ($show_hc): ?>
+            <div class="col-md"><div class="card card-summary h-100"><div class="card-body p-3 d-flex justify-content-between align-items-center"><div><div class="summary-label">Sellout HC</div><div class="summary-value"><?= fmt_qty($summary_stok['total_sellout_hc']) ?></div></div><i class="fas fa-user-nurse summary-icon text-primary-custom"></i></div></div></div>
+        <?php endif; ?>
+        <div class="col-md"><div class="card card-summary h-100"><div class="card-body p-3 d-flex justify-content-between align-items-center"><div><div class="summary-label">Reserve Clinic</div><div class="summary-value"><?= fmt_qty($summary_stok['reserve_onsite']) ?></div></div><i class="fas fa-hospital summary-icon text-primary-custom"></i></div></div></div>
+        <?php if ($show_hc): ?>
+            <div class="col-md"><div class="card card-summary h-100"><div class="card-body p-3 d-flex justify-content-between align-items-center"><div><div class="summary-label">Reserve HC</div><div class="summary-value"><?= fmt_qty($summary_stok['reserve_hc']) ?></div></div><i class="fas fa-user-nurse summary-icon text-primary-custom"></i></div></div></div>
+        <?php endif; ?>
+        <div class="col-md"><div class="card card-summary h-100" style="background-color: #f1f5f9;"><div class="card-body p-3 d-flex justify-content-between align-items-center"><div><div class="summary-label" style="color: #64748b;">Daily Usage</div><div class="summary-value" style="color: #334155; font-weight: 700;"><?= fmt_qty($summary_stok['total_daily_usage']) ?></div></div><i class="fas fa-clock summary-icon" style="color: #94a3b8; opacity: 0.5;"></i></div></div></div>
     </div>
 
     <div class="card"><div class="card-body p-0"><div class="table-responsive">
         <table class="table table-hover table-bordered mb-0 datatable-stok">
             <thead><tr>
-                <th class="text-center">Kode</th><th class="text-center">Nama Barang</th><th class="text-center">Satuan</th><th class="text-center">On Site</th>
-                <?php if ($show_hc): ?><th class="text-center">HC</th><?php endif; ?>
-                <th class="text-center">Sellout</th><?php if ($show_hc): ?><th class="text-center">Sellout HC</th><?php endif; ?>
-                <th class="text-center">Reserve</th><?php if ($show_hc): ?><th class="text-center">Reserve HC</th><?php endif; ?>
-                <th class="text-center">On Hand</th><th class="text-center">Available</th>
+                <th class="text-center">Kode Barang</th><th class="text-center">Nama Barang</th><th class="text-center">Satuan</th><th class="text-center">Stock Clinic</th>
+                <?php if ($show_hc): ?><th class="text-center">Stock HC</th><?php endif; ?>
+                <th class="text-center">Sellout Clinic</th><?php if ($show_hc): ?><th class="text-center">Sellout HC</th><?php endif; ?>
+                <th class="text-center">Reserve Clinic</th><?php if ($show_hc): ?><th class="text-center">Reserve HC</th><?php endif; ?>
+                <th class="text-center">Daily Usage</th>
+                <th class="text-center">On Hand Stok</th><th class="text-center">Available Stok</th>
             </tr></thead>
             <tbody>
                 <?php foreach ($rows as $r): 
@@ -564,13 +634,26 @@ if ($active_tab === 'rekap') {
                     }
                     $sell = (float)$r['sellout_klinik']; $sell_hc = (float)$r['sellout_hc'];
                     $res = (float)$r['reserve_onsite']; $res_hc = (float)$r['reserve_hc'];
-                    $on_h = $is_history_date ? ($s_on + ($show_hc ? $s_hc : 0)) : (($s_on + ($show_hc ? $s_hc : 0)) - ($sell + ($show_hc ? $sell_hc : 0)));
+                    
+                    $acc_daily_usage = 0;
+                    if ($selected_klinik !== 'gudang_utama') {
+                        $acc_daily_usage = calculate_accumulated_usage($selected_klinik, $r['barang_id']);
+                    }
+                    
+                    $total_stok = $s_on + ($show_hc ? $s_hc : 0);
+                    $total_sellout = $sell + ($show_hc ? $sell_hc : 0);
+                    $on_h = ($total_stok - $total_sellout) - $acc_daily_usage;
                     $avail = $on_h - ($res + ($show_hc ? $res_hc : 0));
                 ?>
                 <tr>
                     <td class="small text-muted text-center"><?= htmlspecialchars($r['kode_barang_master'] ?: $r['kode_barang']) ?></td>
                     <td class="small fw-medium"><?= htmlspecialchars($r['nama_barang']) ?></td>
-                    <td class="small text-muted text-center"><?= htmlspecialchars($r['satuan']) ?></td>
+                    <td class="small text-muted text-center">
+                        <div><?= htmlspecialchars($r['satuan']) ?></div>
+                        <?php if (!empty($r['uom_odoo']) && (float)($r['uom_multiplier'] ?? 1) != 1.0): ?>
+                            <div class="text-muted" style="font-size: 0.6rem; line-height: 1.1;">1 <?= htmlspecialchars($r['satuan']) ?> = <?= htmlspecialchars(fmt_qty($r['uom_multiplier'])) ?> <?= htmlspecialchars($r['uom_odoo']) ?></div>
+                        <?php endif; ?>
+                    </td>
                     <td class="fw-bold text-center"><?= fmt_qty($s_on) ?></td>
                     <?php if ($show_hc): ?>
                         <td class="text-center">
@@ -598,10 +681,13 @@ if ($active_tab === 'rekap') {
                     <?php endif; ?>
                     <td class="text-center <?= $sell > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sell) ?></td>
                     <?php if ($show_hc): ?><td class="text-center <?= $sell_hc > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sell_hc) ?></td><?php endif; ?>
-                    <td class="text-center <?= $res > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>"><?php if($res > 0 && $selected_klinik !== 'all' && $selected_klinik !== 'gudang_utama'): ?><a href="#" class="text-warning fw-bold text-decoration-none" onclick="openStokBreakdown(<?= $r['barang_id'] ?>, '<?= addslashes($r['nama_barang']) ?>'); return false;"><?= fmt_qty($res) ?></a><?php else: ?><?= fmt_qty($res) ?><?php endif; ?></td>
-                    <?php if ($show_hc): ?><td class="text-center <?= $res_hc > 0 ? 'text-warning fw-bold' : 'text-muted small' ?>"><?= fmt_qty($res_hc) ?></td><?php endif; ?>
-                    <td class="text-center <?= $on_h < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>"><?= fmt_qty($on_h) ?></td>
-                    <td class="text-center <?= $avail < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>"><?= fmt_qty($avail) ?></td>
+                    <td class="text-center <?= $res > 0 ? 'text-reserve-onsite fw-bold' : 'text-muted small' ?>"><?= fmt_qty($res) ?></td>
+                    <?php if ($show_hc): ?><td class="text-center <?= $res_hc > 0 ? 'text-reserve-hc fw-bold' : 'text-muted small' ?>"><?= fmt_qty($res_hc) ?></td><?php endif; ?>
+                    <td class="text-center" style="background-color: #f1f5f9;">
+                        <div style="color: #334155;" class="<?= $acc_daily_usage > 0 ? 'fw-bold' : '' ?>"><?= fmt_qty($acc_daily_usage) ?></div>
+                    </td>
+                    <td class="text-center <?= $on_h < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$r['barang_id'] ?>, '<?= addslashes($r['nama_barang']) ?>', 'onhand')"><?= fmt_qty($on_h) ?></td>
+                    <td class="text-center <?= $avail < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$r['barang_id'] ?>, '<?= addslashes($r['nama_barang']) ?>', 'available')"><?= fmt_qty($avail) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -626,11 +712,11 @@ if ($active_tab === 'rekap') {
     </div></div>
 
     <div class="row g-3 mb-4">
-        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Sellout Onsite</div><div class="summary-value"><?= fmt_qty($summary_rekap['sellout_onsite']) ?></div></div><i class="fas fa-hospital summary-icon text-primary-custom"></i></div></div></div>
+        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Sellout Clinic</div><div class="summary-value"><?= fmt_qty($summary_rekap['sellout_onsite']) ?></div></div><i class="fas fa-hospital summary-icon text-primary-custom"></i></div></div></div>
         <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Sellout HC</div><div class="summary-value"><?= fmt_qty($summary_rekap['sellout_hc']) ?></div></div><i class="fas fa-user-nurse summary-icon text-primary-custom"></i></div></div></div>
-        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Res-Sold Onsite</div><div class="summary-value"><?= fmt_qty($summary_rekap['reserve_onsite']) ?></div></div><i class="fas fa-check-circle summary-icon text-primary-custom"></i></div></div></div>
+        <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Res-Sold Clinic</div><div class="summary-value"><?= fmt_qty($summary_rekap['reserve_onsite']) ?></div></div><i class="fas fa-check-circle summary-icon text-primary-custom"></i></div></div></div>
         <div class="col"><div class="card card-summary"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Res-Sold HC</div><div class="summary-value"><?= fmt_qty($summary_rekap['reserve_hc']) ?></div></div><i class="fas fa-check-double summary-icon text-primary-custom"></i></div></div></div>
-        <div class="col"><div class="card card-summary" style="background-color: #f0f9ff;"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Booked Onsite</div><div class="summary-value" style="color:#0369a1"><?= fmt_qty($summary_rekap['reserve_booked_onsite']) ?></div></div><i class="fas fa-calendar-alt summary-icon text-info"></i></div></div></div>
+        <div class="col"><div class="card card-summary" style="background-color: #f0f9ff;"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Booked Clinic</div><div class="summary-value" style="color:#0369a1"><?= fmt_qty($summary_rekap['reserve_booked_onsite']) ?></div></div><i class="fas fa-calendar-alt summary-icon text-info"></i></div></div></div>
         <div class="col"><div class="card card-summary" style="background-color: #f0f9ff;"><div class="card-body p-3 d-flex justify-content-between"><div><div class="summary-label">Booked HC</div><div class="summary-value" style="color:#0369a1"><?= fmt_qty($summary_rekap['reserve_booked_hc']) ?></div></div><i class="fas fa-calendar-check summary-icon text-info"></i></div></div></div>
     </div>
 
@@ -639,8 +725,8 @@ if ($active_tab === 'rekap') {
         <div class="d-flex align-items-center"><label class="small fw-bold text-muted me-2 mb-0">Cari:</label><input type="text" id="customSearch" class="form-control form-control-sm" style="width: 200px;"></div>
     </div><div class="table-responsive"><table class="table table-bordered mb-0" id="tableSummary" style="font-size:0.85rem">
         <thead>
-            <tr><th rowspan="2" class="text-center">Kode</th><th rowspan="2">Nama Barang</th><th rowspan="2" class="text-center">Satuan</th><th colspan="3" class="text-center">Sellout</th><th colspan="2" class="text-center">Non-Reserve</th><th colspan="2" class="text-center">Reserve-Sold</th><th colspan="2" class="text-center">Reserve-Booked</th></tr>
-            <tr><th class="text-center">Total</th><th class="text-center">Onsite</th><th class="text-center">HC</th><th class="text-center">Onsite</th><th class="text-center">HC</th><th class="text-center">Onsite</th><th class="text-center">HC</th><th class="text-center">Onsite</th><th class="text-center">HC</th></tr>
+            <tr><th rowspan="2" class="text-center">Kode Barang</th><th rowspan="2">Nama Barang</th><th rowspan="2" class="text-center">Satuan</th><th colspan="3" class="text-center">Sellout</th><th colspan="2" class="text-center">Non-Reserve</th><th colspan="2" class="text-center">Reserve-Sold</th><th colspan="2" class="text-center">Reserve-Booked</th></tr>
+            <tr><th class="text-center">Total</th><th class="text-center">Clinic</th><th class="text-center">HC</th><th class="text-center">Clinic</th><th class="text-center">HC</th><th class="text-center">Clinic</th><th class="text-center">HC</th><th class="text-center">Clinic</th><th class="text-center">HC</th></tr>
         </thead>
         <tbody>
             <?php foreach ($final_data as $row): ?>
@@ -673,12 +759,30 @@ if ($active_tab === 'rekap') {
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
 $(document).ready(function() {
+    window.__stokKlinikContext = {
+        klinikId: <?= json_encode($selected_klinik === 'all' ? 0 : (int)$selected_klinik) ?>,
+        tanggal: <?= json_encode($filter_date ?? date('Y-m-d')) ?>,
+        token: <?= json_encode($token) ?>
+    };
+
     <?php if ($active_tab === 'stok'): ?>
-    $('.datatable-stok').DataTable({ "order": [[ 0, "asc" ]], "pageLength": 10, "lengthChange": false, "language": { "search": "Cari:", "paginate": { "next": '<i class="fas fa-chevron-right"></i>', "previous": '<i class="fas fa-chevron-left"></i>' } } });
+    $('.datatable-stok').DataTable({ 
+        "order": [[ 0, "asc" ]], 
+        "pageLength": 10, 
+        "lengthChange": false, 
+        "language": { "search": "Cari:", "paginate": { "next": '<i class="fas fa-chevron-right"></i>', "previous": '<i class="fas fa-chevron-left"></i>' } } 
+    });
     <?php endif; ?>
 
     <?php if ($active_tab === 'rekap'): ?>
-    var table = $('#tableSummary').DataTable({ "dom": 'rtp', "pageLength": 10, "lengthChange": false, "ordering": false, "language": { "paginate": { "next": '<i class="fas fa-chevron-right"></i>', "previous": '<i class="fas fa-chevron-left"></i>' } } });
+    var table = $('#tableSummary').DataTable({ 
+        "dom": 'rtp', 
+        "pageLength": 10, 
+        "lengthChange": false, 
+        "ordering": true,
+        "order": [[ 0, "asc" ]],
+        "language": { "paginate": { "next": '<i class="fas fa-chevron-right"></i>', "previous": '<i class="fas fa-chevron-left"></i>' } } 
+    });
     $('#customSearch').on('keyup', function() { table.search(this.value).draw(); });
     $('#btnExportExcel').on('click', function() {
         const data = <?= json_encode($final_data ?? []) ?>;
@@ -693,7 +797,179 @@ $(document).ready(function() {
 });
 
 function loadHCDetail(bId, kId, name) { $('#hcDetailContent').html('...'); var m = new bootstrap.Modal(document.getElementById('modalHCDetail')); m.show(); $.ajax({ url: 'api/ajax_hc_detail.php', method: 'POST', data: { barang_id: bId, klinik_id: kId, token: '<?= $token ?>' }, success: function(r) { $('#hcDetailContent').html(r); } }); }
-function openStokBreakdown(bId, name) { var m = new bootstrap.Modal(document.getElementById('modalStokBreakdown')); m.show(); $('#stokBreakdownBody').html('...'); $.ajax({ url: 'api/ajax_stok_klinik_breakdown.php', method: 'POST', dataType: 'json', data: { klinik_id: <?= (int)$selected_klinik ?>, barang_id: bId, tanggal: "<?= $filter_date ?? '' ?>", token: "<?= $token ?>" } }).then(function(res) { if(!res || !res.success) { $('#stokBreakdownBody').html('Err'); return; } var html = '<h5>' + name + '</h5><p>Rekonstruksi selesai. Stok tersedia: ' + res.result.tersedia + '</p>'; $('#stokBreakdownBody').html(html); }); }
+
+function fmtNum(n) {
+    if (n === null || n === undefined) return "0";
+    var s = parseFloat(n).toString();
+    return s === "" ? "0" : s;
+}
+
+function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
+    var modalEl = document.getElementById('modalStokBreakdown');
+    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+    var body = document.getElementById('stokBreakdownBody');
+    body.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div><p class="text-muted mt-2">Memuat detail...</p></div>';
+
+    $.ajax({
+        url: 'api/ajax_stok_klinik_breakdown.php',
+        method: 'POST',
+        dataType: 'json',
+        data: { 
+            klinik_id: window.__stokKlinikContext.klinikId, 
+            barang_id: barangId, 
+            tanggal: window.__stokKlinikContext.tanggal,
+            token: window.__stokKlinikContext.token
+        }
+    }).then(function(res) {
+        if (!res || !res.success) {
+            body.innerHTML = '<div class="alert alert-danger mb-0">Gagal memuat detail.</div>';
+            return;
+        }
+        var b = res.barang || {};
+        var lastU = (res.last_update && res.last_update.text) ? res.last_update.text : '-';
+        var baseOn = (res.baseline && res.baseline.onsite) ? res.baseline.onsite : 0;
+        var baseHc = (res.baseline && res.baseline.hc) ? res.baseline.hc : 0;
+        var rb = res.rollback || {};
+        var rbe = rb.events || {};
+        var pem = Array.isArray(rbe.pemakaian) ? rbe.pemakaian : [];
+        var trf = Array.isArray(rbe.transfers) ? rbe.transfers : [];
+        var periodPem = Array.isArray(res.period_usage) ? res.period_usage : [];
+        var reserve = res.reserve || {};
+        var reserveOn = reserve.onsite || 0;
+        var reserveHc = reserve.hc || 0;
+        var resEvents = Array.isArray(reserve.events) ? reserve.events : [];
+        var result = res.result || {};
+
+        var pemRows = pem.length ? pem.map(function(p) {
+            var jenis = (p.jenis_pemakaian === 'hc') ? '<span class="badge bg-info x-small">HC</span>' : '<span class="badge bg-light text-dark x-small border">Klinik</span>';
+            var tgl = p.tanggal || '';
+            if (p.created_at) {
+                var dt = new Date(p.created_at);
+                if (!isNaN(dt)) {
+                    var pad = function(n) { return n.toString().padStart(2, '0'); };
+                    tgl = pad(dt.getDate()) + '/' + pad(dt.getMonth()+1) + '/' + dt.getFullYear() + ' ' + pad(dt.getHours()) + ':' + pad(dt.getMinutes());
+                }
+            }
+            return '<tr><td class="ps-3">' + $('<div>').text(p.nomor_pemakaian || '').html() + '</td><td>' + $('<div>').text(tgl).html() + '</td><td>' + jenis + '</td><td class="text-end pe-3 fw-semibold">' + fmtNum(p.qty || 0) + '</td></tr>';
+        }).join('') : '<tr><td colspan="4" class="text-center text-muted py-2">Tidak ada transaksi pemakaian</td></tr>';
+
+        var trfRows = trf.length ? trf.map(function(t) {
+            var level = (t.level === 'hc') ? '<span class="badge bg-info x-small">HC</span>' : '<span class="badge bg-light text-dark x-small border">Klinik</span>';
+            return '<tr><td class="ps-3 text-muted">#' + (t.transfer_id || '-') + '</td><td>' + (t.tipe_transaksi || '-') + ' ' + level + '</td><td>' + $('<div>').text(t.last_at || '').html() + '</td><td class="text-end pe-3 fw-semibold">' + fmtNum(t.qty || 0) + '</td></tr>';
+        }).join('') : '<tr><td colspan="4" class="text-center text-muted py-2">Tidak ada transaksi transfer</td></tr>';
+
+        var resRows = resEvents.length ? resEvents.map(function(re) {
+            return '<tr><td class="ps-3">' + $('<div>').text(re.nomor_booking || '-').html() + '</td><td>' + $('<div>').text(re.tanggal_pemeriksaan || '-').html() + '</td><td>' + $('<div>').text(re.status_booking || '-').html() + '</td><td class="text-end pe-3 fw-semibold">' + fmtNum(re.qty || 0) + '</td></tr>';
+        }).join('') : '<tr><td colspan="4" class="text-center text-muted py-2">Tidak ada reservasi aktif</td></tr>';
+
+        var isHistory = (window.__stokKlinikContext.tanggal !== new Date().toISOString().split('T')[0]);
+        var adjLabel = isHistory ? 'Penyesuaian (Rollback):' : 'Sellout:';
+        var adjClass = isHistory ? 'text-success' : 'text-primary';
+
+        var titleIcon = type === 'onhand' ? 'fas fa-box' : 'fas fa-calendar-check';
+        var titleText = type === 'onhand' ? 'Detail Stok On Hand' : 'Detail Stok Available';
+        document.querySelector('#modalStokBreakdown .modal-title').innerHTML = `<i class="${titleIcon} me-2 text-primary-custom"></i>${titleText}`;
+
+        body.innerHTML = `
+            <div class="border rounded bg-light p-2 mb-2">
+                <div class="row g-0 align-items-center">
+                    <div class="col-8 border-end pe-2">
+                        <div class="x-small text-muted text-uppercase fw-bold" style="font-size: 0.65rem;">Barang</div>
+                        <div class="fw-bold text-primary-custom text-truncate small">
+                            ${$('<div>').text((b.kode_barang || '-') + ' - ' + (b.nama_barang || namaBarang)).html()}
+                        </div>
+                    </div>
+                    <div class="col-4 ps-2 text-center">
+                        ${type === 'onhand' ? `
+                            <div class="x-small text-muted text-uppercase fw-bold" style="font-size: 0.65rem;">On Hand Total</div>
+                            <div class="h5 mb-0 fw-bold text-dark">${fmtNum(result.stock_total || 0)}</div>
+                        ` : `
+                            <div class="x-small text-primary-custom text-uppercase fw-bold" style="font-size: 0.65rem;">Available Stok</div>
+                            <div class="h5 mb-0 fw-bold text-primary-custom">${fmtNum(result.tersedia || 0)}</div>
+                        `}
+                    </div>
+                </div>
+            </div>
+
+            ${type === 'onhand' ? `
+            <div class="row g-2 mb-3">
+                <div class="col-md-6">
+                    <div class="card shadow-none border rounded bg-light-subtle">
+                        <div class="card-body p-2">
+                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-hospital me-1"></i>Stok Clinic</h6>
+                            <div class="d-flex justify-content-between mb-1 x-small text-muted"><span>Stok Odoo:</span><span>${fmtNum(baseOn)}</span></div>
+                            <div class="d-flex justify-content-between mb-1 x-small ${adjClass}"><span>${adjLabel}</span><span class="fw-bold">${(function(){
+                                var val = (rb.out_transfer || 0) - (rb.in_transfer || 0) + (rb.sellout_klinik || 0);
+                                if (isHistory) return (val >= 0 ? '+' : '-') + ' ' + fmtNum(Math.abs(val));
+                                else return (val >= 0 ? '-' : '+') + ' ' + fmtNum(Math.abs(val));
+                            })()}</span></div>
+                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-dark"><span>Total Clinic:</span><span>${fmtNum(result.stock_onsite || 0)}</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card shadow-none border rounded bg-light-subtle">
+                        <div class="card-body p-2">
+                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-user-nurse me-1"></i>Stok HC</h6>
+                            <div class="d-flex justify-content-between mb-1 x-small text-muted"><span>Stok Odoo:</span><span>${fmtNum(baseHc)}</span></div>
+                            <div class="d-flex justify-content-between mb-1 x-small ${adjClass}"><span>${adjLabel}</span><span class="fw-bold">${(function(){
+                                var val = (rb.out_transfer_hc || 0) - (rb.in_transfer_hc || 0) + (rb.sellout_hc || 0);
+                                if (isHistory) return (val >= 0 ? '+' : '-') + ' ' + fmtNum(Math.abs(val));
+                                else return (val >= 0 ? '-' : '+') + ' ' + fmtNum(Math.abs(val));
+                            })()}</span></div>
+                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-dark"><span>Total HC:</span><span>${fmtNum(result.stock_hc || 0)}</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ` : `
+            <div class="row g-2 mb-3">
+                <div class="col-md-6">
+                    <div class="card shadow-none border rounded bg-light-subtle">
+                        <div class="card-body p-2">
+                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-hospital me-1"></i>Available Clinic</h6>
+                            <div class="d-flex justify-content-between mb-1 x-small text-muted"><span>On Hand Clinic:</span><span>${fmtNum(result.stock_onsite || 0)}</span></div>
+                            <div class="d-flex justify-content-between mb-1 x-small text-danger"><span>Reservasi:</span><span class="fw-bold">-${fmtNum(reserveOn)}</span></div>
+                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-primary-custom"><span>Total Available:</span><span>${fmtNum((result.stock_onsite || 0) - reserveOn)}</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card shadow-none border rounded bg-light-subtle">
+                        <div class="card-body p-2">
+                            <h6 class="fw-bold mb-2 small border-bottom pb-1"><i class="fas fa-user-nurse me-1"></i>Available HC</h6>
+                            <div class="d-flex justify-content-between mb-1 x-small text-muted"><span>On Hand HC:</span><span>${fmtNum(result.stock_hc || 0)}</span></div>
+                            <div class="d-flex justify-content-between mb-1 x-small text-danger"><span>Reservasi:</span><span class="fw-bold">-${fmtNum(reserveHc)}</span></div>
+                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-primary-custom"><span>Total Available:</span><span>${fmtNum((result.stock_hc || 0) - reserveHc)}</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion" id="accordionDetailRes">
+                <div class="accordion-item border rounded mb-2 overflow-hidden">
+                    <h2 class="accordion-header"><button class="accordion-button collapsed py-2 small fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReserve"><i class="fas fa-calendar-check me-2"></i> Daftar Reservasi (Booking)</button></h2>
+                    <div id="collapseReserve" class="accordion-collapse collapse" data-bs-parent="#accordionDetailRes"><div class="accordion-body p-0"><div class="table-responsive"><table class="table table-sm mb-0"><thead class="bg-light"><tr><th class="ps-3">No. Booking</th><th>Tgl Pemeriksaan</th><th>Tipe</th><th class="text-end pe-3">Qty</th></tr></thead><tbody class="small">${resRows}</tbody></table></div></div></div>
+                </div>
+            </div>
+            `}
+
+            ${type === 'onhand' ? `
+            <div class="accordion" id="accordionDetailTrans">
+                <div class="accordion-item border rounded mb-2 overflow-hidden">
+                    <h2 class="accordion-header"><button class="accordion-button collapsed py-2 small fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePemakaian"><i class="fas fa-list-ul me-2"></i> Daftar Transaksi Pemakaian</button></h2>
+                    <div id="collapsePemakaian" class="accordion-collapse collapse" data-bs-parent="#accordionDetailTrans"><div class="accordion-body p-0"><div class="table-responsive"><table class="table table-sm mb-0"><thead class="bg-light"><tr><th class="ps-3">No. Pemakaian</th><th>Tanggal</th><th>Jenis</th><th class="text-end pe-3">Qty</th></tr></thead><tbody class="small">${pemRows}</tbody></table></div></div></div>
+                </div>
+                <div class="accordion-item border rounded mb-2 overflow-hidden">
+                    <h2 class="accordion-header"><button class="accordion-button collapsed py-2 small fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTransfer"><i class="fas fa-exchange-alt me-2"></i> Daftar Transaksi Transfer</button></h2>
+                    <div id="collapseTransfer" class="accordion-collapse collapse" data-bs-parent="#accordionDetailTrans"><div class="accordion-body p-0"><div class="table-responsive"><table class="table table-sm mb-0"><thead class="bg-light"><tr><th class="ps-3">Ref</th><th>Tipe</th><th>Waktu</th><th class="text-end pe-3">Qty</th></tr></thead><tbody class="small">${trfRows}</tbody></table></div></div></div>
+                </div>
+            </div>
+            ` : ''}
+        `;
+    });
+}
 function fmt_qty(v) { var n = parseFloat(v || 0); return (n % 1 === 0) ? n : n.toFixed(2); }
 </script>
 </body>
