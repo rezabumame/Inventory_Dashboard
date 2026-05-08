@@ -85,7 +85,7 @@ if ($filter_q !== '') {
     $search_where_list = " AND (pb.nomor_pemakaian LIKE ? OR k.nama_klinik LIKE ? OR u_created.nama_lengkap LIKE ? OR u_hc.nama_lengkap LIKE ? OR EXISTS (SELECT 1 FROM inventory_pemakaian_bhp_detail pbd2 LEFT JOIN inventory_barang b2 ON pbd2.barang_id = b2.id AND pbd2.is_lokal = 0 LEFT JOIN inventory_barang_lokal bl2 ON pbd2.barang_id = bl2.id AND pbd2.is_lokal = 1 WHERE pbd2.pemakaian_bhp_id = pb.id AND (b2.nama_barang LIKE ? OR b2.kode_barang LIKE ? OR bl2.nama_item LIKE ?)))";
     $search_params = [$q_param, $q_param, $q_param, $q_param, $q_param, $q_param, $q_param];
     $search_types = "sssssss";
-    $search_where_out = " AND (pb.nomor_pemakaian LIKE ? OR k.nama_klinik LIKE ? OR u_created.nama_lengkap LIKE ? OR u_hc.nama_lengkap LIKE ? OR b.nama_barang LIKE ? OR b.kode_barang LIKE ?)";
+    $search_where_out = " AND (pb.nomor_pemakaian LIKE ? OR k.nama_klinik LIKE ? OR u_created.nama_lengkap LIKE ? OR u_hc.nama_lengkap LIKE ? OR b.nama_barang LIKE ? OR b.kode_barang LIKE ? OR b.nama_barang LIKE ?)";
 }
 
 if ($active_tab === 'data_out') {
@@ -151,7 +151,7 @@ if ($active_tab == 'list') {
             k.nama_klinik,
             u_created.nama_lengkap as created_by_name,
             u_hc.nama_lengkap as hc_name,
-            (SELECT COUNT(*) FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = pb.id) as total_items_detail
+            (SELECT COUNT(DISTINCT barang_id, is_lokal) FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = pb.id) as total_items_detail
         FROM inventory_pemakaian_bhp pb
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id

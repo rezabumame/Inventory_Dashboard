@@ -305,14 +305,19 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
     .fw-800 { font-weight: 800; }
 </style>
 
-<div class="container-fluid settings-container py-4">
+<div class="container-fluid py-4">
     <!-- Header Section -->
-    <div class="page-header d-flex justify-content-between align-items-center">
-        <div>
-            <h1 class="h3 mb-1 fw-800" style="color: var(--bumame-blue); letter-spacing: -0.02em;">
-                Pengaturan Sistem
+    <div class="row mb-3 align-items-center">
+        <div class="col">
+            <h1 class="h3 mb-1 fw-bold" style="color: #204EAB;">
+                <i class="fas fa-cogs me-2"></i>Pengaturan Sistem
             </h1>
-            <p class="text-muted mb-0 small fw-500">Konfigurasi integrasi Odoo, Webhook, dan Keamanan Sistem</p>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="index.php?page=dashboard" class="text-decoration-none">Dashboard</a></li>
+                    <li class="breadcrumb-item active">Pengaturan Sistem</li>
+                </ol>
+            </nav>
         </div>
     </div>
 

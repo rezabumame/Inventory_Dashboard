@@ -97,7 +97,17 @@ $stmt_original->execute();
 $original_details_result = $stmt_original->get_result();
 while ($row = $original_details_result->fetch_assoc()) {
     $key = $row['barang_id'] . '_' . ($row['is_lokal'] ?? 0);
-    $original_details_data[$key] = $row;
+    if (isset($original_details_data[$key])) {
+        $original_details_data[$key]['qty'] += (float)$row['qty'];
+        if (!empty($row['catatan_item'])) {
+            $existing_note = (string)($original_details_data[$key]['catatan_item'] ?? '');
+            if (stripos($existing_note, $row['catatan_item']) === false) {
+                $original_details_data[$key]['catatan_item'] = ($existing_note !== '' ? $existing_note . '; ' : '') . $row['catatan_item'];
+            }
+        }
+    } else {
+        $original_details_data[$key] = $row;
+    }
 }
 
 // If pending edit or has history, prepare the "diff" view
@@ -241,9 +251,17 @@ if ($has_history && $pending_payload) {
                 ];
             }
         }
+        
+        // Build map for comparison in backward compatibility block
+        $original_map = [];
+        foreach ($original_details_data as $row) {
+            $key = $row['barang_id'] . '_' . ($row['is_lokal'] ?? 0);
+            $original_map[$key] = $row;
+        }
+
         foreach ($proposed_items_map as $key => $proposed_item) {
-            if (isset($original_details_data[$key])) {
-                $original_item = $original_details_data[$key];
+            if (isset($original_map[$key])) {
+                $original_item = $original_map[$key];
                 $is_qty_changed = (float)$original_item['qty'] !== (float)$proposed_item['qty'];
                 $is_satuan_changed = trim((string)$original_item['satuan_display']) !== trim((string)$proposed_item['satuan_display']);
                 $is_catatan_changed = trim((string)($original_item['catatan_item'] ?? '')) !== trim((string)($proposed_item['catatan_item'] ?? ''));
@@ -256,13 +274,13 @@ if ($has_history && $pending_payload) {
                     $proposed_item['change_type'] = 'unchanged';
                 }
                 $display_details[] = $proposed_item;
-                unset($original_details_data[$key]);
+                unset($original_map[$key]);
             } else {
                 $proposed_item['change_type'] = 'added';
                 $display_details[] = $proposed_item;
             }
         }
-        foreach ($original_details_data as $bid => $original_item) {
+        foreach ($original_map as $bid => $original_item) {
             $original_item['change_type'] = 'removed';
             $display_details[] = $original_item;
         }
@@ -271,8 +289,8 @@ if ($has_history && $pending_payload) {
     usort($display_details, fn($a, $b) => ($a['barang_id'] <=> $b['barang_id']));
 
 } else {
-    // If not pending edit, use original details from the map
-    foreach ($original_details_data as $bid => $original_item) {
+    // If not pending edit, use consolidated original details
+    foreach ($original_details_data as $original_item) {
         $display_details[] = $original_item;
     }
     // Sort for consistent output
