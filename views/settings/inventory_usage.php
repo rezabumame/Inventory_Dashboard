@@ -309,7 +309,7 @@ $last_sync = get_setting('daily_usage_auto_last_sync', '-');
                                         </div>
                                     </td>
                                     <td class="text-center fw-bold text-muted">
-                                        <?= round($u['last_calculated_rate'], 0) ?>
+                                        <?= round((float)($u['last_calculated_rate'] ?? 0), 0) ?>
                                     </td>
                                     <td class="text-center">
                                         <div class="input-group input-group-sm">
