@@ -282,7 +282,7 @@ if ($active_tab == 'list') {
         WHERE $base_where $search_where_list
         AND pb.tanggal >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
         GROUP BY DATE(pb.tanggal), pb.klinik_id, pb.jenis_pemakaian
-        HAVING SUM(pb.is_auto = 1) > 0 AND SUM(pb.is_auto = 0) = 0
+        HAVING SUM(pb.is_auto = 1) > 0 AND SUM(pb.is_auto = 0 AND pb.status = 'active') = 0
         ORDER BY tgl DESC, k.nama_klinik ASC
         LIMIT 100
     ";
