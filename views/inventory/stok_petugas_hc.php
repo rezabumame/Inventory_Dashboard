@@ -572,6 +572,28 @@ if ($bulk_cancel) {
                                 <?php if (!$petugas_row && $role !== 'petugas_hc'): ?>
                                     <div class="alert alert-info mb-0"><i class="fas fa-info-circle"></i> Pilih petugas untuk melihat item stok tas.</div>
                                 <?php else: ?>
+                                    <?php
+                                        // --- OPTIMASI START ---
+                                        // Pre-fetch all transfer in qty for the current petugas and klinik to avoid query in loop
+                                        $agg_transfer_in = [];
+                                        if ($selected_klinik > 0 && $petugas_user_id > 0) {
+                                            $sql_agg = "SELECT barang_id, COALESCE(SUM(qty), 0) AS total_in 
+                                                       FROM inventory_hc_petugas_transfer 
+                                                       WHERE klinik_id = $selected_klinik 
+                                                       AND user_hc_id = $petugas_user_id";
+                                            if ($u !== '') {
+                                                $sql_agg .= " AND created_at > '" . $conn->real_escape_string($u) . "'";
+                                            }
+                                            $sql_agg .= " GROUP BY barang_id";
+                                            $res_agg = $conn->query($sql_agg);
+                                            if ($res_agg) {
+                                                while ($row_agg = $res_agg->fetch_assoc()) {
+                                                    $agg_transfer_in[(int)$row_agg['barang_id']] = (float)$row_agg['total_in'];
+                                                }
+                                            }
+                                        }
+                                        // --- OPTIMASI END ---
+                                    ?>
                                     <div class="d-flex justify-content-between align-items-center mb-2">
                                         <div class="fw-semibold"><?= htmlspecialchars($petugas_row['nama_lengkap'] ?? '') ?></div>
                                     </div>
@@ -588,21 +610,7 @@ if ($bulk_cancel) {
                                             <tbody>
                                                 <?php foreach ($rows as $r): 
                                                     $bid = (int)($r['barang_id'] ?? 0);
-                                                    $transfer_in_qty = 0;
-                                                    if ($bid > 0 && $selected_klinik > 0 && $petugas_user_id > 0) {
-                                                        $sql_tr = "SELECT COALESCE(SUM(qty), 0) AS total_in 
-                                                            FROM inventory_hc_petugas_transfer 
-                                                            WHERE klinik_id = $selected_klinik 
-                                                            AND user_hc_id = $petugas_user_id 
-                                                            AND barang_id = $bid";
-                                                        if ($u !== '') {
-                                                            $sql_tr .= " AND created_at > '" . $conn->real_escape_string($u) . "'";
-                                                        }
-                                                        $res_tr = $conn->query($sql_tr);
-                                                        if ($res_tr && ($r_tr = $res_tr->fetch_assoc())) {
-                                                            $transfer_in_qty = (float)$r_tr['total_in'];
-                                                        }
-                                                    }
+                                                    $transfer_in_qty = $agg_transfer_in[$bid] ?? 0;
                                                 ?>
                                                     <tr>
                                                         <td><?= htmlspecialchars($r['kode_barang'] ?? '-') ?></td>
