@@ -134,6 +134,20 @@ try {
             throw new Exception("Data lama tidak ditemukan");
         }
 
+        // Block edit if any pending revision exists for this record.
+        // Super Admin is exempt — they can always edit directly.
+        $is_super_admin_early = $_SESSION['role'] === 'super_admin';
+        if (!$is_super_admin_early) {
+            $original_id_check = (int)($old_header['parent_id'] ?: $edit_id);
+            $stmt_pending_chk = $conn->prepare("SELECT COUNT(*) as cnt FROM inventory_pemakaian_bhp WHERE parent_id = ? AND status = 'pending_approval_spv'");
+            $stmt_pending_chk->bind_param("i", $original_id_check);
+            $stmt_pending_chk->execute();
+            $pending_cnt = (int)($stmt_pending_chk->get_result()->fetch_assoc()['cnt'] ?? 0);
+            if ($pending_cnt > 0) {
+                throw new Exception("Tidak dapat diedit — masih ada {$pending_cnt} revisi yang menunggu approval SPV. Selesaikan terlebih dahulu.");
+            }
+        }
+
         // Use usage date (tanggal) to determine if this is a "historical" record
         $usage_date = date('Y-m-d', strtotime($old_header['tanggal']));
         $today = date('Y-m-d');
@@ -207,6 +221,16 @@ try {
                     if (empty($request_ops)) {
                         throw new Exception("Detail perubahan item wajib dipilih (Tambah/Ubah/Hapus)");
                     }
+                    $has_real_change = false;
+                    foreach ($request_ops as $op) {
+                        if (in_array($op['op'] ?? '', ['add', 'update', 'remove'], true)) {
+                            $has_real_change = true;
+                            break;
+                        }
+                    }
+                    if (!$has_real_change) {
+                        throw new Exception("Belum ada perubahan item. Pilih minimal 1 operasi Tambah, Ubah, atau Hapus.");
+                    }
 
                     $stmt_old_items = $conn->prepare("SELECT id, barang_id, is_lokal, qty, satuan, catatan_item FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
                     $stmt_old_items->bind_param("i", $edit_id);
@@ -237,6 +261,7 @@ try {
                             $validated_ops[] = [
                                 'op' => 'add',
                                 'barang_id' => $bid,
+                                'is_lokal' => (int)($op['is_lokal'] ?? 0),
                                 'qty' => $qty_op,
                                 'satuan' => $satuan_op,
                                 'catatan_item' => (string)($op['catatan_item'] ?? '')
@@ -278,12 +303,14 @@ try {
                             'detail_id' => $detail_id,
                             'before' => [
                                 'barang_id' => (int)$before['barang_id'],
+                                'is_lokal' => (int)($before['is_lokal'] ?? 0),
                                 'qty' => (float)$before['qty'],
                                 'satuan' => (string)$before['satuan'],
                                 'catatan_item' => (string)($before['catatan_item'] ?? '')
                             ],
                             'after' => [
                                 'barang_id' => $new_bid,
+                                'is_lokal' => (int)($op['is_lokal'] ?? (int)($before['is_lokal'] ?? 0)),
                                 'qty' => $new_qty,
                                 'satuan' => $new_satuan,
                                 'catatan_item' => (string)($op['catatan_item'] ?? '')
@@ -303,8 +330,9 @@ try {
                     $next_rev = $max_rev + 1;
                     $nomor_revisi = $original_nomor . "-R" . $next_rev;
 
-                    // Fetch current active items for the original record
-                    // TASK: Logic must account for all PRIOR revisions that are still PENDING approval
+                    // Fetch current active items for the original record.
+                    // Delta is computed relative to the original record only (not pending revisions),
+                    // so the edit modal and delta baseline are always in sync.
                     $stmt_current_active_items = $conn->prepare("SELECT barang_id, is_lokal, qty, satuan, catatan_item FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
                     $stmt_current_active_items->bind_param("i", $original_id); 
                     $stmt_current_active_items->execute();
@@ -319,39 +347,32 @@ try {
                         ];
                     }
 
-                    // APPLY PENDING DELTAS FROM PREVIOUS UNAPPROVED REVISIONS
-                    $stmt_pending_deltas = $conn->prepare("
-                        SELECT d.barang_id, d.qty 
-                        FROM inventory_pemakaian_bhp_detail d
-                        JOIN inventory_pemakaian_bhp h ON d.pemakaian_bhp_id = h.id
-                        WHERE h.parent_id = ? AND h.status = 'pending_approval_spv' AND h.id < ?
-                    ");
-                    // We only want to look at R1, R2, R3 etc that were created BEFORE this new revision but NOT YET APPROVED
-                    // Since this logic runs BEFORE inserting the new R record, we don't have its ID yet, but we can pass a dummy large ID or handle it.
-                    // Actually, let's just get all pending revisions for this parent.
-                    $stmt_pending_deltas->bind_param("ii", $original_id, $edit_id); // using $edit_id here is tricky if it's a new rev
-                    // Let's refine the query:
-                    $stmt_pending_deltas = $conn->prepare("
-                        SELECT d.barang_id, d.qty 
-                        FROM inventory_pemakaian_bhp_detail d
-                        JOIN inventory_pemakaian_bhp h ON d.pemakaian_bhp_id = h.id
-                        WHERE h.parent_id = ? AND h.status = 'pending_approval_spv'
-                    ");
-                    $stmt_pending_deltas->bind_param("i", $original_id);
-                    $stmt_pending_deltas->execute();
-                    $pending_deltas_res = $stmt_pending_deltas->get_result();
-                    while ($p_row = $pending_deltas_res->fetch_assoc()) {
-                        $bid_p = (int)$p_row['barang_id'];
-                        if (isset($current_active_items_map[$bid_p])) {
-                            $current_active_items_map[$bid_p]['qty'] += (float)$p_row['qty'];
-                        } else {
-                            // If it's a new item added in a pending revision
-                            $current_active_items_map[$bid_p] = [
-                                'qty' => (float)$p_row['qty'],
-                                'satuan' => '', // will be filled from $items
-                                'catatan_item' => ''
+                    // Rebuild $items from validated_ops so that 'remove' items are excluded
+                    // from the desired final state. Raw $_POST['items'] re-enables disabled
+                    // fields at submit time, so removed items appear with their original qty
+                    // → delta = 0 instead of negative. This mirrors the direct-edit path.
+                    $items = [];
+                    foreach ($validated_ops as $vop) {
+                        if ($vop['op'] === 'add') {
+                            $items[] = [
+                                'barang_id'    => $vop['barang_id'],
+                                'qty'          => $vop['qty'],
+                                'satuan'       => $vop['satuan'],
+                                'is_lokal'     => (int)($vop['is_lokal'] ?? 0),
+                                'catatan_item' => $vop['catatan_item'] ?? ''
+                            ];
+                        } elseif ($vop['op'] === 'update') {
+                            // Covers both explicit 'update' and 'keep' ops (keep is stored as
+                            // update with identical before/after → delta = 0, correct).
+                            $items[] = [
+                                'barang_id'    => $vop['after']['barang_id'],
+                                'qty'          => $vop['after']['qty'],
+                                'satuan'       => $vop['after']['satuan'],
+                                'is_lokal'     => (int)($vop['after']['is_lokal'] ?? 0),
+                                'catatan_item' => $vop['after']['catatan_item'] ?? ''
                             ];
                         }
+                        // 'remove' ops intentionally excluded → delta becomes negative
                     }
 
                     $delta_items = [];
@@ -534,6 +555,9 @@ try {
                         'catatan_item' => $op['catatan_item']
                     ];
                 }
+            }
+            if (empty($items)) {
+                throw new Exception("Minimal harus ada 1 item yang tersisa setelah penghapusan.");
             }
         }
 

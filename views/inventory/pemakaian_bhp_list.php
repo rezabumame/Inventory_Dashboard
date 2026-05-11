@@ -282,6 +282,8 @@ if ($active_tab == 'list') {
             k.nama_klinik
         FROM inventory_pemakaian_bhp pb
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
+        LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
+        LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
         WHERE $base_where $search_where_list
         AND pb.tanggal >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
         GROUP BY DATE(pb.tanggal), pb.klinik_id, pb.jenis_pemakaian
@@ -2821,6 +2823,8 @@ if ($default_modal_klinik_id) {
 
             if (invalid) return { ok: false, message: invalid };
             if (ops.length === 0) return { ok: false, message: 'Pilih minimal 1 perubahan item (Tambah/Ubah/Hapus).' };
+            const hasRealChange = ops.some(o => o.op === 'add' || o.op === 'update' || o.op === 'remove');
+            if (!hasRealChange) return { ok: false, message: 'Belum ada perubahan. Pilih minimal 1 operasi Tambah, Ubah, atau Hapus.' };
             return { ok: true, data: ops };
         }
 

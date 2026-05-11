@@ -67,6 +67,23 @@ if (!$has_access) {
     exit;
 }
 
+// Block edit if there is any pending revision for this record.
+// Super Admin is exempt — they can always edit directly.
+if (!$is_super_admin) {
+    $original_id_check = (int)($header['parent_id'] ?: $id);
+    $stmt_pending = $conn->prepare("
+        SELECT COUNT(*) as cnt FROM inventory_pemakaian_bhp
+        WHERE parent_id = ? AND status = 'pending_approval_spv'
+    ");
+    $stmt_pending->bind_param("i", $original_id_check);
+    $stmt_pending->execute();
+    $pending_count = (int)($stmt_pending->get_result()->fetch_assoc()['cnt'] ?? 0);
+    if ($pending_count > 0) {
+        echo json_encode(['success' => false, 'message' => 'Tidak dapat diedit — masih ada ' . $pending_count . ' revisi yang menunggu approval SPV. Selesaikan (approve/reject) revisi tersebut terlebih dahulu.']);
+        exit;
+    }
+}
+
 // Format tanggal for HTML5 date input (YYYY-MM-DD)
 if (isset($header['tanggal'])) {
     $header['tanggal'] = date('Y-m-d', strtotime($header['tanggal']));
@@ -74,8 +91,8 @@ if (isset($header['tanggal'])) {
 
 // Get details
 $stmt_d = $conn->prepare("
-    SELECT 
-        pbd.*, 
+    SELECT
+        pbd.*,
         COALESCE(bl.nama_item, b.nama_barang) as nama_barang,
         COALESCE(b.kode_barang, 'LOCAL') as kode_barang
     FROM inventory_pemakaian_bhp_detail pbd
