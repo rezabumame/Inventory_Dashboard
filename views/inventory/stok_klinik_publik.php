@@ -173,36 +173,8 @@ if ($active_tab === 'stok') {
             }
 
             $filter_pb2_klinik = str_replace("pb.", "pb2.", $filter_pb_klinik);
-                $filter_pb2_hc = str_replace("pb.", "pb2.", $filter_pb_hc);
-
-                // --- OPTIMASI TAHAP 2: AGGREGATE JOIN ---
-                // Pre-fetch aggregate data untuk performa tinggi
-                
-                // 1. Aggregate Reserve Onsite
-                $res_agg_onsite = $conn->query("SELECT bd.barang_id, SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END) as total 
-                    FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id 
-                    WHERE bp.klinik_id $klinik_filter_sql AND bp.status = 'booked' AND bp.status_booking LIKE '%Clinic%'$filter_bp_onsite GROUP BY bd.barang_id");
-                $agg_reserve_onsite = []; while($r = $res_agg_onsite->fetch_assoc()) $agg_reserve_onsite[(int)$r['barang_id']] = (float)$r['total'];
-
-                // 2. Aggregate Reserve HC
-                $res_agg_hc = $conn->query("SELECT bd.barang_id, SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END) as total 
-                    FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id 
-                    WHERE bp.klinik_id $klinik_filter_sql AND bp.status = 'booked' AND bp.status_booking LIKE '%HC%'$filter_bp_hc GROUP BY bd.barang_id");
-                $agg_reserve_hc = []; while($r = $res_agg_hc->fetch_assoc()) $agg_reserve_hc[(int)$r['barang_id']] = (float)$r['total'];
-
-                // 3. Aggregate Sellout Klinik
-                $res_agg_sell_k = $conn->query("SELECT ts.barang_id, SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) as total 
-                    FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id 
-                    WHERE ts.referensi_tipe = 'pemakaian_bhp' AND ts.level = 'klinik' AND ts.level_id $klinik_filter_sql AND pb2.klinik_id $klinik_filter_sql AND pb2.jenis_pemakaian != 'hc'$filter_pb2_klinik AND pb2.status = 'active' GROUP BY ts.barang_id");
-                $agg_sellout_k = []; while($r = $res_agg_sell_k->fetch_assoc()) $agg_sellout_k[(int)$r['barang_id']] = (float)$r['total'];
-
-                // 4. Aggregate Sellout HC
-                $res_agg_sell_h = $conn->query("SELECT ts.barang_id, SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) as total 
-                    FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id 
-                    WHERE ts.referensi_tipe = 'pemakaian_bhp' AND ts.level = 'hc' AND $hc_user_filter_sql AND pb2.klinik_id $klinik_filter_sql AND pb2.jenis_pemakaian = 'hc'$filter_pb2_hc AND pb2.status = 'active' GROUP BY ts.barang_id");
-                $agg_sellout_h = []; while($r = $res_agg_sell_h->fetch_assoc()) $agg_sellout_h[(int)$r['barang_id']] = (float)$r['total'];
-
-                $hc_user_filter_sql = "EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id $klinik_filter_sql)";
+            $filter_pb2_hc = str_replace("pb.", "pb2.", $filter_pb_hc);
+            $hc_user_filter_sql = "EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id $klinik_filter_sql)";
             
             $rb_in_transfer_sql = $rb_out_transfer_sql = $rb_in_transfer_hc_sql = $rb_out_transfer_hc_sql = $rb_sellout_klinik_sql = $rb_sellout_hc_sql = "0";
             $rb_ts_start = $conn->real_escape_string($filter_end_ts);
@@ -240,10 +212,40 @@ if ($active_tab === 'stok') {
                         COALESCE(uc.multiplier, 1) as uom_multiplier,
                         COALESCE(sm_k.qty, 0) / NULLIF(COALESCE(uc.multiplier, 1), 0) as qty,
                         COALESCE(sm_h.qty, 0) / NULLIF(COALESCE(uc.multiplier, 1), 0) as stok_hc,
-                        0 as reserve_onsite,
-                        0 as reserve_hc,
-                        0 as sellout_klinik,
-                        0 as sellout_hc,
+                        (SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END), 0)
+                         FROM inventory_booking_detail bd 
+                         JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id 
+                         WHERE bd.barang_id = b.id 
+                         AND bp.klinik_id $klinik_filter_sql
+                         AND bp.status = 'booked'
+                         AND bp.status_booking LIKE '%Clinic%'$filter_bp_onsite) as reserve_onsite,
+                        (SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END), 0)
+                         FROM inventory_booking_detail bd
+                         JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
+                         WHERE bd.barang_id = b.id
+                         AND bp.klinik_id $klinik_filter_sql
+                         AND bp.status = 'booked'
+                         AND bp.status_booking LIKE '%HC%'$filter_bp_hc) as reserve_hc,
+                        (SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0)
+                             FROM inventory_transaksi_stok ts
+                             JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id
+                             WHERE ts.barang_id = b.id
+                             AND ts.level = 'klinik'
+                             AND ts.level_id $klinik_filter_sql
+                             AND ts.referensi_tipe = 'pemakaian_bhp'
+                             AND pb2.klinik_id $klinik_filter_sql
+                             AND pb2.jenis_pemakaian != 'hc'$filter_pb2_klinik
+                             AND pb2.status = 'active') as sellout_klinik,
+                        (SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0)
+                             FROM inventory_transaksi_stok ts
+                             JOIN inventory_pemakaian_bhp pb2 ON pb2.id = ts.referensi_id
+                             WHERE ts.barang_id = b.id
+                             AND ts.level = 'hc'
+                             AND $hc_user_filter_sql
+                             AND ts.referensi_tipe = 'pemakaian_bhp'
+                             AND pb2.klinik_id $klinik_filter_sql
+                             AND pb2.jenis_pemakaian = 'hc'$filter_pb2_hc
+                             AND pb2.status = 'active') as sellout_hc,
                         (SELECT COALESCE(SUM(ts.qty), 0)
                          FROM inventory_transaksi_stok ts
                          WHERE ts.barang_id = b.id
@@ -307,47 +309,10 @@ if ($active_tab === 'stok') {
 
             try {
                 $conn->query("SET SQL_BIG_SELECTS=1");
-
-                // --- OPTIMASI DAILY USAGE (EAGER LOADING) ---
-                $usage_map = [];
-                if (!$is_history_date && $selected_klinik !== 'gudang_utama' && $selected_klinik !== '') {
-                    $res_rates = $conn->query("SELECT barang_id, mode, manual_value, last_calculated_rate FROM inventory_daily_usage_config WHERE klinik_id $klinik_filter_sql");
-                    $rates_map = [];
-                    while ($rr = $res_rates->fetch_assoc()) {
-                        $rate = ($rr['mode'] === 'manual') ? (float)$rr['manual_value'] : (float)$rr['last_calculated_rate'];
-                        $rates_map[(int)$rr['barang_id']] = round($rate, 0);
-                    }
-                    $res_last_all = $conn->query("SELECT pbd.barang_id, MAX(pb.tanggal) as last_date FROM inventory_pemakaian_bhp pb JOIN inventory_pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id WHERE pb.klinik_id $klinik_filter_sql AND pb.status = 'active' AND (pb.is_auto = 0 OR pb.is_auto IS NULL) GROUP BY pbd.barang_id");
-                    $last_dates_map = [];
-                    while ($rl = $res_last_all->fetch_assoc()) $last_dates_map[(int)$rl['barang_id']] = $rl['last_date'];
-                    $today = date('Y-m-d');
-                    foreach ($rates_map as $bid => $rate) {
-                        if ($rate <= 0) continue;
-                        $last_date = $last_dates_map[$bid] ?? date('Y-m-01', strtotime('-1 day'));
-                        $accumulated = 0; $current = date('Y-m-d', strtotime($last_date . ' +1 day'));
-                        while ($current <= $today) {
-                            if (is_operational_day($selected_klinik, $current)) $accumulated += $rate;
-                            $current = date('Y-m-d', strtotime($current . ' +1 day'));
-                        }
-                        $usage_map[$bid] = (float)round($accumulated, 0);
-                    }
-                }
-
                 $result = $conn->query($query);
                 while ($r = $result->fetch_assoc()) {
-                    $bid = (int)$r['barang_id'];
-                    // Inject optimized aggregate values
-                    $r['reserve_onsite'] = $agg_reserve_onsite[$bid] ?? 0;
-                    $r['reserve_hc'] = $agg_reserve_hc[$bid] ?? 0;
-                    $r['sellout_klinik'] = $agg_sellout_k[$bid] ?? 0;
-                    $r['sellout_hc'] = $agg_sellout_h[$bid] ?? 0;
-
                     $rows[] = $r;
                     $summary_stok['total_items']++;
-                    
-                    $acc_daily_usage = $usage_map[$bid] ?? 0;
-                    $summary_stok['total_daily_usage'] += $acc_daily_usage;
-
                     if ($is_history_date) {
                         $adj_qty = (float)($r['qty'] ?? 0) + (float)($r['rb_out_transfer'] ?? 0) - (float)($r['rb_in_transfer'] ?? 0) + (float)($r['rb_sellout_klinik'] ?? 0);
                         $adj_hc = (float)($r['stok_hc'] ?? 0) + (float)($r['rb_out_transfer_hc'] ?? 0) - (float)($r['rb_in_transfer_hc'] ?? 0) + (float)($r['rb_sellout_hc'] ?? 0);
@@ -363,7 +328,12 @@ if ($active_tab === 'stok') {
                     $summary_stok['reserve_hc'] += (float)($r['reserve_hc'] ?? 0);
                     $summary_stok['total_sellout_klinik'] += (float)($r['sellout_klinik'] ?? 0);
                     $summary_stok['total_sellout_hc'] += (float)($r['sellout_hc'] ?? 0);
+                    
+                    if ($selected_klinik !== 'gudang_utama') {
+                        $summary_stok['total_daily_usage'] += calculate_accumulated_usage($selected_klinik, $r['barang_id']);
+                    }
                 }
+            } catch (Exception $e) { die("Query Error: " . $e->getMessage()); }
         }
     }
 }
@@ -665,7 +635,10 @@ if ($active_tab === 'rekap') {
                     $sell = (float)$r['sellout_klinik']; $sell_hc = (float)$r['sellout_hc'];
                     $res = (float)$r['reserve_onsite']; $res_hc = (float)$r['reserve_hc'];
                     
-                    $acc_daily_usage = $usage_map[$bid] ?? 0;
+                    $acc_daily_usage = 0;
+                    if ($selected_klinik !== 'gudang_utama') {
+                        $acc_daily_usage = calculate_accumulated_usage($selected_klinik, $r['barang_id']);
+                    }
                     
                     $total_stok = $s_on + ($show_hc ? $s_hc : 0);
                     $total_sellout = $sell + ($show_hc ? $sell_hc : 0);
