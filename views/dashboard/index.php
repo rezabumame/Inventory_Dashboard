@@ -537,8 +537,8 @@ function showLowStockDetails() {
                             <td class="text-muted small">${item.lokasi || '-'}</td>
                             <td class="fw-semibold">${item.kode_barang}</td>
                             <td>${item.nama_barang}</td>
-                            <td class="text-end fw-bold text-danger">${parseFloat(item.stok_saat_ini).toLocaleString()}</td>
-                            <td class="text-end text-muted">${parseFloat(item.stok_minimum).toLocaleString()}</td>
+                            <td class="text-end fw-bold text-danger">${parseFloat(item.stok_saat_ini).toLocaleString()} <small class="text-muted fw-normal">${item.satuan || ''}</small></td>
+                            <td class="text-end text-muted">${parseFloat(item.stok_minimum).toLocaleString()} <small class="text-muted fw-normal">${item.satuan || ''}</small></td>
                         </tr>
                     `;
                 });

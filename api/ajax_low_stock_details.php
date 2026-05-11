@@ -23,13 +23,19 @@ if ($role === 'super_admin') {
                 s.qty as stok_saat_ini,
                 b.stok_minimum,
                 'Gudang Utama' AS lokasi,
-                'gudang' AS tipe_lokasi
+                'gudang' AS tipe_lokasi,
+                COALESCE(uc.to_uom, b.satuan) as satuan,
+                COALESCE(uc.multiplier, 1) as uom_ratio
             FROM inventory_stok_gudang_utama s
             JOIN inventory_barang b ON s.barang_id = b.id
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
             WHERE s.qty <= b.stok_minimum
             ORDER BY b.nama_barang ASC";
     $res = $conn->query($sql);
     while ($res && ($row = $res->fetch_assoc())) {
+        $row['uom_ratio'] = (float)($row['uom_ratio'] ?? 1);
+        if ($row['uom_ratio'] <= 0) $row['uom_ratio'] = 1;
+        $row['stok_saat_ini'] = (float)$row['stok_saat_ini'] * $row['uom_ratio'];
         $items[] = $row;
     }
 
@@ -48,15 +54,21 @@ if ($role === 'super_admin') {
                     WHEN k2.id IS NOT NULL THEN 'hc'
                     WHEN k1.id IS NOT NULL THEN 'onsite'
                     ELSE 'onsite'
-                END AS tipe_lokasi
+                END AS tipe_lokasi,
+                COALESCE(uc.to_uom, b.satuan) as satuan,
+                COALESCE(uc.multiplier, 1) as uom_ratio
             FROM inventory_stock_mirror sm
             JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang)
             LEFT JOIN inventory_klinik k1 ON TRIM(sm.location_code) = TRIM(k1.kode_klinik)
             LEFT JOIN inventory_klinik k2 ON TRIM(sm.location_code) = TRIM(k2.kode_homecare)
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
             WHERE sm.qty <= b.stok_minimum
             ORDER BY lokasi ASC, b.nama_barang ASC";
     $res = $conn->query($sql);
     while ($res && ($row = $res->fetch_assoc())) {
+        $row['uom_ratio'] = (float)($row['uom_ratio'] ?? 1);
+        if ($row['uom_ratio'] <= 0) $row['uom_ratio'] = 1;
+        $row['stok_saat_ini'] = (float)$row['stok_saat_ini'] * $row['uom_ratio'];
         $items[] = $row;
     }
 } else if ($role === 'admin_gudang') {
@@ -68,13 +80,19 @@ if ($role === 'super_admin') {
                 s.qty as stok_saat_ini,
                 b.stok_minimum,
                 'Gudang Utama' AS lokasi,
-                'gudang' AS tipe_lokasi
+                'gudang' AS tipe_lokasi,
+                COALESCE(uc.to_uom, b.satuan) as satuan,
+                COALESCE(uc.multiplier, 1) as uom_ratio
             FROM inventory_stok_gudang_utama s
             JOIN inventory_barang b ON s.barang_id = b.id
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
             WHERE s.qty <= b.stok_minimum
             ORDER BY b.nama_barang ASC";
     $res = $conn->query($sql);
     while ($res && ($row = $res->fetch_assoc())) {
+        $row['uom_ratio'] = (float)($row['uom_ratio'] ?? 1);
+        if ($row['uom_ratio'] <= 0) $row['uom_ratio'] = 1;
+        $row['stok_saat_ini'] = (float)$row['stok_saat_ini'] * $row['uom_ratio'];
         $items[] = $row;
     }
 } else if (in_array($role, ['admin_klinik', 'cs', 'spv_klinik'])) {
@@ -109,14 +127,20 @@ if ($role === 'super_admin') {
                         WHEN TRIM(sm.location_code) = '" . $conn->real_escape_string($kode_homecare) . "' AND '" . $conn->real_escape_string($kode_homecare) . "' <> ''
                             THEN 'hc'
                         ELSE 'onsite'
-                    END AS tipe_lokasi
+                    END AS tipe_lokasi,
+                    COALESCE(uc.to_uom, b.satuan) as satuan,
+                    COALESCE(uc.multiplier, 1) as uom_ratio
                 FROM inventory_stock_mirror sm 
                 JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang) 
+                LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
                 WHERE $mirror_where
                 AND sm.qty <= b.stok_minimum 
                 ORDER BY b.nama_barang ASC";
         $res = $conn->query($sql);
         while ($res && ($row = $res->fetch_assoc())) {
+            $row['uom_ratio'] = (float)($row['uom_ratio'] ?? 1);
+            if ($row['uom_ratio'] <= 0) $row['uom_ratio'] = 1;
+            $row['stok_saat_ini'] = (float)$row['stok_saat_ini'] * $row['uom_ratio'];
             $items[] = $row;
         }
     }
@@ -129,14 +153,20 @@ if ($role === 'super_admin') {
                 sm.qty as stok_saat_ini,
                 b.stok_minimum,
                 COALESCE(k.nama_klinik, TRIM(sm.location_code), '-') AS lokasi,
-                'hc' AS tipe_lokasi
+                'hc' AS tipe_lokasi,
+                COALESCE(uc.to_uom, b.satuan) as satuan,
+                COALESCE(uc.multiplier, 1) as uom_ratio
             FROM inventory_stock_mirror sm
             JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang)
             JOIN inventory_klinik k ON TRIM(sm.location_code) = TRIM(k.kode_homecare)
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
             WHERE sm.qty <= b.stok_minimum
             ORDER BY lokasi ASC, b.nama_barang ASC";
     $res = $conn->query($sql);
     while ($res && ($row = $res->fetch_assoc())) {
+        $row['uom_ratio'] = (float)($row['uom_ratio'] ?? 1);
+        if ($row['uom_ratio'] <= 0) $row['uom_ratio'] = 1;
+        $row['stok_saat_ini'] = (float)$row['stok_saat_ini'] * $row['uom_ratio'];
         $items[] = $row;
     }
 } else {
