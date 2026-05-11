@@ -2813,7 +2813,8 @@ if ($default_modal_klinik_id) {
                     }
                     ops.push({ op: 'update', detail_id: detailId, barang_id: barangId, is_lokal: isLokal, qty: qty, satuan: satuan, catatan_item: catatanItem });
                 } else if (op === 'add') {
-                    ops.push({ op: 'add', barang_id: barangId, is_lokal: isLokal, qty: qty, satuan: satuan, catatan_item: catatanItem });
+                    const uomMode = String($row.find('.edit-uom-select').val() || 'oper');
+                    ops.push({ op: 'add', barang_id: barangId, is_lokal: isLokal, qty: qty, satuan: satuan, catatan_item: catatanItem, uom_mode: uomMode });
                 } else {
                     invalid = 'Operasi item tidak valid.';
                     return false;

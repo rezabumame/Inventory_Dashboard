@@ -264,6 +264,7 @@ try {
                                 'is_lokal' => (int)($op['is_lokal'] ?? 0),
                                 'qty' => $qty_op,
                                 'satuan' => $satuan_op,
+                                'uom_mode' => trim((string)($op['uom_mode'] ?? 'oper')),
                                 'catatan_item' => (string)($op['catatan_item'] ?? '')
                             ];
                             continue;
@@ -354,9 +355,19 @@ try {
                     $items = [];
                     foreach ($validated_ops as $vop) {
                         if ($vop['op'] === 'add') {
+                            $qty_add = (float)$vop['qty'];
+                            $uom_mode_add = trim((string)($vop['uom_mode'] ?? 'oper'));
+                            if ($uom_mode_add === 'odoo' && !(int)($vop['is_lokal'] ?? 0)) {
+                                $stmt_ratio_add = $conn->prepare("SELECT COALESCE(uc.multiplier, 1) AS ratio FROM inventory_barang b LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang WHERE b.id = ? LIMIT 1");
+                                $stmt_ratio_add->bind_param("i", $vop['barang_id']);
+                                $stmt_ratio_add->execute();
+                                $ratio_row_add = $stmt_ratio_add->get_result()->fetch_assoc();
+                                $ratio_add = max((float)($ratio_row_add['ratio'] ?? 1), 0.000001);
+                                $qty_add = $qty_add / $ratio_add;
+                            }
                             $items[] = [
                                 'barang_id'    => $vop['barang_id'],
-                                'qty'          => $vop['qty'],
+                                'qty'          => $qty_add,
                                 'satuan'       => $vop['satuan'],
                                 'is_lokal'     => (int)($vop['is_lokal'] ?? 0),
                                 'catatan_item' => $vop['catatan_item'] ?? ''
@@ -551,7 +562,8 @@ try {
                         'barang_id' => $op['barang_id'],
                         'qty' => $op['qty'],
                         'satuan' => $op['satuan'],
-                        'uom_mode' => 'oper',
+                        'is_lokal' => (int)($op['is_lokal'] ?? 0),
+                        'uom_mode' => $op['op'] === 'add' ? trim((string)($op['uom_mode'] ?? 'oper')) : 'oper',
                         'catatan_item' => $op['catatan_item']
                     ];
                 }
