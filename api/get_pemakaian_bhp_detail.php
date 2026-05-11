@@ -171,6 +171,8 @@ if ($has_history && $pending_payload) {
         }
         foreach ($ops as $op) {
             $op_type = (string)($op['op'] ?? '');
+            if ($op_type === 'keep' || $op_type === 'unchanged') continue; // Skip items that were not changed
+            
             if ($op_type === 'add') {
                 $bid = (int)($op['barang_id'] ?? 0);
                 $is_lokal_op = (int)($op['is_lokal'] ?? 0);
@@ -270,10 +272,8 @@ if ($has_history && $pending_payload) {
                     $proposed_item['original_qty'] = $original_item['qty'];
                     $proposed_item['original_satuan'] = $original_item['satuan_display'];
                     $proposed_item['original_catatan'] = $original_item['catatan_item'];
-                } else {
-                    $proposed_item['change_type'] = 'unchanged';
+                    $display_details[] = $proposed_item;
                 }
-                $display_details[] = $proposed_item;
                 unset($original_map[$key]);
             } else {
                 $proposed_item['change_type'] = 'added';
