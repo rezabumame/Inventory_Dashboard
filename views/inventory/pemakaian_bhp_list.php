@@ -151,11 +151,16 @@ if ($active_tab == 'list') {
             k.nama_klinik,
             u_created.nama_lengkap as created_by_name,
             u_hc.nama_lengkap as hc_name,
-            (SELECT COUNT(DISTINCT barang_id, is_lokal) FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = pb.id) as total_items_detail
+            COALESCE(pbd_agg.total_items, 0) as total_items_detail
         FROM inventory_pemakaian_bhp pb
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
+        LEFT JOIN (
+            SELECT pemakaian_bhp_id, COUNT(DISTINCT barang_id, is_lokal) as total_items 
+            FROM inventory_pemakaian_bhp_detail 
+            GROUP BY pemakaian_bhp_id
+        ) pbd_agg ON pbd_agg.pemakaian_bhp_id = pb.id
         WHERE $base_where $search_where_list";
 
     if ($user_role === 'super_admin') {
@@ -265,25 +270,24 @@ if ($active_tab == 'list') {
     $result_out = $stmt_out->get_result();
 }
 
-// Get missed upload dates (Auto exist but Manual does not)
+// Get missed upload dates (Limit to last 30 days for performance)
+    $q_missed = "
+        SELECT 
+            DATE(pb.tanggal) as tgl,
+            pb.klinik_id,
+            pb.jenis_pemakaian,
+            k.nama_klinik
+        FROM inventory_pemakaian_bhp pb
+        LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
+        WHERE $base_where $search_where_list
+        AND pb.tanggal >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+        GROUP BY DATE(pb.tanggal), pb.klinik_id, pb.jenis_pemakaian
+        HAVING SUM(pb.is_auto = 1) > 0 AND SUM(pb.is_auto = 0) = 0
+        ORDER BY tgl DESC, k.nama_klinik ASC
+        LIMIT 100
+    ";
 $missed_uploads = [];
-$q_missed = "
-    SELECT 
-        DATE(pb.tanggal) as tgl,
-        pb.klinik_id,
-        pb.jenis_pemakaian,
-        k.nama_klinik
-    FROM inventory_pemakaian_bhp pb
-    LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
-    LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
-    LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
-    WHERE $base_where $search_where_list
-    GROUP BY DATE(pb.tanggal), pb.klinik_id, pb.jenis_pemakaian
-    HAVING SUM(pb.is_auto = 1) > 0
-    ORDER BY tgl DESC, k.nama_klinik ASC
-    LIMIT 100
-";
-$stmt_missed = $conn->prepare($q_missed);
+    $stmt_missed = $conn->prepare($q_missed);
 $all_params_missed = array_merge($base_params, $search_params);
 $all_types_missed = $base_types . $search_types;
 if (!empty($all_params_missed)) {
