@@ -141,7 +141,7 @@ try {
                     $stmt_hist = $conn->prepare("INSERT INTO inventory_history_lokal (barang_lokal_id, klinik_id, tipe, qty_sebelum, qty_perubahan, qty_sesudah, keterangan, created_by) 
                         SELECT ?, ?, 'tambah', qty - ?, ?, qty, ?, ? FROM inventory_stok_lokal WHERE barang_lokal_id = ? AND klinik_id = ?");
                     $ket = "Reversal Pemakaian (Delete Approve) " . $header['nomor_pemakaian'];
-                    $stmt_hist->bind_param("idddisii", $bid, $klinik_id, $qty, $qty, $ket, $user_id, $bid, $klinik_id);
+                    $stmt_hist->bind_param("iiddsiii", $bid, $klinik_id, $qty, $qty, $ket, $user_id, $bid, $klinik_id);
                     exec_or_throw($stmt_hist, 'Log history reversal lokal');
 
                 } elseif ($jenis_pemakaian === 'hc' && !empty($user_hc_id)) {
@@ -266,7 +266,7 @@ try {
                         (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ");
-                    $stmt_log->bind_param("isidddsissis", $bid, $level, $level_id, $tipe_transaksi, $log_qty, $qty_sebelum, $qty_sesudah, $ref_type, $id, $cat, $user_id, $created_at_val);
+                    $stmt_log->bind_param("isisdddsisis", $bid, $level, $level_id, $tipe_transaksi, $log_qty, $qty_sebelum, $qty_sesudah, $ref_type, $id, $cat, $user_id, $created_at_val);
                     exec_or_throw($stmt_log, 'Insert stock transaction for delta revision');
                 }
 
@@ -309,7 +309,7 @@ try {
                         // History Lokal
                         $stmt_hist = $conn->prepare("INSERT INTO inventory_history_lokal (barang_lokal_id, klinik_id, tipe, qty_sebelum, qty_perubahan, qty_sesudah, keterangan, created_by) VALUES (?, ?, 'pakai', ?, ?, ?, ?, ?)");
                         $ket = "Pemakaian " . $header['nomor_pemakaian'] . " (Backdate Approved)";
-                        $stmt_hist->bind_param("idddssi", $bid, $kid, $qty_sebelum, $qty, $qty_sesudah, $ket, $user_id);
+                        $stmt_hist->bind_param("iidddsi", $bid, $kid, $qty_sebelum, $qty, $qty_sesudah, $ket, $user_id);
                         exec_or_throw($stmt_hist, 'Log history lokal');
 
                         continue;
@@ -446,11 +446,15 @@ try {
                     // History Lokal
                     $stmt_hist = $conn->prepare("INSERT INTO inventory_history_lokal (barang_lokal_id, klinik_id, tipe, qty_sebelum, qty_perubahan, qty_sesudah, keterangan, created_by) VALUES (?, ?, 'pakai', ?, ?, ?, ?, ?)");
                     $ket = "Pemakaian " . $nomor_pemakaian . " (Add Approved)";
-                    $stmt_hist->bind_param("idddssi", $bid, $klinik_new, $qty_sebelum, $qty, $qty_sesudah, $ket, $user_id);
+                    $stmt_hist->bind_param("iidddsi", $bid, $klinik_new, $qty_sebelum, $qty, $qty_sesudah, $ket, $user_id);
                     exec_or_throw($stmt_hist, 'Log history lokal');
 
                     continue;
                 }
+
+                // Stock deduction
+                $eff = stock_effective($conn, $klinik_new, $jenis_new === 'hc', $bid);
+                $qty_sebelum = $eff['ok'] ? (float)($eff['on_hand'] ?? 0) : 0.0;
                 
                 if ($jenis_new === 'hc' && !empty($user_hc_new)) {
                     $uid = (int)$user_hc_new;
