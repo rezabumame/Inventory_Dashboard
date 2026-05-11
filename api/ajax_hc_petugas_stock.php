@@ -44,15 +44,18 @@ $items = [];
 if (!empty($all_barang_ids)) {
     $ids_str = implode(',', array_keys($all_barang_ids));
     
+    $loc_esc = $conn->real_escape_string($loc_hc);
     $res = $conn->query("
         SELECT
             b.id AS barang_id,
             b.kode_barang,
+            b.odoo_product_id,
             b.nama_barang,
             COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom_oper,
             COALESCE(NULLIF(uc.from_uom,''), b.uom) AS uom_odoo,
             COALESCE(uc.multiplier, 1) AS uom_ratio,
-            (SELECT COALESCE(SUM(qty), 0) FROM inventory_stok_tas_hc WHERE user_id = $user_hc_id AND klinik_id = $klinik_id AND barang_id = b.id) AS qty_lama
+            (SELECT COALESCE(SUM(qty), 0) FROM inventory_stok_tas_hc WHERE user_id = $user_hc_id AND klinik_id = $klinik_id AND barang_id = b.id) AS qty_lama,
+            (SELECT COALESCE(SUM(qty), 0) FROM inventory_stok_tas_hc WHERE klinik_id = $klinik_id AND barang_id = b.id) AS qty_total_allocated
         FROM inventory_barang b
         LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         WHERE b.id IN ($ids_str)
@@ -60,14 +63,30 @@ if (!empty($all_barang_ids)) {
     ");
 
     while ($res && ($row = $res->fetch_assoc())) {
+        $ratio = max((float)($row['uom_ratio'] ?? 1), 0.000001);
+        $kode_b = $conn->real_escape_string(trim((string)($row['kode_barang'] ?? '')));
+        $odoo_b = $conn->real_escape_string(trim((string)($row['odoo_product_id'] ?? '')));
+        $match_clauses = [];
+        if ($kode_b !== '') $match_clauses[] = "TRIM(kode_barang) = '$kode_b'";
+        if ($odoo_b !== '') $match_clauses[] = "TRIM(odoo_product_id) = '$odoo_b'";
+        $mirror_qty = 0.0;
+        if (!empty($match_clauses) && $loc_hc !== '') {
+            $match_sql = '(' . implode(' OR ', $match_clauses) . ')';
+            $rm = $conn->query("SELECT COALESCE(SUM(qty),0) AS q FROM inventory_stock_mirror WHERE TRIM(location_code)='$loc_esc' AND $match_sql");
+            $mirror_qty = (float)(($rm && $rm->num_rows > 0) ? $rm->fetch_assoc()['q'] : 0);
+        }
+        $mirror_oper = $mirror_qty / $ratio;
+        $sisa_tersedia = round($mirror_oper - (float)($row['qty_total_allocated'] ?? 0), 4);
+
         $items[] = [
-            'barang_id' => (int)$row['barang_id'],
-            'kode_barang' => (string)$row['kode_barang'],
-            'nama_barang' => (string)$row['nama_barang'],
-            'uom_oper' => (string)$row['uom_oper'],
-            'uom_odoo' => (string)$row['uom_odoo'],
-            'uom_ratio' => (float)$row['uom_ratio'],
-            'qty_lama' => (float)$row['qty_lama']
+            'barang_id'      => (int)$row['barang_id'],
+            'kode_barang'    => (string)$row['kode_barang'],
+            'nama_barang'    => (string)$row['nama_barang'],
+            'uom_oper'       => (string)$row['uom_oper'],
+            'uom_odoo'       => (string)$row['uom_odoo'],
+            'uom_ratio'      => $ratio,
+            'qty_lama'       => (float)$row['qty_lama'],
+            'sisa_tersedia'  => $sisa_tersedia
         ];
     }
 }

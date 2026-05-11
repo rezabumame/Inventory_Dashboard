@@ -50,14 +50,15 @@ $items = [];
 $count_items = count($barang_ids);
 for ($i = 0; $i < $count_items; $i++) {
     $bid = (int)($barang_ids[$i] ?? 0);
-    $qs = (float)($qtys_so[$i] ?? 0);
+    $qs_raw = trim((string)($qtys_so[$i] ?? ''));
     $mode = trim((string)($uom_modes[$i] ?? 'oper'));
 
     if ($bid <= 0) continue;
+    if ($qs_raw === '') continue; // blank = skip, tidak ubah stok item ini
 
     $items[] = [
         'barang_id' => $bid,
-        'qty_so' => $qs,
+        'qty_so' => (float)$qs_raw,
         'uom_mode' => $mode
     ];
 }

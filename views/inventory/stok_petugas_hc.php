@@ -1289,7 +1289,20 @@ function openMassAllocationSO() {
     var modalEl = document.getElementById('modalMassAllocationSO');
     var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
-    
+
+    // Init Select2 with dropdownParent so search works inside modal
+    if (typeof $ !== 'undefined' && $.fn.select2) {
+        var $sel = $('#massAllocPetugas');
+        if ($sel.hasClass('select2-hidden-accessible')) $sel.select2('destroy');
+        $sel.select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            dropdownParent: $('#modalMassAllocationSO'),
+            placeholder: '- Pilih Petugas -',
+            allowClear: true
+        }).on('change', function() { fetchPetugasStockForSO(); });
+    }
+
     var petugasSel = document.getElementById('massAllocPetugas');
     if (petugasSel.value) {
         fetchPetugasStockForSO();
@@ -1303,7 +1316,7 @@ function fetchPetugasStockForSO() {
     var btnSubmit = document.getElementById('btnSubmitMassSO');
 
     if (!petugasId) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Pilih petugas terlebih dahulu.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Pilih petugas terlebih dahulu.</td></tr>';
         btnSubmit.disabled = true;
         return;
     }
@@ -1311,14 +1324,14 @@ function fetchPetugasStockForSO() {
     // Keep manually added rows
     var manualRows = Array.from(tbody.querySelectorAll('.mass-alloc-row.manually-added'));
     
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin me-2"></i>Memuat stok petugas...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin me-2"></i>Memuat stok petugas...</td></tr>';
     btnSubmit.disabled = true;
 
     fetch('api/ajax_hc_petugas_stock.php?klinik_id=' + klinikId + '&user_hc_id=' + petugasId)
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-3">' + escapeHtml(data.message) + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3">' + escapeHtml(data.message) + '</td></tr>';
                 return;
             }
             
@@ -1328,7 +1341,7 @@ function fetchPetugasStockForSO() {
             manualRows.forEach(row => tbody.appendChild(row));
             
             if (data.items.length === 0 && manualRows.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Petugas belum memiliki stok tas. Klik "Tambah Item Baru" untuk memulai.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Petugas belum memiliki stok tas. Klik "Tambah Item Baru" untuk memulai.</td></tr>';
             } else {
                 data.items.forEach(it => {
                     // Check if item already exists in manual rows to avoid duplicates
@@ -1342,14 +1355,14 @@ function fetchPetugasStockForSO() {
             filterMassAllocTable(); // Re-apply current filter
         })
         .catch(err => {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-3">Gagal memuat data stok.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3">Gagal memuat data stok.</td></tr>';
         });
 }
 
 function addMassAllocRow(data = null) {
     var tbody = document.getElementById('massAllocItemBody');
     // Clear placeholder
-    var placeholder = tbody.querySelector('td[colspan="5"]');
+    var placeholder = tbody.querySelector('td[colspan="6"]');
     if (placeholder) placeholder.closest('tr').remove();
 
     var isManual = (data === null);
@@ -1359,6 +1372,7 @@ function addMassAllocRow(data = null) {
     
     var barangId = data ? data.barang_id : '';
     var qtyLama = data ? data.qty_lama : 0;
+    var sisaTersedia = data ? (data.sisa_tersedia ?? null) : null;
     var uomOper = data ? data.uom_oper : '';
     var uomOdoo = data ? data.uom_odoo : '';
     var uomRatio = data ? data.uom_ratio : 1;
@@ -1372,21 +1386,27 @@ function addMassAllocRow(data = null) {
             data-uom-ratio="${opt.uom_ratio}">${escapeHtml(opt.text)}</option>`;
     });
 
+    var sisaDisplay = sisaTersedia !== null ? fmtQty(sisaTersedia) : '-';
+    var sisaClass = sisaTersedia === null ? 'text-muted' : (sisaTersedia < -0.00001 ? 'text-danger fw-bold' : (sisaTersedia < 0.5 ? 'text-warning fw-bold' : 'text-success fw-bold'));
+
     row.innerHTML = `
         <td class="p-1 ps-3" style="min-width: 250px;">
             <select name="barang_id[]" class="form-select form-select-sm so-barang-select" required onchange="handleSoBarangChange(this)">
                 ${optionsHtml}
             </select>
         </td>
-        <td class="p-1 text-end fw-bold text-muted small" style="width: 100px;">
+        <td class="p-1 text-end fw-bold text-muted small" style="width: 90px;">
             <span class="so-qty-lama-text">${fmtQty(qtyLama)}</span>
             <input type="hidden" name="qty_lama[]" value="${qtyLama}" class="so-qty-lama-input">
         </td>
-        <td class="p-1" style="width: 120px;">
-            <input type="number" name="qty_so[]" class="form-control form-control-sm text-end so-qty-input fw-bold" 
+        <td class="p-1 text-end small" style="width: 90px;" data-sisa="${sisaTersedia !== null ? sisaTersedia : ''}">
+            <span class="so-sisa-text ${sisaClass}">${sisaDisplay}</span>
+        </td>
+        <td class="p-1" style="width: 110px;">
+            <input type="number" name="qty_so[]" class="form-control form-control-sm text-end so-qty-input fw-bold"
                 step="0.0001" min="0" value="" oninput="calculateSoDiff(this)">
         </td>
-        <td class="p-1" style="width: 120px;">
+        <td class="p-1" style="width: 110px;">
             <select name="uom_mode[]" class="form-select form-select-sm so-uom-select small" onchange="handleSoUomChange(this)">
                 <option value="oper">${escapeHtml(uomOper || 'Satuan')}</option>
                 ${(uomOdoo && uomOdoo !== uomOper) ? `<option value="odoo">${escapeHtml(uomOdoo)}</option>` : ''}
@@ -1455,7 +1475,26 @@ function handleSoUomChange(select) {
 }
 
 function calculateSoDiff(input) {
-    // Diff calculation remains but UI update is removed
+    var row = input.closest('tr');
+    if (!row) return;
+    var sisaTd = row.querySelector('td[data-sisa]');
+    if (!sisaTd || sisaTd.dataset.sisa === '') return;
+
+    var baseSisa = parseFloat(sisaTd.dataset.sisa) || 0;
+    var qtyLama = parseFloat(row.querySelector('.so-qty-lama-input').value) || 0;
+    var qtySo = parseFloat(input.value) || 0;
+    var uomMode = (row.querySelector('.so-uom-select') || {}).value || 'oper';
+    var uomRatio = parseFloat((row.querySelector('.so-barang-select option:checked') || {}).dataset?.uomRatio) || 1;
+
+    var qtySoOper = (uomMode === 'odoo') ? qtySo / uomRatio : qtySo;
+    var netChange = qtySoOper - qtyLama;
+    var projected = baseSisa - netChange;
+    projected = Math.round(projected * 10000) / 10000;
+
+    var span = sisaTd.querySelector('.so-sisa-text');
+    if (!span) return;
+    span.textContent = fmtQty(projected);
+    span.className = 'so-sisa-text ' + (projected < -0.00001 ? 'text-danger fw-bold' : (projected < 0.5 ? 'text-warning fw-bold' : 'text-success fw-bold'));
 }
 
 function filterMassAllocTable() {
@@ -1826,9 +1865,9 @@ function fmtQty(v) {
                 
                 <div class="d-flex align-items-center justify-content-between mb-2">
                     <div class="d-flex align-items-center gap-3">
-                        <div style="min-width: 200px;">
+                        <div style="min-width: 280px;">
                             <label class="form-label fw-bold small mb-1">Petugas HC</label>
-                            <select name="user_hc_id" id="massAllocPetugas" class="form-select form-select-sm" required onchange="fetchPetugasStockForSO()">
+                            <select name="user_hc_id" id="massAllocPetugas" class="form-select form-select-sm" required>
                                 <option value="">- Pilih Petugas -</option>
                                 <?php foreach ($petugas_list as $p): ?>
                                     <option value="<?= (int)$p['id'] ?>"><?= htmlspecialchars($p['nama_lengkap']) ?></option>
@@ -1862,14 +1901,15 @@ function fmtQty(v) {
                                 <thead class="bg-light sticky-top">
                                     <tr class="small">
                                         <th class="ps-3">Barang</th>
-                                        <th class="text-end" style="width:100px;">Stok Lama</th>
-                                        <th class="text-end" style="width:120px;">Hasil SO</th>
-                                        <th class="text-center" style="width:120px;">UOM</th>
+                                        <th class="text-end" style="width:90px;">Stok Lama</th>
+                                        <th class="text-end" style="width:90px;" title="Sisa stok HC yang belum dialokasikan ke nakes manapun">Tersedia <i class="fas fa-info-circle text-muted" style="font-size:10px;"></i></th>
+                                        <th class="text-end" style="width:110px;">Hasil SO</th>
+                                        <th class="text-center" style="width:110px;">UOM</th>
                                         <th class="text-center" style="width:50px;">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody id="massAllocItemBody">
-                                    <tr><td colspan="5" class="text-center text-muted py-3 small">Pilih petugas terlebih dahulu.</td></tr>
+                                    <tr><td colspan="6" class="text-center text-muted py-3 small">Pilih petugas terlebih dahulu.</td></tr>
                                 </tbody>
                             </table>
                         </div>
