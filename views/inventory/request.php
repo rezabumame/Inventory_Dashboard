@@ -418,6 +418,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 
                             $stmt_log = $conn->prepare("INSERT INTO inventory_transaksi_stok (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'transfer', ?, ?)");
 
+                            // --- OPTIMASI START ---
+                            // Pre-fetch all effective stocks for items in this request to avoid N+1 stock_effective() calls
+                            $source_stocks = [];
+                            $dest_stocks = [];
+                            $item_ids = array_unique(array_filter(array_map('intval', $received_items)));
+                            if (!empty($item_ids)) {
+                                foreach ($item_ids as $bid) {
+                                    // Source stock
+                                    $src_eff = stock_effective($conn, (int)$source_id, false, (int)$bid);
+                                    $source_stocks[$bid] = (float)($src_eff['on_hand'] ?? 0);
+                                    
+                                    // Destination stock
+                                    $dest_eff = stock_effective($conn, (int)$dest_id, false, (int)$bid);
+                                    $dest_stocks[$bid] = (float)($dest_eff['on_hand'] ?? 0);
+                                }
+                            }
+                            // --- OPTIMASI END ---
+
                             $all_full = true;
                             foreach ($received_items as $idx => $b_id_raw) {
                                 $b_id = (int)$b_id_raw;
@@ -454,13 +472,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 $stmt_lock->execute();
                                 $stmt_lock->get_result();
 
-                                $src_eff = stock_effective($conn, (int)$source_id, false, (int)$b_id); // Assuming source is always klinik or gudang_utama, not HC
-                                if ($source_level === 'gudang_utama') {
-                                    // For gudang_utama, stock_effective returns on_hand directly
-                                    $source_qty_before = (float)($src_eff['on_hand'] ?? 0);
-                                } else { // klinik
-                                    $source_qty_before = (float)($src_eff['on_hand'] ?? 0);
-                                }
+                                // Use pre-fetched source stock
+                                $source_qty_before = $source_stocks[$b_id] ?? 0;
                                 
                                 $uom = (string)($get_barang_info((int)$b_id)['satuan'] ?? '');
                                 if ($source_qty_before + 0.00005 < $qty_recv) {
@@ -476,6 +489,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                     throw new Exception("Stok tidak mencukupi di $src_name untuk barang: $label. Tersedia: $source_qty_before" . ($uom !== '' ? " $uom" : '') . ", Diterima: $qty_recv" . ($uom !== '' ? " $uom" : ''));
                                 }
                                 $source_qty_after = $source_qty_before - $qty_recv;
+                                $source_stocks[$b_id] = $source_qty_after; // Update cache for same-batch duplicate items
 
                                 if ($source_level == 'gudang_utama') {
                                     $stmt_set_src_utama->bind_param("idi", $b_id, $source_qty_after, $user_id);
@@ -485,9 +499,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                     $stmt_set_src_klinik->execute();
                                 }
 
-                                $dest_qty_before = 0;
-                                $dest_eff = stock_effective($conn, (int)$dest_id, false, (int)$b_id); // Assuming dest is always klinik, not HC
-                                $dest_qty_before = (float)($dest_eff['on_hand'] ?? 0);
+                                $dest_qty_before = $dest_stocks[$b_id] ?? 0;
 
                                 $stmt_inc_check->bind_param("ii", $b_id, $dest_id);
                                 $stmt_inc_check->execute();
@@ -500,6 +512,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                     $stmt_inc_ins->execute();
                                 }
                                 $dest_qty_after = $dest_qty_before + $qty_recv;
+                                 $dest_stocks[$b_id] = $dest_qty_after; // Update cache
+ 
+                                 $dest_qty_after = $dest_qty_before + $qty_recv;
 
                                 $stmt_trf_det->bind_param("iid", $transfer_id, $b_id, $qty_recv);
                                 $stmt_trf_det->execute();
