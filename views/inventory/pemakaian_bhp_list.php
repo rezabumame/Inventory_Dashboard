@@ -32,6 +32,7 @@ if ($user_role !== 'super_admin') {
 // Get filters (Default to last 7 days)
 $end_date = isset($_GET['end_date']) ? $_GET['end_date'] : date('Y-m-d');
 $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-m-d', strtotime('-7 days'));
+$filter_date_type = $_GET['date_type'] ?? 'input';
 $filter_q = trim((string) ($_GET['q'] ?? ''));
 
 // Build query based on role for LIST tab
@@ -57,13 +58,15 @@ if ($user_role === 'petugas_hc') {
     $types .= "i";
 }
 
+$date_col = ($filter_date_type === 'input') ? 'pb.created_at' : 'pb.tanggal';
+
 if (!empty($start_date)) {
-    $where_clause .= " AND pb.created_at >= ?";
+    $where_clause .= " AND $date_col >= ?";
     $params[] = $start_date . ' 00:00:00';
     $types .= "s";
 }
 if (!empty($end_date)) {
-    $where_clause .= " AND pb.created_at <= ?";
+    $where_clause .= " AND $date_col <= ?";
     $params[] = $end_date . ' 23:59:59';
     $types .= "s";
 }
@@ -497,6 +500,18 @@ if ($default_modal_klinik_id) {
                 <label class="form-label small fw-bold text-muted">Sampai Tanggal</label>
                 <input type="date" name="end_date" class="form-control" value="<?= $end_date ?>">
             </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-bold text-muted">Berdasarkan</label>
+                <div class="date-type-segmented">
+                    <input type="hidden" name="date_type" id="filterDateType" value="<?= $filter_date_type ?>">
+                    <button type="button" class="date-segment-btn <?= $filter_date_type === 'input' ? 'active' : '' ?>" data-value="input">
+                        <i class="fas fa-clock me-1"></i> Tgl. Input
+                    </button>
+                    <button type="button" class="date-segment-btn <?= $filter_date_type === 'pemakaian' ? 'active' : '' ?>" data-value="pemakaian">
+                        <i class="fas fa-calendar-alt me-1"></i> Tgl. BHP
+                    </button>
+                </div>
+            </div>
             <div class="col-md-auto">
                 <button type="submit" class="btn btn-primary px-4">
                     <i class="fas fa-filter me-2"></i>Filter
@@ -601,6 +616,38 @@ if ($default_modal_klinik_id) {
         cursor: not-allowed;
     }
 
+    .date-type-segmented {
+        background: #f1f3f5;
+        border-radius: 12px;
+        padding: 4px;
+        display: flex;
+        gap: 4px;
+        max-width: 280px;
+    }
+
+    .date-type-segmented .date-segment-btn {
+        flex: 1;
+        border: 0;
+        background: transparent;
+        border-radius: 10px;
+        padding: 6px 12px;
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: #6c757d;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+    }
+
+    .date-type-segmented .date-segment-btn.active {
+        background: #ffffff;
+        color: #204EAB;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    .date-type-segmented .date-segment-btn:hover:not(.active) {
+        background: rgba(0, 0, 0, 0.05);
+    }
+
     .grayscale {
         filter: grayscale(1);
     }
@@ -679,9 +726,10 @@ if ($default_modal_klinik_id) {
                             <input type="hidden" name="view" value="<?= htmlspecialchars($_GET['view']) ?>">
                         <?php endif; ?>
                         <?php foreach ($_GET as $key => $val):
-                            if (!in_array($key, ['q', 'p', 'page', 'tab', 'view'])): ?>
+                            if (!in_array($key, ['q', 'p', 'page', 'tab', 'view', 'date_type'])): ?>
                                 <input type="hidden" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($val) ?>">
                             <?php endif; endforeach; ?>
+                        <input type="hidden" name="date_type" value="<?= htmlspecialchars($filter_date_type) ?>">
                         <div class="input-group input-group-sm" style="width: 250px;">
                             <span class="input-group-text bg-white border-end-0"><i
                                     class="fas fa-search text-muted"></i></span>
@@ -1488,6 +1536,13 @@ if ($default_modal_klinik_id) {
         if ($(this).prop('disabled')) return;
         const v = $(this).data('value');
         $('#editJenisPemakaian').val(v).trigger('change');
+    });
+
+    $(document).on('click', '.date-segment-btn', function () {
+        const val = $(this).data('value');
+        $(this).siblings('.date-segment-btn').removeClass('active');
+        $(this).addClass('active');
+        $('#filterDateType').val(val);
     });
 
     $(document).on('change', '#modalJenisPemakaian, #modalKlinikId', function () {

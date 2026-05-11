@@ -1302,11 +1302,11 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                                 <?php endif; ?>
                             </td>
                             <?php endif; ?>
-                            <td class="text-center <?= $sellout > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>">
+                            <td class="text-center <?= $sellout > 0 ? 'text-danger fw-bold' : ($sellout < 0 ? 'text-primary fw-bold' : 'text-muted small') ?>">
                                 <?= fmt_qty($sellout) ?>
                             </td>
                             <?php if ($show_hc): ?>
-                            <td class="text-center <?= $sellout_hc > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>">
+                            <td class="text-center <?= $sellout_hc > 0 ? 'text-danger fw-bold' : ($sellout_hc < 0 ? 'text-primary fw-bold' : 'text-muted small') ?>">
                                 <?= fmt_qty($sellout_hc) ?>
                             </td>
                             <?php endif; ?>

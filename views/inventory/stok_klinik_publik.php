@@ -174,6 +174,7 @@ if ($active_tab === 'stok') {
 
             $filter_pb2_klinik = str_replace("pb.", "pb2.", $filter_pb_klinik);
             $filter_pb2_hc = str_replace("pb.", "pb2.", $filter_pb_hc);
+            $hc_user_filter_sql = "EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id $klinik_filter_sql)";
 
             // --- OPTIMASI START ---
             // 1. Pre-fetch Daily Usage Data (Eager Loading)
@@ -259,8 +260,6 @@ if ($active_tab === 'stok') {
             }
             // --- OPTIMASI END ---
 
-            $hc_user_filter_sql = "EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id $klinik_filter_sql)";
-            
             $rb_in_transfer_sql = "0";
 
             $union_sql = "SELECT odoo_product_id, kode_barang FROM inventory_stock_mirror WHERE TRIM(location_code) $loc_filter_sql";
@@ -715,8 +714,8 @@ if ($active_tab === 'rekap') {
                             <?php endif; ?>
                         </td>
                     <?php endif; ?>
-                    <td class="text-center <?= $sell > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sell) ?></td>
-                    <?php if ($show_hc): ?><td class="text-center <?= $sell_hc > 0 ? 'text-danger fw-bold' : 'text-muted small' ?>"><?= fmt_qty($sell_hc) ?></td><?php endif; ?>
+                    <td class="text-center <?= $sell > 0 ? 'text-danger fw-bold' : ($sell < 0 ? 'text-primary fw-bold' : 'text-muted small') ?>"><?= fmt_qty($sell) ?></td>
+                    <?php if ($show_hc): ?><td class="text-center <?= $sell_hc > 0 ? 'text-danger fw-bold' : ($sell_hc < 0 ? 'text-primary fw-bold' : 'text-muted small') ?>"><?= fmt_qty($sell_hc) ?></td><?php endif; ?>
                     <td class="text-center <?= $res > 0 ? 'text-reserve-onsite fw-bold' : 'text-muted small' ?>"><?= fmt_qty($res) ?></td>
                     <?php if ($show_hc): ?><td class="text-center <?= $res_hc > 0 ? 'text-reserve-hc fw-bold' : 'text-muted small' ?>"><?= fmt_qty($res_hc) ?></td><?php endif; ?>
                     <td class="text-center" style="background-color: #f1f5f9;">
