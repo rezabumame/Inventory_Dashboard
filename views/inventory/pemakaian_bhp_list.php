@@ -2411,6 +2411,7 @@ if ($default_modal_klinik_id) {
                             }
 
                             // Ensure edited items are in the list (even if out of stock now)
+                            // AND Add current usage back to stock for display in Edit Modal
                             res.details.forEach(function (d) {
                                 const isl_d = d.is_lokal ? 1 : 0;
                                 const dKey = d.barang_id + '_' + isl_d;
@@ -2424,11 +2425,38 @@ if ($default_modal_klinik_id) {
                                         is_lokal: isl_d
                                     };
                                 }
+                                // Add back the quantity being edited to the display stock
+                                availableItemsMap[dKey].rawQty += parseFloat(d.qty) || 0;
                             });
 
                             editRowIndex = 0;
+                            // Grouping items to avoid duplicates in edit modal
+                            const groupedDetails = [];
+                            const detailMap = {};
+
                             res.details.forEach(function (d) {
-                                const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, d.catatan_item, d.uom_mode, d.id, true, d.is_lokal || 0);
+                                const key = d.barang_id + '_' + (d.is_lokal ? '1' : '0') + '_' + (d.uom_mode || 'oper');
+                                if (!detailMap[key]) {
+                                    detailMap[key] = {
+                                        barang_id: d.barang_id,
+                                        qty: 0,
+                                        satuan: d.satuan,
+                                        catatan_item: [],
+                                        uom_mode: d.uom_mode || 'oper',
+                                        is_lokal: d.is_lokal || 0,
+                                        id: d.id // keep first id for reference if needed
+                                    };
+                                    groupedDetails.push(detailMap[key]);
+                                }
+                                detailMap[key].qty += parseFloat(d.qty) || 0;
+                                if (d.catatan_item && !detailMap[key].catatan_item.includes(d.catatan_item)) {
+                                    detailMap[key].catatan_item.push(d.catatan_item);
+                                }
+                            });
+
+                            groupedDetails.forEach(function (d) {
+                                const catatanJoin = d.catatan_item.join(', ');
+                                const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, catatanJoin, d.uom_mode, d.id, true, d.is_lokal || 0);
                                 $('#editItemTableBody').append(rowHtml);
                                 const $row = $('#editItemTableBody tr:last');
                                 const $barangSelect = $row.find('.edit-barang-select');
