@@ -2545,7 +2545,11 @@ if ($default_modal_klinik_id) {
             const rowHtml = makeEditRow(editRowIndex, null, '', '', '', 'oper', '', false);
             $('#editItemTableBody').append(rowHtml);
             const $sel = $('#editItemTableBody tr:last').find('.edit-barang-select');
-            fillSelectOptions($sel, $('#editKlinikId').val(), $('#editJenisPemakaian').val(), false);
+            let userHcId = $('#editUserHcId').val();
+            if (!userHcId && $('#editUserHcIdHidden').length) {
+                userHcId = $('#editUserHcIdHidden').val();
+            }
+            fillSelectOptions($sel, $('#editKlinikId').val(), $('#editJenisPemakaian').val(), userHcId);
             initBarangSelect2($sel);
             editRowIndex++;
             updateEditRemoveButtons();
