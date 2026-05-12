@@ -244,7 +244,9 @@ try {
                     $validated_ops = [];
                     foreach ($request_ops as $op) {
                         $op_type = trim((string)($op['op'] ?? ''));
-                        if (!in_array($op_type, ['add', 'update', 'remove', 'keep'], true)) {
+                        if (!in_array($op_type, ['add', 'update', 'remove'], true)) {
+                            // 'keep' tidak lagi dikirim dari frontend; tipe lain invalid
+                            if ($op_type === 'keep') continue;
                             throw new Exception("Tipe operasi item tidak valid");
                         }
                         if ($op_type === 'add') {
@@ -281,6 +283,7 @@ try {
                                 'detail_id' => $detail_id,
                                 'before' => [
                                     'barang_id' => (int)$before['barang_id'],
+                                    'is_lokal' => (int)($before['is_lokal'] ?? 0),
                                     'qty' => (float)$before['qty'],
                                     'satuan' => (string)$before['satuan'],
                                     'catatan_item' => (string)($before['catatan_item'] ?? '')
@@ -319,11 +322,10 @@ try {
                         ];
                     }
 
-                    // Task: Mekanisme revisi No BHP (R1, R2, dst)
+                    // Mekanisme revisi No BHP (R1, R2, dst)
                     $original_id = $old_header['parent_id'] ?? $edit_id;
                     $original_nomor = $old_header['no_bhp_parent'] ?? $old_header['nomor_pemakaian'];
-                    
-                    // Get latest revision number for this parent
+
                     $stmt_rev = $conn->prepare("SELECT MAX(revision) as max_rev FROM inventory_pemakaian_bhp WHERE parent_id = ? OR id = ?");
                     $stmt_rev->bind_param("ii", $original_id, $original_id);
                     $stmt_rev->execute();
@@ -331,28 +333,8 @@ try {
                     $next_rev = $max_rev + 1;
                     $nomor_revisi = $original_nomor . "-R" . $next_rev;
 
-                    // Fetch current active items for the original record.
-                    // Delta is computed relative to the original record only (not pending revisions),
-                    // so the edit modal and delta baseline are always in sync.
-                    $stmt_current_active_items = $conn->prepare("SELECT barang_id, is_lokal, qty, satuan, catatan_item FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
-                    $stmt_current_active_items->bind_param("i", $original_id); 
-                    $stmt_current_active_items->execute();
-                    $current_active_items_res = $stmt_current_active_items->get_result();
-                    $current_active_items_map = [];
-                    while ($row = $current_active_items_res->fetch_assoc()) {
-                        $current_active_items_map[(int)$row['barang_id']] = [
-                            'is_lokal' => (int)$row['is_lokal'],
-                            'qty' => (float)$row['qty'],
-                            'satuan' => (string)$row['satuan'],
-                            'catatan_item' => (string)$row['catatan_item']
-                        ];
-                    }
-
-                    // Rebuild $items from validated_ops so that 'remove' items are excluded
-                    // from the desired final state. Raw $_POST['items'] re-enables disabled
-                    // fields at submit time, so removed items appear with their original qty
-                    // → delta = 0 instead of negative. This mirrors the direct-edit path.
-                    $items = [];
+                    // Hitung delta langsung dari ops (bukan comparison) — hanya item yang benar-benar berubah
+                    $delta_items = [];
                     foreach ($validated_ops as $vop) {
                         if ($vop['op'] === 'add') {
                             $qty_add = (float)$vop['qty'];
@@ -365,65 +347,54 @@ try {
                                 $ratio_add = max((float)($ratio_row_add['ratio'] ?? 1), 0.000001);
                                 $qty_add = $qty_add / $ratio_add;
                             }
-                            $items[] = [
-                                'barang_id'    => $vop['barang_id'],
-                                'qty'          => $qty_add,
-                                'satuan'       => $vop['satuan'],
-                                'is_lokal'     => (int)($vop['is_lokal'] ?? 0),
+                            $delta_items[] = [
+                                'barang_id' => (int)$vop['barang_id'],
+                                'qty' => $qty_add,
+                                'satuan' => $vop['satuan'],
+                                'is_lokal' => (int)($vop['is_lokal'] ?? 0),
                                 'catatan_item' => $vop['catatan_item'] ?? ''
                             ];
+                        } elseif ($vop['op'] === 'remove') {
+                            $before = $vop['before'];
+                            $delta_items[] = [
+                                'barang_id' => (int)$before['barang_id'],
+                                'qty' => -(float)$before['qty'],
+                                'satuan' => (string)$before['satuan'],
+                                'is_lokal' => (int)($before['is_lokal'] ?? 0),
+                                'catatan_item' => trim((string)($before['catatan_item'] ?? '')) . ' (removed)'
+                            ];
                         } elseif ($vop['op'] === 'update') {
-                            // Covers both explicit 'update' and 'keep' ops (keep is stored as
-                            // update with identical before/after → delta = 0, correct).
-                            $items[] = [
-                                'barang_id'    => $vop['after']['barang_id'],
-                                'qty'          => $vop['after']['qty'],
-                                'satuan'       => $vop['after']['satuan'],
-                                'is_lokal'     => (int)($vop['after']['is_lokal'] ?? 0),
-                                'catatan_item' => $vop['after']['catatan_item'] ?? ''
-                            ];
-                        }
-                        // 'remove' ops intentionally excluded → delta becomes negative
-                    }
-
-                    $delta_items = [];
-                    $processed_bids = [];
-
-                    // Process proposed items (from $items)
-                    foreach ($items as $it) {
-                        $bid = (int)($it['barang_id'] ?? 0);
-                        $new_qty = (float)($it['qty'] ?? 0);
-                        $satuan = (string)($it['satuan'] ?? '');
-                        $catatan_item = (string)($it['catatan_item'] ?? '');
-
-                        if ($bid <= 0) continue; // Skip invalid items
-
-                        $old_qty = $current_active_items_map[$bid]['qty'] ?? 0.0;
-                        $delta_qty = $new_qty - $old_qty;
-
-                        if (abs($delta_qty) > 0.000001) { // Only add if there's a significant change
-                            $delta_items[] = [
-                                'barang_id' => $bid,
-                                'qty' => $delta_qty,
-                                'satuan' => $satuan,
-                                'is_lokal' => (int)($it['is_lokal'] ?? 0),
-                                'catatan_item' => $catatan_item
-                            ];
-                        }
-                        $processed_bids[] = $bid;
-                    }
-
-                    // Process items that were in original but are not in proposed (i.e., removed)
-                    foreach ($current_active_items_map as $bid => $old_item) {
-                        if (!in_array($bid, $processed_bids)) {
-                            // Item was removed, so delta is negative of its original quantity
-                            $delta_items[] = [
-                                'barang_id' => $bid,
-                                'qty' => -$old_item['qty'],
-                                'satuan' => $old_item['satuan'],
-                                'is_lokal' => (int)($old_item['is_lokal'] ?? 0),
-                                'catatan_item' => $old_item['catatan_item'] . ' (removed)'
-                            ];
+                            $before = $vop['before'];
+                            $after  = $vop['after'];
+                            if ((int)$before['barang_id'] === (int)$after['barang_id']) {
+                                // Item sama, qty berubah
+                                $delta_qty = (float)$after['qty'] - (float)$before['qty'];
+                                if (abs($delta_qty) > 0.000001) {
+                                    $delta_items[] = [
+                                        'barang_id' => (int)$after['barang_id'],
+                                        'qty' => $delta_qty,
+                                        'satuan' => (string)$after['satuan'],
+                                        'is_lokal' => (int)($after['is_lokal'] ?? 0),
+                                        'catatan_item' => $after['catatan_item'] ?? ''
+                                    ];
+                                }
+                            } else {
+                                // Item diganti: hapus lama, tambah baru
+                                $delta_items[] = [
+                                    'barang_id' => (int)$before['barang_id'],
+                                    'qty' => -(float)$before['qty'],
+                                    'satuan' => (string)$before['satuan'],
+                                    'is_lokal' => (int)($before['is_lokal'] ?? 0),
+                                    'catatan_item' => trim((string)($before['catatan_item'] ?? '')) . ' (removed)'
+                                ];
+                                $delta_items[] = [
+                                    'barang_id' => (int)$after['barang_id'],
+                                    'qty' => (float)$after['qty'],
+                                    'satuan' => (string)$after['satuan'],
+                                    'is_lokal' => (int)($after['is_lokal'] ?? 0),
+                                    'catatan_item' => $after['catatan_item'] ?? ''
+                                ];
+                            }
                         }
                     }
 
@@ -551,23 +522,69 @@ try {
         $pemakaian_id = $edit_id;
         $nomor_pemakaian = $old_header['nomor_pemakaian'];
 
-        // Task: Handle items from request_items_json if provided (Unified Edit Logic)
+        // Handle items from request_items_json (Unified Edit Logic)
+        // Keeps tidak lagi dikirim dari frontend; ambil dari DB untuk item yang tidak tersentuh.
         $ops_json = (string)($_POST['request_items_json'] ?? '');
         $request_ops = parse_request_items_from_json($ops_json);
         if (!empty($request_ops)) {
+            // Kumpulkan detail_id yang eksplisit diubah/dihapus
+            $explicit_detail_ids = [];
+            foreach ($request_ops as $op) {
+                $did = (int)($op['detail_id'] ?? 0);
+                if ($did > 0 && in_array($op['op'], ['update', 'remove'], true)) {
+                    $explicit_detail_ids[] = $did;
+                }
+            }
+
+            // Ambil semua item original dari DB
+            $stmt_orig = $conn->prepare("SELECT id, barang_id, is_lokal, qty, satuan, catatan_item FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+            $stmt_orig->bind_param("i", $edit_id);
+            $stmt_orig->execute();
+            $orig_items_map = [];
+            while ($r = $stmt_orig->get_result()->fetch_assoc()) {
+                $orig_items_map[(int)$r['id']] = $r;
+            }
+
             $items = [];
             foreach ($request_ops as $op) {
-                if ($op['op'] === 'add' || $op['op'] === 'update' || $op['op'] === 'keep') {
+                $op_type = $op['op'] ?? '';
+                if ($op_type === 'remove') continue; // dihapus, tidak masuk $items
+
+                if ($op_type === 'add') {
                     $items[] = [
                         'barang_id' => $op['barang_id'],
                         'qty' => $op['qty'],
                         'satuan' => $op['satuan'],
                         'is_lokal' => (int)($op['is_lokal'] ?? 0),
-                        'uom_mode' => $op['op'] === 'add' ? trim((string)($op['uom_mode'] ?? 'oper')) : 'oper',
-                        'catatan_item' => $op['catatan_item']
+                        'uom_mode' => trim((string)($op['uom_mode'] ?? 'oper')),
+                        'catatan_item' => $op['catatan_item'] ?? ''
+                    ];
+                } elseif ($op_type === 'update') {
+                    $items[] = [
+                        'barang_id' => $op['barang_id'],
+                        'qty' => $op['qty'],
+                        'satuan' => $op['satuan'],
+                        'is_lokal' => (int)($op['is_lokal'] ?? 0),
+                        'uom_mode' => 'oper',
+                        'catatan_item' => $op['catatan_item'] ?? ''
                     ];
                 }
             }
+
+            // Tambahkan item yang tidak tersentuh (kept) dari DB
+            foreach ($orig_items_map as $did => $orig) {
+                if (!in_array($did, $explicit_detail_ids, true)) {
+                    $items[] = [
+                        'barang_id' => (int)$orig['barang_id'],
+                        'qty' => (float)$orig['qty'],
+                        'satuan' => (string)$orig['satuan'],
+                        'is_lokal' => (int)($orig['is_lokal'] ?? 0),
+                        'uom_mode' => 'oper',
+                        'catatan_item' => (string)($orig['catatan_item'] ?? '')
+                    ];
+                }
+            }
+
             if (empty($items)) {
                 throw new Exception("Minimal harus ada 1 item yang tersisa setelah penghapusan.");
             }

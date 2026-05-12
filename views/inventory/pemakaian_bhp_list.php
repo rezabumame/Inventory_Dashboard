@@ -2788,10 +2788,8 @@ if ($default_modal_klinik_id) {
                 const satuan = String($row.find('.edit-satuan-hidden').val() || '');
                 const catatanItem = String($row.find('input[name*="[catatan_item]"]').val() || '');
 
-                // Existing item without selected operation means "tetap / tidak diubah".
+                // Existing item without selected operation = tidak diubah, skip
                 if (isExisting && !op) {
-                    // Task Fix: Include 'keep' to prevent deletion on backend
-                    ops.push({ op: 'keep', detail_id: detailId, barang_id: barangId, qty: qty, satuan: satuan, catatan_item: catatanItem });
                     return true;
                 }
                 if (!isExisting && op !== 'add') {
