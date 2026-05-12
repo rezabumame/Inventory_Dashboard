@@ -362,8 +362,8 @@ if (!function_exists('compact_transaction_note')) {
             <div>
                 <h6 class="mb-1 fw-bold">Menunggu Persetujuan SPV</h6>
                 <p class="mb-0 small opacity-75">Detail di bawah adalah perubahan yang diusulkan oleh Admin Klinik. <br>
-                <span class="badge bg-success-subtle text-success border border-success-subtle">+ Stok Kembali</span>
-                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">- Stok Keluar</span>
+                <span class="badge bg-success-subtle text-success border border-success-subtle">+ Ditambahkan</span>
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">- Dihapus</span>
                 <span class="badge bg-info-subtle text-info border border-info-subtle">Diubah</span>
                 </p>
             </div>
@@ -374,8 +374,8 @@ if (!function_exists('compact_transaction_note')) {
             <div>
                 <h6 class="mb-1 fw-bold">Transaksi Telah Diubah (Approved)</h6>
                 <p class="mb-0 small opacity-75">Detail di bawah menampilkan riwayat perubahan yang telah disetujui oleh SPV. <br>
-                <span class="badge bg-success-subtle text-success border border-success-subtle">+ Stok Kembali</span>
-                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">- Stok Keluar</span>
+                <span class="badge bg-success-subtle text-success border border-success-subtle">+ Ditambahkan</span>
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">- Dihapus</span>
                 <span class="badge bg-info-subtle text-info border border-info-subtle">Diubah</span>
                 </p>
             </div>
@@ -547,16 +547,16 @@ if (!function_exists('compact_transaction_note')) {
                             if (isset($detail['change_type'])) {
                                 switch ($detail['change_type']) {
                                     case 'added':
-                                        // Stock deducted: show red with minus sign
-                                        $row_class = 'table-danger';
-                                        $change_indicator = '<i class="fas fa-minus-circle text-danger me-1"></i>';
-                                        $qty_display = '<span class="badge bg-danger px-3 py-2" style="font-size: 0.9rem;">-' . fmt_qty(abs((float)$detail['qty'])) . '</span>';
-                                        break;
-                                    case 'removed':
-                                        // Stock returned: show green with plus sign
+                                        // Item baru ditambah ke pemakaian
                                         $row_class = 'table-success';
                                         $change_indicator = '<i class="fas fa-plus-circle text-success me-1"></i>';
                                         $qty_display = '<span class="badge bg-success px-3 py-2" style="font-size: 0.9rem;">+' . fmt_qty(abs((float)$detail['qty'])) . '</span>';
+                                        break;
+                                    case 'removed':
+                                        // Item lama dihapus dari pemakaian
+                                        $row_class = 'table-danger';
+                                        $change_indicator = '<i class="fas fa-minus-circle text-danger me-1"></i>';
+                                        $qty_display = '<span class="badge bg-danger px-3 py-2" style="font-size: 0.9rem;">-' . fmt_qty(abs((float)$detail['qty'])) . '</span>';
                                         break;
                                     case 'changed':
                                         $row_class = 'table-info';
