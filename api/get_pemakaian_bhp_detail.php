@@ -214,19 +214,43 @@ if ($has_history && $pending_payload) {
                     $b_res = $conn->query("SELECT kode_barang, nama_barang, satuan FROM inventory_barang WHERE id = " . $bid_after . " LIMIT 1");
                 }
                 $b = $b_res ? $b_res->fetch_assoc() : [];
-                $display_details[] = [
-                    'change_type' => 'changed',
-                    'barang_id' => $bid_after,
-                    'kode_barang' => $b['kode_barang'] ?? '-',
-                    'nama_barang' => $b['nama_barang'] ?? 'Unknown Item',
-                    'qty' => (float)($after['qty'] ?? 0),
-                    'satuan_display' => (string)($after['satuan'] ?? ($b['satuan'] ?? '-')),
-                    'catatan_item' => (string)($after['catatan_item'] ?? ''),
-                    'original_qty' => (float)($row['qty'] ?? 0),
-                    'original_satuan' => (string)($row['satuan_display'] ?? ''),
-                    'original_catatan' => (string)($row['catatan_item'] ?? ''),
-                    'original_nama_barang' => (string)($row['nama_barang'] ?? '-'),
-                ];
+                // Item swap (different barang_id): show as two separate rows (removed old, added new)
+                if ($bid_after !== (int)$row['barang_id']) {
+                    $display_details[] = [
+                        'change_type' => 'removed',
+                        'barang_id' => (int)$row['barang_id'],
+                        'is_lokal' => (int)($row['is_lokal'] ?? 0),
+                        'kode_barang' => $row['kode_barang'] ?? '-',
+                        'nama_barang' => $row['nama_barang'] ?? 'Unknown Item',
+                        'qty' => (float)($row['qty'] ?? 0),
+                        'satuan_display' => (string)($row['satuan_display'] ?? ''),
+                        'catatan_item' => (string)($row['catatan_item'] ?? ''),
+                    ];
+                    $display_details[] = [
+                        'change_type' => 'added',
+                        'barang_id' => $bid_after,
+                        'is_lokal' => $is_lokal_after,
+                        'kode_barang' => $b['kode_barang'] ?? '-',
+                        'nama_barang' => $b['nama_barang'] ?? 'Unknown Item',
+                        'qty' => (float)($after['qty'] ?? 0),
+                        'satuan_display' => (string)($after['satuan'] ?? ($b['satuan'] ?? '-')),
+                        'catatan_item' => (string)($after['catatan_item'] ?? ''),
+                    ];
+                } else {
+                    $display_details[] = [
+                        'change_type' => 'changed',
+                        'barang_id' => $bid_after,
+                        'kode_barang' => $b['kode_barang'] ?? '-',
+                        'nama_barang' => $b['nama_barang'] ?? 'Unknown Item',
+                        'qty' => (float)($after['qty'] ?? 0),
+                        'satuan_display' => (string)($after['satuan'] ?? ($b['satuan'] ?? '-')),
+                        'catatan_item' => (string)($after['catatan_item'] ?? ''),
+                        'original_qty' => (float)($row['qty'] ?? 0),
+                        'original_satuan' => (string)($row['satuan_display'] ?? ''),
+                        'original_catatan' => (string)($row['catatan_item'] ?? ''),
+                        'original_nama_barang' => (string)($row['nama_barang'] ?? '-'),
+                    ];
+                }
             }
         }
     } else {
@@ -338,8 +362,8 @@ if (!function_exists('compact_transaction_note')) {
             <div>
                 <h6 class="mb-1 fw-bold">Menunggu Persetujuan SPV</h6>
                 <p class="mb-0 small opacity-75">Detail di bawah adalah perubahan yang diusulkan oleh Admin Klinik. <br>
-                <span class="badge bg-success-subtle text-success border border-success-subtle">Ditambahkan</span> 
-                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Dihapus</span> 
+                <span class="badge bg-success-subtle text-success border border-success-subtle">+ Stok Kembali</span>
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">- Stok Keluar</span>
                 <span class="badge bg-info-subtle text-info border border-info-subtle">Diubah</span>
                 </p>
             </div>
@@ -350,8 +374,8 @@ if (!function_exists('compact_transaction_note')) {
             <div>
                 <h6 class="mb-1 fw-bold">Transaksi Telah Diubah (Approved)</h6>
                 <p class="mb-0 small opacity-75">Detail di bawah menampilkan riwayat perubahan yang telah disetujui oleh SPV. <br>
-                <span class="badge bg-success-subtle text-success border border-success-subtle">Ditambahkan</span> 
-                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Dihapus</span> 
+                <span class="badge bg-success-subtle text-success border border-success-subtle">+ Stok Kembali</span>
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">- Stok Keluar</span>
                 <span class="badge bg-info-subtle text-info border border-info-subtle">Diubah</span>
                 </p>
             </div>
@@ -523,22 +547,16 @@ if (!function_exists('compact_transaction_note')) {
                             if (isset($detail['change_type'])) {
                                 switch ($detail['change_type']) {
                                     case 'added':
-                                        $row_class = 'table-success';
-                                        $change_indicator = '<i class="fas fa-plus-circle text-success me-1"></i>';
-                                        if ($is_revision) {
-                                            $qty_display = '<span class="badge bg-success px-3 py-2" style="font-size: 0.9rem;">+' . fmt_qty($detail['qty']) . '</span>';
-                                        }
-                                        break;
-                                    case 'removed':
+                                        // Stock deducted: show red with minus sign
                                         $row_class = 'table-danger';
                                         $change_indicator = '<i class="fas fa-minus-circle text-danger me-1"></i>';
-                                        if ($is_revision) {
-                                            $qty_display = '<span class="badge bg-danger px-3 py-2" style="font-size: 0.9rem;">' . fmt_qty($detail['qty']) . '</span>';
-                                        } else {
-                                            $qty_display = '<del>' . $qty_display . '</del>';
-                                            $satuan_display = '<del>' . $satuan_display . '</del>';
-                                            $catatan_display = '<del>' . $catatan_display . '</del>';
-                                        }
+                                        $qty_display = '<span class="badge bg-danger px-3 py-2" style="font-size: 0.9rem;">-' . fmt_qty(abs((float)$detail['qty'])) . '</span>';
+                                        break;
+                                    case 'removed':
+                                        // Stock returned: show green with plus sign
+                                        $row_class = 'table-success';
+                                        $change_indicator = '<i class="fas fa-plus-circle text-success me-1"></i>';
+                                        $qty_display = '<span class="badge bg-success px-3 py-2" style="font-size: 0.9rem;">+' . fmt_qty(abs((float)$detail['qty'])) . '</span>';
                                         break;
                                     case 'changed':
                                         $row_class = 'table-info';
