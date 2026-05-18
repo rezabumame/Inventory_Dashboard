@@ -659,7 +659,7 @@ if ($active_tab === 'rekap') {
                 <?php if ($show_hc): ?><th class="text-center">Stock HC</th><?php endif; ?>
                 <th class="text-center">Sellout Clinic</th><?php if ($show_hc): ?><th class="text-center">Sellout HC</th><?php endif; ?>
                 <th class="text-center">Reserve Clinic</th><?php if ($show_hc): ?><th class="text-center">Reserve HC</th><?php endif; ?>
-                <th class="text-center" style="font-size:0.55em;">Est. Usage</th>
+                <th class="text-center">Est. Usage</th>
                 <th class="text-center">On Hand Stok</th><th class="text-center">Available Stok</th>
             </tr></thead>
             <tbody>

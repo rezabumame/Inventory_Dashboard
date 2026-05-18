@@ -12,6 +12,7 @@ skills-lock.json
 
 # AI Agent & Tools
 .agents/
+.claude/
 .kiro/
 .trae/
 .gemini/
