@@ -201,7 +201,7 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
             <i class="fas fa-file-invoice"></i> Format Odoo
         </a>
         <a href="index.php?page=daily_usage_config" class="sidebar-link <?= $current_page == 'daily_usage_config' ? 'active' : '' ?>">
-            <i class="fas fa-clock"></i> Daily Usage
+            <i class="fas fa-clock"></i> Est. Usage
         </a>
         <?php endif; ?>
 
