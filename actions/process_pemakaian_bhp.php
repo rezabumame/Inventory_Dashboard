@@ -689,38 +689,36 @@ try {
         $pemakaian_id = $conn->insert_id;
     }
 
-    // --- TARGETED CLEANUP AUTO-DEDUCTION (REFERENCE BASED) ---
+    // --- CLEANUP BHP-AUT ---
+    // Step 1: Targeted cleanup by explicit IDs (jika dikirim dari frontend)
     $realized_auto_ids = $_POST['realized_auto_ids'] ?? '';
     if (!empty($realized_auto_ids)) {
         $ids_to_delete = array_filter(array_map('intval', explode(',', $realized_auto_ids)));
         foreach ($ids_to_delete as $temp_id) {
             if ($temp_id <= 0) continue;
-            // Clear details and transaction history (Note: Auto-BHP no longer has stock records, but we clear just in case)
             $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $temp_id");
             $conn->query("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = $temp_id");
             $conn->query("DELETE FROM inventory_pemakaian_bhp WHERE id = $temp_id AND is_auto = 1");
         }
-    } elseif (!$edit_id) {
-        // --- FALLBACK: GLOBAL CLEANUP BY DATE & CLINIC (Only for new records) ---
-        $date_only = date('Y-m-d', strtotime($tanggal));
-        
-        // Cari ID pemakaian temporary
-        $stmt_find_temp = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal LIKE ?");
-        $tgl_like = $date_only . '%';
-        $stmt_find_temp->bind_param("iss", $klinik_id, $jenis_pemakaian, $tgl_like);
-        $stmt_find_temp->execute();
-        $res_temp = $stmt_find_temp->get_result();
-        
-        while ($row_temp = $res_temp->fetch_assoc()) {
-            $temp_id = (int)$row_temp['id'];
-            
-            // Clear details and transaction history
-            $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $temp_id");
-            $conn->query("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = $temp_id");
+    }
 
-            $stmt_del_temp = $conn->prepare("DELETE FROM inventory_pemakaian_bhp WHERE id = ?");
-            $stmt_del_temp->bind_param("i", $temp_id);
-            $stmt_del_temp->execute();
+    // Step 2: Comprehensive cleanup by date + jenis — selalu jalan untuk record baru,
+    // menangkap BHP-AUT yang mungkin terlewat dari Step 1 (IDs tidak lengkap / tidak dikirim)
+    if (!$edit_id) {
+        $date_only = date('Y-m-d', strtotime($tanggal));
+        $tgl_like  = $date_only . '%';
+        $stmt_find_auto = $conn->prepare("
+            SELECT id FROM inventory_pemakaian_bhp
+            WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal LIKE ?
+        ");
+        $stmt_find_auto->bind_param("iss", $klinik_id, $jenis_pemakaian, $tgl_like);
+        $stmt_find_auto->execute();
+        $res_auto = $stmt_find_auto->get_result();
+        while ($row_auto = $res_auto->fetch_assoc()) {
+            $auto_id = (int)$row_auto['id'];
+            $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $auto_id");
+            $conn->query("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = $auto_id");
+            $conn->query("DELETE FROM inventory_pemakaian_bhp WHERE id = $auto_id AND is_auto = 1");
         }
     }
 
