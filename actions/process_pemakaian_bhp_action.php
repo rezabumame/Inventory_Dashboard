@@ -289,6 +289,31 @@ try {
                 $jenis_pemakaian = $header['jenis_pemakaian'];
                 $user_hc_id = (int)$header['user_hc_id'];
 
+                // Hapus transaksi stok lama (jika ada dari proses sebelumnya) dan reverse efeknya
+                // agar tidak terjadi double-deduction saat approval membuat transaksi baru
+                $stmt_old_ts = $conn->prepare("SELECT barang_id, tipe_transaksi, qty FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = ?");
+                $stmt_old_ts->bind_param("i", $id);
+                exec_or_throw($stmt_old_ts, 'Fetch old transactions');
+                $old_ts_res = $stmt_old_ts->get_result();
+                while ($ots = $old_ts_res->fetch_assoc()) {
+                    $rqty = (float)$ots['qty'];
+                    $rbid = (int)$ots['barang_id'];
+                    if ($ots['tipe_transaksi'] === 'out') {
+                        if ($jenis_pemakaian === 'hc' && !empty($user_hc_id)) {
+                            $stmt_rv = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+                            $stmt_rv->bind_param("diiii", $rqty, $user_id, $rbid, $user_hc_id, $kid);
+                            exec_or_throw($stmt_rv, 'Reverse old stock HC');
+                        } else {
+                            $stmt_rv = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
+                            $stmt_rv->bind_param("diii", $rqty, $user_id, $rbid, $kid);
+                            exec_or_throw($stmt_rv, 'Reverse old stock Klinik');
+                        }
+                    }
+                }
+                $stmt_del_ts = $conn->prepare("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = ?");
+                $stmt_del_ts->bind_param("i", $id);
+                exec_or_throw($stmt_del_ts, 'Delete old stock transactions before approval');
+
                 while ($item = $details->fetch_assoc()) {
                     $bid = (int)$item['barang_id'];
                     $is_lokal = (int)($item['is_lokal'] ?? 0);
