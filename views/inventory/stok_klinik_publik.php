@@ -919,7 +919,8 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
             return '<tr><td class="ps-3 text-muted">#' + (t.transfer_id || '-') + '</td><td>' + (t.tipe_transaksi || '-') + ' ' + level + '</td><td>' + $('<div>').text(t.last_at || '').html() + '</td><td class="text-end pe-3 fw-semibold">' + fmtNum(t.qty || 0) + '</td></tr>';
         }).join('') : '<tr><td colspan="4" class="text-center text-muted py-2">Tidak ada transaksi transfer</td></tr>';
 
-        var isHistory = (window.__stokKlinikContext.tanggal !== new Date().toISOString().split('T')[0]);
+        var _ldt = new Date(); var _todayLocal = _ldt.getFullYear() + '-' + String(_ldt.getMonth()+1).padStart(2,'0') + '-' + String(_ldt.getDate()).padStart(2,'0');
+        var isHistory = (window.__stokKlinikContext.tanggal !== _todayLocal);
         var adjLabel = isHistory ? 'Penyesuaian (Rollback):' : 'Sellout:';
         var adjClass = isHistory ? 'text-success' : 'text-danger';
 
@@ -1066,13 +1067,15 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
                                             <th class="text-center">${type === 'available' ? 'On Hand HC' : 'Stok HC'}</th>
                                             <th class="text-center">${type === 'available' ? 'Reserve Clinic' : 'Sellout Clinic'}</th>
                                             <th class="text-center">${type === 'available' ? 'Reserve HC' : 'Sellout HC'}</th>
-                                            <th class="text-center">Est. Usage</th>
+                                            ${type === 'available' ? '<th class="text-center">Est. Usage</th>' : ''}
                                             <th class="text-center">${type === 'available' ? 'Available' : 'On Hand'}</th>
                                         </tr>
                                     </thead>
                                     <tbody class="small">
                                         ${perKlinik.map(function(k) {
-                                            var onHand = k.on_hand !== undefined ? k.on_hand : (k.stock_on + k.stock_hc);
+                                            var onHand = type === 'onhand'
+                                                ? (k.stock_on - (k.sellout_on||0)) + (k.stock_hc - (k.sellout_hc||0))
+                                                : (k.on_hand !== undefined ? k.on_hand : (k.stock_on + k.stock_hc));
                                             var isGudang = k.is_gudang === true;
                                             var rowBg = isGudang ? ' style="background:#f8fafc;"' : '';
                                             return '<tr' + rowBg + '>' +
@@ -1085,7 +1088,7 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
                                                     : '<td class="text-center text-danger">' + (k.sellout_on > 0 ? fmtNum(k.sellout_on) : '<span class="text-muted">-</span>') + '</td>' +
                                                       '<td class="text-center text-danger">' + (k.sellout_hc > 0 ? fmtNum(k.sellout_hc) : '<span class="text-muted">-</span>') + '</td>'
                                                 ) +
-                                                '<td class="text-center text-danger">' + (!isGudang && k.daily_usage > 0 ? fmtNum(k.daily_usage) : '<span class="text-muted">-</span>') + '</td>' +
+                                                (type === 'available' ? '<td class="text-center text-danger">' + (!isGudang && k.daily_usage > 0 ? fmtNum(k.daily_usage) : '<span class="text-muted">-</span>') + '</td>' : '') +
                                                 '<td class="text-center fw-bold text-success">' + fmtNum(type === 'available' ? (k.available !== undefined ? k.available : onHand) : onHand) + '</td>' +
                                                 '</tr>';
                                         }).join('')}
