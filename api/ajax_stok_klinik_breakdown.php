@@ -383,6 +383,7 @@ $reserve = [
     'events' => []
 ];
 
+$_res_date_filter_upper = $is_history ? " AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'" : '';
 $r = $conn->query("
     SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END), 0) AS qty
     FROM inventory_booking_detail bd
@@ -392,7 +393,7 @@ $r = $conn->query("
       AND bp.status IN ('booked','rescheduled','pending_edit')
       AND bp.status_booking LIKE '%Clinic%'
       AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($tanggal) . "'
-      AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'
+      $_res_date_filter_upper
 ");
 if ($r && $r->num_rows > 0) $reserve['onsite'] = (float)($r->fetch_assoc()['qty'] ?? 0);
 
@@ -405,7 +406,7 @@ $r = $conn->query("
       AND bp.status IN ('booked','rescheduled','pending_edit')
       AND bp.status_booking LIKE '%HC%'
       AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($tanggal) . "'
-      AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'
+      $_res_date_filter_upper
 ");
 if ($r && $r->num_rows > 0) $reserve['hc'] = (float)($r->fetch_assoc()['qty'] ?? 0);
 
@@ -417,7 +418,7 @@ $r = $conn->query("
       AND bp.klinik_id IN ($klinik_ids_str)
       AND bp.status IN ('booked','rescheduled','pending_edit')
       AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($tanggal) . "'
-      AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'
+      $_res_date_filter_upper
     GROUP BY bp.nomor_booking, bp.tanggal_pemeriksaan, bp.status_booking
     ORDER BY bp.tanggal_pemeriksaan ASC
     LIMIT 50
@@ -512,10 +513,10 @@ if ($is_all_klinik) {
 
         // Reserve per klinik
         $ak_res_on = 0.0; $ak_res_hc = 0.0;
-        $t_esc2 = $conn->real_escape_string($tanggal); $me_esc2 = $conn->real_escape_string($month_end);
-        $r = $conn->query("SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_onsite>0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END),0) AS q FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id=bp.id WHERE bd.barang_id=$barang_id AND bp.klinik_id=$ak_id AND bp.status IN ('booked','rescheduled','pending_edit') AND bp.status_booking LIKE '%Clinic%' AND bp.tanggal_pemeriksaan>='$t_esc2' AND bp.tanggal_pemeriksaan<='$me_esc2'");
+        $t_esc2 = $conn->real_escape_string($tanggal);
+        $r = $conn->query("SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_onsite>0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END),0) AS q FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id=bp.id WHERE bd.barang_id=$barang_id AND bp.klinik_id=$ak_id AND bp.status IN ('booked','rescheduled','pending_edit') AND bp.status_booking LIKE '%Clinic%' AND bp.tanggal_pemeriksaan>='$t_esc2' $_res_date_filter_upper");
         if ($r) $ak_res_on = (float)($r->fetch_assoc()['q'] ?? 0);
-        $r = $conn->query("SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_hc>0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END),0) AS q FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id=bp.id WHERE bd.barang_id=$barang_id AND bp.klinik_id=$ak_id AND bp.status IN ('booked','rescheduled','pending_edit') AND bp.status_booking LIKE '%HC%' AND bp.tanggal_pemeriksaan>='$t_esc2' AND bp.tanggal_pemeriksaan<='$me_esc2'");
+        $r = $conn->query("SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_hc>0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END),0) AS q FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id=bp.id WHERE bd.barang_id=$barang_id AND bp.klinik_id=$ak_id AND bp.status IN ('booked','rescheduled','pending_edit') AND bp.status_booking LIKE '%HC%' AND bp.tanggal_pemeriksaan>='$t_esc2' $_res_date_filter_upper");
         if ($r) $ak_res_hc = (float)($r->fetch_assoc()['q'] ?? 0);
 
         $ak_on_hand = ($ak_stock_on + $ak_stock_hc) - $ak_daily;
