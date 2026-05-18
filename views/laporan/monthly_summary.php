@@ -129,19 +129,15 @@ if (!empty($all_barang_ids)) {
         $rs_onsite = (float)($reserve_sold_data[$bid]['onsite'] ?? 0);
         $rs_hc = (float)($reserve_sold_data[$bid]['hc'] ?? 0);
 
-        // Ensure sellout is at least equal to reserve_sold to avoid negative Non-Reserve values
-        // If sellout is less than reserve_sold, it means the BHP record might be missing or date mismatch
-        if ($s_onsite < $rs_onsite) $s_onsite = $rs_onsite;
-        if ($s_hc < $rs_hc) $s_hc = $rs_hc;
-
         $s_total = $s_onsite + $s_hc;
 
         $rb_onsite = (float)($reserve_booked_data[$bid]['onsite'] ?? 0);
         $rb_hc = (float)($reserve_booked_data[$bid]['hc'] ?? 0);
 
-        // Non-Reserve (Incl. Adjustment) = total sellout - Reserve-Sold
-        $nr_onsite = $s_onsite - $rs_onsite;
-        $nr_hc = $s_hc - $rs_hc;
+        // Non-Reserve = BHP aktual di luar booking. Floor 0 karena reserve mapping
+        // bisa over-estimasi — sellout aktual (BHP input) adalah sumber kebenaran.
+        $nr_onsite = max(0, $s_onsite - $rs_onsite);
+        $nr_hc = max(0, $s_hc - $rs_hc);
 
         $final_data[] = [
             'kode_barang' => $b['kode_barang'],
