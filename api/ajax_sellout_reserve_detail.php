@@ -108,7 +108,7 @@ if ($type === 'sellout_clinic' || $type === 'sellout_hc') {
             bp.status_booking,
             bp.status,
             bp.nakes_hc,
-            ($qty_col) AS qty
+            SUM($qty_col) AS qty
         FROM inventory_booking_detail bd
         JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
         WHERE $bp_filter
@@ -116,6 +116,8 @@ if ($type === 'sellout_clinic' || $type === 'sellout_hc') {
           AND $booking_filter
           AND bd.barang_id = $barang_id
           $date_filter
+        GROUP BY bp.nomor_booking, bp.nama_pemesan, bp.tanggal_pemeriksaan,
+                 bp.status_booking, bp.status, bp.nakes_hc
         ORDER BY bp.tanggal_pemeriksaan ASC
         LIMIT 200
     ";
