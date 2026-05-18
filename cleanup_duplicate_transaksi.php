@@ -85,7 +85,14 @@ function get_ts_for_bhp(mysqli $conn, int $pid): array {
     $all = [];
     while ($t = $res->fetch_assoc()) $all[] = $t;
 
-    // Kelompokkan per barang_id, cari yang punya > 1 timestamp berbeda
+    if (empty($all)) return ['to_delete' => [], 'to_keep' => [], 'non_dup' => []];
+
+    // Batch approval = timestamp TERBARU dari semua transaksi BHP ini.
+    // Original batch bisa span beberapa detik (loop insert), tapi approval
+    // selalu menghasilkan timestamp yang lebih baru dari seluruh original batch.
+    $max_ts = max(array_column($all, 'created_at'));
+
+    // Kelompokkan per barang_id
     $by_barang = [];
     foreach ($all as $t) {
         $bid = (int)$t['barang_id'];
@@ -93,26 +100,27 @@ function get_ts_for_bhp(mysqli $conn, int $pid): array {
         $by_barang[$bid][] = $t;
     }
 
-    $to_delete  = []; // transaksi lama dari barang duplikat
-    $to_keep    = []; // transaksi baru dari barang duplikat
-    $non_dup    = []; // transaksi barang yang tidak duplikat (tidak disentuh)
+    $to_delete = []; // transaksi lama (sebelum max_ts) dari barang duplikat
+    $to_keep   = []; // transaksi baru (= max_ts) dari barang duplikat
+    $non_dup   = []; // barang yang hanya ada di satu batch (tidak disentuh)
 
     foreach ($by_barang as $bid => $ts_list) {
-        $timestamps = array_unique(array_column($ts_list, 'created_at'));
-        if (count($timestamps) <= 1) {
-            // Bukan duplikat — semua transaksi untuk barang ini aman
-            foreach ($ts_list as $t) $non_dup[] = $t;
-            continue;
+        $has_old = false;
+        $has_new = false;
+        foreach ($ts_list as $t) {
+            if ($t['created_at'] === $max_ts) $has_new = true;
+            else $has_old = true;
         }
 
-        // Duplikat: barang sama, timestamp berbeda
-        // Batch paling awal = LAMA (hapus), sisanya = BARU (pertahankan)
-        sort($timestamps);
-        $ts_lama = $timestamps[0];
-
-        foreach ($ts_list as $t) {
-            if ($t['created_at'] === $ts_lama) $to_delete[] = $t;
-            else $to_keep[] = $t;
+        if ($has_old && $has_new) {
+            // Ada di batch lama DAN batch approval → true duplicate
+            foreach ($ts_list as $t) {
+                if ($t['created_at'] === $max_ts) $to_keep[] = $t;
+                else $to_delete[] = $t;
+            }
+        } else {
+            // Hanya ada di satu batch → tidak disentuh
+            foreach ($ts_list as $t) $non_dup[] = $t;
         }
     }
 
