@@ -436,15 +436,11 @@ if ($active_tab === 'rekap') {
             $rs_onsite = (float)($reserve_sold_data[$bid]['onsite'] ?? 0);
             $rs_hc = (float)($reserve_sold_data[$bid]['hc'] ?? 0);
             
-            // Penguncian: Pastikan Sellout minimal sama dengan Reserve-Sold agar tidak minus
-            if ($s_onsite < $rs_onsite) $s_onsite = $rs_onsite;
-            if ($s_hc < $rs_hc) $s_hc = $rs_hc;
-
             $s_total = $s_onsite + $s_hc;
             $rb_onsite = (float)($reserve_booked_data[$bid]['onsite'] ?? 0);
             $rb_hc = (float)($reserve_booked_data[$bid]['hc'] ?? 0);
-            $nr_onsite = $s_onsite - $rs_onsite;
-            $nr_hc = $s_hc - $rs_hc;
+            $nr_onsite = max(0, $s_onsite - $rs_onsite);
+            $nr_hc = max(0, $s_hc - $rs_hc);
 
             $final_data[] = [
                 'kode_barang' => $b['kode_barang'], 'nama_barang' => $b['nama_barang'], 'satuan' => $b['satuan'],
