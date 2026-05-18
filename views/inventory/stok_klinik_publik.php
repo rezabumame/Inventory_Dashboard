@@ -213,12 +213,12 @@ if ($active_tab === 'stok') {
             // 2. Aggregate Joins (Phase 2)
             $res_agg_onsite = $conn->query("SELECT bd.barang_id, SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END) as total 
                 FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id 
-                WHERE bp.klinik_id $klinik_filter_sql AND bp.status = 'booked' AND bp.status_booking LIKE '%Clinic%'$filter_bp_onsite GROUP BY bd.barang_id");
+                WHERE bp.klinik_id $klinik_filter_sql AND bp.status IN ('booked','rescheduled','pending_edit') AND bp.status_booking LIKE '%Clinic%'$filter_bp_onsite GROUP BY bd.barang_id");
             $agg_reserve_onsite = []; while($r = $res_agg_onsite->fetch_assoc()) $agg_reserve_onsite[(int)$r['barang_id']] = (float)$r['total'];
 
-            $res_agg_hc = $conn->query("SELECT bd.barang_id, SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END) as total 
-                FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id 
-                WHERE bp.klinik_id $klinik_filter_sql AND bp.status = 'booked' AND bp.status_booking LIKE '%HC%'$filter_bp_hc GROUP BY bd.barang_id");
+            $res_agg_hc = $conn->query("SELECT bd.barang_id, SUM(CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END) as total
+                FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
+                WHERE bp.klinik_id $klinik_filter_sql AND bp.status IN ('booked','rescheduled','pending_edit') AND bp.status_booking LIKE '%HC%'$filter_bp_hc GROUP BY bd.barang_id");
             $agg_reserve_hc = []; while($r = $res_agg_hc->fetch_assoc()) $agg_reserve_hc[(int)$r['barang_id']] = (float)$r['total'];
 
             $res_agg_sell_k = $conn->query("SELECT ts.barang_id, SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) as total 
