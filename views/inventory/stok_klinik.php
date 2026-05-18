@@ -864,12 +864,33 @@ if ($active_tab == 'stok') {
     </div>
 </div>
 
+<!-- Modal Sellout/Reserve Detail -->
+<div class="modal fade" id="modalSelloutReserve" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="srModalTitle"><i class="fas fa-list me-2"></i>Detail</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="srModalBody">
+                <div class="text-muted text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Memuat...</div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between align-items-center">
+                <span class="text-muted small" id="srModalFooterNote"></span>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 window.__stokKlinikContext = {
-    klinikId: <?= (int)$selected_klinik ?>,
+    klinikId: <?= json_encode($selected_klinik) ?>,
     tanggal: "<?= htmlspecialchars($filter_date) ?>",
     tanggalLabel: "<?= htmlspecialchars($filter_date_label) ?>",
-    includeGudang: <?= $include_gudang ? 'true' : 'false' ?>
+    includeGudang: <?= $include_gudang ? 'true' : 'false' ?>,
+    syncAfterTs: "<?= htmlspecialchars($sync_buffer_ts ?? $last_update_general ?? '') ?>",
+    isHistoryDate: <?= $is_history_date ? 'true' : 'false' ?>
 };
 
 function fmtNum(v) {
@@ -883,6 +904,104 @@ function fmtNum(v) {
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     return parts.join(',');
 }
+
+async function openSelloutReserveDetail(barangId, namaBarang, type, expectedTotal) {
+    var ctx    = window.__stokKlinikContext || {};
+    var modal  = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSelloutReserve'));
+    var body   = document.getElementById('srModalBody');
+    var title  = document.getElementById('srModalTitle');
+    var footer = document.getElementById('srModalFooterNote');
+
+    var labels = {
+        sellout_clinic: { icon: 'fas fa-minus-circle text-danger',  text: 'Sellout Clinic' },
+        sellout_hc:     { icon: 'fas fa-minus-circle text-danger',  text: 'Sellout HC' },
+        reserve_clinic: { icon: 'fas fa-lock text-info',            text: 'Reserve Clinic' },
+        reserve_hc:     { icon: 'fas fa-lock text-info',            text: 'Reserve HC' },
+    };
+    var lbl = labels[type] || { icon: 'fas fa-list', text: type };
+    title.innerHTML = `<i class="${lbl.icon} me-2"></i>${lbl.text} — ${namaBarang}`;
+    body.innerHTML  = '<div class="text-muted text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>Memuat...</div>';
+    footer.textContent = '';
+    modal.show();
+
+    var params = new URLSearchParams({
+        type:       type,
+        barang_id:  barangId,
+        klinik_id:  ctx.klinikId || 0,
+        sync_after: ctx.syncAfterTs || '',
+    });
+
+    try {
+        var res  = await fetch('api/ajax_sellout_reserve_detail.php?' + params);
+        var data = await res.json();
+        if (!data.success) { body.innerHTML = `<div class="alert alert-danger">${data.message}</div>`; return; }
+
+        var rows = data.rows || [];
+        if (!rows.length) {
+            body.innerHTML = '<div class="text-center text-muted py-4"><i class="fas fa-inbox fa-2x mb-2 d-block opacity-25"></i>Tidak ada data</div>';
+            return;
+        }
+
+        var isSellout = type.startsWith('sellout');
+        var html = '<div class="table-responsive"><table class="table table-sm table-hover align-middle" style="font-size:13px;">';
+
+        if (isSellout) {
+            html += `<thead class="table-light"><tr>
+                <th>No. BHP</th><th>Tanggal</th><th class="text-center">Jenis</th>
+                <th class="text-center">Qty</th><th>Petugas</th>
+            </tr></thead><tbody>`;
+            rows.forEach(r => {
+                var jenisBadge = r.jenis === 'BHP-AUT'
+                    ? '<span class="badge bg-secondary">AUT</span>'
+                    : `<span class="badge bg-${r.jenis === 'HC' ? 'warning text-dark' : 'primary'}">${r.jenis}</span>`;
+                html += `<tr>
+                    <td class="fw-semibold">${escH(r.nomor)}</td>
+                    <td>${escH(r.tanggal)}</td>
+                    <td class="text-center">${jenisBadge}</td>
+                    <td class="text-center fw-bold ${r.qty < 0 ? 'text-primary' : 'text-danger'}">${fmtNum(r.qty)}</td>
+                    <td class="text-muted">${escH(r.petugas)}</td>
+                </tr>`;
+            });
+        } else {
+            html += `<thead class="table-light"><tr>
+                <th>No. Booking</th><th>Nama Pemesan</th>
+                ${type === 'reserve_hc' ? '<th>Nakes HC</th>' : ''}
+                <th>Tgl Pemeriksaan</th><th class="text-center">Status</th><th class="text-center">Qty</th>
+            </tr></thead><tbody>`;
+            rows.forEach(r => {
+                var statusBadge = `<span class="badge bg-${r.status === 'booked' ? 'success' : 'warning text-dark'}" style="font-size:10px;">${escH(r.status)}</span>`;
+                html += `<tr>
+                    <td class="fw-semibold">${escH(r.nomor)}</td>
+                    <td>${escH(r.nama_pemesan)}</td>
+                    ${type === 'reserve_hc' ? `<td class="text-muted">${escH(r.nakes)}</td>` : ''}
+                    <td>${escH(r.tanggal)}</td>
+                    <td class="text-center">${statusBadge}</td>
+                    <td class="text-center fw-bold text-info">${fmtNum(r.qty)}</td>
+                </tr>`;
+            });
+        }
+
+        html += `</tbody><tfoot><tr class="table-light fw-bold">
+            <td colspan="${isSellout ? 3 : (type === 'reserve_hc' ? 4 : 3)}" class="text-end">Total</td>
+            <td class="text-center ${isSellout ? 'text-danger' : 'text-info'}">${fmtNum(data.total)}</td>
+            <td></td>
+        </tr></tfoot></table></div>`;
+
+        body.innerHTML = html;
+
+        // Warn if total doesn't match expected
+        var diff = Math.abs(data.total - expectedTotal);
+        if (diff > 0.001) {
+            footer.innerHTML = `<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>Total detail (${fmtNum(data.total)}) berbeda dari kolom (${fmtNum(expectedTotal)}) — mungkin ada transaksi di luar filter periode.</span>`;
+        } else {
+            footer.textContent = `${rows.length} transaksi · Total: ${fmtNum(data.total)}`;
+        }
+    } catch(e) {
+        body.innerHTML = `<div class="alert alert-danger">Gagal memuat: ${e.message}</div>`;
+    }
+}
+
+function escH(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage = 0, stockTotal = 0) {
     var modalEl = document.getElementById('modalStokBreakdown');
@@ -1364,19 +1483,23 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
                                 <?php endif; ?>
                             </td>
                             <?php endif; ?>
-                            <td class="text-center <?= $sellout > 0 ? 'text-danger fw-bold' : ($sellout < 0 ? 'text-primary fw-bold' : 'text-muted small') ?>">
+                            <td class="text-center <?= $sellout > 0 ? 'text-danger fw-bold' : ($sellout < 0 ? 'text-primary fw-bold' : 'text-muted small') ?><?= $sellout != 0 ? ' cursor-pointer' : '' ?>"
+                                <?= $sellout != 0 ? 'style="cursor:pointer;" onclick="openSelloutReserveDetail(' . (int)$row['barang_id'] . ',\'' . htmlspecialchars($row['nama_barang'], ENT_QUOTES) . '\',\'sellout_clinic\',' . (float)$sellout . ')"' : '' ?>>
                                 <?= fmt_qty($sellout) ?>
                             </td>
                             <?php if ($show_hc): ?>
-                            <td class="text-center <?= $sellout_hc > 0 ? 'text-danger fw-bold' : ($sellout_hc < 0 ? 'text-primary fw-bold' : 'text-muted small') ?>">
+                            <td class="text-center <?= $sellout_hc > 0 ? 'text-danger fw-bold' : ($sellout_hc < 0 ? 'text-primary fw-bold' : 'text-muted small') ?>"
+                                <?= $sellout_hc != 0 ? 'style="cursor:pointer;" onclick="openSelloutReserveDetail(' . (int)$row['barang_id'] . ',\'' . htmlspecialchars($row['nama_barang'], ENT_QUOTES) . '\',\'sellout_hc\',' . (float)$sellout_hc . ')"' : '' ?>>
                                 <?= fmt_qty($sellout_hc) ?>
                             </td>
                             <?php endif; ?>
-                            <td class="text-center <?= $reserve > 0 ? 'text-reserve-onsite fw-bold' : 'text-muted small' ?>">
+                            <td class="text-center <?= $reserve > 0 ? 'text-reserve-onsite fw-bold' : 'text-muted small' ?>"
+                                <?= $reserve > 0 ? 'style="cursor:pointer;" onclick="openSelloutReserveDetail(' . (int)$row['barang_id'] . ',\'' . htmlspecialchars($row['nama_barang'], ENT_QUOTES) . '\',\'reserve_clinic\',' . (float)$reserve . ')"' : '' ?>>
                                 <?= fmt_qty($reserve) ?>
                             </td>
                             <?php if ($show_hc): ?>
-                            <td class="text-center <?= $reserve_hc > 0 ? 'text-reserve-hc fw-bold' : 'text-muted small' ?>">
+                            <td class="text-center <?= $reserve_hc > 0 ? 'text-reserve-hc fw-bold' : 'text-muted small' ?>"
+                                <?= $reserve_hc > 0 ? 'style="cursor:pointer;" onclick="openSelloutReserveDetail(' . (int)$row['barang_id'] . ',\'' . htmlspecialchars($row['nama_barang'], ENT_QUOTES) . '\',\'reserve_hc\',' . (float)$reserve_hc . ')"' : '' ?>>
                                 <?= fmt_qty($reserve_hc) ?>
                             </td>
                             <?php endif; ?>
