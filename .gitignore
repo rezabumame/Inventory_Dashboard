@@ -31,6 +31,9 @@ tmp_check_db.php
 *.php.bak
 *.tmp
 
+# Upload files (user-generated content, not tracked in git)
+uploads/
+
 # OS files
 .DS_Store
 Thumbs.db
