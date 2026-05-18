@@ -6,7 +6,7 @@ $role = (string)($_SESSION['role'] ?? '');
 $user_klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
 $user_id = (int)($_SESSION['user_id'] ?? 0);
 $active_tab = (string)($_GET['tab'] ?? 'stok');
-if (!in_array($active_tab, ['stok', 'history', 'summary'], true)) $active_tab = 'stok';
+if (!in_array($active_tab, ['stok', 'history', 'summary', 'request'], true)) $active_tab = 'stok';
 
 // Fetch data
 $selected_klinik = 0;
@@ -41,6 +41,44 @@ if ($role === 'petugas_hc') {
     }
 }
 
+// ── Request Stok HC data ────────────────────────────────────────────────────
+$hc_request_pending_count = 0;
+$hc_requests = [];
+if ($selected_klinik > 0 && in_array($role, ['admin_klinik', 'super_admin', 'spv_klinik'], true)) {
+    $pr = $conn->query("SELECT COUNT(*) AS c FROM inventory_hc_transfer_request WHERE klinik_id=$selected_klinik AND status='pending'");
+    if ($pr) $hc_request_pending_count = (int)($pr->fetch_assoc()['c'] ?? 0);
+
+    if ($active_tab === 'request') {
+        $rq = $conn->query("
+            SELECT r.id, r.status, r.foto_path, r.catatan, r.created_at, r.reviewed_at,
+                   u.nama_lengkap AS nakes_name,
+                   rv.nama_lengkap AS reviewer_name,
+                   (SELECT COUNT(*) FROM inventory_hc_transfer_request_items WHERE request_id=r.id) AS item_count
+            FROM inventory_hc_transfer_request r
+            JOIN inventory_users u ON u.id = r.user_hc_id
+            LEFT JOIN inventory_users rv ON rv.id = r.reviewed_by
+            WHERE r.klinik_id = $selected_klinik
+            ORDER BY FIELD(r.status,'pending','approved','rejected'), r.created_at DESC
+            LIMIT 200
+        ");
+        while ($rq && ($rw = $rq->fetch_assoc())) $hc_requests[] = $rw;
+    }
+}
+
+// ── Klinik items for admin add-item modal ───────────────────────────────────
+$klinik_items_for_modal = [];
+if ($selected_klinik > 0 && in_array($role, ['admin_klinik', 'super_admin', 'spv_klinik'], true)) {
+    $ki_res = $conn->query("
+        SELECT b.id AS barang_id, b.nama_barang, COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom
+        FROM inventory_stok_gudang_klinik sgk
+        JOIN inventory_barang b ON b.id = sgk.barang_id
+        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+        WHERE sgk.klinik_id = $selected_klinik AND sgk.qty > 0
+        ORDER BY b.nama_barang ASC
+    ");
+    while ($ki_res && ($ki = $ki_res->fetch_assoc())) $klinik_items_for_modal[] = $ki;
+}
+
 $last_update_text = '-';
 $rows = [];
 $hc_total = 0.0;
@@ -53,8 +91,8 @@ $history_to = (string)($_GET['history_to'] ?? '');
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $history_from)) $history_from = '';
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $history_to)) $history_to = '';
 
-$history_view = (string)($_GET['history_view'] ?? 'detail');
-if (!in_array($history_view, ['detail', 'rekap'])) $history_view = 'detail';
+$history_view = (string)($_GET['history_view'] ?? 'rekap');
+if (!in_array($history_view, ['detail', 'rekap'])) $history_view = 'rekap';
 
 if ($klinik_row && !empty($klinik_row['kode_homecare'])) {
     $loc_hc = $conn->real_escape_string((string)$klinik_row['kode_homecare']);
@@ -505,20 +543,29 @@ if ($bulk_cancel) {
 
         <ul class="nav nav-pills mb-4" role="tablist">
             <li class="nav-item">
-                <a class="nav-link rounded-pill py-2 px-4 me-2 <?= $active_tab == 'stok' ? 'active-blue' : 'text-muted border' ?>" 
+                <a class="nav-link rounded-pill py-2 px-4 me-2 <?= $active_tab == 'stok' ? 'active-blue' : 'text-muted border' ?>"
                    href="index.php?page=stok_petugas_hc&tab=stok&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>">
                     <i class="fas fa-briefcase-medical me-2"></i>Stok Tas
                 </a>
             </li>
             <?php if (in_array($role, ['admin_klinik', 'super_admin', 'spv_klinik'], true)): ?>
             <li class="nav-item">
-                <a class="nav-link rounded-pill py-2 px-4 me-2 <?= $active_tab == 'summary' ? 'active-blue' : 'text-muted border' ?>" 
+                <a class="nav-link rounded-pill py-2 px-4 me-2 <?= $active_tab == 'request' ? 'active-blue' : 'text-muted border' ?>"
+                   href="index.php?page=stok_petugas_hc&tab=request&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>">
+                    <i class="fas fa-inbox me-2"></i>Request Stok HC
+                    <?php if ($hc_request_pending_count > 0): ?>
+                        <span class="badge bg-danger rounded-pill ms-1" style="font-size:11px;"><?= $hc_request_pending_count ?></span>
+                    <?php endif; ?>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link rounded-pill py-2 px-4 me-2 <?= $active_tab == 'summary' ? 'active-blue' : 'text-muted border' ?>"
                    href="index.php?page=stok_petugas_hc&tab=summary&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>">
                     <i class="fas fa-list-alt me-2"></i>Summary
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link rounded-pill py-2 px-4 <?= $active_tab == 'history' ? 'active-blue' : 'text-muted border' ?>" 
+                <a class="nav-link rounded-pill py-2 px-4 <?= $active_tab == 'history' ? 'active-blue' : 'text-muted border' ?>"
                    href="index.php?page=stok_petugas_hc&tab=history&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>">
                     <i class="fas fa-history me-2"></i>History Transfer
                 </a>
@@ -697,14 +744,20 @@ if ($bulk_cancel) {
                                 <div class="fw-semibold">History Transfer</div>
                                 <div class="text-muted small">Ikuti filter Klinik/Petugas di atas. Limit 500 data.</div>
                             </div>
-                            <div class="btn-group btn-group-sm shadow-sm">
-                                <a href="index.php?page=stok_petugas_hc&tab=history&history_view=detail&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>&history_from=<?= $history_from ?>&history_to=<?= $history_to ?>" 
-                                   class="btn <?= $history_view === 'detail' ? 'btn-primary' : 'btn-outline-primary' ?>">
-                                    <i class="fas fa-list me-1"></i> Detail
-                                </a>
-                                <a href="index.php?page=stok_petugas_hc&tab=history&history_view=rekap&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>&history_from=<?= $history_from ?>&history_to=<?= $history_to ?>" 
-                                   class="btn <?= $history_view === 'rekap' ? 'btn-primary' : 'btn-outline-primary' ?>">
-                                    <i class="fas fa-th-list me-1"></i> Rekap Per Hari
+                            <div class="d-flex gap-2 align-items-center">
+                                <div class="btn-group btn-group-sm shadow-sm">
+                                    <a href="index.php?page=stok_petugas_hc&tab=history&history_view=detail&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>&history_from=<?= $history_from ?>&history_to=<?= $history_to ?>"
+                                       class="btn <?= $history_view === 'detail' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                                        <i class="fas fa-list me-1"></i> Detail
+                                    </a>
+                                    <a href="index.php?page=stok_petugas_hc&tab=history&history_view=rekap&klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>&history_from=<?= $history_from ?>&history_to=<?= $history_to ?>"
+                                       class="btn <?= $history_view === 'rekap' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                                        <i class="fas fa-th-list me-1"></i> Rekap Per Hari
+                                    </a>
+                                </div>
+                                <a href="actions/export_history_hc.php?klinik_id=<?= $selected_klinik ?>&petugas_user_id=<?= $petugas_user_id ?>&history_from=<?= urlencode($history_from) ?>&history_to=<?= urlencode($history_to) ?>"
+                                   class="btn btn-sm btn-success shadow-sm">
+                                    <i class="fas fa-file-excel me-1"></i> Export Excel
                                 </a>
                             </div>
                         </div>
@@ -921,42 +974,41 @@ if ($bulk_cancel) {
                             $rekap = [];
                             foreach ($history as $h) {
                                 $date = date('Y-m-d', strtotime((string)$h['created_at']));
-                                $uid = (int)($h['user_hc_id'] ?? 0);
-                                $key = $date . '_' . $uid;
-                                
+                                $uid  = (int)($h['user_hc_id'] ?? 0);
+                                $key  = $date . '_' . $uid;
+
                                 if (!isset($rekap[$key])) {
                                     $rekap[$key] = [
-                                        'date' => $date,
-                                        'user_id' => $uid,
-                                        'petugas' => $petugas_name_map[$uid] ?? '-',
-                                        'barang_ids' => [],
+                                        'date'      => $date,
+                                        'user_id'   => $uid,
+                                        'petugas'   => $petugas_name_map[$uid] ?? '-',
+                                        'items'     => [],
                                         'total_qty' => 0,
-                                        'catatan' => (string)($h['catatan'] ?? '')
                                     ];
                                 }
-                                
-                                // Hitung total qty (netto)
-                                $rekap[$key]['total_qty'] += (float)$h['qty'];
-                                
-                                // Hitung jenis barang (hanya yang positif / original transfer)
-                                if ((float)$h['qty'] > 0) {
-                                    $rekap[$key]['barang_ids'][(int)$h['barang_id']] = true;
-                                }
 
-                                if (trim((string)($h['catatan'] ?? '')) !== '' && strpos((string)$h['catatan'], 'Reversal') === false) {
-                                    $rekap[$key]['catatan'] = (string)$h['catatan'];
+                                $rekap[$key]['total_qty'] += (float)$h['qty'];
+
+                                if ((float)$h['qty'] > 0) {
+                                    $bid  = (int)$h['barang_id'];
+                                    $nama = $barang_name_map[$bid] ?? 'Barang #' . $bid;
+                                    if (!isset($rekap[$key]['items'][$bid])) {
+                                        $rekap[$key]['items'][$bid] = ['nama' => $nama, 'qty' => 0];
+                                    }
+                                    $rekap[$key]['items'][$bid]['qty'] += (float)$h['qty'];
                                 }
                             }
                             ?>
                             <div class="table-responsive">
-                                <table class="table table-hover align-middle mb-0">
-                                    <thead class="table-light">
+                                <table class="table table-hover align-middle mb-0 datatable"
+                                       data-order-col="0" data-order-dir="desc">
+                                    <thead style="background:#204EAB;color:#fff;">
                                         <tr>
                                             <th>Tanggal</th>
                                             <th>Petugas</th>
-                                            <th class="text-center">Jumlah Jenis Barang</th>
+                                            <th>Item & Qty</th>
+                                            <th class="text-center">Jml Item</th>
                                             <th class="text-center">Total Qty</th>
-                                            <th>Sampel Catatan</th>
                                             <th class="text-end">Aksi</th>
                                         </tr>
                                     </thead>
@@ -964,38 +1016,48 @@ if ($bulk_cancel) {
                                         <?php if (empty($rekap)): ?>
                                             <tr><td colspan="6" class="text-center text-muted">Tidak ada data transfer untuk direkap.</td></tr>
                                         <?php else: ?>
-                                            <?php foreach ($rekap as $r): 
+                                            <?php foreach ($rekap as $r):
                                                 $is_cleared = ($r['total_qty'] <= 0.00005);
+                                                $item_lines = [];
+                                                foreach ($r['items'] as $bid => $it) {
+                                                    $item_lines[] = htmlspecialchars($it['nama']) . ' <span class="badge" style="background:#e8f0fd;color:#204EAB;">' . fmt_qty($it['qty']) . '</span>';
+                                                }
                                             ?>
                                                 <tr>
-                                                    <td class="fw-semibold"><?= date('d M Y', strtotime($r['date'])) ?></td>
+                                                    <td class="fw-semibold text-nowrap"><?= date('d M Y', strtotime($r['date'])) ?></td>
                                                     <td><?= htmlspecialchars($r['petugas']) ?></td>
-                                                    <td class="text-center"><?= count($r['barang_ids']) ?></td>
+                                                    <td class="small" style="line-height:2;">
+                                                        <?= implode('<br>', $item_lines) ?: '<span class="text-muted">-</span>' ?>
+                                                    </td>
+                                                    <td class="text-center fw-bold" style="color:#204EAB;"><?= count($r['items']) ?></td>
                                                     <td class="text-center">
                                                         <?php if ($is_cleared): ?>
-                                                            <span class="badge bg-success-soft text-success" style="background-color: #e8f5e9; color: #2e7d32;">
-                                                                <i class="fas fa-check-circle me-1"></i> 0 (Sudah Kembali)
+                                                            <span class="badge" style="background:#e8f5e9;color:#2e7d32;">
+                                                                <i class="fas fa-check-circle me-1"></i>0 (Kembali)
                                                             </span>
                                                         <?php else: ?>
                                                             <span class="fw-bold" style="color:#204EAB;"><?= fmt_qty($r['total_qty']) ?></span>
                                                         <?php endif; ?>
                                                     </td>
-                                                    <td class="small text-muted"><?= htmlspecialchars($r['catatan']) ?></td>
                                                     <td class="text-end">
                                                         <?php if (!$is_cleared): ?>
-                                                            <form method="POST" action="actions/bulk_reverse_hc_transfer.php" class="d-inline">
+                                                            <?php $petugas_esc = htmlspecialchars(json_encode($r['petugas']), ENT_QUOTES); ?>
+                                                            <?php $tgl_esc = date('d M Y', strtotime($r['date'])); ?>
+                                                            <form method="POST" action="actions/bulk_reverse_hc_transfer.php" class="d-inline batalRekapForm">
                                                                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                                                                 <input type="hidden" name="date" value="<?= $r['date'] ?>">
                                                                 <input type="hidden" name="user_hc_id" value="<?= $r['user_id'] ?>">
                                                                 <input type="hidden" name="klinik_id" value="<?= (int)$selected_klinik ?>">
                                                                 <input type="hidden" name="tab" value="history">
                                                                 <input type="hidden" name="history_view" value="rekap">
-                                                                <button type="submit" class="btn btn-sm btn-danger shadow-sm" onclick="return confirm('⚠️ PERINGATAN: Batalkan SEMUA transfer untuk <?= htmlspecialchars($r['petugas']) ?> pada tanggal <?= date('d M Y', strtotime($r['date'])) ?>? Stok tas petugas akan ditarik kembali.');">
+                                                                <button type="button" class="btn btn-sm btn-danger shadow-sm btn-batal-rekap"
+                                                                        data-petugas="<?= htmlspecialchars($r['petugas'], ENT_QUOTES) ?>"
+                                                                        data-tgl="<?= $tgl_esc ?>">
                                                                     <i class="fas fa-trash-alt me-1"></i> Batal Semua
                                                                 </button>
                                                             </form>
                                                         <?php else: ?>
-                                                            <span class="text-muted small italic">Semua sudah dikembalikan</span>
+                                                            <span class="text-muted small fst-italic">Sudah dikembalikan</span>
                                                         <?php endif; ?>
                                                     </td>
                                                 </tr>
@@ -1004,6 +1066,26 @@ if ($bulk_cancel) {
                                     </tbody>
                                 </table>
                             </div>
+                            <script>
+                            document.querySelectorAll('.btn-batal-rekap').forEach(btn => {
+                                btn.addEventListener('click', function() {
+                                    const petugas = this.dataset.petugas;
+                                    const tgl = this.dataset.tgl;
+                                    Swal.fire({
+                                        title: 'Batalkan Semua Transfer?',
+                                        html: `⚠️ Batalkan SEMUA transfer <b>${petugas}</b> pada <b>${tgl}</b>?<br><small class="text-muted">Stok tas petugas akan ditarik kembali.</small>`,
+                                        icon: 'warning',
+                                        showCancelButton: true,
+                                        confirmButtonColor: '#dc2626',
+                                        cancelButtonColor: '#6b7280',
+                                        confirmButtonText: 'Ya, Batalkan',
+                                        cancelButtonText: 'Batal'
+                                    }).then(result => {
+                                        if (result.isConfirmed) this.closest('form').submit();
+                                    });
+                                });
+                            });
+                            </script>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -1108,9 +1190,465 @@ if ($bulk_cancel) {
                 </div>
             </div>
 
+            <?php if (in_array($role, ['admin_klinik', 'super_admin', 'spv_klinik'], true)): ?>
+            <div class="tab-pane fade <?= $active_tab === 'request' ? 'show active' : '' ?>" id="tabpane-request" role="tabpanel">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div>
+                                <div class="fw-semibold">Request Stok HC</div>
+                                <div class="text-muted small">Request stok dari nakes via QR. Pending perlu persetujuan.</div>
+                            </div>
+                        </div>
+                        <?php if (empty($hc_requests)): ?>
+                            <div class="text-muted small">Belum ada request untuk klinik ini.</div>
+                        <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Nakes</th>
+                                        <th>Tanggal</th>
+                                        <th class="text-center">Item</th>
+                                        <th class="text-center">Foto</th>
+                                        <th class="text-center">Status</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="hcRequestsTbody">
+                                    <?php foreach ($hc_requests as $hr): ?>
+                                    <tr>
+                                        <td class="text-muted small">#<?= (int)$hr['id'] ?></td>
+                                        <td class="fw-semibold"><?= htmlspecialchars($hr['nakes_name']) ?></td>
+                                        <td class="small"><?= date('d M Y H:i', strtotime($hr['created_at'])) ?></td>
+                                        <td class="text-center"><?= (int)$hr['item_count'] ?> item</td>
+                                        <td class="text-center">
+                                            <?php if (!empty($hr['foto_path'])): ?>
+                                                <i class="fas fa-image text-info" title="Ada foto"></i>
+                                            <?php else: ?>
+                                                <span class="text-muted">-</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="text-center">
+                                            <?php if ($hr['status'] === 'pending'): ?>
+                                                <span class="badge bg-warning text-dark">Pending</span>
+                                            <?php elseif ($hr['status'] === 'approved'): ?>
+                                                <span class="badge bg-success">Disetujui</span>
+                                            <?php else: ?>
+                                                <span class="badge bg-danger">Ditolak</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="text-end">
+                                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                                onclick="openRequestModal(<?= (int)$hr['id'] ?>)">
+                                                <i class="fas fa-eye me-1"></i>
+                                                <?= $hr['status'] === 'pending' ? 'Review' : 'Lihat' ?>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="hcRequestsPagination" class="d-flex align-items-center justify-content-between px-1 pt-2 pb-1" style="font-size:13px;"></div>
+                        <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            var tbody = document.getElementById('hcRequestsTbody');
+                            var pager = document.getElementById('hcRequestsPagination');
+                            if (!tbody || !pager) return;
+                            var PER_PAGE = 10;
+                            var rows = Array.from(tbody.querySelectorAll('tr'));
+                            if (!rows.length) return;
+                            var current = 1;
+                            var total = Math.ceil(rows.length / PER_PAGE);
+
+                            function pageBtn(p) {
+                                var active = p === current ? ' active' : '';
+                                return '<li class="paginate_button page-item' + active + '">'
+                                    + '<a class="page-link" style="cursor:pointer;" onclick="__hcPage(' + p + ')">' + p + '</a>'
+                                    + '</li>';
+                            }
+
+                            function render(page) {
+                                current = page;
+                                var start = (page - 1) * PER_PAGE;
+                                rows.forEach(function(r, i) {
+                                    r.style.display = (i >= start && i < start + PER_PAGE) ? '' : 'none';
+                                });
+                                var from = start + 1, to = Math.min(start + PER_PAGE, rows.length);
+                                var info = '<span class="text-muted" style="font-size:13px;">Menampilkan ' + from + '–' + to + ' dari ' + rows.length + ' request</span>';
+                                var btns = '';
+                                if (total <= 7) {
+                                    for (var p = 1; p <= total; p++) btns += pageBtn(p);
+                                } else {
+                                    btns += pageBtn(1);
+                                    if (current > 3) btns += '<li class="paginate_button page-item disabled"><a class="page-link">&hellip;</a></li>';
+                                    for (var p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) btns += pageBtn(p);
+                                    if (current < total - 2) btns += '<li class="paginate_button page-item disabled"><a class="page-link">&hellip;</a></li>';
+                                    btns += pageBtn(total);
+                                }
+                                var nav = '<div class="dataTables_wrapper dt-bootstrap5 no-footer" style="display:contents;">'
+                                    + '<div class="dataTables_paginate paging_simple_numbers">'
+                                    + '<ul class="pagination pagination-sm mb-0">'
+                                    + '<li class="paginate_button page-item previous' + (current===1?' disabled':'') + '">'
+                                    + '<a class="page-link" style="cursor:pointer;" onclick="__hcPage(' + (current-1) + ')"><i class="fas fa-chevron-left"></i></a></li>'
+                                    + btns
+                                    + '<li class="paginate_button page-item next' + (current===total?' disabled':'') + '">'
+                                    + '<a class="page-link" style="cursor:pointer;" onclick="__hcPage(' + (current+1) + ')"><i class="fas fa-chevron-right"></i></a></li>'
+                                    + '</ul></div></div>';
+                                pager.innerHTML = info + nav;
+                            }
+
+                            window.__hcPage = function(p) { render(p); };
+                            render(1);
+                        });
+                        </script>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+
         </div>
     <?php endif; ?>
 </div>
+
+<!-- Modal Review Request -->
+<?php if (in_array($role, ['admin_klinik', 'super_admin', 'spv_klinik'], true)): ?>
+<div class="modal fade" id="modalRequestReview" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-inbox me-2"></i>Review Request Stok HC</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalRequestBody">
+                <div class="text-center py-4"><span class="spinner-border text-primary"></span></div>
+            </div>
+            <div class="modal-footer" id="modalRequestFooter" style="display:none;">
+                <button type="button" class="btn btn-success" id="btnApproveRequest">
+                    <i class="fas fa-check me-1"></i>Setujui & Transfer
+                </button>
+                <button type="button" class="btn btn-danger" id="btnRejectRequest">
+                    <i class="fas fa-times me-1"></i>Tolak
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const klinikItemsJson = <?= json_encode($klinik_items_for_modal, JSON_UNESCAPED_UNICODE) ?>;
+let currentRequestId = 0;
+let currentRequestStatus = '';
+let _adminCompressedFoto = null;
+
+function openRequestModal(requestId) {
+    currentRequestId = requestId;
+    currentRequestStatus = '';
+    const modal = new bootstrap.Modal(document.getElementById('modalRequestReview'));
+    document.getElementById('modalRequestBody').innerHTML = '<div class="text-center py-4"><span class="spinner-border text-primary"></span></div>';
+    document.getElementById('modalRequestFooter').style.display = 'none';
+    modal.show();
+    loadRequestDetail(requestId);
+}
+
+function loadRequestDetail(requestId) {
+    fetch('api/get_hc_request_detail.php?request_id=' + requestId)
+        .then(r => r.json())
+        .then(res => {
+            if (!res.success) { document.getElementById('modalRequestBody').innerHTML = '<div class="alert alert-danger">' + escHtml(res.message) + '</div>'; return; }
+            const d = res.data;
+            currentRequestStatus = d.status;
+            const isPending = d.status === 'pending';
+
+            const statusBadge = d.status === 'pending'
+                ? '<span class="badge bg-warning text-dark">Pending</span>'
+                : (d.status === 'approved' ? '<span class="badge bg-success">Disetujui</span>' : '<span class="badge bg-danger">Ditolak</span>');
+
+            let fotoHtml = '';
+            if (d.foto_path) {
+                fotoHtml = `<div class="mb-3"><label class="form-label fw-semibold small text-muted">FOTO</label><br>
+                    <img src="${escHtml(d.foto_url)}" class="img-thumbnail" style="max-height:160px;cursor:zoom-in;" onclick="showFotoLightbox('${escHtml(d.foto_url)}')"></div>`;
+            }
+            let fotoUploadHtml = '';
+            if (isPending) {
+                fotoUploadHtml = `<div class="mb-3">
+                    <label class="form-label fw-semibold small text-muted">UPLOAD / GANTI FOTO</label>
+                    <input type="file" class="form-control form-control-sm" id="adminFotoInput" accept="image/*">
+                    <div id="adminFotoInfo" class="small text-success mt-1" style="display:none;"></div>
+                </div>`;
+            }
+
+            // Build items table
+            const optHtmlNew = klinikItemsJson.map(ki => `<option value="${ki.barang_id}" data-uom="${escHtml(ki.uom)}">${escHtml(ki.nama_barang)}</option>`).join('');
+            let rowsHtml = '';
+            d.items.forEach((item, idx) => {
+                const qaVal = item.qty_approved !== null ? item.qty_approved : item.qty_request;
+                if (isPending) {
+                    rowsHtml += `<tr data-barang-id="${item.barang_id}">
+                        <td>${escHtml(item.nama_barang)}</td>
+                        <td><input type="number" class="qty-approved-input form-control form-control-sm text-center" value="${qaVal}" min="0.01" step="0.01"></td>
+                        <td class="text-muted small">${escHtml(item.uom)}</td>
+                        <td class="text-center"><button type="button" class="btn btn-sm btn-danger py-0 px-2" onclick="removeRequestRow(this)"><i class="fas fa-times"></i></button></td>
+                    </tr>`;
+                } else {
+                    rowsHtml += `<tr>
+                        <td>${escHtml(item.nama_barang)}</td>
+                        <td class="text-center fw-semibold">${qaVal !== null ? qaVal : '-'}</td>
+                        <td class="text-muted small">${escHtml(item.uom)}</td>
+                    </tr>`;
+                }
+            });
+
+            const addBtnHtml = (isPending && klinikItemsJson.length > 0)
+                ? `<button type="button" class="btn btn-success btn-sm mt-2" id="btnTambahBaris"><i class="fas fa-plus me-1"></i>Tambah Baris</button>`
+                : '';
+
+            const itemCount = d.items.length;
+            const statusColor = d.status === 'pending' ? '#f59e0b' : (d.status === 'approved' ? '#10b981' : '#ef4444');
+
+            document.getElementById('modalRequestBody').innerHTML = `
+                <input type="hidden" id="reqCsrf" value="${escHtml(d.csrf)}">
+
+                <!-- Summary card -->
+                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:16px;">
+                    <div class="row g-3 align-items-start">
+                        <div class="col-7">
+                            <div style="font-size:10px;font-weight:700;letter-spacing:.6px;color:#94a3b8;margin-bottom:3px;">
+                                <i class="fas fa-user-nurse me-1"></i>NAKES
+                            </div>
+                            <div style="font-size:14px;font-weight:600;color:#1e293b;line-height:1.3;">${escHtml(d.nakes_name)}</div>
+                        </div>
+                        <div class="col-5 text-end">
+                            <div style="font-size:10px;font-weight:700;letter-spacing:.6px;color:#94a3b8;margin-bottom:4px;">STATUS</div>
+                            ${statusBadge}
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mt-0" style="border-top:1px solid #e2e8f0;padding-top:12px;margin-top:10px;">
+                        <div class="col-4">
+                            <div style="font-size:10px;font-weight:700;letter-spacing:.6px;color:#94a3b8;margin-bottom:3px;">
+                                <i class="fas fa-calendar-alt me-1"></i>TANGGAL
+                            </div>
+                            <div style="font-size:12px;color:#334155;">${escHtml(d.created_at_fmt)}</div>
+                        </div>
+                        <div class="col-3">
+                            <div style="font-size:10px;font-weight:700;letter-spacing:.6px;color:#94a3b8;margin-bottom:3px;">
+                                <i class="fas fa-boxes me-1"></i>ITEM
+                            </div>
+                            <div style="font-size:20px;font-weight:700;color:#204EAB;line-height:1;">${itemCount}<span style="font-size:11px;font-weight:400;color:#64748b;margin-left:3px;">item</span></div>
+                        </div>
+                        ${d.catatan ? `<div class="col-5">
+                            <div style="font-size:10px;font-weight:700;letter-spacing:.6px;color:#94a3b8;margin-bottom:3px;">
+                                <i class="fas fa-comment-alt me-1"></i>CATATAN
+                            </div>
+                            <div style="font-size:12px;color:#475569;line-height:1.4;">${escHtml(d.catatan)}</div>
+                        </div>` : ''}
+                    </div>
+                </div>
+
+                ${fotoHtml}
+                ${fotoUploadHtml}
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0 border" id="requestItemsTable">
+                        <thead style="background:#204EAB;color:#fff;">
+                            <tr>
+                                <th>BARANG ${isPending ? '<span style="color:#fde047;">*</span>' : ''}</th>
+                                <th style="width:100px;">QTY ${isPending ? '<span style="color:#fde047;">*</span>' : ''}</th>
+                                <th style="width:110px;">UOM</th>
+                                ${isPending ? '<th style="width:48px;">AKSI</th>' : ''}
+                            </tr>
+                        </thead>
+                        <tbody id="requestItemsBody">${rowsHtml}</tbody>
+                    </table>
+                </div>
+                ${addBtnHtml}
+            `;
+
+            document.getElementById('modalRequestFooter').style.display = isPending ? '' : 'none';
+
+            // Compress foto on select, store blob for approve
+            if (isPending) {
+                _adminCompressedFoto = null;
+                document.getElementById('adminFotoInput')?.addEventListener('change', function() {
+                    const file = this.files[0];
+                    if (!file) return;
+                    const infoEl = document.getElementById('adminFotoInfo');
+                    if (infoEl) { infoEl.style.display = ''; infoEl.textContent = 'Mengompres...'; }
+                    compressImage(file, 1280, 0.75).then(blob => {
+                        _adminCompressedFoto = blob;
+                        const kb = Math.round(blob.size / 1024);
+                        if (infoEl) infoEl.textContent = `✓ Siap diupload: ${file.name} (${kb} KB)`;
+                    });
+                });
+            }
+
+            if (isPending) {
+                document.getElementById('btnTambahBaris')?.addEventListener('click', addNewBlankRow);
+            }
+        })
+        .catch(() => { document.getElementById('modalRequestBody').innerHTML = '<div class="alert alert-danger">Gagal memuat detail.</div>'; });
+}
+
+function removeRequestRow(btn) {
+    btn.closest('tr').remove();
+}
+
+function addNewBlankRow() {
+    const optHtmlNew = klinikItemsJson.map(ki => `<option value="${ki.barang_id}" data-uom="${escHtml(ki.uom)}">${escHtml(ki.nama_barang)}</option>`).join('');
+    const newRow = document.createElement('tr');
+    newRow.dataset.barangId = '';
+    newRow.innerHTML = `
+        <td><select class="form-select form-select-sm new-item-select" onchange="onNewItemSelect(this)">
+            <option value="">-- Pilih Barang --</option>${optHtmlNew}
+        </select></td>
+        <td><input type="number" class="qty-approved-input form-control form-control-sm text-center" value="" min="0.01" step="0.01" placeholder="0"></td>
+        <td class="new-item-uom text-muted small">-</td>
+        <td class="text-center"><button type="button" class="btn btn-sm btn-danger py-0 px-2" onclick="removeRequestRow(this)"><i class="fas fa-times"></i></button></td>
+    `;
+    document.getElementById('requestItemsBody').appendChild(newRow);
+}
+
+function onNewItemSelect(sel) {
+    const row = sel.closest('tr');
+    const opt = sel.options[sel.selectedIndex];
+    row.dataset.barangId = sel.value;
+    row.querySelector('.new-item-uom').textContent = (opt && opt.dataset.uom) ? opt.dataset.uom : '-';
+}
+
+function collectCurrentItems() {
+    const items = [];
+    document.querySelectorAll('#requestItemsBody tr').forEach(row => {
+        const sel = row.querySelector('.new-item-select');
+        if (sel) row.dataset.barangId = sel.value;
+        const bid = parseInt(row.getAttribute('data-barang-id') || '0');
+        const qty = parseFloat(row.querySelector('.qty-approved-input')?.value ?? 0);
+        if (bid > 0 && qty > 0) items.push({ barang_id: bid, qty });
+    });
+    return items;
+}
+
+document.getElementById('btnApproveRequest')?.addEventListener('click', () => {
+    const items = collectCurrentItems();
+    if (!items.length) { Swal.fire('Perhatian', 'Tidak ada item untuk disetujui.', 'warning'); return; }
+
+    Swal.fire({
+        title: 'Setujui & Transfer Stok?',
+        text: `Request ini akan disetujui dan ${items.length} item dipindahkan ke tas nakes.`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: '<i class="fas fa-check me-1"></i> Setujui',
+        cancelButtonText: 'Batal'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+
+        const csrf = document.getElementById('reqCsrf')?.value ?? '';
+        const fd = new FormData();
+        fd.append('_csrf', csrf);
+        fd.append('action', 'approve');
+        fd.append('request_id', currentRequestId);
+        if (_adminCompressedFoto) fd.append('foto', _adminCompressedFoto, 'foto.jpg');
+        items.forEach(it => {
+            fd.append('barang_id[]', it.barang_id);
+            fd.append('qty_approved[]', it.qty);
+        });
+
+        const btn = document.getElementById('btnApproveRequest');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Memproses...';
+        Swal.fire({ title: 'Memproses...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        fetch('actions/process_hc_request.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(res => {
+                if (res.success) {
+                    Swal.fire('Berhasil!', res.message, 'success').then(() => { bootstrap.Modal.getInstance(document.getElementById('modalRequestReview')).hide(); location.reload(); });
+                } else {
+                    Swal.fire('Gagal', res.message, 'error');
+                    btn.disabled = false; btn.innerHTML = '<i class="fas fa-check me-1"></i>Setujui & Transfer';
+                }
+            });
+    });
+});
+
+document.getElementById('btnRejectRequest')?.addEventListener('click', () => {
+    Swal.fire({
+        title: 'Tolak Request?',
+        text: 'Nakes tidak akan mendapatkan item yang diminta.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: '<i class="fas fa-times me-1"></i> Tolak',
+        cancelButtonText: 'Batal'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        const csrf = document.getElementById('reqCsrf')?.value ?? '';
+        const fd = new FormData();
+        fd.append('_csrf', csrf);
+        fd.append('action', 'reject');
+        fd.append('request_id', currentRequestId);
+        document.getElementById('btnRejectRequest').disabled = true;
+        fetch('actions/process_hc_request.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(res => {
+                if (res.success) {
+                    Swal.fire('Ditolak', res.message, 'success').then(() => { bootstrap.Modal.getInstance(document.getElementById('modalRequestReview')).hide(); location.reload(); });
+                } else {
+                    Swal.fire('Gagal', res.message, 'error');
+                    document.getElementById('btnRejectRequest').disabled = false;
+                }
+            });
+    });
+});
+
+function compressImage(file, maxPx, quality) {
+    return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = e => {
+            const img = new Image();
+            img.onload = () => {
+                let w = img.width, h = img.height;
+                if (w > maxPx || h > maxPx) {
+                    const r = Math.min(maxPx / w, maxPx / h);
+                    w = Math.round(w * r); h = Math.round(h * r);
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = w; canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                canvas.toBlob(blob => resolve(blob ?? new Blob([file])), 'image/jpeg', quality);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+
+function escHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+
+function showFotoLightbox(url) {
+    let lb = document.getElementById('_fotoLightbox');
+    if (!lb) {
+        lb = document.createElement('div');
+        lb.id = '_fotoLightbox';
+        lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+        lb.innerHTML = '<img style="max-width:92vw;max-height:92vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,.5);">';
+        lb.addEventListener('click', () => lb.style.display = 'none');
+        document.body.appendChild(lb);
+    }
+    lb.querySelector('img').src = url;
+    lb.style.display = 'flex';
+}
+</script>
+<?php endif; ?>
 
 <div class="modal fade" id="modalUnallocated" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">

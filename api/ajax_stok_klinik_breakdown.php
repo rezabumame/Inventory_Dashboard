@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../lib/usage.php';
 
 header('Content-Type: application/json');
 
@@ -28,6 +29,7 @@ $is_all_klinik = ($klinik_id_raw === 'all' || (int)$klinik_id_raw === 0);
 $klinik_id = $is_all_klinik ? 0 : (int)$klinik_id_raw;
 $barang_id = (int)($_POST['barang_id'] ?? 0);
 $tanggal = (string)($_POST['tanggal'] ?? '');
+$include_gudang = !empty($_POST['include_gudang']);
 
 if ($barang_id <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal)) {
     echo json_encode(['success' => false, 'message' => 'Invalid parameters'], JSON_UNESCAPED_UNICODE);
@@ -432,6 +434,148 @@ if ($is_history) {
     $stock_as_of_hc = $baseline_hc - ($rb['out_transfer_hc'] - $rb['in_transfer_hc'] + $rb['sellout_hc']);
 }
 
+// Daily usage (accumulated) — uses same logic as main table
+$daily_usage_rate = 0.0;
+if (!$is_history) {
+    $daily_usage_rate = $is_all_klinik
+        ? calculate_accumulated_usage('all', $barang_id)
+        : calculate_accumulated_usage($klinik_id, $barang_id);
+}
+
+// Per-klinik breakdown (only when all klinik)
+$per_klinik = [];
+if ($is_all_klinik) {
+    foreach ($active_kliniks as $ak) {
+        $ak_id = (int)$ak['id'];
+        $ak_loc_k = !empty($ak['kode_klinik']) ? "'" . $conn->real_escape_string(trim($ak['kode_klinik'])) . "'" : null;
+        $ak_loc_h = !empty($ak['kode_homecare']) ? "'" . $conn->real_escape_string(trim($ak['kode_homecare'])) . "'" : null;
+
+        // Baseline onsite dari stock_mirror
+        $ak_on = 0.0;
+        if ($ak_loc_k) {
+            $r = $conn->query("SELECT SUM(qty) as q FROM (SELECT location_code, qty FROM inventory_stock_mirror sm1 JOIN (SELECT TRIM(location_code) as loc, MAX(updated_at) as max_up FROM inventory_stock_mirror WHERE TRIM(location_code) = $ak_loc_k AND $match_sql GROUP BY TRIM(location_code)) lsm ON TRIM(sm1.location_code) = lsm.loc AND sm1.updated_at = lsm.max_up WHERE TRIM(sm1.location_code) = $ak_loc_k AND $match_sql) c");
+            if ($r && $r->num_rows > 0) $ak_on = (float)($r->fetch_assoc()['q'] ?? 0) / $multiplier;
+        }
+        // Baseline HC dari stock_mirror
+        $ak_hc = 0.0;
+        if ($ak_loc_h) {
+            $r = $conn->query("SELECT SUM(qty) as q FROM (SELECT location_code, qty FROM inventory_stock_mirror sm1 JOIN (SELECT TRIM(location_code) as loc, MAX(updated_at) as max_up FROM inventory_stock_mirror WHERE TRIM(location_code) = $ak_loc_h AND $match_sql GROUP BY TRIM(location_code)) lsm ON TRIM(sm1.location_code) = lsm.loc AND sm1.updated_at = lsm.max_up WHERE TRIM(sm1.location_code) = $ak_loc_h AND $match_sql) c");
+            if ($r && $r->num_rows > 0) $ak_hc = (float)($r->fetch_assoc()['q'] ?? 0) / $multiplier;
+        }
+
+        // Apply transfer adjustments (same logic as aggregate but per clinic)
+        $ak_rb_out_on = 0.0; $ak_rb_in_on = 0.0;
+        $ak_rb_out_hc = 0.0; $ak_rb_in_hc = 0.0;
+        $ak_sell_on = 0.0; $ak_sell_hc = 0.0;
+
+        if ($max_u !== '') {
+            $ak_ms = $conn->real_escape_string($month_start_ts);
+            $ak_mu = $conn->real_escape_string($max_u);
+            if ($is_history && strtotime($tanggal_end_ts) < strtotime($max_u)) {
+                $ak_rs = $conn->real_escape_string($tanggal_end_ts);
+                $ak_re = $ak_mu;
+                $range_cond     = "AND ts.created_at > '$ak_rs' AND ts.created_at <= '$ak_re' AND ts.created_at >= '$ak_ms'";
+                $pem_date_cond  = "AND pb.tanggal > '$ak_rs' AND pb.tanggal <= '$ak_re' AND pb.tanggal >= '$ak_ms'";
+            } elseif (!$is_history) {
+                $range_cond     = "AND ts.created_at > '$ak_mu' AND ts.created_at >= '$ak_ms'";
+                $pem_date_cond  = "AND pb.created_at > '$ak_mu' AND pb.tanggal >= '$ak_ms'";
+            } else {
+                $range_cond = $pem_date_cond = "AND 1=0"; // no adjustments needed
+            }
+
+            $r = $conn->query("SELECT COALESCE(SUM(ts.qty),0) AS q FROM inventory_transaksi_stok ts WHERE ts.barang_id=$barang_id AND ts.level='klinik' AND ts.level_id=$ak_id AND ts.tipe_transaksi='out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') $range_cond");
+            if ($r) $ak_rb_out_on = (float)($r->fetch_assoc()['q'] ?? 0);
+            $r = $conn->query("SELECT COALESCE(SUM(ts.qty),0) AS q FROM inventory_transaksi_stok ts WHERE ts.barang_id=$barang_id AND ts.level='klinik' AND ts.level_id=$ak_id AND ts.tipe_transaksi='in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') $range_cond");
+            if ($r) $ak_rb_in_on = (float)($r->fetch_assoc()['q'] ?? 0);
+            $r = $conn->query("SELECT COALESCE(SUM(ts.qty),0) AS q FROM inventory_transaksi_stok ts WHERE ts.barang_id=$barang_id AND ts.level='hc' AND EXISTS(SELECT 1 FROM inventory_users u WHERE u.id=ts.level_id AND u.klinik_id=$ak_id) AND ts.tipe_transaksi='out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') $range_cond");
+            if ($r) $ak_rb_out_hc = (float)($r->fetch_assoc()['q'] ?? 0);
+            $r = $conn->query("SELECT COALESCE(SUM(ts.qty),0) AS q FROM inventory_transaksi_stok ts WHERE ts.barang_id=$barang_id AND ts.level='hc' AND EXISTS(SELECT 1 FROM inventory_users u WHERE u.id=ts.level_id AND u.klinik_id=$ak_id) AND ts.tipe_transaksi='in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') $range_cond");
+            if ($r) $ak_rb_in_hc = (float)($r->fetch_assoc()['q'] ?? 0);
+
+            $r = $conn->query("SELECT pb.jenis_pemakaian, COALESCE(SUM(CASE WHEN ts.tipe_transaksi='out' THEN ts.qty ELSE -ts.qty END),0) AS qty FROM inventory_pemakaian_bhp pb JOIN inventory_transaksi_stok ts ON ts.referensi_id=pb.id WHERE pb.klinik_id=$ak_id AND ts.barang_id=$barang_id AND ts.referensi_tipe='pemakaian_bhp' $pem_date_cond AND pb.status='active' GROUP BY pb.jenis_pemakaian");
+            while ($r && ($prow = $r->fetch_assoc())) {
+                if ($prow['jenis_pemakaian'] === 'hc') $ak_sell_hc += (float)$prow['qty'];
+                else $ak_sell_on += (float)$prow['qty'];
+            }
+        }
+
+        if ($is_history) {
+            $ak_stock_on = $ak_on + $ak_rb_out_on - $ak_rb_in_on + $ak_sell_on;
+            $ak_stock_hc = $ak_hc + $ak_rb_out_hc - $ak_rb_in_hc + $ak_sell_hc;
+        } else {
+            $ak_stock_on = $ak_on - ($ak_rb_out_on - $ak_rb_in_on + $ak_sell_on);
+            $ak_stock_hc = $ak_hc - ($ak_rb_out_hc - $ak_rb_in_hc + $ak_sell_hc);
+        }
+
+        // Accumulated daily usage per klinik (same logic as main table)
+        $ak_daily = $is_history ? 0.0 : calculate_accumulated_usage($ak_id, $barang_id);
+
+        // Reserve per klinik
+        $ak_res_on = 0.0; $ak_res_hc = 0.0;
+        $t_esc2 = $conn->real_escape_string($tanggal); $me_esc2 = $conn->real_escape_string($month_end);
+        $r = $conn->query("SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_onsite>0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END),0) AS q FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id=bp.id WHERE bd.barang_id=$barang_id AND bp.klinik_id=$ak_id AND bp.status='booked' AND bp.status_booking LIKE '%Clinic%' AND bp.tanggal_pemeriksaan>='$t_esc2' AND bp.tanggal_pemeriksaan<='$me_esc2'");
+        if ($r) $ak_res_on = (float)($r->fetch_assoc()['q'] ?? 0);
+        $r = $conn->query("SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_hc>0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END),0) AS q FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id=bp.id WHERE bd.barang_id=$barang_id AND bp.klinik_id=$ak_id AND bp.status='booked' AND bp.status_booking LIKE '%HC%' AND bp.tanggal_pemeriksaan>='$t_esc2' AND bp.tanggal_pemeriksaan<='$me_esc2'");
+        if ($r) $ak_res_hc = (float)($r->fetch_assoc()['q'] ?? 0);
+
+        $ak_on_hand = ($ak_stock_on + $ak_stock_hc) - $ak_daily;
+
+        $per_klinik[] = [
+            'id'          => $ak_id,
+            'nama_klinik' => (string)$ak['nama_klinik'],
+            'stock_on'    => $ak_stock_on + $ak_sell_on,
+            'stock_hc'    => $ak_stock_hc + $ak_sell_hc,
+            'sellout_on'  => $ak_sell_on,
+            'sellout_hc'  => $ak_sell_hc,
+            'daily_usage' => round($ak_daily, 0),
+            'on_hand'     => $ak_on_hand,
+            'reserve_on'  => $ak_res_on,
+            'reserve_hc'  => $ak_res_hc,
+            'available'   => $ak_on_hand - $ak_res_on - $ak_res_hc,
+        ];
+    }
+
+    // Prepend Gudang Utama row if include_gudang (appears at top)
+    if ($include_gudang) {
+        $gudang_loc = trim((string)get_setting('odoo_location_gudang_utama', ''));
+        $ak_gd_on = 0.0;
+        if ($gudang_loc !== '') {
+            $gloc_esc = "'" . $conn->real_escape_string($gudang_loc) . "'";
+            $r = $conn->query("SELECT SUM(qty) as q FROM (SELECT location_code, qty FROM inventory_stock_mirror sm1 JOIN (SELECT TRIM(location_code) as loc, MAX(updated_at) as max_up FROM inventory_stock_mirror WHERE TRIM(location_code) = $gloc_esc AND $match_sql GROUP BY TRIM(location_code)) lsm ON TRIM(sm1.location_code) = lsm.loc AND sm1.updated_at = lsm.max_up WHERE TRIM(sm1.location_code) = $gloc_esc AND $match_sql) c");
+            if ($r && $r->num_rows > 0) $ak_gd_on = (float)($r->fetch_assoc()['q'] ?? 0) / $multiplier;
+        }
+
+        // Sellout gudang (from transaksi_stok level=gudang_utama)
+        $ak_gd_sell = 0.0;
+        if ($max_u !== '') {
+            $ak_mu_gd = $conn->real_escape_string($max_u);
+            $ak_ms_gd = $conn->real_escape_string($month_start_ts);
+            if ($is_history && strtotime($tanggal_end_ts) < strtotime($max_u)) {
+                $ak_rs_gd = $conn->real_escape_string($tanggal_end_ts);
+                $pem_cond_gd = "AND pb.tanggal > '$ak_rs_gd' AND pb.tanggal <= '$ak_mu_gd' AND pb.tanggal >= '$ak_ms_gd'";
+            } elseif (!$is_history) {
+                $pem_cond_gd = "AND pb.created_at > '$ak_mu_gd' AND pb.tanggal >= '$ak_ms_gd'";
+            } else {
+                $pem_cond_gd = "AND 1=0";
+            }
+            $r = $conn->query("SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi='out' THEN ts.qty ELSE -ts.qty END),0) AS qty FROM inventory_pemakaian_bhp pb JOIN inventory_transaksi_stok ts ON ts.referensi_id=pb.id WHERE ts.barang_id=$barang_id AND ts.referensi_tipe='pemakaian_bhp' AND ts.level='gudang_utama' $pem_cond_gd AND pb.status='active'");
+            if ($r) $ak_gd_sell = (float)($r->fetch_assoc()['qty'] ?? 0);
+        }
+
+        array_unshift($per_klinik, [
+            'id'          => 0,
+            'nama_klinik' => 'Gudang Utama',
+            'stock_on'    => $ak_gd_on,
+            'stock_hc'    => 0.0,
+            'sellout_on'  => $ak_gd_sell,
+            'sellout_hc'  => 0.0,
+            'daily_usage' => 0.0,
+            'on_hand'     => $ak_gd_on,
+            'is_gudang'   => true,
+        ]);
+    }
+}
+
 // Period usage (1st of month until selected date)
 $ms_q = $conn->real_escape_string($month_start);
 $t_q = $conn->real_escape_string($tanggal);
@@ -490,6 +634,8 @@ echo json_encode([
         'to_uom' => (string)($b['satuan'] ?? ($conv['to_uom'] ?? '')),
         'multiplier' => $multiplier
     ],
+    'daily_usage' => round($daily_usage_rate, 2),
+    'per_klinik' => $per_klinik,
     'rollback' => $rb,
     'reserve' => $reserve,
     'result' => [

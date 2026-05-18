@@ -28,7 +28,16 @@ if (isset($_SESSION['user_id'])) {
         $badge_spv = (int)($q_spv->fetch_assoc()['cnt'] ?? 0);
     }
 
-    // 3. BHP Pending Approval Count (for SPV / Super Admin only)
+    // 3. HC Transfer Request Pending Count (for admin_klinik, spv_klinik, super_admin)
+    $badge_hc_request = 0;
+    if (in_array($u_role, ['admin_klinik', 'spv_klinik', 'super_admin'], true)) {
+        $where_hcr = "status = 'pending'";
+        if ($u_role !== 'super_admin') $where_hcr .= " AND klinik_id = $u_klinik_id";
+        $q_hcr = $conn->query("SELECT COUNT(*) as cnt FROM inventory_hc_transfer_request WHERE $where_hcr");
+        if ($q_hcr) $badge_hc_request = (int)($q_hcr->fetch_assoc()['cnt'] ?? 0);
+    }
+
+    // 4. BHP Pending Approval Count (for SPV / Super Admin only)
     $badge_bhp_pending = 0;
     if (in_array($u_role, ['super_admin', 'spv_klinik'], true)) {
         $where_bhp = "status IN ('pending_add', 'pending_edit', 'pending_delete', 'pending_approval_spv')";
@@ -144,7 +153,12 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
 
         <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)): ?>
         <a href="index.php?page=stok_petugas_hc" class="sidebar-link <?= $current_page == 'stok_petugas_hc' ? 'active' : '' ?>">
-            <i class="fas fa-briefcase-medical"></i> Stok Petugas HC
+            <div class="d-flex w-100 align-items-center justify-content-between">
+                <div><i class="fas fa-briefcase-medical"></i> Stok Petugas HC</div>
+                <?php if ($badge_hc_request > 0): ?>
+                    <span class="badge bg-danger rounded-pill"><?= $badge_hc_request ?></span>
+                <?php endif; ?>
+            </div>
         </a>
         <?php endif; ?>
 

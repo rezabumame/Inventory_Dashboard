@@ -42,6 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $token = trim((string)($_POST['public_stok_token'] ?? ''));
         set_setting('public_stok_token', $token);
         $msg = '<div class="alert alert-success">Token akses publik tersimpan.</div>';
+    } else if ($form_type === 'gudang_sync') {
+        $t = trim((string)($_POST['gudang_sync_token'] ?? ''));
+        set_setting('gudang_sync_token', $t);
+        $msg = '<div class="alert alert-success">Token sync gudang utama tersimpan.</div>';
     } else if ($form_type === 'schedule') {
         $enabled_input = $_POST['enabled'] ?? '0';
         $enabled = ($enabled_input === '1') ? '1' : '0';
@@ -90,8 +94,11 @@ $lark_booking_at_id = trim((string)get_setting('webhook_lark_booking_at_id', '')
 $gsheet_webhook = trim((string)get_setting('gsheet_booking_webhook_url', ''));
 $public_stok_token = trim((string)get_setting('public_stok_token', ''));
 $scheduler_token_saved = trim((string)get_setting('odoo_sync_token', ''));
+$gudang_sync_token_saved = trim((string)get_setting('gudang_sync_token', ''));
+$gudang_sync_last_run = (int)get_setting('gudang_sync_last_run', '0');
 $internal_token = getenv('ODOO_SYNC_SYSTEM_TOKEN') ?: '';
 $schedule_hint_url = '';
+$gudang_sync_hint_url = '';
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/'));
@@ -99,6 +106,8 @@ $appRoot = rtrim(dirname(rtrim(dirname($script), '/')), '/'); // up 2 levels fro
 if ($appRoot === '/' || $appRoot === '\\') $appRoot = '';
 $schedule_hint_url = $scheme . '://' . $host . $appRoot . '/api/updatedataforodoo.php';
 if ($scheduler_token_saved !== '') $schedule_hint_url .= '?token=' . urlencode($scheduler_token_saved);
+$gudang_sync_hint_url = $scheme . '://' . $host . $appRoot . '/api/sync_gudang_utama.php';
+if ($gudang_sync_token_saved !== '') $gudang_sync_hint_url .= '?token=' . urlencode($gudang_sync_token_saved);
 
 function next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run) {
     if (!$enabled) return '-';
@@ -429,6 +438,58 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                         <button type="button" class="btn btn-premium btn-test" onclick="confirmSyncNow(this)">
                             <i class="fas fa-sync me-2"></i>Jalankan Sekarang
                         </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Gudang Utama Manual Sync -->
+            <div class="settings-card mb-3">
+                <div class="card-title-premium">
+                    <i class="fas fa-warehouse"></i>
+                    <span>Sync Gudang Utama (Harian)</span>
+                    <?php if ($gudang_sync_last_run): ?>
+                    <span class="ms-auto" style="font-size:0.7rem;font-weight:600;color:var(--slate-600);">
+                        Terakhir: <?= date('d M Y H:i', $gudang_sync_last_run) ?>
+                    </span>
+                    <?php endif; ?>
+                </div>
+                <form method="POST" class="row g-3">
+                    <input type="hidden" name="form_type" value="gudang_sync">
+                    <div class="col-12">
+                        <label class="form-label">Token Akses</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" name="gudang_sync_token" id="gudang_sync_token"
+                                   value="<?= htmlspecialchars($gudang_sync_token_saved) ?>"
+                                   placeholder="Contoh: gd-sync-bumame-2026">
+                            <button class="btn btn-outline-secondary" type="button"
+                                    onclick="document.getElementById('gudang_sync_token').value = Math.random().toString(36).substring(2,10) + Math.random().toString(36).substring(2,10)">
+                                <i class="fas fa-redo"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">Token bebas — isi terserah, lalu simpan untuk generate link.</div>
+                    </div>
+                    <?php if ($gudang_sync_token_saved !== ''): ?>
+                    <div class="col-12">
+                        <label class="form-label">Link Sync Harian</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control form-control-sm" id="gudang_sync_link"
+                                   value="<?= htmlspecialchars($gudang_sync_hint_url) ?>" readonly>
+                            <button class="btn btn-outline-primary" type="button" onclick="copyGudangLink()">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">Panggil link ini setiap hari (cron job, task scheduler, atau browser).</div>
+                    </div>
+                    <?php endif; ?>
+                    <div class="col-12 pt-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-premium btn-save">
+                            <i class="fas fa-save me-2"></i>Simpan Token
+                        </button>
+                        <?php if ($gudang_sync_token_saved !== ''): ?>
+                        <button type="button" class="btn btn-premium btn-test" onclick="runGudangSyncNow(this)">
+                            <i class="fas fa-sync me-2"></i>Jalankan Sekarang
+                        </button>
+                        <?php endif; ?>
                     </div>
                 </form>
             </div>
@@ -784,5 +845,85 @@ function copyPublicLink() {
     link.select();
     document.execCommand('copy');
     Swal.fire({ title: 'Tersalin!', text: 'Link publik sudah ada di clipboard.', icon: 'success', timer: 1500, showConfirmButton: false });
+}
+
+function copyGudangLink() {
+    const el = document.getElementById('gudang_sync_link');
+    if (!el) return;
+    el.select();
+    document.execCommand('copy');
+    Swal.fire({ title: 'Tersalin!', text: 'Link sync gudang sudah di clipboard.', icon: 'success', timer: 1500, showConfirmButton: false });
+}
+
+async function runGudangSyncNow(btn) {
+    const { isConfirmed } = await Swal.fire({
+        title: 'Jalankan Sync Gudang?',
+        text: 'Data stok gudang utama akan ditarik dari Odoo sekarang.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#204EAB',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Ya, Jalankan',
+        cancelButtonText: 'Batal',
+    });
+    if (!isConfirmed) return;
+
+    btn.disabled = true;
+    const origHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Memproses...';
+    try {
+        const link = document.getElementById('gudang_sync_link');
+        const url = link ? link.value : '';
+        if (!url) throw new Error('Link belum tersedia');
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.success) {
+            const diff = data.diff || {};
+            const added   = diff.added   || [];
+            const removed = diff.removed || [];
+            const changed = diff.changed || [];
+
+            let html = `<div style="text-align:left;font-size:13px;">`;
+            html += `<p class="mb-2"><b>${data.produk_count}</b> produk aktif &bull; <span class="text-muted">${data.elapsed_s}s</span></p>`;
+
+            if (data.first_sync) {
+                html += `<p class="text-muted mb-0">Sync pertama — belum ada data pembanding.</p>`;
+            } else {
+                if (added.length) {
+                    html += `<div class="mb-2"><span class="badge bg-success mb-1">+${added.length} Barang Baru</span><ul class="mb-0 ps-3" style="max-height:120px;overflow-y:auto;">`;
+                    added.forEach(i => { html += `<li>${i.nama} <span class="text-muted">(${i.qty})</span></li>`; });
+                    html += `</ul></div>`;
+                }
+                if (removed.length) {
+                    html += `<div class="mb-2"><span class="badge bg-danger mb-1">-${removed.length} Barang Hilang</span><ul class="mb-0 ps-3" style="max-height:100px;overflow-y:auto;">`;
+                    removed.forEach(i => { html += `<li>${i.nama}</li>`; });
+                    html += `</ul></div>`;
+                }
+                if (changed.length) {
+                    html += `<div class="mb-2"><span class="badge bg-warning text-dark mb-1">${changed.length} Qty Berubah</span><ul class="mb-0 ps-3" style="max-height:120px;overflow-y:auto;">`;
+                    changed.slice(0, 20).forEach(i => {
+                        const sign = i.delta > 0 ? '+' : '';
+                        html += `<li>${i.nama}: ${i.qty_lama} → ${i.qty_baru} <span class="text-muted">(${sign}${i.delta})</span></li>`;
+                    });
+                    if (changed.length > 20) html += `<li class="text-muted">...dan ${changed.length - 20} lainnya</li>`;
+                    html += `</ul></div>`;
+                }
+                if (!added.length && !removed.length && !changed.length) {
+                    html += `<p class="text-muted mb-0">Tidak ada perubahan dari sync sebelumnya.</p>`;
+                }
+            }
+            html += `</div>`;
+
+            Swal.fire({ title: 'Sync Selesai!', html, icon: 'success', width: 500 })
+                .then(() => location.reload());
+        } else {
+            Swal.fire('Gagal!', data.message || 'Terjadi kesalahan.', 'error');
+        }
+    } catch (e) {
+        Swal.fire('Error!', e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+    }
 }
 </script>

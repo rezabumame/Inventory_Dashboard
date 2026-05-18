@@ -135,8 +135,8 @@ function stock_reserve_qty(mysqli $conn, int $klinik_id, int $barang_id, string 
 
 function fmt_qty($v) {
     $n = (float)($v ?? 0);
-    if (abs($n - round($n)) < 0.00005) return (string)(int)round($n);
-    $s = rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
+    if (abs($n - round($n)) < 0.00005) return number_format((int)round($n), 0, ',', '.');
+    $s = rtrim(rtrim(number_format($n, 4, ',', '.'), '0'), ',');
     return $s === '' ? '0' : $s;
 }
 

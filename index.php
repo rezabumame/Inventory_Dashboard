@@ -13,7 +13,35 @@ $action = isset($_GET['action']) ? $_GET['action'] : '';
 
 // Auth check for non-public pages
 $public_pages = ['login', 'logout', 'qr_verify_rab', 'stok_klinik_publik'];
+
+// Remember Me auto-login
+if (!isset($_SESSION['user_id']) && !empty($_COOKIE['_rm_token'])) {
+    $rm_token = $_COOKIE['_rm_token'];
+    $rm_esc   = $conn->real_escape_string($rm_token);
+    $rm_res   = $conn->query("SELECT id, username, nama_lengkap, role, klinik_id, photo FROM inventory_users WHERE remember_token = '$rm_esc' AND remember_token_expires > NOW() AND status = 'active' LIMIT 1");
+    if ($rm_res && $rm_res->num_rows > 0) {
+        $rm_user = $rm_res->fetch_assoc();
+        $_SESSION['user_id']     = (int)$rm_user['id'];
+        $_SESSION['username']    = $rm_user['username'];
+        $_SESSION['nama_lengkap']= $rm_user['nama_lengkap'];
+        $_SESSION['role']        = $rm_user['role'];
+        $_SESSION['klinik_id']   = $rm_user['klinik_id'];
+        $_SESSION['photo']       = $rm_user['photo'];
+        // Rotate token setiap auto-login untuk keamanan
+        $new_token = bin2hex(random_bytes(32));
+        $expires   = date('Y-m-d H:i:s', strtotime('+360 days'));
+        $uid_rm    = (int)$rm_user['id'];
+        $new_tok_esc = $conn->real_escape_string($new_token);
+        $conn->query("UPDATE inventory_users SET remember_token='$new_tok_esc', remember_token_expires='$expires' WHERE id=$uid_rm");
+        setcookie('_rm_token', $new_token, time() + (360 * 86400), '/', '', false, true);
+    }
+}
+
 if (!in_array($page, $public_pages) && !isset($_SESSION['user_id'])) {
+    // Simpan URL tujuan agar bisa redirect balik setelah login
+    if ($page !== 'login') {
+        $_SESSION['_login_redirect'] = $_SERVER['REQUEST_URI'] ?? '';
+    }
     redirect('index.php?page=login');
 }
 
@@ -23,8 +51,11 @@ if (isset($_SESSION['user_id'])) {
     maybe_auto_sync();
 }
 
+// Pages yang pakai layout mobile penuh (tanpa sidebar/header standar)
+$mobile_pages = ['qr_transfer'];
+
 // Layout structure
-if (!in_array($page, $public_pages) && !isset($_GET['layout'])) {
+if (!in_array($page, $public_pages) && !in_array($page, $mobile_pages) && !isset($_GET['layout'])) {
     include 'views/layouts/header.php';
     include 'views/layouts/sidebar.php';
 }
@@ -73,6 +104,12 @@ switch ($page) {
         break;
     case 'stok_klinik_publik':
         include 'views/inventory/stok_klinik_publik.php';
+        break;
+    case 'qr_transfer':
+        include 'views/inventory/qr_transfer.php';
+        break;
+    case 'print_qr_klinik':
+        include 'views/inventory/print_qr_klinik.php';
         break;
     // case 'stock_opname':
     //     include 'views/inventory/stock_opname.php';
@@ -138,7 +175,7 @@ switch ($page) {
         break;
 }
 
-if (!in_array($page, $public_pages) && !isset($_GET['layout'])) {
+if (!in_array($page, $public_pages) && !in_array($page, $mobile_pages) && !isset($_GET['layout'])) {
     include 'views/layouts/footer.php';
 }
 ?>

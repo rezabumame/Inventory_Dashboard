@@ -523,7 +523,7 @@ if ($active_tab == 'stok') {
                             $cur_stok_onsite += (float)($r['in_transfer'] ?? 0) - (float)($r['out_transfer'] ?? 0);
                             $cur_stok_hc += (float)($r['in_transfer_hc'] ?? 0) - (float)($r['out_transfer_hc'] ?? 0);
                             $cur_total_sellout = (float)($r['sellout_klinik'] ?? 0) + ($show_hc ? (float)($r['sellout_hc'] ?? 0) : 0);
-                            $cur_on_hand = ($cur_stok_onsite + ($show_hc ? $cur_stok_hc : 0)) - $cur_total_sellout - $item_daily_usage;
+                            $cur_on_hand = ($cur_stok_onsite + ($show_hc ? $cur_stok_hc : 0)) - $cur_total_sellout;
                         }
 
                         if (!$show_zero && $can_use_zero_filter && $cur_on_hand <= 0) {
@@ -836,7 +836,7 @@ if ($active_tab == 'stok') {
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="text-uppercase fw-semibold" style="color: #64748b; font-size: 0.65rem;">Daily Usage</div>
+                        <div class="text-uppercase fw-semibold" style="color: #64748b; font-size: 0.65rem;">Est. Usage</div>
                         <div class="h4 mb-0 fw-bold" style="color: #334155;"><?= fmt_qty($summary_stok['total_daily_usage'] ?? 0) ?></div>
                     </div>
                     <i class="fas fa-clock fa-lg" style="color: #94a3b8; opacity: 0.5;"></i>
@@ -868,17 +868,23 @@ if ($active_tab == 'stok') {
 window.__stokKlinikContext = {
     klinikId: <?= (int)$selected_klinik ?>,
     tanggal: "<?= htmlspecialchars($filter_date) ?>",
-    tanggalLabel: "<?= htmlspecialchars($filter_date_label) ?>"
+    tanggalLabel: "<?= htmlspecialchars($filter_date_label) ?>",
+    includeGudang: <?= $include_gudang ? 'true' : 'false' ?>
 };
 
 function fmtNum(v) {
     var n = parseFloat(v || 0);
-    if (Math.abs(n - Math.round(n)) < 0.00005) return Math.round(n).toString();
-    var s = n.toFixed(4).replace(/\.?0+$/, "");
-    return s === "" ? "0" : s;
+    if (isNaN(n)) return "0";
+    if (Math.abs(n - Math.round(n)) < 0.00005) {
+        return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+    var s = n.toFixed(4).replace(/0+$/, '').replace(/,$/, '');
+    var parts = s.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return parts.join(',');
 }
 
-function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
+function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage = 0, stockTotal = 0) {
     var modalEl = document.getElementById('modalStokBreakdown');
     var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
@@ -889,7 +895,7 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
         url: 'api/ajax_stok_klinik_breakdown.php',
         method: 'POST',
         dataType: 'json',
-        data: { klinik_id: window.__stokKlinikContext.klinikId, barang_id: barangId, tanggal: window.__stokKlinikContext.tanggal }
+        data: { klinik_id: window.__stokKlinikContext.klinikId, barang_id: barangId, tanggal: window.__stokKlinikContext.tanggal, include_gudang: window.__stokKlinikContext.includeGudang ? 1 : 0 }
     }).then(function(res) {
         if (!res || !res.success) {
             body.innerHTML = '<div class="alert alert-danger mb-0">Gagal memuat detail.</div>';
@@ -908,6 +914,9 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
         var reserveOn = reserve.onsite || 0;
         var reserveHc = reserve.hc || 0;
         var result = res.result || {};
+        var dailyUsage = accDailyUsage > 0 ? accDailyUsage : parseFloat(res.daily_usage || 0);
+        var stockTotalVal = stockTotal > 0 ? stockTotal : (result.stock_total || 0);
+        var perKlinik = Array.isArray(res.per_klinik) ? res.per_klinik : [];
 
         var pemRows = pem.length ? pem.map(function(p) {
             var jenis = (p.jenis_pemakaian === 'hc') ? '<span class="badge bg-info x-small">HC</span>' : '<span class="badge bg-light text-dark x-small border">Klinik</span>';
@@ -934,7 +943,7 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
 
         var isHistory = (window.__stokKlinikContext.tanggal !== new Date().toISOString().split('T')[0]);
         var adjLabel = isHistory ? 'Penyesuaian (Rollback):' : 'Sellout:';
-        var adjClass = isHistory ? 'text-success' : 'text-primary';
+        var adjClass = isHistory ? 'text-success' : 'text-danger';
 
         var titleIcon = type === 'onhand' ? 'fas fa-box' : 'fas fa-calendar-check';
         var titleText = type === 'onhand' ? 'Detail Stok On Hand' : 'Detail Stok Available';
@@ -946,17 +955,18 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                 <div class="row g-0 align-items-center">
                     <div class="col-8 border-end pe-2">
                         <div class="x-small text-muted text-uppercase fw-bold" style="font-size: 0.65rem;">Barang</div>
-                        <div class="fw-bold text-primary-custom text-truncate small" title="${$('<div>').text((b.kode_barang || '-') + ' - ' + (b.nama_barang || namaBarang)).html()}">
+                        <div class="fw-bold text-dark text-truncate small" title="${$('<div>').text((b.kode_barang || '-') + ' - ' + (b.nama_barang || namaBarang)).html()}">
                             ${$('<div>').text((b.kode_barang || '-') + ' - ' + (b.nama_barang || namaBarang)).html()}
                         </div>
                     </div>
                     <div class="col-4 ps-2 text-center">
                         ${type === 'onhand' ? `
-                            <div class="x-small text-muted text-uppercase fw-bold" style="font-size: 0.65rem;">On Hand Total</div>
-                            <div class="h5 mb-0 fw-bold text-dark">${fmtNum(result.stock_total || 0)}</div>
+                            <div class="x-small text-dark text-uppercase fw-bold" style="font-size: 0.65rem;">On Hand Total</div>
+                            <div class="h5 mb-0 fw-bold text-success">${fmtNum(stockTotalVal)}</div>
                         ` : `
-                            <div class="x-small text-primary-custom text-uppercase fw-bold" style="font-size: 0.65rem;">Available Stok</div>
-                            <div class="h5 mb-0 fw-bold text-primary-custom">${fmtNum(result.tersedia || 0)}</div>
+                            <div class="x-small text-dark text-uppercase fw-bold" style="font-size: 0.65rem;">Available Stok</div>
+                            <div class="h5 mb-0 fw-bold text-success">${fmtNum((result.tersedia || 0) - dailyUsage)}</div>
+                            ${dailyUsage > 0 ? `<div class="x-small text-muted mt-1">${fmtNum(result.tersedia || 0)} &minus; <span class="fw-semibold">${fmtNum(dailyUsage)}</span> est. usage</div>` : ''}
                         `}
                     </div>
                 </div>
@@ -1028,11 +1038,11 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                                 <span>On Hand Clinic:</span>
                                 <span>${fmtNum(result.stock_onsite || 0)}</span>
                             </div>
-                            <div class="d-flex justify-content-between mb-1 x-small text-danger">
+                            <div class="d-flex justify-content-between mb-1 x-small text-primary">
                                 <span>Reservasi:</span>
                                 <span class="fw-bold">-${fmtNum(reserveOn)}</span>
                             </div>
-                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-primary-custom">
+                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-dark">
                                 <span>Total Available:</span>
                                 <span>${fmtNum((result.stock_onsite || 0) - reserveOn)}</span>
                             </div>
@@ -1048,11 +1058,11 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                                 <span>On Hand HC:</span>
                                 <span>${fmtNum(result.stock_hc || 0)}</span>
                             </div>
-                            <div class="d-flex justify-content-between mb-1 x-small text-danger">
+                            <div class="d-flex justify-content-between mb-1 x-small text-primary">
                                 <span>Reservasi:</span>
                                 <span class="fw-bold">-${fmtNum(reserveHc)}</span>
                             </div>
-                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-primary-custom">
+                            <div class="d-flex justify-content-between pt-1 border-top fw-bold small text-dark">
                                 <span>Total Available:</span>
                                 <span>${fmtNum((result.stock_hc || 0) - reserveHc)}</span>
                             </div>
@@ -1061,6 +1071,58 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                 </div>
             </div>
             `}
+
+            <!-- Per-Klinik Breakdown (only when all) -->
+            ${perKlinik.length > 1 ? `
+            <div class="accordion mb-2" id="accordionPerKlinik">
+                <div class="accordion-item border rounded overflow-hidden">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed py-2 small fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePerKlinik">
+                            <i class="fas fa-hospital-alt me-2"></i> Breakdown Per Klinik
+                        </button>
+                    </h2>
+                    <div id="collapsePerKlinik" class="accordion-collapse collapse">
+                        <div class="accordion-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th class="ps-3">Klinik</th>
+                                            <th class="text-center">${type === 'available' ? 'On Hand Clinic' : 'Stok Clinic'}</th>
+                                            <th class="text-center">${type === 'available' ? 'On Hand HC' : 'Stok HC'}</th>
+                                            <th class="text-center">${type === 'available' ? 'Reserve Clinic' : 'Sellout Clinic'}</th>
+                                            <th class="text-center">${type === 'available' ? 'Reserve HC' : 'Sellout HC'}</th>
+                                            <th class="text-center">Est. Usage</th>
+                                            <th class="text-center">${type === 'available' ? 'Available' : 'On Hand'}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="small">
+                                        ${perKlinik.map(function(k) {
+                                            var onHand = k.on_hand !== undefined ? k.on_hand : (k.stock_on + k.stock_hc);
+                                            var isGudang = k.is_gudang === true;
+                                            var rowBg = isGudang ? ' style="background:#f8fafc;"' : '';
+                                            return '<tr' + rowBg + '>' +
+                                                '<td class="ps-3 fw-medium">' + $('<div>').text(k.nama_klinik).html() + '</td>' +
+                                                '<td class="text-center text-dark">' + fmtNum(type === 'available' ? k.stock_on - (k.sellout_on || 0) : k.stock_on) + '</td>' +
+                                                '<td class="text-center text-dark">' + ((type === 'available' ? k.stock_hc - (k.sellout_hc || 0) : k.stock_hc) > 0 ? fmtNum(type === 'available' ? k.stock_hc - (k.sellout_hc || 0) : k.stock_hc) : '<span class="text-muted">-</span>') + '</td>' +
+                                                (type === 'available'
+                                                    ? '<td class="text-center text-primary">' + (k.reserve_on > 0 ? fmtNum(k.reserve_on) : '<span class="text-muted">-</span>') + '</td>' +
+                                                      '<td class="text-center text-primary">' + (k.reserve_hc > 0 ? fmtNum(k.reserve_hc) : '<span class="text-muted">-</span>') + '</td>'
+                                                    : '<td class="text-center text-danger">' + (k.sellout_on > 0 ? fmtNum(k.sellout_on) : '<span class="text-muted">-</span>') + '</td>' +
+                                                      '<td class="text-center text-danger">' + (k.sellout_hc > 0 ? fmtNum(k.sellout_hc) : '<span class="text-muted">-</span>') + '</td>'
+                                                ) +
+                                                '<td class="text-center text-danger">' + (!isGudang && k.daily_usage > 0 ? fmtNum(k.daily_usage) : '<span class="text-muted">-</span>') + '</td>' +
+                                                '<td class="text-center fw-bold text-success">' + fmtNum(type === 'available' ? (k.available !== undefined ? k.available : onHand) : onHand) + '</td>' +
+                                                '</tr>';
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
 
             ${type === 'onhand' ? `
             <div class="accordion" id="accordionDetailTrans">
@@ -1180,7 +1242,7 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                             <?php if ($show_hc): ?><th class="text-center">Sellout HC</th><?php endif; ?>
                             <th class="text-center">Reserve Clinic</th>
                             <?php if ($show_hc): ?><th class="text-center">Reserve HC</th><?php endif; ?>
-                             <th class="text-center">Daily Usage</th>
+                             <th class="text-center" style="font-size:0.55em;">Est. Usage</th>
                             <th class="text-center">On Hand Stok</th>
                             <th class="text-center">Available Stok</th>
                             <?php if ($is_history_date): ?><th>Detail</th><?php endif; ?>
@@ -1219,9 +1281,9 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                             if ($is_history_date) {
                                 $on_hand = $total_stok;
                             } else {
-                                $on_hand = $total_stok - $total_sellout - $acc_daily_usage;
+                                $on_hand = $total_stok - $total_sellout;
                             }
-                            $available = $on_hand - $reserve_total;
+                            $available = $on_hand - $reserve_total - $acc_daily_usage;
                         ?>
                         <tr>
                             <td class="text-center">
@@ -1273,11 +1335,11 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                                 <?php if ($stok_hc != 0): ?>
                                     <div class="d-flex flex-column align-items-center">
                                         <?php
-                                            $hc_class = ((float)$stok_hc) < 0 ? 'text-danger fw-bold' : 'text-primary fw-bold';
+                                            $hc_class = ((float)$stok_hc) < 0 ? 'text-danger fw-bold' : 'fw-bold text-dark';
                                         ?>
                                         <a href="javascript:void(0)" class="<?= $hc_class ?> text-decoration-none"
                                            onclick="loadHCDetail(<?= $row['barang_id'] ?>, <?= $row['klinik_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>'); return false;">
-                                            <?= fmt_qty($stok_hc) ?> <i class="fas fa-user-nurse"></i>
+                                            <?= fmt_qty($stok_hc) ?>
                                         </a>
                                         <?php if ((float)($row['in_transfer_hc'] ?? 0) > 0 || (float)($row['out_transfer_hc'] ?? 0) > 0): ?>
                                             <div class="d-flex align-items-center justify-content-center gap-2 small mt-1">
@@ -1321,15 +1383,15 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand') {
                             <td class="text-center" style="background-color: #f1f5f9;">
                                 <div style="color: #334155;" class="<?= $acc_daily_usage > 0 ? 'fw-bold' : '' ?>"><?= fmt_qty($acc_daily_usage) ?></div>
                             </td>
-                            <td class="text-center <?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'onhand')">
+                            <td class="text-center <?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'onhand', <?= (float)$acc_daily_usage ?>, <?= (float)$on_hand ?>)">
                                 <?= fmt_qty($on_hand) ?>
                             </td>
-                            <td class="text-center <?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'available')">
+                            <td class="text-center <?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'available', <?= (float)$acc_daily_usage ?>, <?= (float)$on_hand ?>)">
                                 <?= fmt_qty($available) ?>
                             </td>
                             <?php if ($is_history_date): ?>
                             <td class="text-center">
-                                <a href="javascript:void(0)" class="text-decoration-none" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'onhand'); return false;">
+                                <a href="javascript:void(0)" class="text-decoration-none" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'onhand', <?= (float)$acc_daily_usage ?>, <?= (float)$on_hand ?>); return false;">
                                     <i class="fas fa-info-circle"></i>
                                 </a>
                             </td>

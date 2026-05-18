@@ -803,8 +803,17 @@ try {
         $row = $res->fetch_assoc();
         $type = $row['Type'];
         if (strpos($type, 'admin_hc') !== false) return "Already exists";
-        
         $new_type = str_replace(")", ",'admin_hc')", $type);
+        $conn->query("ALTER TABLE inventory_users MODIFY COLUMN role $new_type");
+        return "Updated";
+    });
+
+    run_migration_task("Schema: Add role petugas_hc to inventory_users", function() use ($conn) {
+        $res = $conn->query("SHOW COLUMNS FROM inventory_users LIKE 'role'");
+        $row = $res->fetch_assoc();
+        $type = $row['Type'];
+        if (strpos($type, 'petugas_hc') !== false) return "Already exists";
+        $new_type = str_replace(")", ",'petugas_hc')", $type);
         $conn->query("ALTER TABLE inventory_users MODIFY COLUMN role $new_type");
         return "Updated";
     });
@@ -902,6 +911,47 @@ try {
         if (!table_exists($conn, 'inventory_app_settings')) return "Table not found";
         $conn->query("INSERT IGNORE INTO inventory_app_settings (k, v) VALUES ('daily_usage_auto_last_sync', '')");
         return "Settings Initialized";
+    });
+
+    // ─── QR HC Transfer Request ────────────────────────────────────────────────
+
+    run_migration_task("Column: inventory_users.remember_token", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_users', 'remember_token', "VARCHAR(64) NULL DEFAULT NULL");
+    });
+    run_migration_task("Column: inventory_users.remember_token_expires", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_users', 'remember_token_expires', "DATETIME NULL DEFAULT NULL");
+    });
+    run_migration_task("Index: inventory_users.idx_remember_token", function() use ($conn) {
+        return m_ensure_index($conn, 'inventory_users', 'idx_remember_token', "CREATE INDEX idx_remember_token ON inventory_users (remember_token)");
+    });
+
+    run_migration_task("Table: inventory_hc_transfer_request", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_hc_transfer_request", "CREATE TABLE IF NOT EXISTS inventory_hc_transfer_request (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            klinik_id INT NOT NULL,
+            user_hc_id INT NOT NULL,
+            status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+            foto_path VARCHAR(500) NULL,
+            catatan TEXT NULL,
+            reviewed_by INT NULL,
+            reviewed_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT NOW(),
+            KEY idx_klinik_status (klinik_id, status),
+            KEY idx_user_hc (user_hc_id),
+            KEY idx_created (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    run_migration_task("Table: inventory_hc_transfer_request_items", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_hc_transfer_request_items", "CREATE TABLE IF NOT EXISTS inventory_hc_transfer_request_items (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            request_id INT NOT NULL,
+            barang_id INT NOT NULL,
+            qty_request DECIMAL(12,4) NOT NULL DEFAULT 0,
+            qty_approved DECIMAL(12,4) NULL,
+            KEY idx_request (request_id),
+            KEY idx_barang (barang_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
     });
 
 } catch (Throwable $e) {

@@ -8,6 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     require_csrf();
     $username = $_POST['username'];
     $password = $_POST['password'];
+    $remember = true;
 
     $stmt = $conn->prepare("SELECT id, username, password, nama_lengkap, role, klinik_id, photo FROM inventory_users WHERE username = ? AND status = 'active'");
     $stmt->bind_param("s", $username);
@@ -17,13 +18,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if ($result->num_rows == 1) {
         $user = $result->fetch_assoc();
         if (password_verify($password, $user['password'])) {
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['username'];
+            $_SESSION['user_id']      = $user['id'];
+            $_SESSION['username']     = $user['username'];
             $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
-            $_SESSION['role'] = $user['role'];
-            $_SESSION['klinik_id'] = $user['klinik_id'];
-            $_SESSION['photo'] = $user['photo'];
-            
+            $_SESSION['role']         = $user['role'];
+            $_SESSION['klinik_id']    = $user['klinik_id'];
+            $_SESSION['photo']        = $user['photo'];
+
+            if ($remember) {
+                $token   = bin2hex(random_bytes(32));
+                $expires = date('Y-m-d H:i:s', strtotime('+360 days'));
+                $uid_l   = (int)$user['id'];
+                $tok_esc = $conn->real_escape_string($token);
+                $conn->query("UPDATE inventory_users SET remember_token='$tok_esc', remember_token_expires='$expires' WHERE id=$uid_l");
+                setcookie('_rm_token', $token, time() + (360 * 86400), '/', '', false, true);
+            }
+
+            $redirect_to = (string)($_SESSION['_login_redirect'] ?? '');
+            unset($_SESSION['_login_redirect']);
+            if ($redirect_to !== '' && strpos($redirect_to, 'page=login') === false) {
+                header('Location: ' . $redirect_to);
+                exit;
+            }
             redirect('index.php?page=dashboard');
         } else {
             $error = 'Email atau password salah.';

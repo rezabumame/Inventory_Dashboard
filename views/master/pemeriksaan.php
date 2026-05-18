@@ -494,9 +494,14 @@ const CAN_EDIT = <?= json_encode($can_edit) ?>;
 
 function fmtNum(v) {
     var n = parseFloat(v || 0);
-    if (Math.abs(n - Math.round(n)) < 0.00005) return Math.round(n).toString();
-    var s = n.toFixed(4).replace(/\.?0+$/, "");
-    return s === "" ? "0" : s;
+    if (isNaN(n)) return "0";
+    if (Math.abs(n - Math.round(n)) < 0.00005) {
+        return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+    var s = n.toFixed(4).replace(/0+$/, '').replace(/,$/, '');
+    var parts = s.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return parts.join(',');
 }
 
 function getRowByGrupId(grupId) {
