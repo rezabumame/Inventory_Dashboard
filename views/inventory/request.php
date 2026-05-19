@@ -476,18 +476,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                                 $source_qty_before = $source_stocks[$b_id] ?? 0;
                                 
                                 $uom = (string)($get_barang_info((int)$b_id)['satuan'] ?? '');
-                                if ($source_qty_before + 0.00005 < $qty_recv) {
-                                    $info = $get_barang_info((int)$b_id);
-                                    $kode = trim((string)($info['kode_barang'] ?? ''));
-                                    $nm = trim((string)($info['nama_barang'] ?? '-'));
-                                    $label = ($kode !== '' ? ($kode . ' - ') : '') . $nm;
-                                    $src_name = ($source_level === 'gudang_utama') ? 'Gudang Utama' : 'Klinik sumber';
-                                    if ($source_level === 'klinik') {
-                                        $r = $conn->query("SELECT nama_klinik FROM inventory_klinik WHERE id = " . (int)$source_id . " LIMIT 1");
-                                        if ($r && $r->num_rows > 0) $src_name = (string)($r->fetch_assoc()['nama_klinik'] ?? $src_name);
-                                    }
-                                    throw new Exception("Stok tidak mencukupi di $src_name untuk barang: $label. Tersedia: $source_qty_before" . ($uom !== '' ? " $uom" : '') . ", Diterima: $qty_recv" . ($uom !== '' ? " $uom" : ''));
-                                }
+                                // Stock sufficiency check removed — negative stock is allowed
                                 $source_qty_after = $source_qty_before - $qty_recv;
                                 $source_stocks[$b_id] = $source_qty_after; // Update cache for same-batch duplicate items
 
@@ -1482,14 +1471,7 @@ function validateStock() {
         if (ratio <= 0) ratio = 1;
         var qtyOper = (uomMode === 'odoo') ? (qtyReq / ratio) : qtyReq;
         
-        if (id) {
-            var avail = (stockData[id] !== undefined) ? parseFloat(stockData[id]) : 0;
-            if (qtyOper > avail + 0.00005) {
-                Swal.fire('Stok Kurang', 'Ketersediaan stok tidak mencukupi untuk salah satu item.', 'error');
-                valid = false;
-                return false;
-            }
-        }
+        // Stock availability check removed — negative stock is allowed
     });
     return valid;
 }
