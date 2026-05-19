@@ -25,13 +25,15 @@ header('Content-Type: text/html; charset=utf-8');
  * Ini adalah true duplicate dari approval flow bug.
  */
 function get_affected_bhps(mysqli $conn): array {
-    // Step 1: Cari pemakaian_id yang punya barang duplikat (barang sama, timestamp beda)
+    // Step 1: Cari pemakaian_id yang punya barang duplikat dengan gap > 2 menit.
+    // Beda detik (loop insert dalam satu submission) BUKAN duplikat.
     $sql_dup_pids = "
         SELECT DISTINCT ts.referensi_id AS pemakaian_id
         FROM inventory_transaksi_stok ts
         WHERE ts.referensi_tipe = 'pemakaian_bhp'
         GROUP BY ts.referensi_id, ts.barang_id
         HAVING COUNT(DISTINCT ts.created_at) > 1
+          AND TIMESTAMPDIFF(SECOND, MIN(ts.created_at), MAX(ts.created_at)) > 120
     ";
     $res_pids = $conn->query($sql_dup_pids);
     $pids = [];
@@ -87,10 +89,32 @@ function get_ts_for_bhp(mysqli $conn, int $pid): array {
 
     if (empty($all)) return ['to_delete' => [], 'to_keep' => [], 'non_dup' => []];
 
-    // Batch approval = timestamp TERBARU dari semua transaksi BHP ini.
-    // Original batch bisa span beberapa detik (loop insert), tapi approval
-    // selalu menghasilkan timestamp yang lebih baru dari seluruh original batch.
-    $max_ts = max(array_column($all, 'created_at'));
+    // Kelompokkan seluruh timestamp unik ke dalam "batch" berdasarkan gap > 2 menit.
+    // Semua timestamp dalam satu window 2 menit dianggap SATU submission (loop insert normal).
+    $unique_ts = array_unique(array_column($all, 'created_at'));
+    sort($unique_ts);
+
+    // Bagi timestamp ke dalam batch: batch baru jika gap ke timestamp sebelumnya > 120 detik
+    $batches = []; // array of arrays of timestamps
+    $current_batch = [];
+    foreach ($unique_ts as $ts) {
+        if (empty($current_batch) || (strtotime($ts) - strtotime(end($current_batch))) <= 120) {
+            $current_batch[] = $ts;
+        } else {
+            $batches[] = $current_batch;
+            $current_batch = [$ts];
+        }
+    }
+    if (!empty($current_batch)) $batches[] = $current_batch;
+
+    // Jika hanya 1 batch → semua dalam satu submission, tidak ada duplikat
+    if (count($batches) <= 1) {
+        return ['to_delete' => [], 'to_keep' => [], 'non_dup' => $all];
+    }
+
+    // Ada 2+ batch → batch TERBARU dipertahankan, batch lama adalah duplikat
+    $latest_batch = $batches[count($batches) - 1];
+    $latest_batch_set = array_flip($latest_batch); // untuk O(1) lookup
 
     // Kelompokkan per barang_id
     $by_barang = [];
@@ -100,22 +124,22 @@ function get_ts_for_bhp(mysqli $conn, int $pid): array {
         $by_barang[$bid][] = $t;
     }
 
-    $to_delete = []; // transaksi lama (sebelum max_ts) dari barang duplikat
-    $to_keep   = []; // transaksi baru (= max_ts) dari barang duplikat
+    $to_delete = []; // transaksi lama (batch bukan terbaru) dari barang duplikat
+    $to_keep   = []; // transaksi dari batch terbaru untuk barang duplikat
     $non_dup   = []; // barang yang hanya ada di satu batch (tidak disentuh)
 
     foreach ($by_barang as $bid => $ts_list) {
         $has_old = false;
         $has_new = false;
         foreach ($ts_list as $t) {
-            if ($t['created_at'] === $max_ts) $has_new = true;
+            if (isset($latest_batch_set[$t['created_at']])) $has_new = true;
             else $has_old = true;
         }
 
         if ($has_old && $has_new) {
-            // Ada di batch lama DAN batch approval → true duplicate
+            // Ada di batch lama DAN batch terbaru → true duplicate
             foreach ($ts_list as $t) {
-                if ($t['created_at'] === $max_ts) $to_keep[] = $t;
+                if (isset($latest_batch_set[$t['created_at']])) $to_keep[] = $t;
                 else $to_delete[] = $t;
             }
         } else {
