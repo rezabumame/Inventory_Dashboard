@@ -144,7 +144,7 @@ if ($ke_level === 'klinik') {
         exit;
     }
     $resolved_loc = resolve_location_code($conn, $kode_klinik);
-    $stmt = $conn->prepare("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = ? AND qty > 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
+    $stmt = $conn->prepare("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = ? AND qty >= 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
     $stmt->bind_param("s", $resolved_loc);
     $stmt->execute();
     $res = $stmt->get_result();
@@ -177,7 +177,7 @@ if ($ke_level === 'gudang_utama') {
         exit;
     }
     $resolved_loc = resolve_location_code($conn, $gudang_loc);
-    $stmt = $conn->prepare("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = ? AND qty > 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
+    $stmt = $conn->prepare("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = ? AND qty >= 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
     $stmt->bind_param("s", $resolved_loc);
     $stmt->execute();
     $res = $stmt->get_result();
