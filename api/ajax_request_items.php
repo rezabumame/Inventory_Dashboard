@@ -144,22 +144,27 @@ if ($ke_level === 'klinik') {
         exit;
     }
     $resolved_loc = resolve_location_code($conn, $kode_klinik);
-    $stmt = $conn->prepare("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = ? AND qty >= 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
-    $stmt->bind_param("s", $resolved_loc);
-    $stmt->execute();
-    $res = $stmt->get_result();
+    $loc_esc = $conn->real_escape_string($resolved_loc);
+    $res = $conn->query("
+        SELECT b.id AS barang_id, b.kode_barang, b.nama_barang, b.satuan,
+               COALESCE(sm.qty, 0) AS qty
+        FROM inventory_barang b
+        LEFT JOIN inventory_stock_mirror sm ON sm.kode_barang = b.kode_barang AND sm.location_code = '$loc_esc'
+        WHERE TRIM(b.kode_barang) <> '' AND b.kode_barang IS NOT NULL
+        ORDER BY COALESCE(sm.qty, 0) DESC, b.nama_barang ASC
+    ");
     $items = [];
     while ($res && ($row = $res->fetch_assoc())) {
-        $b = find_or_create_barang_by_kode($conn, (string)($row['kode_barang'] ?? ''));
-        $m = conv_multiplier($conn, (int)($b['id'] ?? 0));
+        $bid = (int)($row['barang_id'] ?? 0);
+        $m = conv_multiplier($conn, $bid);
         if ($m <= 0) $m = 1;
         $q = (float)($row['qty'] ?? 0) / $m;
-        $uom = conv_to_uom($conn, (int)($b['id'] ?? 0), (string)($b['satuan'] ?? ''));
-        $uom_odoo = conv_from_uom($conn, (int)($b['id'] ?? 0));
+        $uom = conv_to_uom($conn, $bid, (string)($row['satuan'] ?? ''));
+        $uom_odoo = conv_from_uom($conn, $bid);
         $items[] = [
-            'barang_id' => (int)($b['id'] ?? 0),
+            'barang_id' => $bid,
             'kode_barang' => (string)($row['kode_barang'] ?? ''),
-            'nama_barang' => (string)($b['nama_barang'] ?? ''),
+            'nama_barang' => (string)($row['nama_barang'] ?? ''),
             'satuan' => (string)$uom,
             'uom_odoo' => (string)$uom_odoo,
             'uom_ratio' => (float)$m,
@@ -177,22 +182,27 @@ if ($ke_level === 'gudang_utama') {
         exit;
     }
     $resolved_loc = resolve_location_code($conn, $gudang_loc);
-    $stmt = $conn->prepare("SELECT kode_barang, qty FROM inventory_stock_mirror WHERE location_code = ? AND qty >= 0 AND TRIM(kode_barang) <> '' ORDER BY qty DESC");
-    $stmt->bind_param("s", $resolved_loc);
-    $stmt->execute();
-    $res = $stmt->get_result();
+    $loc_esc = $conn->real_escape_string($resolved_loc);
+    $res = $conn->query("
+        SELECT b.id AS barang_id, b.kode_barang, b.nama_barang, b.satuan,
+               COALESCE(sm.qty, 0) AS qty
+        FROM inventory_barang b
+        LEFT JOIN inventory_stock_mirror sm ON sm.kode_barang = b.kode_barang AND sm.location_code = '$loc_esc'
+        WHERE TRIM(b.kode_barang) <> '' AND b.kode_barang IS NOT NULL
+        ORDER BY COALESCE(sm.qty, 0) DESC, b.nama_barang ASC
+    ");
     $items = [];
     while ($res && ($row = $res->fetch_assoc())) {
-        $b = find_or_create_barang_by_kode($conn, (string)($row['kode_barang'] ?? ''));
-        $m = conv_multiplier($conn, (int)($b['id'] ?? 0));
+        $bid = (int)($row['barang_id'] ?? 0);
+        $m = conv_multiplier($conn, $bid);
         if ($m <= 0) $m = 1;
         $q = (float)($row['qty'] ?? 0) / $m;
-        $uom = conv_to_uom($conn, (int)($b['id'] ?? 0), (string)($b['satuan'] ?? ''));
-        $uom_odoo = conv_from_uom($conn, (int)($b['id'] ?? 0));
+        $uom = conv_to_uom($conn, $bid, (string)($row['satuan'] ?? ''));
+        $uom_odoo = conv_from_uom($conn, $bid);
         $items[] = [
-            'barang_id' => (int)($b['id'] ?? 0),
+            'barang_id' => $bid,
             'kode_barang' => (string)($row['kode_barang'] ?? ''),
-            'nama_barang' => (string)($b['nama_barang'] ?? ''),
+            'nama_barang' => (string)($row['nama_barang'] ?? ''),
             'satuan' => (string)$uom,
             'uom_odoo' => (string)$uom_odoo,
             'uom_ratio' => (float)$m,
