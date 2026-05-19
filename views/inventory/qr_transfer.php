@@ -254,11 +254,7 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
 <!-- Submit bar -->
 <div class="submit-bar">
     <button type="button" class="btn-submit" id="submitBtn" <?= empty($klinik_items) ? 'disabled' : '' ?>>
-        <?php if ($pending_count > 0): ?>
-            <i class="fas fa-exclamation-circle me-2"></i>Ada Request Pending
-        <?php else: ?>
-            <i class="fas fa-paper-plane me-2"></i>Kirim Request
-        <?php endif; ?>
+        <i class="fas fa-paper-plane me-2"></i>Kirim Request
     </button>
 </div>
 
@@ -485,11 +481,6 @@ document.getElementById('fotoInput').addEventListener('change', function() {
 
 // ── Submit ────────────────────────────────────────────────────────────────────
 document.getElementById('submitBtn').addEventListener('click', () => {
-    <?php if ($pending_count > 0): ?>
-    alert('Anda masih memiliki request yang pending. Harap tunggu persetujuan admin terlebih dahulu.');
-    return;
-    <?php endif; ?>
-
     const form = document.getElementById('requestForm');
     const hiddens = form.querySelectorAll('input.hidden-barang-id');
     if (hiddens.length === 0) {

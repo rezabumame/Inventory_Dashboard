@@ -28,13 +28,6 @@ if (!$u) {
     exit;
 }
 
-// Cek tidak ada pending yang sedang aktif
-$pending = $conn->query("SELECT id FROM inventory_hc_transfer_request WHERE user_hc_id=$user_id AND klinik_id=$klinik_id AND status='pending' LIMIT 1")->fetch_assoc();
-if ($pending) {
-    echo json_encode(['success' => false, 'message' => 'Anda masih memiliki request yang pending. Tunggu persetujuan admin terlebih dahulu.']);
-    exit;
-}
-
 // Parse items
 $items_raw = [];
 $barang_ids = $_POST['barang_id'] ?? [];
