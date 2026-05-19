@@ -252,7 +252,7 @@ if ($action === 'approve') {
 
             $cat = $catatan_base . ' - Transfer #' . $transfer_id;
 
-            $qty_after_onsite = max(0, $onsite_before - $qty_oper);
+            $qty_after_onsite = $onsite_before - $qty_oper;
             $stmt_log = $conn->prepare("INSERT INTO inventory_transaksi_stok (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at) VALUES (?, 'klinik', ?, 'out', ?, ?, ?, 'hc_petugas_transfer', ?, ?, ?, NOW())");
             $stmt_log->bind_param("iidddisi", $barang_id, $klinik_id, $qty_oper, $onsite_before, $qty_after_onsite, $transfer_id, $cat, $reviewer);
             $stmt_log->execute();

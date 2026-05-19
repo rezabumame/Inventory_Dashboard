@@ -38,16 +38,15 @@ $pending_count = 0;
 $pr = $conn->query("SELECT COUNT(*) AS c FROM inventory_hc_transfer_request WHERE user_hc_id=$user_id AND klinik_id=$klinik_id AND status='pending'");
 if ($pr) $pending_count = (int)($pr->fetch_assoc()['c'] ?? 0);
 
-// Daftar item di klinik (stok gudang klinik > 0)
+// Daftar item - semua barang, qty dari stok klinik (boleh 0/minus)
 $klinik_items = [];
 $res_ki = $conn->query("
     SELECT b.id AS barang_id, b.nama_barang,
            COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom,
-           sgk.qty
-    FROM inventory_stok_gudang_klinik sgk
-    JOIN inventory_barang b ON b.id = sgk.barang_id
+           COALESCE(sgk.qty, 0) AS qty
+    FROM inventory_barang b
+    LEFT JOIN inventory_stok_gudang_klinik sgk ON sgk.barang_id = b.id AND sgk.klinik_id = $klinik_id
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-    WHERE sgk.klinik_id = $klinik_id AND sgk.qty > 0
     ORDER BY b.nama_barang ASC
 ");
 while ($res_ki && ($ri = $res_ki->fetch_assoc())) {
