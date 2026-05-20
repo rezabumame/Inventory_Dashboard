@@ -84,16 +84,20 @@ if ($last_update_general !== '') {
     $last_sync_filter = " AND ts.created_at > '" . $conn->real_escape_string($last_update_general) . "'";
 }
 
+// OUT hanya tampilkan transfer fisik, bukan pemakaian_bhp (sudah masuk Sellout)
+$referensi_filter = ($tipe === 'out') ? "AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')" : '';
+
 $sql = "SELECT ts.*, u.nama_lengkap as creator_name, k.nama_klinik
         FROM inventory_transaksi_stok ts
         LEFT JOIN inventory_users u ON ts.created_by = u.id
         LEFT JOIN inventory_klinik k ON ts.level_id = k.id AND ts.level = 'klinik'
-        WHERE ts.barang_id = $barang_id 
-          AND $level_filter 
+        WHERE ts.barang_id = $barang_id
+          AND $level_filter
           AND ts.tipe_transaksi = ?
-          AND ts.created_at >= ? 
+          AND ts.created_at >= ?
           AND ts.created_at <= ?
           $last_sync_filter
+          $referensi_filter
         ORDER BY ts.created_at DESC";
 
 $stmt = $conn->prepare($sql);
