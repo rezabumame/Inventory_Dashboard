@@ -1502,7 +1502,7 @@ function addNewBlankRow() {
     const newRow = document.createElement('tr');
     newRow.dataset.barangId = '';
     newRow.innerHTML = `
-        <td><select class="form-select form-select-sm new-item-select" onchange="onNewItemSelect(this)">
+        <td><select class="form-select form-select-sm new-item-select">
             <option value="">-- Pilih Barang --</option>${optHtmlNew}
         </select></td>
         <td><input type="number" class="qty-approved-input form-control form-control-sm text-center" value="" min="0.01" step="0.01" placeholder="0"></td>
@@ -1510,6 +1510,20 @@ function addNewBlankRow() {
         <td class="text-center"><button type="button" class="btn btn-sm btn-danger py-0 px-2" onclick="removeRequestRow(this)"><i class="fas fa-times"></i></button></td>
     `;
     document.getElementById('requestItemsBody').appendChild(newRow);
+
+    const $sel = $(newRow).find('select.new-item-select');
+    if (typeof $ !== 'undefined' && $.fn.select2) {
+        $sel.select2({
+            dropdownParent: $('#modalRequestReview'),
+            width: '100%',
+            placeholder: '-- Pilih Barang --',
+            allowClear: true
+        }).on('change', function() {
+            onNewItemSelect(this);
+        });
+    } else {
+        $sel[0].addEventListener('change', function() { onNewItemSelect(this); });
+    }
 }
 
 function onNewItemSelect(sel) {
