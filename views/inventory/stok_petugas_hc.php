@@ -69,11 +69,11 @@ if ($selected_klinik > 0 && in_array($role, ['admin_klinik', 'super_admin', 'spv
 $klinik_items_for_modal = [];
 if ($selected_klinik > 0 && in_array($role, ['admin_klinik', 'super_admin', 'spv_klinik'], true)) {
     $ki_res = $conn->query("
-        SELECT b.id AS barang_id, b.nama_barang, COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom
-        FROM inventory_stok_gudang_klinik sgk
-        JOIN inventory_barang b ON b.id = sgk.barang_id
+        SELECT b.id AS barang_id, b.nama_barang, COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom,
+               COALESCE(sgk.qty, 0) AS qty
+        FROM inventory_barang b
+        LEFT JOIN inventory_stok_gudang_klinik sgk ON sgk.barang_id = b.id AND sgk.klinik_id = $selected_klinik
         LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-        WHERE sgk.klinik_id = $selected_klinik AND sgk.qty > 0
         ORDER BY b.nama_barang ASC
     ");
     while ($ki_res && ($ki = $ki_res->fetch_assoc())) $klinik_items_for_modal[] = $ki;
