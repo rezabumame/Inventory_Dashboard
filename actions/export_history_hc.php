@@ -52,6 +52,24 @@ $res = $conn->query($sql);
 $rows = [];
 while ($res && ($r = $res->fetch_assoc())) $rows[] = $r;
 
+// ── Sheet 0: Summary Per Item (tanpa breakdown tanggal) ──────────────────────
+$summary = [];
+foreach ($rows as $r) {
+    $barang = $r['nama_barang'];
+    $uom    = $r['uom'];
+    if (!isset($summary[$barang])) {
+        $summary[$barang] = ['barang' => $barang, 'uom' => $uom, 'qty' => 0];
+    }
+    $summary[$barang]['qty'] += (float)$r['qty'];
+}
+usort($summary, fn($a, $b) => strcmp($a['barang'], $b['barang']));
+
+$sheet0 = [['Nama Barang', 'UOM', 'Total Qty']];
+foreach ($summary as $s) {
+    $sheet0[] = [$s['barang'], $s['uom'], $s['qty']];
+}
+if (count($sheet0) === 1) $sheet0[] = ['-', '-', 0];
+
 // ── Sheet 1: Rekap Per Hari ───────────────────────────────────────────────────
 // Group by date → item only (all nakes merged), sum qty
 $daily = [];
@@ -111,6 +129,7 @@ if ($history_from !== '') $range .= '_' . str_replace('-', '', $history_from);
 if ($history_to   !== '') $range .= '_sd_' . str_replace('-', '', $history_to);
 $filename = 'HistoryTransfer_' . preg_replace('/[^A-Za-z0-9_]/', '_', $nama_klinik) . $range . '_' . date('YmdHis') . '.xlsx';
 
-SimpleXLSXGen::fromArray($sheet1, 'Rekap Per Hari')
+SimpleXLSXGen::fromArray($sheet0, 'Summary')
+    ->addSheet($sheet1, 'Rekap Per Hari')
     ->addSheet($sheet2, 'Per Nakes')
     ->downloadAs($filename);
