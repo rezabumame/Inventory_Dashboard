@@ -45,7 +45,7 @@ $sql = "
     JOIN inventory_users  u  ON u.id = t.user_hc_id
     JOIN inventory_barang b  ON b.id = t.barang_id
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-    WHERE $where_sql AND t.qty > 0
+    WHERE $where_sql AND t.qty <> 0
     ORDER BY t.created_at ASC, u.nama_lengkap ASC, b.nama_barang ASC
 ";
 $res = $conn->query($sql);
