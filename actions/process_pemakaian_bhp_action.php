@@ -510,6 +510,20 @@ try {
                 $stmt_log->bind_param("isidddsisis", $bid, $level, $level_id, $qty, $qty_sebelum, $qty_sesudah, $ref_type, $id, $cat, $user_id, $created_at_val);
                 exec_or_throw($stmt_log, 'Insert stock transaction');
             }
+            // Cleanup BHP-AUT untuk tanggal & jenis yang sama setelah approval
+            $date_only = date('Y-m-d', strtotime($tanggal));
+            $tgl_like   = $date_only . '%';
+            $stmt_find_auto = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal LIKE ?");
+            $stmt_find_auto->bind_param("iss", $kid, $jenis_pemakaian, $tgl_like);
+            $stmt_find_auto->execute();
+            $res_auto = $stmt_find_auto->get_result();
+            while ($row_auto = $res_auto->fetch_assoc()) {
+                $auto_id = (int)$row_auto['id'];
+                $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $auto_id");
+                $conn->query("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = $auto_id");
+                $conn->query("DELETE FROM inventory_pemakaian_bhp WHERE id = $auto_id AND is_auto = 1");
+            }
+
             $msg = "Permintaan penambahan data backdate disetujui.";
         } else {
             throw new Exception("Status tidak valid untuk approval");
