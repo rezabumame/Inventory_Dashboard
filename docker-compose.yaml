@@ -12,4 +12,5 @@ services:
     volumes:
       - ./bumame-credentials.json:/var/www/html/bumame-credentials.json:ro
       - ./uploads:/var/www/html/uploads
+      - ./views/uploads:/var/www/html/views/uploads
     restart: unless-stopped
