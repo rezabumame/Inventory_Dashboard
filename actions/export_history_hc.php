@@ -47,7 +47,7 @@ $sql = "
     JOIN inventory_barang b  ON b.id = t.barang_id
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
     LEFT JOIN inventory_hc_transfer_request r ON r.id = t.request_id
-    WHERE $where_sql AND t.qty <> 0
+    WHERE $where_sql AND t.qty > 0
     ORDER BY tgl_request_dt ASC, u.nama_lengkap ASC, b.nama_barang ASC
 ";
 $res = $conn->query($sql);
