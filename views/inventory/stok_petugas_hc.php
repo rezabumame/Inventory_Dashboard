@@ -978,9 +978,10 @@ if ($bulk_cancel) {
                             <?php
                             $rekap = [];
                             foreach ($history as $h) {
-                                $date = date('Y-m-d', strtotime((string)$h['created_at']));
-                                $uid  = (int)($h['user_hc_id'] ?? 0);
-                                $key  = $date . '_' . $uid;
+                                $tgl_req  = !empty($h['tgl_request']) ? $h['tgl_request'] : $h['created_at'];
+                                $date     = date('Y-m-d', strtotime((string)$tgl_req));
+                                $uid      = (int)($h['user_hc_id'] ?? 0);
+                                $key      = $date . '_' . $uid;
 
                                 if (!isset($rekap[$key])) {
                                     $rekap[$key] = [
@@ -1009,7 +1010,7 @@ if ($bulk_cancel) {
                                        data-order-col="0" data-order-dir="desc">
                                     <thead style="background:#204EAB;color:#fff;">
                                         <tr>
-                                            <th>Tanggal</th>
+                                            <th>Tgl Request</th>
                                             <th>Petugas</th>
                                             <th>Item & Qty</th>
                                             <th class="text-center">Jml Item</th>
