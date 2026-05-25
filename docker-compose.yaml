@@ -11,4 +11,8 @@ services:
       APP_TIMEZONE: Asia/Jakarta
     volumes:
       - ./bumame-credentials.json:/var/www/html/bumame-credentials.json:ro
+      - uploads_data:/var/www/html/uploads
+
+volumes:
+  uploads_data:
     restart: unless-stopped
