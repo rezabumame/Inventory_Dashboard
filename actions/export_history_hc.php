@@ -25,28 +25,30 @@ if ($selected_klinik <= 0) die('Pilih klinik terlebih dahulu');
 $kl_row = $conn->query("SELECT nama_klinik FROM inventory_klinik WHERE id=$selected_klinik LIMIT 1")->fetch_assoc();
 $nama_klinik = $kl_row['nama_klinik'] ?? 'Klinik';
 
-// Build WHERE
+// Build WHERE — filter by tanggal request (COALESCE fallback ke approved date)
 $where = ["t.klinik_id = $selected_klinik"];
 if ($petugas_user_id > 0) $where[] = "t.user_hc_id = $petugas_user_id";
-if ($history_from !== '') $where[] = "t.created_at >= '" . $conn->real_escape_string($history_from . ' 00:00:00') . "'";
-if ($history_to   !== '') $where[] = "t.created_at <= '" . $conn->real_escape_string($history_to . ' 23:59:59') . "'";
+if ($history_from !== '') $where[] = "COALESCE(r.created_at, t.created_at) >= '" . $conn->real_escape_string($history_from . ' 00:00:00') . "'";
+if ($history_to   !== '') $where[] = "COALESCE(r.created_at, t.created_at) <= '" . $conn->real_escape_string($history_to . ' 23:59:59') . "'";
 $where_sql = implode(' AND ', $where);
 
-// Query — join barang untuk nama & uom
+// Query — join barang, request untuk tgl request & approved
 $sql = "
     SELECT
-        t.created_at,
-        DATE(t.created_at) AS tgl,
-        u.nama_lengkap    AS petugas,
+        t.created_at                                    AS tgl_approved,
+        COALESCE(r.created_at, t.created_at)            AS tgl_request_dt,
+        DATE(COALESCE(r.created_at, t.created_at))      AS tgl,
+        u.nama_lengkap                                  AS petugas,
         b.nama_barang,
-        COALESCE(NULLIF(uc.to_uom,''), b.satuan, '-') AS uom,
+        COALESCE(NULLIF(uc.to_uom,''), b.satuan, '-')  AS uom,
         t.qty
     FROM inventory_hc_petugas_transfer t
     JOIN inventory_users  u  ON u.id = t.user_hc_id
     JOIN inventory_barang b  ON b.id = t.barang_id
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    LEFT JOIN inventory_hc_transfer_request r ON r.id = t.request_id
     WHERE $where_sql AND t.qty <> 0
-    ORDER BY t.created_at ASC, u.nama_lengkap ASC, b.nama_barang ASC
+    ORDER BY tgl_request_dt ASC, u.nama_lengkap ASC, b.nama_barang ASC
 ";
 $res = $conn->query($sql);
 $rows = [];
@@ -84,7 +86,7 @@ foreach ($rows as $r) {
     $daily[$key]['qty'] += (float)$r['qty'];
 }
 
-$sheet1 = [['Tanggal', 'Nama Barang', 'UOM', 'Qty']];
+$sheet1 = [['Tgl Request', 'Nama Barang', 'UOM', 'Qty']];
 foreach ($daily as $d) {
     $sheet1[] = [
         date('d M Y', strtotime($d['tgl'])),
@@ -93,7 +95,7 @@ foreach ($daily as $d) {
         $d['qty'],
     ];
 }
-if (count($sheet1) === 1) $sheet1[] = ['-', '-', '-', '-', 0];
+if (count($sheet1) === 1) $sheet1[] = ['-', '-', '-', 0];
 
 // ── Sheet 2: Per Nakes (sorted petugas → date → item) ────────────────────────
 $nakes = [];
@@ -111,7 +113,7 @@ foreach ($rows as $r) {
 // Sort by petugas → date
 usort($nakes, fn($a, $b) => [$a['petugas'], $a['tgl']] <=> [$b['petugas'], $b['tgl']]);
 
-$sheet2 = [['Petugas', 'Tanggal', 'Nama Barang', 'UOM', 'Qty']];
+$sheet2 = [['Petugas', 'Tgl Request', 'Nama Barang', 'UOM', 'Qty']];
 foreach ($nakes as $n) {
     $sheet2[] = [
         $n['petugas'],

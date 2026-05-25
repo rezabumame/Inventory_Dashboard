@@ -574,6 +574,7 @@ try {
         ['inventory_history_lokal', 'reference_id', "INT NULL COMMENT 'ID dari inventory_pemakaian_bhp jika tipe=pakai' AFTER keterangan"],
         ['inventory_booking_detail', 'is_lokal', "TINYINT(1) NOT NULL DEFAULT 0 AFTER barang_id"],
         ['inventory_pemakaian_bhp_detail', 'is_lokal', "TINYINT(1) NOT NULL DEFAULT 0 AFTER barang_id"],
+        ['inventory_hc_petugas_transfer', 'request_id', "INT NULL AFTER id"],
     ];
 
     foreach ($cols as $c) {
@@ -581,6 +582,11 @@ try {
             return m_ensure_column($conn, $c[0], $c[1], $c[2]);
         });
     }
+
+    run_migration_task("Backfill: inventory_hc_petugas_transfer.request_id", function() use ($conn) {
+        $conn->query("UPDATE inventory_hc_petugas_transfer SET request_id = CAST(REGEXP_SUBSTR(catatan, '[0-9]+') AS UNSIGNED) WHERE catatan LIKE 'Approve Request #%' AND request_id IS NULL");
+        return "Backfilled " . $conn->affected_rows . " rows";
+    });
 
     // Initial settings for GSheet & Lark
     run_migration_task("Data: GSheet Sync Settings", function() use ($conn) {

@@ -263,18 +263,18 @@ if ($selected_klinik > 0 && in_array($role, ['admin_klinik', 'super_admin', 'spv
     if ($petugas_user_id > 0) $where_parts[] = "x.user_hc_id = " . (int)$petugas_user_id;
     if ($history_from !== '') {
         $from_ts = $conn->real_escape_string($history_from . ' 00:00:00');
-        $where_parts[] = "x.created_at >= '$from_ts'";
+        $where_parts[] = "COALESCE(x.tgl_request, x.created_at) >= '$from_ts'";
     }
     if ($history_to !== '') {
         $to_ts = $conn->real_escape_string($history_to . ' 23:59:59');
-        $where_parts[] = "x.created_at <= '$to_ts'";
+        $where_parts[] = "COALESCE(x.tgl_request, x.created_at) <= '$to_ts'";
     }
     $where = implode(' AND ', $where_parts);
 
     $res_h = $conn->query("
         SELECT *
         FROM (
-            SELECT 
+            SELECT
                 'transfer' AS tipe,
                 t.id,
                 t.klinik_id,
@@ -283,8 +283,10 @@ if ($selected_klinik > 0 && in_array($role, ['admin_klinik', 'super_admin', 'spv
                 t.qty,
                 t.catatan,
                 t.created_by,
-                t.created_at
+                t.created_at,
+                r.created_at AS tgl_request
             FROM inventory_hc_petugas_transfer t
+            LEFT JOIN inventory_hc_transfer_request r ON r.id = t.request_id
             UNION ALL
             SELECT
                 'allocasi' AS tipe,
@@ -295,11 +297,12 @@ if ($selected_klinik > 0 && in_array($role, ['admin_klinik', 'super_admin', 'spv
                 a.qty,
                 a.catatan,
                 a.created_by,
-                a.created_at
+                a.created_at,
+                NULL AS tgl_request
             FROM inventory_hc_tas_allocation a
         ) x
         WHERE $where
-        ORDER BY x.created_at DESC
+        ORDER BY COALESCE(x.tgl_request, x.created_at) DESC
         LIMIT 500
     ");
     while ($res_h && ($rh = $res_h->fetch_assoc())) $history[] = $rh;
@@ -840,7 +843,8 @@ if ($bulk_cancel) {
                                                         <input class="form-check-input" type="checkbox" id="checkAllHistory">
                                                     </div>
                                                 </th>
-                                                <th>Waktu</th>
+                                                <th>Tgl Request</th>
+                                                <th>Tgl Approved</th>
                                                 <th>Tipe</th>
                                                 <th>Petugas</th>
                                                 <th>Barang</th>
@@ -865,6 +869,7 @@ if ($bulk_cancel) {
                                                             </div>
                                                         <?php endif; ?>
                                                     </td>
+                                                    <td class="small text-muted"><?= !empty($h['tgl_request']) ? date('d M Y H:i', strtotime((string)$h['tgl_request'])) : '-' ?></td>
                                                     <td class="small text-muted"><?= date('d M Y H:i', strtotime((string)$h['created_at'])) ?></td>
                                                     <td>
                                                         <?php if (($h['tipe'] ?? '') === 'transfer'): ?>

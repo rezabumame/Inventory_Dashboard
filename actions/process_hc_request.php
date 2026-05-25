@@ -235,8 +235,8 @@ if ($action === 'approve') {
             $hc_before = (float)($ef_hc['on_hand'] ?? 0);
 
             // Transfer record
-            $stmt_t = $conn->prepare("INSERT INTO inventory_hc_petugas_transfer (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
-            $stmt_t->bind_param("iiidsi", $klinik_id, $user_hc_id, $barang_id, $qty_oper, $catatan_base, $reviewer);
+            $stmt_t = $conn->prepare("INSERT INTO inventory_hc_petugas_transfer (request_id, klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt_t->bind_param("iiiidsi", $request_id, $klinik_id, $user_hc_id, $barang_id, $qty_oper, $catatan_base, $reviewer);
             $stmt_t->execute();
             $transfer_id = (int)$conn->insert_id;
 
