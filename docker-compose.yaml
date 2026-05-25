@@ -11,8 +11,4 @@ services:
       APP_TIMEZONE: Asia/Jakarta
     volumes:
       - ./bumame-credentials.json:/var/www/html/bumame-credentials.json:ro
-      - sessions_data:/var/lib/php/sessions
     restart: unless-stopped
-
-volumes:
-  sessions_data:
