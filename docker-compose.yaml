@@ -12,7 +12,7 @@ services:
     volumes:
       - ./bumame-credentials.json:/var/www/html/bumame-credentials.json:ro
       - uploads_data:/var/www/html/uploads
+    restart: unless-stopped
 
 volumes:
   uploads_data:
-    restart: unless-stopped
