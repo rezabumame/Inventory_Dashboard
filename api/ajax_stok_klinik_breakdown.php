@@ -30,6 +30,8 @@ $klinik_id = $is_all_klinik ? 0 : (int)$klinik_id_raw;
 $barang_id = (int)($_POST['barang_id'] ?? 0);
 $tanggal = (string)($_POST['tanggal'] ?? '');
 $include_gudang = !empty($_POST['include_gudang']);
+$reserve_window = trim((string)($_POST['reserve_window'] ?? '30'));
+if (!in_array($reserve_window, ['7', '30', 'month', 'all'], true)) $reserve_window = '30';
 
 if ($barang_id <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal)) {
     echo json_encode(['success' => false, 'message' => 'Invalid parameters'], JSON_UNESCAPED_UNICODE);
@@ -383,7 +385,17 @@ $reserve = [
     'events' => []
 ];
 
-$_res_date_filter_upper = $is_history ? " AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'" : '';
+if ($is_history) {
+    $reserve_end_date = $month_end;
+} else {
+    switch ($reserve_window) {
+        case '7':     $reserve_end_date = date('Y-m-d', strtotime('+7 days')); break;
+        case 'month': $reserve_end_date = date('Y-m-t'); break;
+        case 'all':   $reserve_end_date = ''; break;
+        default:      $reserve_end_date = date('Y-m-d', strtotime('+30 days')); break;
+    }
+}
+$_res_date_filter_upper = ($reserve_end_date !== '') ? " AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($reserve_end_date) . "'" : '';
 $r = $conn->query("
     SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END), 0) AS qty
     FROM inventory_booking_detail bd

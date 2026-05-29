@@ -50,9 +50,11 @@ try {
 } catch (Exception $e) {}
 
 // Fetch Details
-$query_det = "SELECT d.*, b.kode_barang, b.nama_barang, b.satuan 
+$query_det = "SELECT d.*, b.kode_barang, b.nama_barang,
+                     COALESCE(uc.to_uom, b.satuan) as satuan
               FROM inventory_request_barang_detail d
               JOIN inventory_barang b ON d.barang_id = b.id
+              LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
               WHERE d.request_barang_id = $id";
 $details = $conn->query($query_det);
 

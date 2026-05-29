@@ -98,7 +98,15 @@ if ($type === 'sellout_clinic' || $type === 'sellout_hc') {
         : "CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END";
 
     $today = date('Y-m-d');
-    $date_filter = "AND bp.tanggal_pemeriksaan >= '$today'";
+    $reserve_window = trim((string)($_GET['reserve_window'] ?? '30'));
+    if (!in_array($reserve_window, ['7', '30', 'month', 'all'], true)) $reserve_window = '30';
+    switch ($reserve_window) {
+        case '7':     $reserve_end = date('Y-m-d', strtotime('+7 days')); break;
+        case 'month': $reserve_end = date('Y-m-t'); break;
+        case 'all':   $reserve_end = ''; break;
+        default:      $reserve_end = date('Y-m-d', strtotime('+30 days')); break;
+    }
+    $date_filter = "AND bp.tanggal_pemeriksaan >= '$today'" . ($reserve_end !== '' ? " AND bp.tanggal_pemeriksaan <= '$reserve_end'" : '');
 
     $sql = "
         SELECT

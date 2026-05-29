@@ -46,6 +46,16 @@ $filter_date_label = date('d M Y', strtotime($filter_date));
 $can_use_zero_filter = in_array($_SESSION['role'], ['super_admin', 'admin_gudang', 'admin_klinik']);
 $show_zero = isset($_GET['show_zero']) ? ($_GET['show_zero'] == '1') : false;
 
+// Reserve window filter
+$reserve_window = isset($_GET['reserve_window']) ? (string)$_GET['reserve_window'] : '30';
+if (!in_array($reserve_window, ['7', '30', 'month', 'all'], true)) $reserve_window = '30';
+switch ($reserve_window) {
+    case '7':     $reserve_end_date = date('Y-m-d', strtotime('+7 days')); break;
+    case 'month': $reserve_end_date = date('Y-m-t'); break;
+    case 'all':   $reserve_end_date = ''; break;
+    default:      $reserve_end_date = date('Y-m-d', strtotime('+30 days')); break;
+}
+
 // Fetch Kliniks
 $kliniks = [];
 if ($can_filter_klinik) {
@@ -283,7 +293,8 @@ if ($active_tab == 'stok') {
                         $last_update_time = date('H:i:s', strtotime($last_update_general));
                         // Task Fix: Bookings are always local and never synced to Odoo.
                         // We should subtract ALL active bookings for the current period, regardless of Odoo sync time.
-                        $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($today_date) . "'";
+                        $reserve_upper = $reserve_end_date !== '' ? " AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($reserve_end_date) . "'" : '';
+                        $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($today_date) . "'" . $reserve_upper;
                         
                         // Sellout (Pemakaian) should only subtract what's NOT in Odoo yet.
                         // We use a 5-minute buffer to account for the sync duration (race condition).
@@ -696,6 +707,17 @@ if ($active_tab == 'stok') {
                 </label>
                 <input type="date" name="tanggal" class="form-control" value="<?= htmlspecialchars($filter_date) ?>" min="<?= htmlspecialchars($min_filter_date) ?>" max="<?= htmlspecialchars($today_date) ?>" onchange="this.form.submit()">
             </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold small mb-1">
+                    <i class="fas fa-bookmark text-primary"></i> Periode Reservasi
+                </label>
+                <select name="reserve_window" class="form-select" onchange="this.form.submit()">
+                    <option value="7"    <?= $reserve_window === '7'     ? 'selected' : '' ?>>7 Hari ke Depan</option>
+                    <option value="30"   <?= $reserve_window === '30'    ? 'selected' : '' ?>>30 Hari ke Depan</option>
+                    <option value="month"<?= $reserve_window === 'month' ? 'selected' : '' ?>>Bulan Ini</option>
+                    <option value="all"  <?= $reserve_window === 'all'   ? 'selected' : '' ?>>Semua</option>
+                </select>
+            </div>
             <?php if ($can_use_zero_filter): ?>
             <div class="col-md-2">
                 <label class="form-label fw-bold small mb-1">
@@ -708,7 +730,7 @@ if ($active_tab == 'stok') {
             </div>
             <?php endif; ?>
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-            <div class="col-md-5">
+            <div class="col-auto ms-auto">
                 <div class="d-flex flex-column align-items-end pt-1">
                     <button type="button" class="btn btn-outline-primary btn-sm refresh-btn d-flex align-items-center justify-content-center gap-2 py-2" onclick="confirmSync(this)" <?= $is_history_date ? 'disabled' : '' ?>>
                         <i class="fas fa-sync-alt"></i><span>Refresh Odoo</span>
@@ -890,7 +912,8 @@ window.__stokKlinikContext = {
     tanggalLabel: "<?= htmlspecialchars($filter_date_label) ?>",
     includeGudang: <?= $include_gudang ? 'true' : 'false' ?>,
     syncAfterTs: "<?= htmlspecialchars($sync_buffer_ts ?? $last_update_general ?? '') ?>",
-    isHistoryDate: <?= $is_history_date ? 'true' : 'false' ?>
+    isHistoryDate: <?= $is_history_date ? 'true' : 'false' ?>,
+    reserveWindow: "<?= htmlspecialchars($reserve_window) ?>"
 };
 
 function fmtNum(v) {
@@ -925,10 +948,11 @@ async function openSelloutReserveDetail(barangId, namaBarang, type, expectedTota
     modal.show();
 
     var params = new URLSearchParams({
-        type:       type,
-        barang_id:  barangId,
-        klinik_id:  ctx.klinikId || 0,
-        sync_after: ctx.syncAfterTs || '',
+        type:           type,
+        barang_id:      barangId,
+        klinik_id:      ctx.klinikId || 0,
+        sync_after:     ctx.syncAfterTs || '',
+        reserve_window: '<?= htmlspecialchars($reserve_window) ?>',
     });
 
     try {
@@ -1014,7 +1038,7 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
         url: 'api/ajax_stok_klinik_breakdown.php',
         method: 'POST',
         dataType: 'json',
-        data: { klinik_id: window.__stokKlinikContext.klinikId, barang_id: barangId, tanggal: window.__stokKlinikContext.tanggal, include_gudang: window.__stokKlinikContext.includeGudang ? 1 : 0 }
+        data: { klinik_id: window.__stokKlinikContext.klinikId, barang_id: barangId, tanggal: window.__stokKlinikContext.tanggal, include_gudang: window.__stokKlinikContext.includeGudang ? 1 : 0, reserve_window: window.__stokKlinikContext.reserveWindow || '30' }
     }).then(function(res) {
         if (!res || !res.success) {
             body.innerHTML = '<div class="alert alert-danger mb-0">Gagal memuat detail.</div>';
