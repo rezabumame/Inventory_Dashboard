@@ -22,16 +22,24 @@ if ($klinik_id <= 0) {
     echo json_encode(['success' => false, 'message' => 'Klinik tidak valid.']); exit;
 }
 
-// Ambil semua pending pull untuk klinik ini
+// Ambil kode_klinik untuk query Odoo mirror
+$kl_row = $conn->query("SELECT kode_klinik FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+$kode_klinik_esc = $conn->real_escape_string(trim((string)($kl_row['kode_klinik'] ?? '')));
+
+// Ambil semua pending pull — stok klinik dari Odoo mirror
 $res = $conn->query("
     SELECT pp.id, pp.barang_id, pp.qty, b.kode_barang, b.nama_barang,
            COALESCE(uc.to_uom, b.satuan) AS satuan,
            COALESCE(uc.multiplier, 1) AS ratio,
-           COALESCE(sg.qty, 0) AS stok_klinik
+           COALESCE((
+               SELECT SUM(sm.qty)
+               FROM inventory_stock_mirror sm
+               WHERE TRIM(sm.location_code) = '$kode_klinik_esc'
+               AND (TRIM(sm.kode_barang) = b.kode_barang OR TRIM(sm.odoo_product_id) = b.odoo_product_id)
+           ), 0) AS stok_klinik_odoo
     FROM inventory_hc_pending_pull pp
     JOIN inventory_barang b ON b.id = pp.barang_id
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-    LEFT JOIN inventory_stok_gudang_klinik sg ON sg.barang_id = pp.barang_id AND sg.klinik_id = $klinik_id
     WHERE pp.klinik_id = $klinik_id
 ");
 
@@ -52,7 +60,8 @@ try {
     foreach ($items as $item) {
         $bid         = (int)$item['barang_id'];
         $qty_need    = (float)$item['qty'];
-        $stok_klinik = (float)$item['stok_klinik'];
+        $ratio_item  = max((float)($item['ratio'] ?? 1), 0.000001);
+        $stok_klinik = round((float)$item['stok_klinik_odoo'] / $ratio_item, 4);
         $ratio       = max((float)$item['ratio'], 0.000001);
         $label       = trim($item['kode_barang'] . ' - ' . $item['nama_barang']);
 

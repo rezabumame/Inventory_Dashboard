@@ -971,8 +971,24 @@ try {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             KEY idx_klinik (klinik_id),
             KEY idx_barang (barang_id),
-            KEY idx_klinik_barang (klinik_id, barang_id)
+            UNIQUE KEY uq_klinik_barang (klinik_id, barang_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    run_migration_task("Index: inventory_hc_pending_pull unique klinik_barang", function() use ($conn) {
+        // Hapus duplikat dulu (keep row dengan qty terbesar per klinik+barang)
+        $conn->query("
+            DELETE pp1 FROM inventory_hc_pending_pull pp1
+            INNER JOIN inventory_hc_pending_pull pp2
+            WHERE pp1.klinik_id = pp2.klinik_id AND pp1.barang_id = pp2.barang_id AND pp1.id < pp2.id
+        ");
+        // Coba tambah unique key jika belum ada
+        $res = $conn->query("SHOW INDEX FROM inventory_hc_pending_pull WHERE Key_name = 'uq_klinik_barang'");
+        if ($res && $res->num_rows > 0) return "Already exists";
+        // Drop non-unique index dulu kalau ada
+        @$conn->query("ALTER TABLE inventory_hc_pending_pull DROP INDEX idx_klinik_barang");
+        return $conn->query("ALTER TABLE inventory_hc_pending_pull ADD UNIQUE KEY uq_klinik_barang (klinik_id, barang_id)")
+            ? "Added UNIQUE KEY" : "Failed: " . $conn->error;
     });
 
 } catch (Throwable $e) {

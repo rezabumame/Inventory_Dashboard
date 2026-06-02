@@ -186,21 +186,30 @@ try {
 
     $conn->commit();
 
-    // Ambil pending_pull terkini untuk klinik ini (untuk ditampilkan di frontend)
+    // Ambil kode_klinik untuk query mirror
+    $kode_klinik_esc = $conn->real_escape_string(trim((string)($kl['kode_klinik'] ?? '')));
+
+    // Ambil pending_pull terkini — stok klinik dari Odoo mirror (bukan local tracking)
     $pending_rows = [];
     $res_pp = $conn->query("
         SELECT pp.id, pp.barang_id, b.kode_barang, b.nama_barang,
                COALESCE(uc.to_uom, b.satuan) AS satuan,
+               COALESCE(uc.multiplier, 1) AS ratio,
                pp.qty,
-               COALESCE(sg.qty, 0) AS stok_klinik
+               COALESCE((
+                   SELECT SUM(sm.qty)
+                   FROM inventory_stock_mirror sm
+                   WHERE TRIM(sm.location_code) = '$kode_klinik_esc'
+                   AND (TRIM(sm.kode_barang) = b.kode_barang OR TRIM(sm.odoo_product_id) = b.odoo_product_id)
+               ), 0) AS stok_klinik_odoo
         FROM inventory_hc_pending_pull pp
         JOIN inventory_barang b ON b.id = pp.barang_id
         LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-        LEFT JOIN inventory_stok_gudang_klinik sg ON sg.barang_id = pp.barang_id AND sg.klinik_id = pp.klinik_id
         WHERE pp.klinik_id = $klinik_id
         ORDER BY pp.created_at DESC
     ");
     while ($res_pp && ($rpp = $res_pp->fetch_assoc())) {
+        $ratio_pp = max((float)($rpp['ratio'] ?? 1), 0.000001);
         $pending_rows[] = [
             'id'          => (int)$rpp['id'],
             'barang_id'   => (int)$rpp['barang_id'],
@@ -208,7 +217,7 @@ try {
             'nama_barang' => $rpp['nama_barang'],
             'satuan'      => $rpp['satuan'],
             'qty'         => (float)$rpp['qty'],
-            'stok_klinik' => (float)$rpp['stok_klinik'],
+            'stok_klinik' => round((float)$rpp['stok_klinik_odoo'] / $ratio_pp, 4),
         ];
     }
 
