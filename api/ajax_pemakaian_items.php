@@ -71,14 +71,14 @@ if ($jenis === 'hc' && $user_hc_id > 0) {
             FROM inventory_stock_mirror sm
             JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang)
             LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-            WHERE sm.location_code = '$loc_esc' AND sm.qty > 0
+            WHERE sm.location_code = '$loc_esc'
             ORDER BY b.nama_barang ASC
         ");
         
         while ($row = $res->fetch_assoc()) {
             $bid = (int)$row['barang_id'];
             $ef = stock_effective($conn, $klinik_id, ($jenis === 'hc'), $bid);
-            if ($ef['ok'] && $ef['on_hand'] > 0) { // Menggunakan on_hand untuk ketersediaan pemakaian BHP
+            if ($ef['ok']) { // Tampilkan semua item termasuk stok 0/negatif (izinkan input seperti mode upload)
                 $mult = (float)($row['uom_ratio'] ?? 1);
                 $items[] = [
                     'barang_id' => $bid,
