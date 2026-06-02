@@ -160,7 +160,9 @@ if ($active_tab === 'stok') {
                 $filter_ts_hc = $filter_ts_klinik;
             } else {
                 if ($last_update_general !== '') {
-                    $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($today_date) . "'";
+                    // Public view: Periode Reservasi dikunci ke Bulan Ini
+                    $reserve_end_publik = date('Y-m-t');
+                    $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($today_date) . "' AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($reserve_end_publik) . "'";
                     $sync_buffer_ts = date('Y-m-d H:i:s', strtotime($last_update_general));
                     $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "' AND pb.created_at > '" . $conn->real_escape_string($sync_buffer_ts) . "'";
                     $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at > '" . $conn->real_escape_string($sync_buffer_ts) . "'";
@@ -621,7 +623,13 @@ if ($active_tab === 'rekap') {
                         <input type="date" name="tanggal" class="form-control" value="<?= htmlspecialchars($filter_date) ?>" min="<?= htmlspecialchars($min_filter_date) ?>" max="<?= htmlspecialchars($today_date) ?>" onchange="this.form.submit()">
                     </form>
                 </div>
-                <div class="col-md-7 text-end"><div class="last-update mb-2">Terakhir update: <?= htmlspecialchars($last_update_text ?? '-') ?></div></div>
+                <div class="col-md-auto">
+                    <label class="form-label fw-bold small mb-1"><i class="fas fa-bookmark text-primary me-1"></i>Periode Reservasi</label>
+                    <div class="form-control bg-light text-muted small d-flex align-items-center gap-1" style="cursor:default; width:auto;">
+                        <i class="fas fa-lock" style="font-size:0.7rem;"></i> Bulan Ini
+                    </div>
+                </div>
+                <div class="col text-end"><div class="last-update mb-2">Terakhir update: <?= htmlspecialchars($last_update_text ?? '-') ?></div></div>
             </div>
         </div>
     </div>
