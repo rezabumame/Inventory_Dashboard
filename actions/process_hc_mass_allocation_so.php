@@ -135,7 +135,7 @@ try {
         // 3. Calculate actual diff (delta)
         $diff = (float)round($qty_so_oper - $latest_qty_db, 4);
 
-        // 4. Safety Check: If diff > 0, we are adding stock. Check unallocated mirror.
+        // 4. Check unallocated mirror. Jika tidak cukup, catat ke pending_pull (tidak diblock).
         if ($diff > 0.00001) {
             $kode_barang = trim((string)($b['kode_barang'] ?? ''));
             $odoo_product_id = trim((string)($b['odoo_product_id'] ?? ''));
@@ -152,13 +152,17 @@ try {
 
             $r = $conn->query("SELECT COALESCE(SUM(qty), 0) AS total FROM inventory_stok_tas_hc WHERE klinik_id = $klinik_id AND barang_id = $bid");
             $allocated_item = (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['total'] ?? 0) : 0);
-            $unallocated = $mirror_converted - $allocated_item;
-            if ($unallocated < 0) $unallocated = 0;
+            $unallocated = max(0.0, $mirror_converted - $allocated_item);
 
             if ($diff > $unallocated + 0.00005) {
-                $label = trim((string)($b['nama_barang'] ?? 'Barang'));
-                if ($kode_barang !== '') $label = $kode_barang . ' - ' . $label;
-                throw new Exception('Unallocated tidak cukup untuk penambahan item: ' . $label . '. Unallocated: ' . fmt_qty($unallocated) . ', Dibutuhkan: ' . fmt_qty($diff));
+                // Selisih tidak tercukupi oleh HC mirror → catat ke pending_pull
+                $qty_need = round($diff - $unallocated, 4);
+                $catatan_pull = $conn->real_escape_string($catatan_header ?: 'Stock Opname / Alokasi Ulang');
+                $conn->query("
+                    INSERT INTO inventory_hc_pending_pull (klinik_id, barang_id, qty, catatan, created_by)
+                    VALUES ($klinik_id, $bid, $qty_need, '$catatan_pull', $created_by)
+                    ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), created_at = CURRENT_TIMESTAMP
+                ");
             }
         }
 
@@ -168,14 +172,7 @@ try {
              throw new Exception('Stok hasil SO untuk ' . $label . ' tidak boleh negatif.');
         }
 
-        $catatan = $catatan_header ?: 'Stock Opname / Alokasi Ulang';
-        
-        // Log to allocation history
-        $stmt = $conn->prepare("INSERT INTO inventory_hc_tas_allocation (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("iiidsi", $klinik_id, $user_hc_id, $bid, $diff, $catatan, $created_by);
-        $stmt->execute();
-
-        // Update current stock
+        // Update current stock (SO tidak masuk History Transfer — hanya Pull dari klinik yang dicatat)
         $stmt = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by)");
         $stmt->bind_param("iiidi", $bid, $user_hc_id, $klinik_id, $diff, $created_by);
         $stmt->execute();
@@ -188,10 +185,42 @@ try {
     }
 
     $conn->commit();
+
+    // Ambil pending_pull terkini untuk klinik ini (untuk ditampilkan di frontend)
+    $pending_rows = [];
+    $res_pp = $conn->query("
+        SELECT pp.id, pp.barang_id, b.kode_barang, b.nama_barang,
+               COALESCE(uc.to_uom, b.satuan) AS satuan,
+               pp.qty,
+               COALESCE(sg.qty, 0) AS stok_klinik
+        FROM inventory_hc_pending_pull pp
+        JOIN inventory_barang b ON b.id = pp.barang_id
+        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+        LEFT JOIN inventory_stok_gudang_klinik sg ON sg.barang_id = pp.barang_id AND sg.klinik_id = pp.klinik_id
+        WHERE pp.klinik_id = $klinik_id
+        ORDER BY pp.created_at DESC
+    ");
+    while ($res_pp && ($rpp = $res_pp->fetch_assoc())) {
+        $pending_rows[] = [
+            'id'          => (int)$rpp['id'],
+            'barang_id'   => (int)$rpp['barang_id'],
+            'kode_barang' => $rpp['kode_barang'],
+            'nama_barang' => $rpp['nama_barang'],
+            'satuan'      => $rpp['satuan'],
+            'qty'         => (float)$rpp['qty'],
+            'stok_klinik' => (float)$rpp['stok_klinik'],
+        ];
+    }
+
     $msg = 'Alokasi ulang berhasil disimpan (' . $processed_count . ' item disesuaikan).';
     if ($is_ajax) {
         header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'message' => $msg, 'redirect' => 'index.php?page=stok_petugas_hc&klinik_id=' . $klinik_id . '&petugas_user_id=' . $user_hc_id]);
+        echo json_encode([
+            'success'      => true,
+            'message'      => $msg,
+            'pending_pull' => $pending_rows,
+            'redirect'     => 'index.php?page=stok_petugas_hc&klinik_id=' . $klinik_id . '&petugas_user_id=' . $user_hc_id
+        ]);
         exit;
     }
     $_SESSION['success'] = $msg;

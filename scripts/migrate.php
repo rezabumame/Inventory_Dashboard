@@ -960,6 +960,21 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
     });
 
+    run_migration_task("Table: inventory_hc_pending_pull", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_hc_pending_pull", "CREATE TABLE IF NOT EXISTS inventory_hc_pending_pull (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            klinik_id INT NOT NULL,
+            barang_id INT NOT NULL,
+            qty DECIMAL(18,4) NOT NULL DEFAULT 0,
+            catatan VARCHAR(255) NULL,
+            created_by INT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_klinik (klinik_id),
+            KEY idx_barang (barang_id),
+            KEY idx_klinik_barang (klinik_id, barang_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
 } catch (Throwable $e) {
     if ($is_cli) {
         $stderr = defined('STDERR') ? STDERR : fopen('php://stderr', 'w');

@@ -432,6 +432,13 @@ if ($bulk_cancel) {
     unset($_SESSION['hc_bulk_pending']);
     redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$selected_klinik . '&petugas_user_id=' . (int)$petugas_user_id);
 }
+
+// Hitung pending pull untuk klinik ini
+$pending_pull_count = 0;
+if ($selected_klinik > 0) {
+    $res_pp_count = $conn->query("SELECT COUNT(*) AS cnt FROM inventory_hc_pending_pull WHERE klinik_id = $selected_klinik");
+    if ($res_pp_count) $pending_pull_count = (int)($res_pp_count->fetch_assoc()['cnt'] ?? 0);
+}
 ?>
 
 <div class="container-fluid">
@@ -513,8 +520,13 @@ if ($bulk_cancel) {
                     <!-- Column 1: Alokasi & Upload -->
                     <div class="d-flex flex-column gap-2">
                         <?php if (in_array($role, ['super_admin', 'admin_klinik', 'spv_klinik'], true)): ?>
-                            <button type="button" class="btn btn-outline-primary btn-sm shadow-sm" onclick="openMassAllocationSO()">
+                            <button type="button" class="btn btn-outline-primary btn-sm shadow-sm position-relative" onclick="openMassAllocationSO()">
                                 <i class="fas fa-redo me-2"></i>Alokasi Ulang (Mass/All)
+                                <?php if ($pending_pull_count > 0): ?>
+                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:0.6rem;" onclick="event.stopPropagation(); openPendingPullReview();" title="<?= $pending_pull_count ?> item pending pull dari klinik">
+                                    <?= $pending_pull_count ?>
+                                </span>
+                                <?php endif; ?>
                             </button>
                         <?php endif; ?>
                         <button type="button" class="btn btn-outline-primary btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#modalUploadAlokasiMirrorHC">
@@ -878,7 +890,14 @@ if ($bulk_cancel) {
                                                             <span class="badge bg-outline-primary border text-primary">Allocasi</span>
                                                         <?php endif; ?>
                                                     </td>
-                                                    <td><?= htmlspecialchars((string)($petugas_name_map[(int)($h['user_hc_id'] ?? 0)] ?? '-')) ?></td>
+                                                    <td><?php
+                                                        $uid_h = (int)($h['user_hc_id'] ?? 0);
+                                                        if ($uid_h === 0) {
+                                                            echo '<span class="text-muted fst-italic small">Unallocated (Pull Klinik)</span>';
+                                                        } else {
+                                                            echo htmlspecialchars((string)($petugas_name_map[$uid_h] ?? '-'));
+                                                        }
+                                                    ?></td>
                                                     <td><?= htmlspecialchars((string)($barang_name_map[(int)($h['barang_id'] ?? 0)] ?? '-')) ?></td>
                                                     <td class="text-end fw-semibold">
                                                         <?php if ($is_reversal): ?>
@@ -1834,14 +1853,120 @@ document.addEventListener('DOMContentLoaded', function() {
     var massAllocForm = document.getElementById('formMassAllocationSO');
     if (massAllocForm) {
         massAllocForm.onsubmit = function(e) {
+            e.preventDefault();
             var btn = document.getElementById('btnSubmitMassSO');
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...';
-            }
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...'; }
+            var fd = new FormData(massAllocForm);
+            fd.append('is_ajax', '1');
+            fetch(massAllocForm.action, { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(function(data) {
+                    if (!data.success) {
+                        if (btn) { btn.disabled = false; btn.innerHTML = 'Simpan Alokasi Ulang'; }
+                        alert('Gagal: ' + (data.message || 'Terjadi kesalahan.'));
+                        return;
+                    }
+                    // Tutup modal SO
+                    var soModal = bootstrap.Modal.getInstance(document.getElementById('modalMassAllocationSO'));
+                    if (soModal) soModal.hide();
+
+                    // Jika ada pending pull, tampilkan modal konfirmasi
+                    if (data.pending_pull && data.pending_pull.length > 0) {
+                        showPendingPullModal(data.pending_pull, data.message);
+                    } else {
+                        window.location.reload();
+                    }
+                })
+                .catch(function() {
+                    if (btn) { btn.disabled = false; btn.innerHTML = 'Simpan Alokasi Ulang'; }
+                    alert('Gagal menghubungi server.');
+                });
         };
     }
 });
+
+function showPendingPullModal(items, soMessage) {
+    var klinikId = <?= (int)$selected_klinik ?>;
+    var csrf = window.HC_CSRF || '';
+
+    var rows = items.map(function(it) {
+        var cukup = it.stok_klinik >= it.qty;
+        var badge = cukup
+            ? '<span class="badge bg-success-subtle text-success border border-success-subtle">Stok cukup</span>'
+            : '<span class="badge bg-danger-subtle text-danger border border-danger-subtle">Stok kurang</span>';
+        return '<tr>' +
+            '<td class="small">' + escapeHtml(it.kode_barang + ' - ' + it.nama_barang) + '</td>' +
+            '<td class="text-center small fw-bold text-danger">' + fmtQty(it.qty) + ' ' + escapeHtml(it.satuan) + '</td>' +
+            '<td class="text-center small">' + fmtQty(it.stok_klinik) + ' ' + escapeHtml(it.satuan) + '</td>' +
+            '<td class="text-center">' + badge + '</td>' +
+            '</tr>';
+    }).join('');
+
+    var html = '<div class="alert alert-success py-2 small mb-3"><i class="fas fa-check-circle me-1"></i>' + escapeHtml(soMessage) + '</div>' +
+        '<p class="small text-muted mb-2">Item berikut punya selisih positif dan perlu di-pull dari stok klinik:</p>' +
+        '<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">' +
+        '<thead class="table-light"><tr>' +
+        '<th>Barang</th><th class="text-center">Butuh</th><th class="text-center">Stok Klinik</th><th class="text-center">Status</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+
+    Swal.fire({
+        title: 'Ada Pending Pull dari Klinik',
+        html: html,
+        width: 700,
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonColor: '#204EAB',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: '<i class="fas fa-download me-1"></i> Pull dari Stok Klinik',
+        cancelButtonText: 'Lewati (Pull Nanti)',
+        reverseButtons: true,
+    }).then(function(result) {
+        if (result.isConfirmed) {
+            var fd = new FormData();
+            fd.append('_csrf', csrf);
+            fd.append('klinik_id', String(klinikId));
+            fetch('actions/process_hc_pull_from_klinik.php', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(function(d) {
+                    Swal.fire({
+                        title: d.success ? 'Berhasil' : 'Gagal',
+                        text: d.message,
+                        icon: d.success ? 'success' : 'warning',
+                        timer: 3000,
+                        showConfirmButton: false
+                    }).then(function() { window.location.reload(); });
+                })
+                .catch(function() { window.location.reload(); });
+        } else {
+            window.location.reload();
+        }
+    });
+}
+
+function fmtQty(v) {
+    var n = parseFloat(v || 0);
+    if (isNaN(n)) return '0';
+    if (Math.abs(n - Math.round(n)) < 0.00005) return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return n.toFixed(4).replace(/\.?0+$/, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function openPendingPullReview() {
+    var klinikId = <?= (int)$selected_klinik ?>;
+    var csrf = window.HC_CSRF || '';
+
+    fetch('api/ajax_hc_pending_pull.php?klinik_id=' + klinikId)
+        .then(r => r.json())
+        .then(function(data) {
+            if (!data.success || !data.items || data.items.length === 0) {
+                Swal.fire('Info', 'Tidak ada pending pull saat ini.', 'info');
+                return;
+            }
+            showPendingPullModal(data.items, '');
+        })
+        .catch(function() {
+            Swal.fire('Error', 'Gagal memuat data pending pull.', 'error');
+        });
+}
 
 function openMassAllocationSO() {
     var modalEl = document.getElementById('modalMassAllocationSO');
@@ -1965,10 +2090,8 @@ function addMassAllocRow(data = null) {
                 step="0.0001" min="0" value="" oninput="calculateSoDiff(this)">
         </td>
         <td class="p-1" style="width: 110px;">
-            <select name="uom_mode[]" class="form-select form-select-sm so-uom-select small" onchange="handleSoUomChange(this)">
-                <option value="oper">${escapeHtml(uomOper || 'Satuan')}</option>
-                ${(uomOdoo && uomOdoo !== uomOper) ? `<option value="odoo">${escapeHtml(uomOdoo)}</option>` : ''}
-            </select>
+            <input type="hidden" name="uom_mode[]" value="oper">
+            <span class="form-control-plaintext form-control-sm fw-semibold text-center small">${escapeHtml(uomOper || 'Satuan')}</span>
         </td>
         <td class="p-1 text-center" style="width: 50px;">
             <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="this.closest('tr').remove(); updateSubmitBtnState();">
@@ -2018,11 +2141,8 @@ function handleSoBarangChange(select) {
     var uomOper = opt.getAttribute('data-uom-oper');
     var uomOdoo = opt.getAttribute('data-uom-odoo');
     
-    var uomSelect = row.querySelector('.so-uom-select');
-    uomSelect.innerHTML = `<option value="oper">${escapeHtml(uomOper)}</option>`;
-    if (uomOdoo && uomOdoo !== uomOper) {
-        uomSelect.innerHTML += `<option value="odoo">${escapeHtml(uomOdoo)}</option>`;
-    }
+    var uomSpan = row.querySelector('.so-uom-select');
+    if (uomSpan) uomSpan.textContent = uomOper || 'Satuan';
     
     calculateSoDiff(row.querySelector('.so-qty-input'));
 }
@@ -2479,9 +2599,19 @@ function fmtQty(v) {
                     <input type="text" name="catatan" class="form-control form-control-sm" placeholder="Contoh: Stock Opname Rutin">
                 </div>
 
-                <div class="modal-footer border-0 p-0 mt-2">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-sm btn-primary" id="btnSubmitMassSO" disabled>Simpan Alokasi Ulang</button>
+                <div class="modal-footer border-0 p-0 mt-2 d-flex justify-content-between align-items-center">
+                    <div>
+                        <?php if ($pending_pull_count > 0): ?>
+                        <button type="button" class="btn btn-sm btn-warning" onclick="var m=bootstrap.Modal.getInstance(document.getElementById('modalMassAllocationSO')); if(m)m.hide(); setTimeout(openPendingPullReview,300);">
+                            <i class="fas fa-arrow-down me-1"></i>Pull dari Klinik
+                            <span class="badge bg-danger ms-1"><?= $pending_pull_count ?></span>
+                        </button>
+                        <?php endif; ?>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-sm btn-primary" id="btnSubmitMassSO" disabled>Simpan Alokasi Ulang</button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -3004,14 +3134,8 @@ document.addEventListener('DOMContentLoaded', function() {
         var ratio = parseFloat(String($opt.attr('data-uom-ratio') || '1').replace(',', '.')) || 1;
         if (!oper) oper = '-';
         var html = '';
-        if (odoo && ratio && Math.abs(ratio - 1) > 0.0000001 && oper.toLowerCase() !== odoo.toLowerCase()) {
-            html += '<option value="oper">' + escapeHtml(oper) + '</option>';
-            html += '<option value="odoo">' + escapeHtml(odoo) + '</option>';
-            $uomSel.prop('disabled', false);
-        } else {
-            html += '<option value="oper">' + escapeHtml(oper) + '</option>';
-            $uomSel.prop('disabled', true);
-        }
+        html += '<option value="oper">' + escapeHtml(oper) + '</option>';
+        $uomSel.prop('disabled', true);
         $uomSel.html(html).val('oper');
     }
 
