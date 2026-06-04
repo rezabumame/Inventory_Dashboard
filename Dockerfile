@@ -26,4 +26,10 @@ RUN sed -i 's|/var/www/html|/var/www/html|g' /etc/apache2/sites-available/000-de
 # Set proper permissions
 RUN chown -R www-data:www-data /var/www/html
 
+# Entrypoint to fix bind-mount permissions on every container start
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 80
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["apache2-foreground"]

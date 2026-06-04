@@ -1,8 +1,12 @@
 <?php
+ini_set('display_errors', '0');
+ob_start();
+
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../lib/stock.php';
 
+ob_clean();
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['user_id'])) {
