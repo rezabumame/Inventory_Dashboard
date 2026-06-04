@@ -95,6 +95,9 @@ switch ($page) {
     case 'uom_convert':
         include 'views/inventory/uom_convert.php';
         break;
+    case 'fix_uom_satuan':
+        include 'scripts/fix_uom_satuan.php';
+        break;
 
     case 'request':
         include 'views/inventory/request.php';
