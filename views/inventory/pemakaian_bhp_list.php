@@ -962,6 +962,7 @@ if ($default_modal_klinik_id) {
                         $export_url .= "&klinik_id=" . urlencode($_GET['klinik_id']);
                     if (isset($_GET['q']))
                         $export_url .= "&q=" . urlencode($_GET['q']);
+                    $export_url .= "&date_type=" . urlencode($filter_date_type);
                     ?>
                     <a href="<?= $export_url ?>" class="btn btn-success btn-sm">
                         <i class="fas fa-file-excel me-2"></i>Export Odoo (.xlsx)

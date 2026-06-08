@@ -34,13 +34,16 @@ if ($user_role === 'admin_klinik' && $user_klinik_id) {
     $types .= "i";
 }
 
+$date_type = ($_GET['date_type'] ?? 'input') === 'pemakaian' ? 'pemakaian' : 'input';
+$date_col  = $date_type === 'pemakaian' ? 'pb.tanggal' : 'pb.created_at';
+
 if (!empty($start_date)) {
-    $where_clause .= " AND pb.created_at >= ?";
+    $where_clause .= " AND $date_col >= ?";
     $params[] = $start_date . ' 00:00:00';
     $types .= "s";
 }
 if (!empty($end_date)) {
-    $where_clause .= " AND pb.created_at <= ?";
+    $where_clause .= " AND $date_col <= ?";
     $params[] = $end_date . ' 23:59:59';
     $types .= "s";
 }
