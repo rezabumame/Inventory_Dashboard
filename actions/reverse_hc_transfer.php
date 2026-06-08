@@ -113,9 +113,10 @@ try {
     $cat_orig = trim((string)($t['catatan'] ?? ''));
     if ($cat_orig !== '') $cat_detail .= ' - ' . $cat_orig;
 
-    $stmt = $conn->prepare("INSERT INTO inventory_hc_petugas_transfer (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
+    $orig_request_id = isset($t['request_id']) && $t['request_id'] > 0 ? (int)$t['request_id'] : null;
+    $stmt = $conn->prepare("INSERT INTO inventory_hc_petugas_transfer (klinik_id, user_hc_id, barang_id, qty, catatan, created_by, request_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $neg = 0 - $qty;
-    $stmt->bind_param("iiidsi", $t_klinik_id, $user_hc_id, $barang_id, $neg, $cat, $created_by);
+    $stmt->bind_param("iiidsii", $t_klinik_id, $user_hc_id, $barang_id, $neg, $cat, $created_by, $orig_request_id);
     $stmt->execute();
 
     $stmt = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ? WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");

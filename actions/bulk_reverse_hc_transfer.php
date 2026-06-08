@@ -72,20 +72,25 @@ try {
         $user_hc_id = (int)$t['user_hc_id'];
         $t_klinik_id = (int)$t['klinik_id']; // Use klinik_id from transfer record!
         
+        // Skip if already reversed (prevent double-cancel)
+        $existing_rev = $conn->query("SELECT id FROM inventory_hc_petugas_transfer WHERE qty < 0 AND catatan LIKE 'Bulk Reversal Transfer HC Petugas #$transfer_id (%' LIMIT 1")->fetch_assoc();
+        if ($existing_rev) { $success_count++; continue; }
+
         // Check bag stock
         $cur = $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE klinik_id = $t_klinik_id AND user_id = $user_hc_id AND barang_id = $barang_id FOR UPDATE")->fetch_assoc();
         $cur_qty = (float)($cur['qty'] ?? 0);
-        
+
         $t_date = date('d-m-Y', strtotime($t['created_at']));
         $cat = 'Bulk Reversal Transfer HC Petugas #' . $transfer_id . ' (Transfer Tgl ' . $t_date . ')';
         $cat_detail = $cat;
         $cat_orig = trim((string)($t['catatan'] ?? ''));
         if ($cat_orig !== '') $cat_detail .= ' - ' . $cat_orig;
 
-        // 1. Insert reversal record
-        $stmt = $conn->prepare("INSERT INTO inventory_hc_petugas_transfer (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
+        // 1. Insert reversal record (inherit request_id so rekap groups with the original date)
+        $orig_request_id = isset($t['request_id']) && $t['request_id'] > 0 ? (int)$t['request_id'] : null;
+        $stmt = $conn->prepare("INSERT INTO inventory_hc_petugas_transfer (klinik_id, user_hc_id, barang_id, qty, catatan, created_by, request_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
         $neg = 0 - $qty;
-        $stmt->bind_param("iiidsi", $t_klinik_id, $user_hc_id, $barang_id, $neg, $cat, $created_by);
+        $stmt->bind_param("iiidsii", $t_klinik_id, $user_hc_id, $barang_id, $neg, $cat, $created_by, $orig_request_id);
         $stmt->execute();
 
         // 2. Update bag stock

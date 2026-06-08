@@ -995,32 +995,54 @@ if ($selected_klinik > 0) {
                             </script>
                         <?php else: // Rekap View ?>
                             <?php
-                            $rekap = [];
+                            // Pass 1: identify reversed transfer IDs (from negative qty + catatan)
+                            $reversed_ids = [];
+                            $transfer_group_keys = [];
                             foreach ($history as $h) {
+                                if ($h['tipe'] !== 'transfer') continue;
+                                $qty_h = (float)$h['qty'];
+                                if ($qty_h < 0) {
+                                    if (preg_match('/Transfer HC Petugas #(\d+)/', (string)($h['catatan'] ?? ''), $m)) {
+                                        $reversed_ids[(int)$m[1]] = true;
+                                    }
+                                } elseif ($qty_h > 0) {
+                                    $tgl_req = !empty($h['tgl_request']) ? $h['tgl_request'] : $h['created_at'];
+                                    $date    = date('Y-m-d', strtotime((string)$tgl_req));
+                                    $uid     = (int)($h['user_hc_id'] ?? 0);
+                                    $key     = $date . '_' . $uid;
+                                    $transfer_group_keys[$key] = ['date' => $date, 'user_id' => $uid, 'petugas' => $petugas_name_map[$uid] ?? '-'];
+                                }
+                            }
+
+                            // Initialize rekap with all transfer groups so reversed ones show "0 (Kembali)"
+                            $rekap = [];
+                            foreach ($transfer_group_keys as $key => $info) {
+                                $rekap[$key] = ['date' => $info['date'], 'user_id' => $info['user_id'], 'petugas' => $info['petugas'], 'items' => [], 'total_qty' => 0];
+                            }
+
+                            // Pass 2: populate with un-reversed transfers + allocations
+                            foreach ($history as $h) {
+                                $qty_h = (float)$h['qty'];
+                                if ($h['tipe'] === 'transfer' && $qty_h < 0) continue; // skip reversal inserts
+                                if ($h['tipe'] === 'transfer' && $qty_h > 0 && isset($reversed_ids[(int)$h['id']])) continue; // skip reversed
+
                                 $tgl_req  = !empty($h['tgl_request']) ? $h['tgl_request'] : $h['created_at'];
                                 $date     = date('Y-m-d', strtotime((string)$tgl_req));
                                 $uid      = (int)($h['user_hc_id'] ?? 0);
                                 $key      = $date . '_' . $uid;
 
                                 if (!isset($rekap[$key])) {
-                                    $rekap[$key] = [
-                                        'date'      => $date,
-                                        'user_id'   => $uid,
-                                        'petugas'   => $petugas_name_map[$uid] ?? '-',
-                                        'items'     => [],
-                                        'total_qty' => 0,
-                                    ];
+                                    $rekap[$key] = ['date' => $date, 'user_id' => $uid, 'petugas' => $petugas_name_map[$uid] ?? '-', 'items' => [], 'total_qty' => 0];
                                 }
 
-                                $rekap[$key]['total_qty'] += (float)$h['qty'];
-
-                                if ((float)$h['qty'] > 0) {
+                                $rekap[$key]['total_qty'] += $qty_h;
+                                if ($qty_h > 0) {
                                     $bid  = (int)$h['barang_id'];
                                     $nama = $barang_name_map[$bid] ?? 'Barang #' . $bid;
                                     if (!isset($rekap[$key]['items'][$bid])) {
                                         $rekap[$key]['items'][$bid] = ['nama' => $nama, 'qty' => 0];
                                     }
-                                    $rekap[$key]['items'][$bid]['qty'] += (float)$h['qty'];
+                                    $rekap[$key]['items'][$bid]['qty'] += $qty_h;
                                 }
                             }
                             ?>
