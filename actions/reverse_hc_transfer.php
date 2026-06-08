@@ -70,10 +70,6 @@ $qty = (float)($t['qty'] ?? 0);
 
 $cur = $conn->query("SELECT COALESCE(qty, 0) AS qty FROM inventory_stok_tas_hc WHERE klinik_id = $t_klinik_id AND user_id = $user_hc_id AND barang_id = $barang_id LIMIT 1")->fetch_assoc();
 $cur_qty = (float)($cur['qty'] ?? 0);
-if ($cur_qty + 0.00005 < $qty) {
-    $_SESSION['error'] = 'Stok tas petugas tidak mencukupi untuk reversal. Qty saat ini: ' . fmt_qty($cur_qty);
-    redirect('index.php?page=stok_petugas_hc&klinik_id=' . (int)$klinik_id . '&petugas_user_id=' . (int)$petugas_user_id . '&tab=' . urlencode($tab));
-}
 
 $kl = $conn->query("SELECT id, nama_klinik, kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $t_klinik_id LIMIT 1")->fetch_assoc();
 if (!$kl) {
@@ -136,7 +132,6 @@ try {
     $stmt->execute();
 
     $qty_after_hc = (float)$effective_hc - $qty;
-    if ($qty_after_hc < 0) $qty_after_hc = 0;
     $stmt = $conn->prepare("
         INSERT INTO inventory_transaksi_stok
         (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)

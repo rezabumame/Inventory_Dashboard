@@ -76,13 +76,6 @@ try {
         $cur = $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE klinik_id = $t_klinik_id AND user_id = $user_hc_id AND barang_id = $barang_id FOR UPDATE")->fetch_assoc();
         $cur_qty = (float)($cur['qty'] ?? 0);
         
-        if ($cur_qty + 0.00005 < $qty) {
-            // Get item name for better error message
-            $bi = $conn->query("SELECT nama_barang FROM inventory_barang WHERE id = $barang_id LIMIT 1")->fetch_assoc();
-            $nama_barang = $bi['nama_barang'] ?? "ID $barang_id";
-            throw new Exception("Stok tas petugas untuk item '$nama_barang' tidak mencukupi (Sisa: " . fmt_qty($cur_qty) . ", Perlu: " . fmt_qty($qty) . "). Pembatalan massal dibatalkan.");
-        }
-        
         $t_date = date('d-m-Y', strtotime($t['created_at']));
         $cat = 'Bulk Reversal Transfer HC Petugas #' . $transfer_id . ' (Transfer Tgl ' . $t_date . ')';
         $cat_detail = $cat;
@@ -116,7 +109,7 @@ try {
         $ef_hc = stock_effective($conn, $t_klinik_id, true, $barang_id);
         $effective_hc = (float)($ef_hc['available'] ?? 0);
         $qty_after_hc = $effective_hc - $qty;
-        if ($qty_after_hc < 0) $qty_after_hc = 0;
+        if ($qty_after_hc < 0) $qty_after_hc = $effective_hc - $qty;
         
         $stmt = $conn->prepare("
             INSERT INTO inventory_transaksi_stok
