@@ -270,6 +270,43 @@ try {
                     exec_or_throw($stmt_log, 'Insert stock transaction for delta revision');
                 }
 
+                // Sync the PARENT's item detail list to reflect the now-applied deltas.
+                // Without this, the parent's inventory_pemakaian_bhp_detail rows stay frozen at
+                // their original creation-time values forever, even though stock/ledger are correct.
+                foreach ($delta_items as $delta_item) {
+                    $bid = (int)$delta_item['barang_id'];
+                    $is_lokal_d = (int)($delta_item['is_lokal'] ?? 0);
+                    $qty_delta = (float)$delta_item['qty'];
+                    $satuan_d = (string)($delta_item['satuan'] ?? '');
+                    $catatan_d = (string)($delta_item['catatan_item'] ?? '');
+
+                    if (abs($qty_delta) < 0.000001) continue;
+
+                    $stmt_find = $conn->prepare("SELECT id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ? AND barang_id = ? AND is_lokal = ? LIMIT 1");
+                    $stmt_find->bind_param("iii", $parent_id, $bid, $is_lokal_d);
+                    $stmt_find->execute();
+                    $existing_detail = $stmt_find->get_result()->fetch_assoc();
+
+                    $old_qty = $existing_detail ? (float)$existing_detail['qty'] : 0.0;
+                    $new_qty = $old_qty + $qty_delta;
+
+                    if ($new_qty <= 0.000001) {
+                        if ($existing_detail) {
+                            $stmt_del_detail = $conn->prepare("DELETE FROM inventory_pemakaian_bhp_detail WHERE id = ?");
+                            $stmt_del_detail->bind_param("i", $existing_detail['id']);
+                            exec_or_throw($stmt_del_detail, 'Sync parent detail (remove)');
+                        }
+                    } elseif ($existing_detail) {
+                        $stmt_upd_detail = $conn->prepare("UPDATE inventory_pemakaian_bhp_detail SET qty = ?, satuan = ?, catatan_item = ? WHERE id = ?");
+                        $stmt_upd_detail->bind_param("dssi", $new_qty, $satuan_d, $catatan_d, $existing_detail['id']);
+                        exec_or_throw($stmt_upd_detail, 'Sync parent detail (update)');
+                    } else {
+                        $stmt_ins_detail = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, is_lokal, qty, satuan, catatan_item) VALUES (?, ?, ?, ?, ?, ?)");
+                        $stmt_ins_detail->bind_param("iiidss", $parent_id, $bid, $is_lokal_d, $new_qty, $satuan_d, $catatan_d);
+                        exec_or_throw($stmt_ins_detail, 'Sync parent detail (insert)');
+                    }
+                }
+
                 // Mark the REVISION record as active
                 $now_val = date('Y-m-d H:i:s');
                 $stmt_upd = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'active', spv_approved_by = ?, spv_approved_at = NOW(), created_at = ? WHERE id = ?");

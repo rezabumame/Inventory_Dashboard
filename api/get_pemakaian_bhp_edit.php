@@ -37,11 +37,17 @@ if (!$header) {
     exit;
 }
 
-// Permission check: 
+// Permission check:
 // 1. Super Admin: Always
 // 2. Admin Klinik: Always (for their own clinic)
-// 3. Others (HC): Only creator on the same day
-$is_today = date('Y-m-d', strtotime($header['created_at'])) === date('Y-m-d');
+// 3. Others (HC): Only creator, within the usage-date grace window (today or yesterday)
+// Must match the grace window used in actions/process_pemakaian_bhp.php ($is_today_edit),
+// which is based on `tanggal` (usage date), not `created_at` — using created_at here previously
+// caused false access denials for records entered the day after their usage date.
+$usage_date = date('Y-m-d', strtotime($header['tanggal']));
+$today = date('Y-m-d');
+$yesterday = date('Y-m-d', strtotime('-1 day'));
+$is_today = ($usage_date === $today || $usage_date === $yesterday);
 $is_creator = $header['created_by'] == $_SESSION['user_id'];
 $is_super_admin = $_SESSION['role'] === 'super_admin';
 $is_admin_klinik = $_SESSION['role'] === 'admin_klinik';

@@ -499,6 +499,18 @@ try {
             }
         }
 
+        // 2b. Capture original items BEFORE deleting, so untouched items can be restored below.
+        // Must happen before the DELETE in step 3 — querying after delete always returns empty,
+        // which previously caused untouched items to be silently dropped on partial edits.
+        $orig_items_map = [];
+        $stmt_orig = $conn->prepare("SELECT id, barang_id, is_lokal, qty, satuan, catatan_item FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+        $stmt_orig->bind_param("i", $edit_id);
+        $stmt_orig->execute();
+        $res_orig = $stmt_orig->get_result();
+        while ($r = $res_orig->fetch_assoc()) {
+            $orig_items_map[(int)$r['id']] = $r;
+        }
+
         // 3. Delete old details
         $stmt = $conn->prepare("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
         $stmt->bind_param("i", $edit_id);
@@ -536,15 +548,7 @@ try {
                 }
             }
 
-            // Ambil semua item original dari DB
-            $stmt_orig = $conn->prepare("SELECT id, barang_id, is_lokal, qty, satuan, catatan_item FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
-            $stmt_orig->bind_param("i", $edit_id);
-            $stmt_orig->execute();
-            $orig_items_map = [];
-            while ($r = $stmt_orig->get_result()->fetch_assoc()) {
-                $orig_items_map[(int)$r['id']] = $r;
-            }
-
+            // $orig_items_map already captured in step 2b, before the items were deleted.
             $items = [];
             foreach ($request_ops as $op) {
                 $op_type = $op['op'] ?? '';
