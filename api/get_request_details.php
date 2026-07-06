@@ -43,6 +43,7 @@ $can_process = false;
 if (in_array($req['status'], ['approved', 'partial'], true)) {
     if ($user_role == 'super_admin') $can_process = true;
     if ($user_role == 'admin_klinik' && $req['dari_level'] == 'klinik' && (int)$req['dari_id'] === (int)$user_klinik) $can_process = true;
+    if ($user_role == 'spv_klinik' && $req['dari_level'] == 'klinik' && (int)$req['dari_id'] === (int)$user_klinik) $can_process = true;
 }
 $can_cancel = false;
 if ($user_role == 'admin_klinik' && $req['dari_level'] == 'klinik' && (int)$req['dari_id'] === (int)$user_klinik && $req['status'] == 'pending_spv') $can_cancel = true;

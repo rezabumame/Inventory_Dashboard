@@ -257,11 +257,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 
                 $stmt_req_upd = $conn->prepare("UPDATE inventory_request_barang_detail SET qty_approved = ? WHERE request_barang_id = ? AND barang_id = ?");
 
-                $all_approved = true;
-
                 foreach ($approved_items as $idx => $b_id) {
                     $qty_app = (float)($approved_qtys[$idx] ?? 0);
-                    
+
                     $res_req_det = $conn->query("SELECT qty_request FROM inventory_request_barang_detail WHERE request_barang_id = $request_id AND barang_id = $b_id");
                     $row_req_det = $res_req_det->fetch_assoc();
                     $qty_req = (float)($row_req_det['qty_request'] ?? 0);
@@ -269,15 +267,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
                     if ($qty_app > $qty_req + 0.00005) {
                         throw new Exception("Error: Qty disetujui tidak boleh melebihi Qty yang diminta.");
                     }
-                    if ($qty_app + 0.00005 < $qty_req) $all_approved = false;
                     if ($qty_app <= 0.00005) continue;
 
                     $stmt_req_upd->bind_param("dii", $qty_app, $request_id, $b_id);
                     $stmt_req_upd->execute();
                 }
 
-                $final_status = $all_approved ? 'approved' : 'partial';
-                $conn->query("UPDATE inventory_request_barang SET status = '$final_status', approved_by = $user_id WHERE id = $request_id");
+                // Status tetap 'approved' di tahap ini; 'partial' hanya berlaku saat penerimaan barang (qty diterima < qty disetujui)
+                $conn->query("UPDATE inventory_request_barang SET status = 'approved', approved_by = $user_id WHERE id = $request_id");
 
                 $conn->commit();
                 $_SESSION['success'] = 'Permintaan barang telah disetujui. Silakan unggah dokumen untuk memproses pergerakan stok.';
@@ -336,6 +333,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
         $can_process = false;
         if ($user_role === 'super_admin') $can_process = true;
         if ($user_role === 'admin_klinik' && $req['dari_level'] === 'klinik' && (int)$req['dari_id'] === (int)$user_klinik) $can_process = true;
+        if ($user_role === 'spv_klinik' && $req['dari_level'] === 'klinik' && (int)$req['dari_id'] === (int)$user_klinik) $can_process = true;
 
         if (!$can_process) {
             $message = '<div class="alert alert-danger">Anda tidak memiliki akses untuk memproses permintaan ini.</div>';
@@ -556,7 +554,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
         $can_process = false;
         if ($user_role === 'super_admin') $can_process = true;
         if ($user_role === 'admin_klinik' && $req['dari_level'] === 'klinik' && (int)$req['dari_id'] === (int)$user_klinik) $can_process = true;
-        
+        if ($user_role === 'spv_klinik' && $req['dari_level'] === 'klinik' && (int)$req['dari_id'] === (int)$user_klinik) $can_process = true;
+
         if ($can_process) {
             $stmt = $conn->prepare("UPDATE inventory_request_barang SET status = 'completed', processed_by = ?, processed_at = NOW() WHERE id = ?");
             $stmt->bind_param("ii", $user_id, $request_id);
