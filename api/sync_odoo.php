@@ -368,14 +368,32 @@ try {
     ");
 
     // Build locations from inventory_klinik: kode_klinik and kode_homecare
+    // Optional scope: klinik_id (int) syncs only that clinic, 'gudang_utama' syncs only the main warehouse.
+    // If omitted/'all', behavior is unchanged: sync every active clinic + main warehouse.
+    $scope = $_POST['klinik_id'] ?? '';
     $locations = [];
-    $res = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE status = 'active'");
-    while ($row = $res->fetch_assoc()) {
-        if (!empty($row['kode_klinik'])) $locations[] = $row['kode_klinik'];
-        if (!empty($row['kode_homecare'])) $locations[] = $row['kode_homecare'];
-    }
     $gudang_loc = trim((string)get_setting('odoo_location_gudang_utama', ''));
-    if ($gudang_loc !== '') $locations[] = $gudang_loc;
+
+    if ($scope === 'gudang_utama') {
+        if ($gudang_loc !== '') $locations[] = $gudang_loc;
+    } elseif ($scope !== '' && $scope !== 'all') {
+        $scope_id = (int)$scope;
+        $stmt_k = $conn->prepare("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = ? AND status = 'active'");
+        $stmt_k->bind_param("i", $scope_id);
+        $stmt_k->execute();
+        $row = $stmt_k->get_result()->fetch_assoc();
+        if ($row) {
+            if (!empty($row['kode_klinik'])) $locations[] = $row['kode_klinik'];
+            if (!empty($row['kode_homecare'])) $locations[] = $row['kode_homecare'];
+        }
+    } else {
+        $res = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE status = 'active'");
+        while ($row = $res->fetch_assoc()) {
+            if (!empty($row['kode_klinik'])) $locations[] = $row['kode_klinik'];
+            if (!empty($row['kode_homecare'])) $locations[] = $row['kode_homecare'];
+        }
+        if ($gudang_loc !== '') $locations[] = $gudang_loc;
+    }
     $locations = array_values(array_unique($locations));
 
     // Pull stock per location and refresh snapshot in mirror
@@ -526,8 +544,12 @@ try {
         $loc_group_map = build_loc_group_map($conn);
         $diff_pack = build_diff_grouped_lines_compact($mirror_before, $mirror_after, $loc_group_map, 12, 0.0001);
         $diff_lines = $diff_pack['lines'] ?? [];
-        $sum_klinik = build_group_summary_lines($mirror_after, $loc_group_map, false, 12);
-        $sum_hc = build_group_summary_lines($mirror_after, $loc_group_map, true, 12);
+        // Ringkasan per klinik/HC hanya menampilkan lokasi yang benar-benar disync run ini
+        // (scoped ke $locations), supaya tidak terlihat seolah semua klinik ikut ditarik saat scope-nya cuma 1 klinik.
+        $mirror_after_scoped = $mirror_after;
+        $mirror_after_scoped['by_loc'] = array_intersect_key($mirror_after['by_loc'] ?? [], array_flip($locations));
+        $sum_klinik = build_group_summary_lines($mirror_after_scoped, $loc_group_map, false, 12);
+        $sum_hc = build_group_summary_lines($mirror_after_scoped, $loc_group_map, true, 12);
 
         $time_now = date('d M Y H:i');
         $time_display = $time_now;

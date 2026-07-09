@@ -1661,11 +1661,17 @@ function confirmSync(btn) {
     const minutes = String(now.getMinutes()).padStart(2, '0');
     const currentDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
 
+    const scope = <?= json_encode($selected_klinik, JSON_UNESCAPED_SLASHES) ?>;
+    const scopeText = (scope === 'all' || scope === '')
+        ? 'Semua Klinik + Gudang Utama'
+        : (scope === 'gudang_utama' ? 'Gudang Utama saja' : 'Klinik yang sedang dipilih saja');
+
     Swal.fire({
         title: 'Konfirmasi Sinkronisasi',
         html: `
             <div class="text-start">
                 <p class="small text-muted mb-3">Pilih waktu efektif sinkronisasi. Pemakaian lokal setelah waktu ini akan tetap muncul di dashboard untuk menghindari selisih.</p>
+                <div class="form-text small text-muted mb-2"><i class="fas fa-map-marker-alt me-1"></i> Cakupan sync: <strong>${scopeText}</strong></div>
                 <label class="form-label small fw-bold">WAKTU EFEKTIF (OVERRIDE)</label>
                 <input type="datetime-local" id="override_time_stok" class="form-control mb-2" value="${currentDateTime}">
                 <div class="form-text small text-primary"><i class="fas fa-info-circle me-1"></i> Biarkan default jika ingin menggunakan waktu saat ini.</div>
@@ -1699,6 +1705,10 @@ async function syncFromOdoo(btn, overrideTime = '') {
         fd.append('_csrf', <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>);
         if (overrideTime) {
             fd.append('override_time', overrideTime.replace('T', ' ') + ':00');
+        }
+        const scope = <?= json_encode($selected_klinik, JSON_UNESCAPED_SLASHES) ?>;
+        if (scope !== '' && scope !== 'all') {
+            fd.append('klinik_id', scope);
         }
         const res = await fetch('api/sync_odoo.php', { method: 'POST', body: fd });
         const data = await res.json();
