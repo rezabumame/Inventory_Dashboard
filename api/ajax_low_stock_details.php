@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../lib/stock.php';
 
 header('Content-Type: application/json');
 
@@ -14,32 +16,15 @@ $klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
 
 $items = [];
 
-if ($role === 'super_admin') {
-    // Super admin: gabungkan gudang utama + seluruh lokasi mirror (klinik/homecare)
-    $sql = "SELECT
-                b.id,
-                b.kode_barang,
-                b.nama_barang,
-                s.qty as stok_saat_ini,
-                b.stok_minimum,
-                'Gudang Utama' AS lokasi,
-                'gudang' AS tipe_lokasi,
-                COALESCE(uc.to_uom, b.satuan) as satuan,
-                COALESCE(uc.multiplier, 1) as uom_ratio
-            FROM inventory_stok_gudang_utama s
-            JOIN inventory_barang b ON s.barang_id = b.id
-            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-            WHERE s.qty <= b.stok_minimum
-            ORDER BY b.nama_barang ASC";
-    $res = $conn->query($sql);
-    while ($res && ($row = $res->fetch_assoc())) {
-        $row['uom_ratio'] = (float)($row['uom_ratio'] ?? 1);
-        if ($row['uom_ratio'] <= 0) $row['uom_ratio'] = 1;
-        $row['stok_saat_ini'] = (float)$row['stok_saat_ini'] / $row['uom_ratio'];
-        $row['stok_minimum'] = (float)$row['stok_minimum'] / $row['uom_ratio'];
-        $items[] = $row;
-    }
+// Lokasi gudang utama di Odoo mirror (sumber kebenaran yang sama dipakai stock_effective/Inventory Klinik).
+// inventory_stok_gudang_utama adalah ledger lokal yang bisa drift/negatif, jangan dipakai untuk alert low stock.
+$gudang_loc = trim((string)get_setting('odoo_location_gudang_utama', ''));
+if ($gudang_loc !== '') $gudang_loc = stock_resolve_location($conn, $gudang_loc);
+if ($gudang_loc === '') $gudang_loc = 'WHS01/Stock';
+$gudang_loc_esc = $conn->real_escape_string($gudang_loc);
 
+if ($role === 'super_admin') {
+    // Super admin: gabungkan gudang utama + seluruh lokasi mirror (klinik/homecare), semua dari Odoo mirror
     $sql = "SELECT
                 b.id,
                 b.kode_barang,
@@ -47,11 +32,11 @@ if ($role === 'super_admin') {
                 sm.qty as stok_saat_ini,
                 b.stok_minimum,
                 CASE
-                    WHEN TRIM(sm.location_code) = 'WHS01/Stock' THEN 'Gudang Utama'
+                    WHEN TRIM(sm.location_code) = '$gudang_loc_esc' THEN 'Gudang Utama'
                     ELSE COALESCE(k1.nama_klinik, k2.nama_klinik, TRIM(sm.location_code), '-')
                 END AS lokasi,
                 CASE
-                    WHEN TRIM(sm.location_code) = 'WHS01/Stock' THEN 'gudang'
+                    WHEN TRIM(sm.location_code) = '$gudang_loc_esc' THEN 'gudang'
                     WHEN k2.id IS NOT NULL THEN 'hc'
                     WHEN k1.id IS NOT NULL THEN 'onsite'
                     ELSE 'onsite'
@@ -74,21 +59,22 @@ if ($role === 'super_admin') {
         $items[] = $row;
     }
 } else if ($role === 'admin_gudang') {
-    // Admin gudang: khusus gudang utama
+    // Admin gudang: khusus gudang utama, dari Odoo mirror (sama dengan Inventory Klinik)
     $sql = "SELECT
                 b.id,
                 b.kode_barang,
                 b.nama_barang,
-                s.qty as stok_saat_ini,
+                sm.qty as stok_saat_ini,
                 b.stok_minimum,
                 'Gudang Utama' AS lokasi,
                 'gudang' AS tipe_lokasi,
                 COALESCE(uc.to_uom, b.satuan) as satuan,
                 COALESCE(uc.multiplier, 1) as uom_ratio
-            FROM inventory_stok_gudang_utama s
-            JOIN inventory_barang b ON s.barang_id = b.id
+            FROM inventory_stock_mirror sm
+            JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang)
             LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-            WHERE s.qty <= b.stok_minimum
+            WHERE TRIM(sm.location_code) = '$gudang_loc_esc'
+              AND sm.qty <= b.stok_minimum
             ORDER BY b.nama_barang ASC";
     $res = $conn->query($sql);
     while ($res && ($row = $res->fetch_assoc())) {
