@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../../lib/stock.php';
+
 $nama = (string)($_SESSION['nama_lengkap'] ?? 'User');
 $user_id = (int)($_SESSION['user_id'] ?? 0);
 $klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
@@ -21,6 +23,13 @@ $last_mirror_update = '';
 $r = $conn->query("SELECT MAX(updated_at) AS last_update FROM inventory_stock_mirror");
 if ($r && $r->num_rows > 0) $last_mirror_update = (string)($r->fetch_assoc()['last_update'] ?? '');
 
+// Lokasi gudang utama di Odoo mirror (sumber kebenaran yang sama dipakai stock_effective/Inventory Klinik).
+// inventory_stok_gudang_utama adalah ledger lokal yang bisa drift/negatif, jangan dipakai untuk hitungan low stock.
+$gudang_loc = trim((string)get_setting('odoo_location_gudang_utama', ''));
+if ($gudang_loc !== '') $gudang_loc = stock_resolve_location($conn, $gudang_loc);
+if ($gudang_loc === '') $gudang_loc = 'WHS01/Stock';
+$gudang_loc_esc = $conn->real_escape_string($gudang_loc);
+
 if ($role === 'super_admin') {
     // GLOBAL STATS (ALL LOCATIONS)
     $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_barang");
@@ -33,7 +42,7 @@ if ($role === 'super_admin') {
     $low_onsite = 0;
     $low_hc = 0;
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_stok_gudang_utama s JOIN inventory_barang b ON s.barang_id = b.id WHERE s.qty <= b.stok_minimum");
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_stock_mirror sm JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang) WHERE TRIM(sm.location_code) = '$gudang_loc_esc' AND sm.qty <= b.stok_minimum");
     if ($res) $low_gudang = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
     $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_stock_mirror sm JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang) JOIN inventory_klinik k ON TRIM(sm.location_code) = TRIM(k.kode_klinik) WHERE sm.qty <= b.stok_minimum");
@@ -55,7 +64,7 @@ if ($role === 'super_admin') {
     $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_barang");
     $total_barang = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
-    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_stok_gudang_utama s JOIN inventory_barang b ON s.barang_id = b.id WHERE s.qty <= b.stok_minimum");
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_stock_mirror sm JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang) WHERE TRIM(sm.location_code) = '$gudang_loc_esc' AND sm.qty <= b.stok_minimum");
     $low_stock = (int)($res->fetch_assoc()['cnt'] ?? 0);
 
     $res = $conn->query("SELECT COUNT(*) as cnt FROM inventory_request_barang WHERE status IN ('pending', 'pending_gudang', 'pending_spv')");
@@ -155,13 +164,13 @@ if ($role === 'super_admin') {
             SELECT
                 b.kode_barang,
                 b.nama_barang,
-                s.qty AS stok_saat_ini,
+                sm.qty AS stok_saat_ini,
                 b.stok_minimum,
                 'Gudang Utama' AS lokasi,
                 'gudang' AS tipe_lokasi
-            FROM inventory_stok_gudang_utama s
-            JOIN inventory_barang b ON b.id = s.barang_id
-            WHERE s.qty <= (b.stok_minimum * 0.5)
+            FROM inventory_stock_mirror sm
+            JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang)
+            WHERE TRIM(sm.location_code) = '$gudang_loc_esc' AND sm.qty <= (b.stok_minimum * 0.5)
             UNION ALL
             SELECT
                 b.kode_barang,
@@ -186,14 +195,14 @@ if ($role === 'super_admin') {
         SELECT
             b.kode_barang,
             b.nama_barang,
-            s.qty AS stok_saat_ini,
+            sm.qty AS stok_saat_ini,
             b.stok_minimum,
             'Gudang Utama' AS lokasi,
             'gudang' AS tipe_lokasi
-        FROM inventory_stok_gudang_utama s
-        JOIN inventory_barang b ON b.id = s.barang_id
-        WHERE s.qty <= (b.stok_minimum * 0.5)
-        ORDER BY (s.qty / NULLIF(b.stok_minimum, 0)) ASC, s.qty ASC
+        FROM inventory_stock_mirror sm
+        JOIN inventory_barang b ON (sm.odoo_product_id = b.odoo_product_id OR sm.kode_barang = b.kode_barang)
+        WHERE TRIM(sm.location_code) = '$gudang_loc_esc' AND sm.qty <= (b.stok_minimum * 0.5)
+        ORDER BY (sm.qty / NULLIF(b.stok_minimum, 0)) ASC, sm.qty ASC
         LIMIT 3
     ";
     $r_critical = $conn->query($sql_critical);
