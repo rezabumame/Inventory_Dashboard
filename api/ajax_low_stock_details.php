@@ -36,6 +36,7 @@ if ($role === 'super_admin') {
         $row['uom_ratio'] = (float)($row['uom_ratio'] ?? 1);
         if ($row['uom_ratio'] <= 0) $row['uom_ratio'] = 1;
         $row['stok_saat_ini'] = (float)$row['stok_saat_ini'] / $row['uom_ratio'];
+        $row['stok_minimum'] = (float)$row['stok_minimum'] / $row['uom_ratio'];
         $items[] = $row;
     }
 
@@ -69,6 +70,7 @@ if ($role === 'super_admin') {
         $row['uom_ratio'] = (float)($row['uom_ratio'] ?? 1);
         if ($row['uom_ratio'] <= 0) $row['uom_ratio'] = 1;
         $row['stok_saat_ini'] = (float)$row['stok_saat_ini'] / $row['uom_ratio'];
+        $row['stok_minimum'] = (float)$row['stok_minimum'] / $row['uom_ratio'];
         $items[] = $row;
     }
 } else if ($role === 'admin_gudang') {
@@ -93,6 +95,7 @@ if ($role === 'super_admin') {
         $row['uom_ratio'] = (float)($row['uom_ratio'] ?? 1);
         if ($row['uom_ratio'] <= 0) $row['uom_ratio'] = 1;
         $row['stok_saat_ini'] = (float)$row['stok_saat_ini'] / $row['uom_ratio'];
+        $row['stok_minimum'] = (float)$row['stok_minimum'] / $row['uom_ratio'];
         $items[] = $row;
     }
 } else if (in_array($role, ['admin_klinik', 'cs', 'spv_klinik'])) {
@@ -141,6 +144,7 @@ if ($role === 'super_admin') {
             $row['uom_ratio'] = (float)($row['uom_ratio'] ?? 1);
             if ($row['uom_ratio'] <= 0) $row['uom_ratio'] = 1;
             $row['stok_saat_ini'] = (float)$row['stok_saat_ini'] / $row['uom_ratio'];
+        $row['stok_minimum'] = (float)$row['stok_minimum'] / $row['uom_ratio'];
             $items[] = $row;
         }
     }
@@ -167,6 +171,7 @@ if ($role === 'super_admin') {
         $row['uom_ratio'] = (float)($row['uom_ratio'] ?? 1);
         if ($row['uom_ratio'] <= 0) $row['uom_ratio'] = 1;
         $row['stok_saat_ini'] = (float)$row['stok_saat_ini'] / $row['uom_ratio'];
+        $row['stok_minimum'] = (float)$row['stok_minimum'] / $row['uom_ratio'];
         $items[] = $row;
     }
 } else {
