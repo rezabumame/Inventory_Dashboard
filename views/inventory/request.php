@@ -18,7 +18,7 @@ function renderPagination($total_pages, $current_page) {
     $base_url = 'index.php?' . http_build_query($query_params);
     $html = '<nav aria-label="Page navigation" class="mt-4"><ul class="pagination pagination-circular justify-content-end">';
     $prev_class = ($current_page <= 1) ? 'disabled' : '';
-    $html .= '<li class="page-item ' . $prev_class . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page - 1) . '"><i class="fas fa-chevron-left"></i></a></li>';
+    $html .= '<li class="page-item ' . $prev_class . '"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page - 1) . '"><i class="fas fa-chevron-left"></i></a></li>';
     $start = max(1, $current_page - 2);
     $end = min($total_pages, $current_page + 2);
     if ($start > 1) {
@@ -27,14 +27,14 @@ function renderPagination($total_pages, $current_page) {
     }
     for ($i = $start; $i <= $end; $i++) {
         $active = ($i == $current_page) ? 'active' : '';
-        $html .= '<li class="page-item ' . $active . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $i . '">' . $i . '</a></li>';
+        $html .= '<li class="page-item ' . $active . '"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $i . '">' . $i . '</a></li>';
     }
     if ($end < $total_pages) {
         if ($end < $total_pages - 1) $html .= '<li class="page-item disabled"><span class="page-link border-0">...</span></li>';
         $html .= '<li class="page-item"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . $total_pages . '">' . $total_pages . '</a></li>';
     }
     $next_class = ($current_page >= $total_pages) ? 'disabled' : '';
-    $html .= '<li class="page-item ' . $next_class . '><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page + 1) . '"><i class="fas fa-chevron-right"></i></a></li>';
+    $html .= '<li class="page-item ' . $next_class . '"><a class="page-link shadow-sm" href="' . $base_url . '&p=' . ($current_page + 1) . '"><i class="fas fa-chevron-right"></i></a></li>';
     $html .= '</ul></nav>';
     return $html;
 }
