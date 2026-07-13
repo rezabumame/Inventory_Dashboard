@@ -127,8 +127,8 @@ if ($res_dok && $res_dok->num_rows > 0) {
             <td>
                 <?php if ($can_approve): ?>
                     <input type="hidden" name="approved_items[]" value="<?= $row['barang_id'] ?>">
-                    <input type="number" name="approved_qtys[]" class="form-control form-control-sm" 
-                           value="<?= $row['qty_request'] ?>" max="<?= $row['qty_request'] ?>" min="0">
+                    <input type="number" name="approved_qtys[]" class="form-control form-control-sm"
+                           value="<?= $row['qty_request'] ?>" min="0">
                 <?php else: ?>
                     <?= $row['qty_approved'] ?>
                 <?php endif; ?>

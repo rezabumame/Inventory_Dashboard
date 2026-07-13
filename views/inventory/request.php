@@ -66,6 +66,34 @@ if (!in_array($active_tab, ['incoming','outgoing'], true)) {
     }
 }
 
+// STATUS FILTER
+$status_options = [
+    'pending_spv'  => 'Waiting SPV',
+    'pending'      => 'Pending',
+    'pending_gudang' => 'Pending Gudang',
+    'approved'     => 'Approved',
+    'partial'      => 'Partial',
+    'completed'    => 'Completed',
+    'rejected'     => 'Rejected',
+    'rejected_spv' => 'Rejected SPV',
+    'cancelled'    => 'Cancelled',
+];
+$status_filter = (string)($_GET['status'] ?? '');
+if (!array_key_exists($status_filter, $status_options)) $status_filter = '';
+$status_filter_sql = $status_filter !== '' ? "r.status = '" . $conn->real_escape_string($status_filter) . "'" : '';
+
+// SEARCH FILTER (cari di seluruh data, bukan hanya baris yang sedang tampil)
+$search_filter = trim((string)($_GET['q'] ?? ''));
+$search_filter_sql = '';
+if ($search_filter !== '') {
+    $esc = $conn->real_escape_string($search_filter);
+    $search_filter_sql = "(r.nomor_request LIKE '%$esc%' OR u.nama_lengkap LIKE '%$esc%')";
+}
+
+$extra_conditions = array_values(array_filter([$status_filter_sql, $search_filter_sql], function($c) { return $c !== ''; }));
+$extra_where_standalone = !empty($extra_conditions) ? (' WHERE ' . implode(' AND ', $extra_conditions)) : '';
+$extra_where_append = !empty($extra_conditions) ? (' AND ' . implode(' AND ', $extra_conditions)) : '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
 }
@@ -259,14 +287,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 
                 foreach ($approved_items as $idx => $b_id) {
                     $qty_app = (float)($approved_qtys[$idx] ?? 0);
-
-                    $res_req_det = $conn->query("SELECT qty_request FROM inventory_request_barang_detail WHERE request_barang_id = $request_id AND barang_id = $b_id");
-                    $row_req_det = $res_req_det->fetch_assoc();
-                    $qty_req = (float)($row_req_det['qty_request'] ?? 0);
-
-                    if ($qty_app > $qty_req + 0.00005) {
-                        throw new Exception("Error: Qty disetujui tidak boleh melebihi Qty yang diminta.");
-                    }
                     if ($qty_app <= 0.00005) continue;
 
                     $stmt_req_upd->bind_param("dii", $qty_app, $request_id, $b_id);
@@ -660,26 +680,15 @@ if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_
                         WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
                         ELSE UPPER(r.ke_level)
                     END AS tujuan_label
-                  FROM inventory_request_barang r 
+                  FROM inventory_request_barang r
                   JOIN inventory_users u ON r.created_by = u.id
-                  LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
+                  LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)"
+                  . $extra_where_standalone . "
                   ORDER BY r.created_at DESC";
     $count_sql = preg_replace("/SELECT.*?FROM/s", "SELECT COUNT(*) as cnt FROM", $query_base);
     $total_out = (int)($conn->query($count_sql)->fetch_assoc()['cnt'] ?? 0);
     $total_pages_out = ceil($total_out / $items_per_page);
-    $query = "SELECT 
-                    r.*, 
-                    u.nama_lengkap as requestor_name,
-                    CASE
-                        WHEN r.ke_level = 'klinik' THEN CONCAT('Klinik - ', COALESCE(k_to.nama_klinik, '-'))
-                        WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
-                        ELSE UPPER(r.ke_level)
-                    END AS tujuan_label
-                  FROM inventory_request_barang r 
-                  JOIN inventory_users u ON r.created_by = u.id
-                  LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
-                  ORDER BY r.created_at DESC
-                   LIMIT $items_per_page OFFSET $offset";
+    $query = $query_base . " LIMIT $items_per_page OFFSET $offset";
     } elseif ($user_role === 'spv_klinik') {
         // SPV melihat semua request dari kliniknya (permintaan saya = klinik saya)
         
@@ -692,28 +701,16 @@ if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_
                         WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
                         ELSE UPPER(r.ke_level)
                     END AS tujuan_label
-                  FROM inventory_request_barang r 
+                  FROM inventory_request_barang r
                   JOIN inventory_users u ON r.created_by = u.id
                   LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
-                  WHERE r.dari_level = 'klinik' AND r.dari_id = $user_klinik
+                  WHERE r.dari_level = 'klinik' AND r.dari_id = $user_klinik"
+                  . $extra_where_append . "
                   ORDER BY r.created_at DESC";
     $count_sql = preg_replace("/SELECT.*?FROM/s", "SELECT COUNT(*) as cnt FROM", $query_base);
     $total_out = (int)($conn->query($count_sql)->fetch_assoc()['cnt'] ?? 0);
     $total_pages_out = ceil($total_out / $items_per_page);
-    $query = "SELECT 
-                    r.*, 
-                    u.nama_lengkap as requestor_name,
-                    CASE
-                        WHEN r.ke_level = 'klinik' THEN CONCAT('Klinik - ', COALESCE(k_to.nama_klinik, '-'))
-                        WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
-                        ELSE UPPER(r.ke_level)
-                    END AS tujuan_label
-                  FROM inventory_request_barang r 
-                  JOIN inventory_users u ON r.created_by = u.id
-                  LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
-                  WHERE r.dari_level = 'klinik' AND r.dari_id = $user_klinik
-                  ORDER BY r.created_at DESC
-                   LIMIT $items_per_page OFFSET $offset";
+    $query = $query_base . " LIMIT $items_per_page OFFSET $offset";
     } else {
         // Admin Klinik & Petugas HC: permintaan saya = yang saya buat
         
@@ -726,28 +723,16 @@ if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_
                         WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
                         ELSE UPPER(r.ke_level)
                     END AS tujuan_label
-                  FROM inventory_request_barang r 
+                  FROM inventory_request_barang r
                   JOIN inventory_users u ON r.created_by = u.id
                   LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
-                  WHERE r.created_by = $user_id 
+                  WHERE r.created_by = $user_id"
+                  . $extra_where_append . "
                   ORDER BY r.created_at DESC";
     $count_sql = preg_replace("/SELECT.*?FROM/s", "SELECT COUNT(*) as cnt FROM", $query_base);
     $total_out = (int)($conn->query($count_sql)->fetch_assoc()['cnt'] ?? 0);
     $total_pages_out = ceil($total_out / $items_per_page);
-    $query = "SELECT 
-                    r.*, 
-                    u.nama_lengkap as requestor_name,
-                    CASE
-                        WHEN r.ke_level = 'klinik' THEN CONCAT('Klinik - ', COALESCE(k_to.nama_klinik, '-'))
-                        WHEN r.ke_level = 'gudang_utama' THEN 'Gudang Utama'
-                        ELSE UPPER(r.ke_level)
-                    END AS tujuan_label
-                  FROM inventory_request_barang r 
-                  JOIN inventory_users u ON r.created_by = u.id
-                  LEFT JOIN inventory_klinik k_to ON (r.ke_level = 'klinik' AND r.ke_id = k_to.id)
-                  WHERE r.created_by = $user_id 
-                  ORDER BY r.created_at DESC
-                   LIMIT $items_per_page OFFSET $offset";
+    $query = $query_base . " LIMIT $items_per_page OFFSET $offset";
     }
     $res = $conn->query($query);
     while($row = $res->fetch_assoc()) $outgoing_requests[] = $row;
@@ -766,8 +751,9 @@ if (in_array($user_role, ['admin_gudang', 'admin_klinik', 'spv_klinik', 'super_a
     } elseif (in_array($user_role, ['admin_klinik','spv_klinik'], true)) {
         $where = "r.ke_level = 'klinik' AND r.ke_id = $user_klinik AND r.status NOT IN ('pending_spv','rejected_spv')";
     }
+    if (!empty($extra_conditions)) $where .= ' AND ' . implode(' AND ', $extra_conditions);
 
-    
+
     // Count Incoming
     $count_sql = "SELECT COUNT(*) as cnt FROM inventory_request_barang r WHERE $where";
     $total_in = (int)($conn->query($count_sql)->fetch_assoc()['cnt'] ?? 0);
@@ -872,10 +858,16 @@ function get_status_badge($status) {
 
 <?= $message ?>
 
+<?php
+$filter_qs = '';
+if ($status_filter !== '') $filter_qs .= '&status=' . urlencode($status_filter);
+if ($search_filter !== '') $filter_qs .= '&q=' . urlencode($search_filter);
+?>
+
 <ul class="nav nav-pills mb-4" id="requestTabs" role="tablist">
     <?php if (in_array($user_role, ['super_admin', 'admin_klinik', 'spv_klinik', 'petugas_hc'], true)): ?>
     <li class="nav-item" role="presentation">
-        <a class="nav-link rounded-pill px-4 <?= ($active_tab === 'outgoing') ? 'active' : '' ?>" id="outgoing-tab" href="index.php?page=request&tab=outgoing" role="tab">
+        <a class="nav-link rounded-pill px-4 <?= ($active_tab === 'outgoing') ? 'active' : '' ?>" id="outgoing-tab" href="index.php?page=request&tab=outgoing<?= $filter_qs ?>" role="tab">
             <i class="fas fa-paper-plane me-2"></i>Permintaan Saya <?php if ($user_role !== 'super_admin' && $outgoing_active_count > 0): ?><span class="badge bg-danger ms-1"><?= (int)$outgoing_active_count ?></span><?php endif; ?>
         </a>
     </li>
@@ -883,7 +875,7 @@ function get_status_badge($status) {
 
     <?php if (in_array($user_role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'], true)): ?>
     <li class="nav-item ms-2" role="presentation">
-        <a class="nav-link rounded-pill px-4 <?= ($active_tab === 'incoming') ? 'active' : '' ?>" id="incoming-tab" href="index.php?page=request&tab=incoming" role="tab">
+        <a class="nav-link rounded-pill px-4 <?= ($active_tab === 'incoming') ? 'active' : '' ?>" id="incoming-tab" href="index.php?page=request&tab=incoming<?= $filter_qs ?>" role="tab">
             <i class="fas fa-inbox me-2"></i>Masuk 
             <?php
             $incoming_active_count = count(array_filter($incoming_all, function($r){ return in_array($r['status'], ['pending', 'pending_gudang'], true); }));
@@ -901,6 +893,24 @@ function get_status_badge($status) {
     .breadcrumb-item + .breadcrumb-item::before { content: "/"; }
     .datatable thead th { background-color: #f8f9fa; color: #444; font-weight: 600; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.5px; }
 </style>
+
+<div class="row mb-3">
+    <div class="col-auto ms-auto">
+        <form method="get" class="d-flex align-items-center gap-2" id="statusFilterForm">
+            <input type="hidden" name="page" value="request">
+            <input type="hidden" name="tab" value="<?= htmlspecialchars($active_tab) ?>">
+            <input type="search" name="q" id="searchFilterInput" class="form-control form-control-sm shadow-sm" style="min-width: 220px;" placeholder="Cari no. request / nama..." value="<?= htmlspecialchars($search_filter) ?>">
+            <label for="statusFilterSelect" class="form-label mb-0 small text-muted">Filter Status</label>
+            <select name="status" id="statusFilterSelect" class="form-select form-select-sm shadow-sm" style="min-width: 180px;" onchange="this.form.submit()">
+                <option value="">Semua Status</option>
+                <?php foreach ($status_options as $st_val => $st_label): ?>
+                <option value="<?= htmlspecialchars($st_val) ?>" <?= ($status_filter === $st_val) ? 'selected' : '' ?>><?= htmlspecialchars($st_label) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <button type="submit" class="btn btn-sm text-white" style="background-color: #204EAB;"><i class="fas fa-search"></i></button>
+        </form>
+    </div>
+</div>
 
 <div class="tab-content" id="requestTabsContent">
     
@@ -940,6 +950,7 @@ function get_status_badge($status) {
                         </tbody>
                     </table>
                 </div>
+                <?= $active_tab === "incoming" ? renderPagination($total_pages_in, $current_page) : "" ?>
             </div>
         </div>
     </div>
@@ -1626,6 +1637,14 @@ function submitApproval(action) {
             }
         });
     } else {
+        var approvedInputs = document.querySelectorAll('input[name="approved_qtys[]"]');
+        for (var i = 0; i < approvedInputs.length; i++) {
+            var val = parseFloat(approvedInputs[i].value) || 0;
+            if (val < 0) {
+                Swal.fire('Input Salah', 'Qty disetujui tidak boleh negatif.', 'error');
+                return;
+            }
+        }
         $('#status_action').val('approve_all');
         $('#approvalForm').submit();
     }
@@ -1674,7 +1693,7 @@ $(document).ready(function() {
         $(this).DataTable({
             "paging": false,
             "info": false,
-            "searching": true,
+            "searching": false,
             "ordering": true
         });
     });
