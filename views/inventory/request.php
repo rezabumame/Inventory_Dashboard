@@ -755,7 +755,7 @@ if (in_array($user_role, ['admin_gudang', 'admin_klinik', 'spv_klinik', 'super_a
 
 
     // Count Incoming
-    $count_sql = "SELECT COUNT(*) as cnt FROM inventory_request_barang r WHERE $where";
+    $count_sql = "SELECT COUNT(*) as cnt FROM inventory_request_barang r JOIN inventory_users u ON r.created_by = u.id WHERE $where";
     $total_in = (int)($conn->query($count_sql)->fetch_assoc()['cnt'] ?? 0);
     $total_pages_in = ceil($total_in / $items_per_page);
     $query = "SELECT r.*, u.nama_lengkap as requestor_name 
