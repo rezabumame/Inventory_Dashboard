@@ -36,9 +36,13 @@
         $('.form-select').each(function() {
             // Skip if it's a template or already initialized
             if (!$(this).hasClass('no-select2') && !$(this).hasClass('select2-hidden-accessible')) {
+                const $modal = $(this).closest('.modal');
                 $(this).select2({
                     theme: 'bootstrap-5',
-                    width: '100%'
+                    width: '100%',
+                    // Render dropdown inside the modal so Bootstrap's focus-trap
+                    // doesn't steal keystrokes away from the search input
+                    dropdownParent: $modal.length ? $modal : $(document.body)
                 });
             }
         });

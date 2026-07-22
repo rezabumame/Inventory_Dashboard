@@ -6,6 +6,8 @@ if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], ['super_admin',
     die('Akses ditolak.');
 }
 
+$csrf = csrf_token();
+
 // Auto-create tables if not exists
 $conn->query("CREATE TABLE IF NOT EXISTS `inventory_odoo_format_config` (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -27,6 +29,33 @@ $conn->query("CREATE TABLE IF NOT EXISTS `inventory_odoo_support_data` (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 )");
+$conn->query("CREATE TABLE IF NOT EXISTS `inventory_odoo_categories` (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)");
+
+// Seed default categories once, if table is empty
+$catCount = $conn->query("SELECT COUNT(*) c FROM inventory_odoo_categories")->fetch_assoc()['c'];
+if ($catCount == 0) {
+    $defaultCategories = [
+        'MCU / Laboratory Test', 'All [KHUSUS NON TRACK INVENTORY]', 'OTHERS / General',
+        'GENETICS SCREENING / GEN-Others', 'VITAMIN BOOSTER / V-Boost', 'VITAMIN BOOSTER / V-Drip',
+        'GENETICS SCREENING / Reproductive', 'NIFTY / NIFTY', 'GENETICS SCREENING / Oncology',
+        'VACCINE / VAC-Others', 'MCU / Body Functions', 'MCU / MCU-Others',
+        'Medical Expertise Service / Medical Expertise Service', 'VACCINE / Hepatitis Vaccine',
+        'VACCINE / Measles, Mumps, Rubella Vaccine', 'VACCINE / HPV Vaccine',
+        'VACCINE / Herpes Vaccine', 'VACCINE / Influenza Vaccine',
+        'VACCINE / Japanese Encephalitis Vaccine', 'VACCINE / Typhoid Vaccine',
+        'VACCINE / Pneumonia Vaccine', 'VACCINE / Polio Vaccine',
+        'VACCINE / Dengue Vaccine', 'VACCINE / RSV Vaccine', 'VACCINE / Tdap Vaccine',
+        'VACCINE / Tetanus Vaccine', 'VACCINE / Yellow Fever Vaccine',
+        'VACCINE / Meningitis Vaccine', 'VACCINE / Rabies Vaccine'
+    ];
+    foreach ($defaultCategories as $dc) {
+        $conn->query("INSERT IGNORE INTO inventory_odoo_categories (name) VALUES ('" . $conn->real_escape_string($dc) . "')");
+    }
+}
 
 // Check if key_name column exists (migration)
 $res = $conn->query("SHOW COLUMNS FROM `inventory_odoo_support_data` LIKE 'key_name'");
@@ -146,20 +175,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Options for dropdowns
 $uom_options = ['Pcs','Test','uL','mL','Unit','Units','L','Vial','Tube','Botol','Btl','Ampule','gr','Kit@100test','Tablet','Roll','Box','Lembar','Lbr','mg','Set','Psg','Strip','Pack','Pfs','Injeksi','Tab','Ampul'];
-$category_options = [
-    'MCU / Laboratory Test', 'All [KHUSUS NON TRACK INVENTORY]', 'OTHERS / General', 
-    'GENETICS SCREENING / GEN-Others', 'VITAMIN BOOSTER / V-Boost', 'VITAMIN BOOSTER / V-Drip', 
-    'GENETICS SCREENING / Reproductive', 'NIFTY / NIFTY', 'GENETICS SCREENING / Oncology', 
-    'VACCINE / VAC-Others', 'MCU / Body Functions', 'MCU / MCU-Others', 
-    'Medical Expertise Service / Medical Expertise Service', 'VACCINE / Hepatitis Vaccine', 
-    'VACCINE / Measles, Mumps, Rubella Vaccine', 'VACCINE / HPV Vaccine', 
-    'VACCINE / Herpes Vaccine', 'VACCINE / Influenza Vaccine', 
-    'VACCINE / Japanese Encephalitis Vaccine', 'VACCINE / Typhoid Vaccine', 
-    'VACCINE / Pneumonia Vaccine', 'VACCINE / Polio Vaccine', 
-    'VACCINE / Dengue Vaccine', 'VACCINE / RSV Vaccine', 'VACCINE / Tdap Vaccine', 
-    'VACCINE / Tetanus Vaccine', 'VACCINE / Yellow Fever Vaccine', 
-    'VACCINE / Meningitis Vaccine', 'VACCINE / Rabies Vaccine'
-];
+$category_options = [];
+$catRes = $conn->query("SELECT name FROM inventory_odoo_categories ORDER BY name ASC");
+while ($cr = $catRes->fetch_assoc()) {
+    $category_options[] = $cr['name'];
+}
 $income_options = [
     '410101001 PENDAPATAN USAHA LAB - MCU', '410101000 PENDAPATAN USAHA - LABORATORIUM', 
     '420101002 PENDAPATAN LAIN - LAIN', '410101003 PENDAPATAN USAHA LAB - GENETICS SCREENING', 
@@ -330,6 +350,7 @@ $supports = $conn->query("SELECT * FROM inventory_odoo_support_data ORDER BY id 
             <input type="hidden" name="action" value="add_odoo_config" id="configAction">
             <input type="hidden" name="id" id="configId">
             <input type="hidden" name="active_tab" value="#master">
+            <input type="hidden" name="_csrf" value="<?= $csrf ?>">
             <div class="modal-header">
                 <h5 class="modal-title fw-bold" id="configModalTitle">Tambah Master Data Odoo</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -354,13 +375,23 @@ $supports = $conn->query("SELECT * FROM inventory_odoo_support_data ORDER BY id 
                         </select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label fw-semibold">Product Category</label>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label fw-semibold mb-0">Product Category</label>
+                            <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none" onclick="toggleAddCategory()">
+                                <i class="fas fa-plus-circle me-1"></i>Tambah Kategori
+                            </button>
+                        </div>
                         <select name="product_category" id="product_category" class="form-select" required>
                             <option value="">Pilih Kategori</option>
                             <?php foreach ($category_options as $c): ?>
-                            <option value="<?= $c ?>"><?= $c ?></option>
+                            <option value="<?= htmlspecialchars($c) ?>"><?= htmlspecialchars($c) ?></option>
                             <?php endforeach; ?>
                         </select>
+                        <div id="addCategoryBox" class="input-group input-group-sm mt-2 d-none">
+                            <input type="text" id="newCategoryName" class="form-control" placeholder="Nama kategori baru, contoh: VACCINE / New Category">
+                            <button type="button" class="btn btn-success" onclick="submitNewCategory()">Simpan</button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="toggleAddCategory()">Batal</button>
+                        </div>
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">Income Account</label>
@@ -416,6 +447,9 @@ $supports = $conn->query("SELECT * FROM inventory_odoo_support_data ORDER BY id 
                     <br><br>
                     <span class="text-danger">Catatan: Jika Internal Reference sudah ada, data akan diperbarui (overwrite).</span>
                 </div>
+                <a href="api/export_template_odoo_config.php" class="btn btn-outline-success btn-sm mb-3">
+                    <i class="fas fa-file-excel me-1"></i> Download Template (berisi data existing)
+                </a>
                 <div class="mb-3">
                     <label class="form-label fw-semibold">Pilih File Excel (.xlsx)</label>
                     <input type="file" name="file" class="form-control" accept=".xlsx" required>
@@ -487,6 +521,42 @@ $(document).ready(function() {
         window.history.replaceState({}, '', newUrl);
     });
 });
+
+function toggleAddCategory() {
+    const $box = $('#addCategoryBox');
+    $box.toggleClass('d-none');
+    if (!$box.hasClass('d-none')) {
+        $('#newCategoryName').val('').focus();
+    }
+}
+
+function submitNewCategory() {
+    const name = $('#newCategoryName').val().trim();
+    if (!name) {
+        alert('Nama kategori tidak boleh kosong.');
+        return;
+    }
+
+    $.post('api/add_odoo_category.php', {
+        name: name,
+        _csrf: '<?= $csrf ?>'
+    }, function(res) {
+        if (res.success) {
+            const $select = $('#product_category');
+            $select.append(new Option(res.name, res.name, false, false));
+            // Re-sort options alphabetically, keeping the placeholder first
+            const $opts = $select.find('option[value!=""]').sort((a, b) => a.text.localeCompare(b.text));
+            $select.find('option[value!=""]').remove();
+            $select.append($opts);
+            $select.val(res.name).trigger('change');
+            $('#addCategoryBox').addClass('d-none');
+        } else {
+            alert(res.message || 'Gagal menambahkan kategori.');
+        }
+    }, 'json').fail(function() {
+        alert('Gagal menghubungi server.');
+    });
+}
 
 function clearConfigForm() {
     $('#configAction').val('add_odoo_config');
