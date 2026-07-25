@@ -15,7 +15,7 @@ $has_bis   = $bis_check && $bis_check->num_rows > 0;
 // ── Sheet 1: Konfigurasi Barang ────────────────────────────────────────────────
 if ($has_bis) {
     $sql = "SELECT id, kode_barang, nama_barang, stok_minimum, tipe,
-                barcode_internal, track_ed, label_print, label_placement
+                barcode_internal, track_ed, label_print, label_placement, label_config_set
             FROM inventory_barang ORDER BY nama_barang ASC";
 } else {
     $sql = "SELECT id, kode_barang, nama_barang, stok_minimum, tipe
@@ -36,6 +36,10 @@ $sheet1 = [[
 ]];
 
 while ($row = $res->fetch_assoc()) {
+    // Item yang Konfigurasi Label-nya belum pernah diset (label_config_set = 0) harus
+    // diekspor dengan kolom kosong, bukan "none" literal — kalau tidak, reupload tanpa
+    // diedit akan menganggapnya sengaja diset ke "Sistem Saja" (Category A).
+    $lc_set = $has_bis && (int)($row['label_config_set'] ?? 0) === 1;
     $sheet1[] = [
         (int)$row['id'],
         (string)$row['kode_barang'],
@@ -44,8 +48,8 @@ while ($row = $res->fetch_assoc()) {
         (string)($row['tipe'] ?? ''),
         $has_bis ? (string)($row['barcode_internal'] ?? '') : '',
         $has_bis ? (int)($row['track_ed'] ?? 0)             : '',
-        $has_bis ? (string)($row['label_print'] ?? '')       : '',
-        $has_bis ? (string)($row['label_placement'] ?? '')   : '',
+        $lc_set ? (string)($row['label_print'] ?? '')       : '',
+        $lc_set ? (string)($row['label_placement'] ?? '')   : '',
     ];
 }
 
