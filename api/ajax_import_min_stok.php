@@ -45,6 +45,13 @@ $valid_tipe      = ['Core', 'Support', ''];
 $valid_lp        = ['none', 'physical', ''];
 $valid_placement = ['unit', 'item', 'box', 'outer', 'catalogue', ''];
 
+// Preload ID barang yang valid di DB ini — supaya baris dengan ID Barang yang tidak
+// sinkron (mis. template diunduh dari environment lain) di-skip saja, bukan menggagalkan
+// seluruh import lewat foreign key constraint error.
+$valid_ids = [];
+$qvid = $conn->query("SELECT id FROM inventory_barang");
+while ($rvid = $qvid->fetch_assoc()) $valid_ids[(int)$rvid['id']] = true;
+
 $conn->begin_transaction();
 try {
     $updated = 0;
@@ -172,7 +179,7 @@ try {
             $ket      = trim((string)($vrow[4] ?? ''));
             $hapus    = strtoupper(trim((string)($vrow[5] ?? ''))) === 'X';
 
-            if ($bid <= 0 || $barcode === '') { $vendor_skipped++; continue; }
+            if ($bid <= 0 || $barcode === '' || !isset($valid_ids[$bid])) { $vendor_skipped++; continue; }
 
             if ($hapus) {
                 $stmt_vend_del->bind_param("is", $bid, $barcode);
@@ -239,7 +246,7 @@ try {
                 continue;
             }
 
-            if ($bid_ed <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $ed_date)) { $ed_skipped++; continue; }
+            if ($bid_ed <= 0 || !isset($valid_ids[$bid_ed]) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $ed_date)) { $ed_skipped++; continue; }
 
             $stmt_ed_exists->bind_param("is", $bid_ed, $ed_date);
             $stmt_ed_exists->execute();
