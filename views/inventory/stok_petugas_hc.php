@@ -231,6 +231,7 @@ if ($petugas_row && $selected_klinik > 0) {
             b.id AS barang_id,
             b.kode_barang,
             b.nama_barang,
+            b.barcode_internal,
             COALESCE(uc.to_uom, b.satuan) AS satuan,
             COALESCE(uc.from_uom, '') AS uom_odoo,
             COALESCE(uc.multiplier, 1) AS uom_multiplier,
@@ -628,6 +629,12 @@ if ($selected_klinik > 0) {
                                         <div class="fw-semibold">Stok Tas Petugas</div>
                                         <div class="text-muted small"><?= htmlspecialchars($klinik_row['nama_klinik'] ?? '-') ?> • Mirror: <?= htmlspecialchars($klinik_row['kode_homecare'] ?? '-') ?></div>
                                     </div>
+                                    <?php if ($selected_klinik > 0): ?>
+                                    <button type="button" class="btn btn-outline-primary btn-sm"
+                                        onclick="showQR(<?= (int)$selected_klinik ?>, <?= htmlspecialchars(json_encode($klinik_row['nama_klinik'] ?? ''), ENT_QUOTES) ?>)">
+                                        <i class="fas fa-qrcode me-1"></i>QR Nakes
+                                    </button>
+                                    <?php endif; ?>
                                 </div>
 
 
@@ -670,7 +677,7 @@ if ($selected_klinik > 0) {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                <?php foreach ($rows as $r): 
+                                                <?php foreach ($rows as $r):
                                                     $bid = (int)($r['barang_id'] ?? 0);
                                                     $transfer_in_qty = $agg_transfer_in[$bid] ?? 0;
                                                 ?>
@@ -1710,6 +1717,119 @@ function showFotoLightbox(url) {
 }
 </script>
 <?php endif; ?>
+
+<!-- Modal QR Nakes -->
+<div class="modal fade" id="modalQRKlinik" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:480px;">
+        <div class="modal-content border-0 shadow-lg" style="border-radius:18px;overflow:hidden;">
+            <div class="modal-header border-0 pb-0" style="background:linear-gradient(135deg,#204EAB,#3b82f6);color:#fff;padding:20px 24px 16px;">
+                <div>
+                    <div class="fw-bold" style="font-size:18px;"><i class="fas fa-qrcode me-2"></i>QR Code Input Stok HC</div>
+                    <div id="qrKlinikName" style="font-size:13px;opacity:.85;margin-top:3px;"></div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body px-4 pt-3 pb-0 text-center">
+                <div style="background:#f8fafc;border-radius:14px;padding:20px;display:inline-block;margin-bottom:16px;border:1px solid #e8ecf4;">
+                    <img id="qrKlinikImg" src="" alt="QR Code" style="width:200px;height:200px;display:block;">
+                </div>
+                <div id="qrKlinikUrl" style="font-size:10px;color:#94a3b8;word-break:break-all;margin-bottom:16px;padding:0 8px;"></div>
+                <div style="background:#f0f7ff;border-radius:12px;padding:14px 16px;text-align:left;margin-bottom:16px;border:1px solid #bfdbfe;">
+                    <div style="font-size:12px;font-weight:700;color:#204EAB;margin-bottom:8px;"><i class="fas fa-info-circle me-1"></i>Cara Penggunaan</div>
+                    <ol style="margin:0;padding-left:18px;font-size:12px;color:#475569;line-height:1.8;">
+                        <li>Scan QR ini menggunakan HP nakes</li>
+                        <li>Login dengan akun Bumame Inventory</li>
+                        <li>Pilih item yang dibutuhkan beserta qty</li>
+                        <li>Upload foto bukti <em>(opsional)</em></li>
+                        <li>Tekan <strong>Kirim Request</strong></li>
+                        <li>Admin klinik akan mereview &amp; menyetujui</li>
+                    </ol>
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-0 px-4 pb-4" style="gap:10px;">
+                <button type="button" class="btn btn-outline-secondary flex-fill" onclick="downloadQR()">
+                    <i class="fas fa-download me-1"></i>Download
+                </button>
+                <button type="button" class="btn flex-fill text-white" style="background:#204EAB;" onclick="printQRModal()">
+                    <i class="fas fa-print me-1"></i>Cetak
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let _currentQRKlinikId   = 0;
+let _currentQRKlinikName = '';
+
+function showQR(klinikId, klinikName) {
+    _currentQRKlinikId   = klinikId;
+    _currentQRKlinikName = klinikName;
+    const base      = '<?= base_url() ?>';
+    const targetUrl = base + 'index.php?page=qr_transfer&klinik_id=' + klinikId;
+    const qrSrc     = base + 'api/qr.php?size=220x220&text=' + encodeURIComponent(targetUrl);
+    document.getElementById('qrKlinikName').textContent = klinikName;
+    document.getElementById('qrKlinikImg').src          = qrSrc;
+    document.getElementById('qrKlinikUrl').textContent  = targetUrl;
+    new bootstrap.Modal(document.getElementById('modalQRKlinik')).show();
+}
+
+function downloadQR() {
+    const img = document.getElementById('qrKlinikImg');
+    fetch(img.src).then(r => r.blob()).then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'QR_' + _currentQRKlinikName.replace(/\s+/g,'_') + '.png';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    });
+}
+
+function printQRModal() {
+    const base      = '<?= base_url() ?>';
+    const targetUrl = base + 'index.php?page=qr_transfer&klinik_id=' + _currentQRKlinikId;
+    const qrSrc     = base + 'api/qr.php?size=300x300&text=' + encodeURIComponent(targetUrl);
+    const win = window.open('', '_blank', 'width=520,height=700');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head>
+<title>QR – ${_currentQRKlinikName}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#fff;display:flex;justify-content:center;padding:30px 20px;}
+.card{border:2px solid #204EAB;border-radius:16px;padding:28px 24px;max-width:340px;width:100%;text-align:center;}
+.logo{color:#204EAB;font-size:13px;font-weight:700;letter-spacing:1px;margin-bottom:12px;text-transform:uppercase;}
+h2{color:#1e293b;font-size:17px;font-weight:700;margin-bottom:4px;}
+.sub{color:#64748b;font-size:12px;margin-bottom:18px;}
+img{border:1px solid #e2e8f0;border-radius:10px;padding:6px;background:#f8fafc;}
+.rules{background:#f0f7ff;border-radius:10px;padding:12px 14px;text-align:left;margin-top:18px;border:1px solid #bfdbfe;}
+.rules-title{font-size:11px;font-weight:700;color:#204EAB;margin-bottom:6px;}
+ol{padding-left:16px;font-size:11px;color:#475569;line-height:1.9;}
+.url{font-size:9px;color:#94a3b8;word-break:break-all;margin-top:14px;}
+@media print{body{padding:10px;}.card{border-color:#ccc;}}
+</style></head><body>
+<div class="card">
+    <div class="logo">Bumame Inventory</div>
+    <h2>${_currentQRKlinikName}</h2>
+    <div class="sub">Scan untuk Input Stok HC</div>
+    <img src="${qrSrc}" width="240" height="240" onload="window.print()">
+    <div class="rules">
+        <div class="rules-title">📋 Cara Penggunaan</div>
+        <ol>
+            <li>Scan QR ini dengan HP Anda</li>
+            <li>Login dengan akun Bumame Inventory</li>
+            <li>Pilih item &amp; qty yang dibutuhkan</li>
+            <li>Upload foto bukti <em>(opsional)</em></li>
+            <li>Tekan <strong>Kirim Request</strong></li>
+            <li>Admin akan mereview &amp; menyetujui</li>
+        </ol>
+    </div>
+    <div class="url">${targetUrl}</div>
+</div>
+</body></html>`);
+    win.document.close();
+}
+
+</script>
 
 <div class="modal fade" id="modalUnallocated" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">

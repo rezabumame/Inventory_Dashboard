@@ -76,6 +76,10 @@
     <!-- Custom Notifications -->
     <script src="<?= base_url('assets/js/notifications.js') ?>"></script>
 
+    <!-- Label Config Wizard (Konfigurasi Label BIS) -->
+    <?php $lcw_js_path = __DIR__ . '/../../assets/js/label_config_wizard.js'; ?>
+    <script src="<?= base_url('assets/js/label_config_wizard.js') ?>?v=<?= is_file($lcw_js_path) ? (int)filemtime($lcw_js_path) : time() ?>"></script>
+
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>

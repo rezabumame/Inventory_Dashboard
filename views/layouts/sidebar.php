@@ -98,6 +98,12 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
+        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'])): ?>
+        <a href="index.php?page=qr_inbound" class="sidebar-link <?= $current_page == 'qr_inbound' ? 'active' : '' ?>">
+            <i class="fas fa-truck-loading"></i> Inbound Barang
+        </a>
+        <?php endif; ?>
+
         <?php if (!in_array($role, ['cs', 'petugas_hc', 'admin_hc'])): ?>
         <a href="index.php?page=request" class="sidebar-link <?= $current_page == 'request' ? 'active' : '' ?>">
             <div class="d-flex w-100 align-items-center justify-content-between">
@@ -106,6 +112,12 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
                     <span class="badge bg-danger rounded-pill"><?= $badge_incoming + $badge_spv ?></span>
                 <?php endif; ?>
             </div>
+        </a>
+        <?php endif; ?>
+
+        <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'])): ?>
+        <a href="index.php?page=qr_stock_opname" class="sidebar-link <?= $current_page == 'qr_stock_opname' ? 'active' : '' ?>">
+            <i class="fas fa-clipboard-check"></i> Stock Opname
         </a>
         <?php endif; ?>
 
@@ -168,8 +180,11 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
-        <?php if ($role === 'super_admin' || in_array($role, ['admin_klinik', 'spv_klinik', 'cs'])): ?>
         <div class="sidebar-heading">MASTER DATA</div>
+        <a href="index.php?page=barang" class="sidebar-link <?= $current_page == 'barang' ? 'active' : '' ?>">
+            <i class="fas fa-box"></i> Database Barang
+        </a>
+        <?php if ($role === 'super_admin' || in_array($role, ['admin_klinik', 'spv_klinik', 'cs'])): ?>
         <a href="index.php?page=pemeriksaan" class="sidebar-link <?= $current_page == 'pemeriksaan' ? 'active' : '' ?>">
             <i class="fas fa-notes-medical"></i> <?= ($role === 'super_admin') ? 'Master Pemeriksaan' : 'Daftar Pemeriksaan' ?>
         </a>
@@ -183,9 +198,6 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         <?php if ($role === 'super_admin'): ?>
         <a href="index.php?page=klinik" class="sidebar-link <?= $current_page == 'klinik' ? 'active' : '' ?>">
             <i class="fas fa-clinic-medical"></i> Data Klinik
-        </a>
-        <a href="index.php?page=barang" class="sidebar-link <?= $current_page == 'barang' ? 'active' : '' ?>">
-            <i class="fas fa-box"></i> Database Barang
         </a>
         <a href="index.php?page=uom_convert" class="sidebar-link <?= $current_page == 'uom_convert' ? 'active' : '' ?>">
             <i class="fas fa-exchange-alt"></i> Konversi UOM

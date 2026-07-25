@@ -54,10 +54,17 @@ if (isset($_SESSION['user_id'])) {
 // Pages yang pakai layout mobile penuh (tanpa sidebar/header standar)
 $mobile_pages = ['qr_transfer'];
 
+// Halaman BIS (Barcode Internal System) pakai sidebar terpisah
+$bis_pages = ['qr_master_barcode'];
+
 // Layout structure
 if (!in_array($page, $public_pages) && !in_array($page, $mobile_pages) && !isset($_GET['layout'])) {
     include 'views/layouts/header.php';
-    include 'views/layouts/sidebar.php';
+    if (in_array($page, $bis_pages)) {
+        include 'views/layouts/sidebar_bis.php';
+    } else {
+        include 'views/layouts/sidebar.php';
+    }
 }
 
 // Routing
@@ -97,6 +104,16 @@ switch ($page) {
         break;
     case 'fix_uom_satuan':
         include 'scripts/fix_uom_satuan.php';
+        break;
+    // QR Code System (FE Framework - dummy data)
+    case 'qr_master_barcode':
+        include 'views/inventory/qr_master_barcode.php';
+        break;
+    case 'qr_inbound':
+        include 'views/inventory/qr_inbound.php';
+        break;
+    case 'qr_stock_opname':
+        include 'views/inventory/qr_stock_opname.php';
         break;
 
     case 'request':

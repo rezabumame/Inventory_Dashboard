@@ -399,7 +399,7 @@ try {
         qty DECIMAL(18,4) NOT NULL DEFAULT 0,
         updated_by INT NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY barang_user (barang_id, user_id)
+        UNIQUE KEY barang_user (barang_id, user_id, klinik_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
 
     run_migration_task("Table: inventory_hc_petugas_transfer", function() use ($conn) { return m_ensure_table($conn, "inventory_hc_petugas_transfer", "CREATE TABLE IF NOT EXISTS inventory_hc_petugas_transfer (
@@ -441,6 +441,19 @@ try {
     run_migration_task("Update: inventory_hc_petugas_transfer qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_hc_petugas_transfer MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_hc_tas_allocation qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_hc_tas_allocation MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_stok_tas_hc qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_stok_tas_hc MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
+    // Bug: unique key lama (barang_id, user_id) tidak menyertakan klinik_id, sehingga saat nakes
+    // pindah klinik, INSERT ON DUPLICATE KEY UPDATE / INSERT IGNORE menabrak baris klinik lama
+    // dan qty numpuk di klinik_id lama alih-alih membuat baris baru untuk klinik saat ini.
+    run_migration_task("Index: inventory_stok_tas_hc unique key sertakan klinik_id", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_stok_tas_hc')) return "Table not found";
+        $r = $conn->query("SHOW INDEX FROM inventory_stok_tas_hc WHERE Key_name = 'barang_user'");
+        $cols = [];
+        while ($r && ($row = $r->fetch_assoc())) $cols[] = $row['Column_name'];
+        if (in_array('klinik_id', $cols, true)) return "Already includes klinik_id";
+        if (!empty($cols)) $conn->query("ALTER TABLE inventory_stok_tas_hc DROP INDEX barang_user");
+        $conn->query("ALTER TABLE inventory_stok_tas_hc ADD UNIQUE KEY barang_user (barang_id, user_id, klinik_id)");
+        return "Updated";
+    });
     run_migration_task("Update: inventory_transaksi_stok qty", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_transaksi_stok qty_sebelum", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty_sebelum DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
     run_migration_task("Update: inventory_transaksi_stok qty_sesudah", function() use ($conn) { return $conn->query("ALTER TABLE inventory_transaksi_stok MODIFY COLUMN qty_sesudah DECIMAL(18,4) NOT NULL DEFAULT 0.0000") ? "Updated" : "Failed"; });
@@ -989,6 +1002,339 @@ try {
         @$conn->query("ALTER TABLE inventory_hc_pending_pull DROP INDEX idx_klinik_barang");
         return $conn->query("ALTER TABLE inventory_hc_pending_pull ADD UNIQUE KEY uq_klinik_barang (klinik_id, barang_id)")
             ? "Added UNIQUE KEY" : "Failed: " . $conn->error;
+    });
+
+    // ─── BIS (Barcode Internal System) ──────────────────────────────────────────
+
+    // Columns on inventory_barang
+    run_migration_task("BIS Column: inventory_barang.barcode_internal", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'barcode_internal', "VARCHAR(30) NULL AFTER barcode");
+    });
+    run_migration_task("BIS Column: inventory_barang.track_ed", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'track_ed', "TINYINT(1) NOT NULL DEFAULT 0 AFTER barcode_internal");
+    });
+    run_migration_task("BIS Column: inventory_barang.label_print", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'label_print', "ENUM('none','physical') NOT NULL DEFAULT 'none' AFTER track_ed");
+    });
+    run_migration_task("BIS Column: inventory_barang.label_placement", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'label_placement', "ENUM('unit','box','outer','catalogue') NULL AFTER label_print");
+    });
+    run_migration_task("BIS Column: inventory_barang.label_config_set", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'label_config_set', "TINYINT(1) NOT NULL DEFAULT 0 AFTER label_placement");
+    });
+    run_migration_task("BIS Index: inventory_barang.uniq_barcode_internal", function() use ($conn) {
+        return m_ensure_unique_if_clean($conn, 'inventory_barang', 'barcode_internal', 'uniq_barcode_internal');
+    });
+
+    // Konfigurasi Label — wizard answers & manual override audit trail
+    run_migration_task("BIS Column: inventory_barang.wizard_answers", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'wizard_answers', "TEXT NULL AFTER label_config_set");
+    });
+    run_migration_task("BIS Column: inventory_barang.recommended_category", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'recommended_category', "ENUM('A','B','C','D') NULL AFTER wizard_answers");
+    });
+    run_migration_task("BIS Column: inventory_barang.final_category", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'final_category', "ENUM('A','B','C','D') NULL AFTER recommended_category");
+    });
+    run_migration_task("BIS Column: inventory_barang.override_status", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'override_status', "TINYINT(1) NOT NULL DEFAULT 0 AFTER final_category");
+    });
+    run_migration_task("BIS Column: inventory_barang.override_reason", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'override_reason', "VARCHAR(150) NULL AFTER override_status");
+    });
+    run_migration_task("BIS Column: inventory_barang.override_notes", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'override_notes', "TEXT NULL AFTER override_reason");
+    });
+    run_migration_task("BIS Column: inventory_barang.override_by", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'override_by', "INT NULL AFTER override_notes");
+    });
+    run_migration_task("BIS Column: inventory_barang.override_at", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_barang', 'override_at', "DATETIME NULL AFTER override_by");
+    });
+
+    run_migration_task("BIS Table: inventory_barcode_vendor", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_barcode_vendor", "CREATE TABLE IF NOT EXISTS inventory_barcode_vendor (
+            id         INT(11) AUTO_INCREMENT PRIMARY KEY,
+            barang_id  INT(11) NOT NULL,
+            barcode    VARCHAR(100) NOT NULL,
+            keterangan VARCHAR(100) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (barang_id) REFERENCES inventory_barang(id) ON DELETE CASCADE,
+            UNIQUE KEY uq_barcode (barcode)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    run_migration_task("BIS Table: inventory_barang_ed", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_barang_ed", "CREATE TABLE IF NOT EXISTS inventory_barang_ed (
+            id         INT(11) AUTO_INCREMENT PRIMARY KEY,
+            barang_id  INT(11) NOT NULL,
+            klinik_id  INT(11) NULL,
+            ed_month   DATE NOT NULL,
+            keterangan VARCHAR(100) NULL,
+            created_by INT(11) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_barang (barang_id),
+            FOREIGN KEY (barang_id) REFERENCES inventory_barang(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    run_migration_task("BIS Alter: inventory_barang_ed klinik_id nullable", function() use ($conn) {
+        // klinik_id NULL = ED dicatat dari gudang (inbound), bukan spesifik klinik
+        $r = $conn->query("SHOW COLUMNS FROM inventory_barang_ed LIKE 'klinik_id'");
+        $col = $r ? $r->fetch_assoc() : null;
+        if ($col && strpos($col['Null'], 'NO') !== false) {
+            // Drop FK constraint dulu jika ada
+            $fkRes = $conn->query("SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='inventory_barang_ed'
+                AND COLUMN_NAME='klinik_id' AND REFERENCED_TABLE_NAME='inventory_klinik' LIMIT 1");
+            if ($fkRes && ($fk = $fkRes->fetch_assoc())) {
+                $conn->query("ALTER TABLE inventory_barang_ed DROP FOREIGN KEY `{$fk['CONSTRAINT_NAME']}`");
+            }
+            return $conn->query("ALTER TABLE inventory_barang_ed MODIFY COLUMN klinik_id INT(11) NULL");
+        }
+        return true;
+    });
+
+    run_migration_task("BIS Alter: inventory_barang_ed ed_month ke DATE", function() use ($conn) {
+        // Ubah ed_month dari VARCHAR(7) ke DATE agar bisa simpan tanggal penuh (bukan hanya bulan)
+        $r = $conn->query("SHOW COLUMNS FROM inventory_barang_ed LIKE 'ed_month'");
+        $col = $r ? $r->fetch_assoc() : null;
+        if (!$col) return true; // kolom tidak ada, skip
+
+        $already_date = stripos($col['Type'], 'date') !== false;
+        if ($already_date) return true; // sudah DATE, skip
+
+        // Pad existing YYYY-MM records ke YYYY-MM-01 sebelum convert
+        $conn->query("UPDATE inventory_barang_ed SET ed_month = CONCAT(ed_month, '-01') WHERE CHAR_LENGTH(ed_month) = 7");
+
+        // Hapus record invalid (0000-00-00 atau format aneh yang gagal di-pad)
+        $conn->query("DELETE FROM inventory_barang_ed WHERE ed_month = '' OR ed_month IS NULL OR CHAR_LENGTH(ed_month) < 8");
+
+        return $conn->query("ALTER TABLE inventory_barang_ed MODIFY COLUMN ed_month DATE NOT NULL");
+    });
+
+    run_migration_task("BIS Table: inventory_stok_opname", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_stok_opname", "CREATE TABLE IF NOT EXISTS inventory_stok_opname (
+            id              INT(11) AUTO_INCREMENT PRIMARY KEY,
+            klinik_id       INT(11) NOT NULL,
+            user_id         INT(11) NOT NULL,
+            tanggal_mulai   DATETIME NOT NULL,
+            tanggal_selesai DATETIME NULL,
+            status          ENUM('draft','selesai','batal') DEFAULT 'draft',
+            catatan         TEXT NULL,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_klinik_status (klinik_id, status),
+            FOREIGN KEY (klinik_id) REFERENCES inventory_klinik(id),
+            FOREIGN KEY (user_id)   REFERENCES inventory_users(id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    run_migration_task("BIS Table: inventory_stok_opname_detail", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_stok_opname_detail", "CREATE TABLE IF NOT EXISTS inventory_stok_opname_detail (
+            id          INT(11) AUTO_INCREMENT PRIMARY KEY,
+            opname_id   INT(11) NOT NULL,
+            barang_id   INT(11) NOT NULL,
+            stok_sistem DECIMAL(18,4) NOT NULL DEFAULT 0,
+            qty_fisik   DECIMAL(18,4) NULL,
+            selisih     DECIMAL(18,4) NULL,
+            status      ENUM('pending','ok','selisih') DEFAULT 'pending',
+            KEY idx_opname (opname_id),
+            KEY idx_barang (barang_id),
+            FOREIGN KEY (opname_id) REFERENCES inventory_stok_opname(id) ON DELETE CASCADE,
+            FOREIGN KEY (barang_id) REFERENCES inventory_barang(id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    run_migration_task("BIS Table: inventory_odoo_inbound_log", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_odoo_inbound_log", "CREATE TABLE IF NOT EXISTS inventory_odoo_inbound_log (
+            id              INT(11) AUTO_INCREMENT PRIMARY KEY,
+            picking_ref     VARCHAR(50) NOT NULL,
+            picking_id_odoo INT(11) NULL,
+            items_count     INT(11) NOT NULL DEFAULT 0,
+            processed_by    INT(11) NULL,
+            processed_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_picking_ref (picking_ref),
+            FOREIGN KEY (processed_by) REFERENCES inventory_users(id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    // Auto-generate barcode_internal for existing items
+    run_migration_task("BIS Data: Auto-generate barcode_internal", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_barang')) return "Table not found";
+        $r_col = $conn->query("SHOW COLUMNS FROM inventory_barang LIKE 'barcode_internal'");
+        if (!$r_col || $r_col->num_rows === 0) return "Column not yet added";
+        $res = $conn->query("SELECT id, kode_barang FROM inventory_barang WHERE barcode_internal IS NULL AND kode_barang IS NOT NULL AND kode_barang != '' ORDER BY id ASC");
+        if (!$res) return "Query failed";
+        $count = 0; $skipped = 0;
+        while ($row = $res->fetch_assoc()) {
+            $kode = trim((string)$row['kode_barang']);
+            $id   = (int)$row['id'];
+            $bis  = is_numeric($kode)
+                ? 'BIS-' . str_pad((int)$kode, 4, '0', STR_PAD_LEFT)
+                : 'BIS-' . strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $kode), 0, 8));
+            // If generated code already taken by another row, append the item ID
+            $bis_esc = $conn->real_escape_string($bis);
+            $chk = $conn->query("SELECT id FROM inventory_barang WHERE barcode_internal = '$bis_esc' LIMIT 1");
+            if ($chk && $chk->num_rows > 0) {
+                $bis     = $bis . '-' . $id;
+                $bis_esc = $conn->real_escape_string($bis);
+            }
+            $conn->query("UPDATE inventory_barang SET barcode_internal = '$bis_esc' WHERE id = $id AND barcode_internal IS NULL");
+            if ($conn->affected_rows > 0) $count++; else $skipped++;
+        }
+        if ($count === 0 && $skipped === 0) return "Already Up-to-date";
+        return "Generated $count" . ($skipped > 0 ? ", skipped $skipped (already set)" : '') . " barcodes";
+    });
+
+    // ─── Stok Opname: tambah kolom untuk SO redesign ────────────────────────────
+
+    run_migration_task("SO Column: inventory_stok_opname_detail.hc_user_id", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname_detail', 'hc_user_id', "INT NULL AFTER barang_id");
+    });
+    run_migration_task("SO Column: inventory_stok_opname_detail.tipe", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname_detail', 'tipe', "ENUM('klinik','hc') NOT NULL DEFAULT 'klinik' AFTER hc_user_id");
+    });
+    run_migration_task("SO Column: inventory_stok_opname_detail.ed_lte3m", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname_detail', 'ed_lte3m', "DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER selisih");
+    });
+    run_migration_task("SO Column: inventory_stok_opname_detail.ed_gt3m", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname_detail', 'ed_gt3m', "DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER ed_lte3m");
+    });
+    run_migration_task("SO Column: inventory_stok_opname_detail.ed_expired", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname_detail', 'ed_expired', "DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER ed_gt3m");
+    });
+    run_migration_task("SO Column: inventory_stok_opname_detail.catatan", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname_detail', 'catatan', "TEXT NULL AFTER ed_gt3m");
+    });
+    run_migration_task("SO Column: inventory_stok_opname_detail.qty_aktual", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname_detail', 'qty_aktual', "DECIMAL(18,4) NULL COMMENT 'Stok aktual yg divalidasi admin, terpisah dari qty_fisik nakes' AFTER catatan");
+    });
+    run_migration_task("SO Index: drop unique uq_opname_barang_hc (allow multi scan history per checker)", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_stok_opname_detail')) return "Table not found";
+        $r = $conn->query("SHOW INDEX FROM inventory_stok_opname_detail WHERE Key_name = 'uq_opname_barang_hc'");
+        if (!$r || $r->num_rows === 0) return "Already dropped";
+        return $conn->query("ALTER TABLE inventory_stok_opname_detail DROP INDEX uq_opname_barang_hc")
+            ? "Dropped" : "Failed: " . $conn->error;
+    });
+    run_migration_task("SO Index: stok_opname_detail lookup (non-unique) opname+barang+hc", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_stok_opname_detail')) return "Table not found";
+        $r = $conn->query("SHOW INDEX FROM inventory_stok_opname_detail WHERE Key_name = 'idx_opname_barang_hc'");
+        if ($r && $r->num_rows > 0) return "Already exists";
+        return $conn->query("ALTER TABLE inventory_stok_opname_detail
+            ADD KEY idx_opname_barang_hc (opname_id, barang_id, hc_user_id)")
+            ? "Created" : "Failed: " . $conn->error;
+    });
+
+    run_migration_task("SO Table: inventory_stok_opname_ed_detail", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_stok_opname_ed_detail", "CREATE TABLE IF NOT EXISTS inventory_stok_opname_ed_detail (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            opname_detail_id INT NOT NULL,
+            ed_month        DATE NOT NULL,
+            keterangan      VARCHAR(255) NULL,
+            qty             DECIMAL(18,4) NOT NULL DEFAULT 0,
+            kategori        ENUM('expired','lte3m','gt3m') NOT NULL,
+            KEY idx_detail (opname_detail_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    });
+    run_migration_task("SO Column: inventory_stok_opname_ed_detail.kategori add 'expired'", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_stok_opname_ed_detail')) return "Table not found";
+        $r = $conn->query("SHOW COLUMNS FROM inventory_stok_opname_ed_detail LIKE 'kategori'");
+        $col = $r ? $r->fetch_assoc() : null;
+        if ($col && str_contains($col['Type'], "'expired'")) return "Already includes 'expired'";
+        return $conn->query("ALTER TABLE inventory_stok_opname_ed_detail
+            MODIFY COLUMN kategori ENUM('expired','lte3m','gt3m') NOT NULL")
+            ? "Modified" : "Failed: " . $conn->error;
+    });
+
+    // SO periode & lock columns
+    run_migration_task("SO Column: inventory_stok_opname.periode", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname', 'periode', "VARCHAR(7) NULL COMMENT 'Format YYYY-MM, periode bulanan SO' AFTER status");
+    });
+    run_migration_task("SO Column: inventory_stok_opname.is_locked", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname', 'is_locked', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1=locked oleh super_admin' AFTER periode");
+    });
+    run_migration_task("SO Column: inventory_stok_opname.locked_by", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname', 'locked_by', "INT(11) NULL AFTER is_locked");
+    });
+    run_migration_task("SO Column: inventory_stok_opname.locked_at", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname', 'locked_at', "DATETIME NULL AFTER locked_by");
+    });
+    run_migration_task("SO Backfill: inventory_stok_opname.periode", function() use ($conn) {
+        $r = $conn->query("SHOW COLUMNS FROM inventory_stok_opname LIKE 'periode'");
+        if (!$r || $r->num_rows === 0) return "Column not found";
+        $conn->query("UPDATE inventory_stok_opname SET periode = DATE_FORMAT(tanggal_mulai, '%Y-%m') WHERE periode IS NULL AND tanggal_mulai IS NOT NULL");
+        return "Backfilled: " . $conn->affected_rows . " rows";
+    });
+    run_migration_task("SO Index: inventory_stok_opname.idx_periode_klinik", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_stok_opname')) return "Table not found";
+        $r = $conn->query("SHOW INDEX FROM inventory_stok_opname WHERE Key_name = 'idx_so_periode_klinik'");
+        if ($r && $r->num_rows > 0) return "Already exists";
+        return $conn->query("ALTER TABLE inventory_stok_opname ADD INDEX idx_so_periode_klinik (klinik_id, periode)")
+            ? "Created" : "Failed: " . $conn->error;
+    });
+
+    run_migration_task("SO Column: inventory_stok_opname.is_gudang_utama", function() use ($conn) {
+        return m_ensure_column($conn, 'inventory_stok_opname', 'is_gudang_utama',
+            "TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1=SO untuk Gudang Utama (klinik_id=NULL)' AFTER klinik_id");
+    });
+
+    run_migration_task("SO: drop klinik_id FK & allow NULL for gudang", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_stok_opname')) return "Table not found";
+        // Cek apakah klinik_id sudah nullable
+        $r = $conn->query("SHOW COLUMNS FROM inventory_stok_opname LIKE 'klinik_id'");
+        $col = $r ? $r->fetch_assoc() : null;
+        if ($col && stripos($col['Null'] ?? '', 'yes') !== false) return "Already nullable";
+        // Cari nama FK constraint
+        $rFk = $conn->query("SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'inventory_stok_opname'
+            AND COLUMN_NAME = 'klinik_id' AND REFERENCED_TABLE_NAME = 'inventory_klinik' LIMIT 1");
+        if ($rFk && ($fkRow = $rFk->fetch_assoc())) {
+            $fkName = $fkRow['CONSTRAINT_NAME'];
+            $conn->query("ALTER TABLE inventory_stok_opname DROP FOREIGN KEY `$fkName`");
+        }
+        $conn->query("ALTER TABLE inventory_stok_opname MODIFY COLUMN klinik_id INT(11) NULL");
+        return $conn->error ? "Failed: " . $conn->error : "Done";
+    });
+
+    run_migration_task("SO Index: inventory_stok_opname.idx_so_gudang_periode", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_stok_opname')) return "Table not found";
+        $r = $conn->query("SHOW INDEX FROM inventory_stok_opname WHERE Key_name = 'idx_so_gudang_periode'");
+        if ($r && $r->num_rows > 0) return "Already exists";
+        return $conn->query("ALTER TABLE inventory_stok_opname ADD INDEX idx_so_gudang_periode (is_gudang_utama, periode)")
+            ? "Created" : "Failed: " . $conn->error;
+    });
+
+    // Expand status ENUM to include 'validated' (set by admin after verifying qty_aktual)
+    run_migration_task("SO Column: inventory_stok_opname_detail.status add 'validated'", function() use ($conn) {
+        if (!table_exists($conn, 'inventory_stok_opname_detail')) return "Table not found";
+        $r = $conn->query("SHOW COLUMNS FROM inventory_stok_opname_detail LIKE 'status'");
+        $col = $r ? $r->fetch_assoc() : null;
+        if (!$col) return "Column not found";
+        // Check if 'validated' is already in the enum
+        if (strpos($col['Type'] ?? '', 'validated') !== false) return "Already includes 'validated'";
+        return $conn->query("ALTER TABLE inventory_stok_opname_detail
+            MODIFY COLUMN status ENUM('pending','ok','selisih','validated') DEFAULT 'pending'")
+            ? "Updated ENUM" : "Failed: " . $conn->error;
+    });
+
+    run_migration_task("BIS Table: inventory_inbound_log", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_inbound_log", "CREATE TABLE IF NOT EXISTS inventory_inbound_log (
+            id           INT(11) AUTO_INCREMENT PRIMARY KEY,
+            odoo_ref     VARCHAR(100) NULL COMMENT 'Referensi picking Odoo, NULL jika scan manual',
+            barang_id    INT(11) NOT NULL,
+            kode_barang  VARCHAR(100) NULL,
+            nama_barang  VARCHAR(255) NULL,
+            qty          DECIMAL(10,2) NULL COMMENT 'Qty dari Odoo picking, NULL jika scan manual',
+            uom          VARCHAR(50) NULL,
+            action       ENUM('print_label','confirm','scan_manual','search_manual') NOT NULL DEFAULT 'print_label',
+            processed_by INT(11) NOT NULL,
+            klinik_id    INT(11) NULL,
+            processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_odoo_ref (odoo_ref),
+            KEY idx_barang (barang_id),
+            KEY idx_processed_at (processed_at),
+            KEY idx_processed_by (processed_by)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
     });
 
 } catch (Throwable $e) {

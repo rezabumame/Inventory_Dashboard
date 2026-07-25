@@ -2095,7 +2095,11 @@ if ($default_modal_klinik_id) {
         function resetModalItemRows() {
             const klinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : '<?= (int) $default_modal_klinik_id ?>';
             const jenis = $('#modalJenisPemakaian').val() || 'klinik';
-            const optionsHtml = buildOptionsHtml(klinikId, jenis);
+            let userHcId = $('#modalUserHcId').val();
+            if (!userHcId && $('#modalUserHcIdHidden').length) {
+                userHcId = $('#modalUserHcIdHidden').val();
+            }
+            const optionsHtml = buildOptionsHtml(klinikId, jenis, userHcId);
             const rowHtml = `
             <tr class="modal-item-row">
                 <td class="p-2">
@@ -2210,7 +2214,11 @@ if ($default_modal_klinik_id) {
         $('#modalAddRowBtn').on('click', function () {
             const klinikId = $('#modalKlinikId').length ? $('#modalKlinikId').val() : '<?= (int) $default_modal_klinik_id ?>';
             const jenis = $('#modalJenisPemakaian').val();
-            const optionsHtml = buildOptionsHtml(klinikId, jenis);
+            let userHcId = $('#modalUserHcId').val();
+            if (!userHcId && $('#modalUserHcIdHidden').length) {
+                userHcId = $('#modalUserHcIdHidden').val();
+            }
+            const optionsHtml = buildOptionsHtml(klinikId, jenis, userHcId);
             const newRow = `
             <tr class="modal-item-row">
                 <td class="p-2">

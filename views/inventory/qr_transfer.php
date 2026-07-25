@@ -8,8 +8,16 @@ if (!in_array($qr_role, $qr_allowed, true)) {
     exit;
 }
 
-$user_id   = (int)$_SESSION['user_id'];
-$klinik_id = (int)($_GET['klinik_id'] ?? (int)$_SESSION['klinik_id']);
+$user_id       = (int)$_SESSION['user_id'];
+$own_klinik_id = (int)$_SESSION['klinik_id'];
+$klinik_id     = (int)($_GET['klinik_id'] ?? $own_klinik_id);
+$active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'opname') ? 'opname' : 'request';
+
+// Selain super_admin, tidak boleh lihat data klinik lain lewat manipulasi klinik_id di URL —
+// paksa balik ke klinik sendiri kalau beda.
+if ($qr_role !== 'super_admin' && $klinik_id !== $own_klinik_id) {
+    $klinik_id = $own_klinik_id;
+}
 
 // Validasi klinik
 $klinik_row = null;
@@ -17,7 +25,7 @@ if ($klinik_id > 0) {
     $klinik_row = $conn->query("SELECT id, nama_klinik FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 }
 if (!$klinik_row && $qr_role !== 'super_admin') {
-    $klinik_id  = (int)$_SESSION['klinik_id'];
+    $klinik_id  = $own_klinik_id;
     $klinik_row = $conn->query("SELECT id, nama_klinik FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
 }
 
@@ -33,16 +41,19 @@ if ($is_nakes) {
     if ($pr) $pending_count = (int)($pr->fetch_assoc()['c'] ?? 0);
 }
 
-// Pending request
-$pending_count = 0;
-$pr = $conn->query("SELECT COUNT(*) AS c FROM inventory_hc_transfer_request WHERE user_hc_id=$user_id AND klinik_id=$klinik_id AND status='pending'");
-if ($pr) $pending_count = (int)($pr->fetch_assoc()['c'] ?? 0);
+// Check track_ed column existence once, used by both queries below
+$r_bis = $conn->query("SHOW COLUMNS FROM inventory_barang LIKE 'track_ed'");
+$has_track_ed = ($r_bis && $r_bis->num_rows > 0);
 
 // Daftar item - semua barang, qty dari stok klinik (boleh 0/minus)
 $klinik_items = [];
+$track_ed_sel2 = $has_track_ed ? 'b.track_ed,' : '0 AS track_ed,';
 $res_ki = $conn->query("
     SELECT b.id AS barang_id, b.nama_barang,
            COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom,
+           COALESCE(uc.from_uom, '') AS from_uom,
+           COALESCE(uc.multiplier, 1) AS multiplier,
+           $track_ed_sel2
            COALESCE(sgk.qty, 0) AS qty
     FROM inventory_barang b
     LEFT JOIN inventory_stok_gudang_klinik sgk ON sgk.barang_id = b.id AND sgk.klinik_id = $klinik_id
@@ -50,7 +61,88 @@ $res_ki = $conn->query("
     ORDER BY b.nama_barang ASC
 ");
 while ($res_ki && ($ri = $res_ki->fetch_assoc())) {
+    $ri['track_ed'] = (int)($ri['track_ed'] ?? 0);
+    $ri['multiplier'] = (float)($ri['multiplier'] ?? 1);
     $klinik_items[] = $ri;
+}
+
+// Resolusi opname_id HARUS sama persis dengan api/hc_stock_validate.php & api/get_hc_bag.php
+// (baris terakhir milik klinik ini, apa pun periode/status kuncinya) — dipakai utk cek
+// barang_id mana yang SUDAH dilaporkan nakes periode ini (dikunci dari sisi nakes).
+$r_opname = $conn->query("SELECT id, periode FROM inventory_stok_opname WHERE klinik_id = $klinik_id ORDER BY id DESC LIMIT 1");
+$opname_row = $r_opname ? $r_opname->fetch_assoc() : null;
+$opname_id_now = $opname_row ? (int)$opname_row['id'] : 0;
+$opname_periode_label = ($opname_row && !empty($opname_row['periode']))
+    ? date('F Y', strtotime($opname_row['periode'] . '-01')) : null;
+
+$reported_bids = []; // barang_id => true, sudah ada qty_fisik utk (opname_id_now, user_id) periode ini
+if ($opname_id_now > 0) {
+    $r_rep = $conn->query("SELECT barang_id FROM inventory_stok_opname_detail
+        WHERE opname_id = $opname_id_now AND tipe = 'hc' AND hc_user_id = $user_id AND qty_fisik IS NOT NULL");
+    while ($r_rep && ($rr = $r_rep->fetch_assoc())) $reported_bids[(int)$rr['barang_id']] = true;
+}
+
+// Stok tas HC untuk opname — hanya item yang ada di tas dengan qty > 0
+$track_ed_sel = $has_track_ed ? 'b.track_ed,' : '0 AS track_ed,';
+
+$hc_bag_items = [];
+$hc_bag_ids   = [];
+$res_bag = $conn->query("
+    SELECT b.id AS barang_id, b.nama_barang, b.kode_barang,
+           $track_ed_sel
+           COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom,
+           COALESCE(uc.from_uom, '') AS from_uom,
+           COALESCE(uc.multiplier, 1) AS multiplier,
+           COALESCE(st.qty, 0) AS qty_sistem
+    FROM inventory_stok_tas_hc st
+    JOIN inventory_barang b ON b.id = st.barang_id
+    LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    WHERE st.user_id = $user_id AND st.klinik_id = $klinik_id AND st.qty > 0
+    ORDER BY b.nama_barang ASC
+");
+while ($res_bag && ($rb = $res_bag->fetch_assoc())) {
+    $bid = (int)$rb['barang_id'];
+    $rb['track_ed']  = (int)($rb['track_ed'] ?? 0);
+    $rb['multiplier'] = (float)($rb['multiplier'] ?? 1);
+    // Item stok tas ini bisa saja SUDAH dilaporkan ulang periode ini juga — dikunci dari sisi nakes.
+    $rb['already_reported'] = isset($reported_bids[$bid]);
+    $hc_bag_items[] = $rb;
+    $hc_bag_ids[$bid] = true;
+}
+
+// Item yang sudah dilaporkan (self-report) periode ini tapi belum divalidasi admin
+// (belum masuk inventory_stok_tas_hc) — tetap tampilkan pakai laporan sendiri sbg acuan,
+// dan dikunci dari sisi nakes (sudah lapor = tidak bisa diubah lagi sampai admin koreksi
+// lewat halaman SO, atau periode baru dibuka).
+if ($opname_id_now > 0 && !empty($reported_bids)) {
+    $res_pending = $conn->query("
+        SELECT b.id AS barang_id, b.nama_barang, b.kode_barang,
+               $track_ed_sel
+               COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom,
+               COALESCE(uc.from_uom, '') AS from_uom,
+               COALESCE(uc.multiplier, 1) AS multiplier,
+               d.qty_fisik AS qty_fisik_raw
+        FROM inventory_stok_opname_detail d
+        JOIN inventory_barang b ON b.id = d.barang_id
+        LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+        WHERE d.opname_id = $opname_id_now AND d.tipe = 'hc' AND d.hc_user_id = $user_id
+          AND d.qty_fisik IS NOT NULL
+        ORDER BY b.nama_barang ASC
+    ");
+    while ($res_pending && ($rp = $res_pending->fetch_assoc())) {
+        $bid = (int)$rp['barang_id'];
+        if (isset($hc_bag_ids[$bid])) continue; // sudah ada dari stok tas (flag di-set di loop atas)
+        $mult = (float)($rp['multiplier'] ?? 1);
+        if ($mult <= 0) $mult = 1;
+        // qty_fisik disimpan dalam from_uom (lihat hc_stock_validate.php) → konversi ke to_uom utk tampilan
+        $rp['track_ed']   = (int)($rp['track_ed'] ?? 0);
+        $rp['multiplier'] = $mult;
+        $rp['qty_sistem'] = (float)$rp['qty_fisik_raw'] / $mult;
+        $rp['already_reported'] = true; // sudah lapor periode ini — read-only utk nakes
+        unset($rp['qty_fisik_raw']);
+        $hc_bag_items[] = $rp;
+        $hc_bag_ids[$bid] = true;
+    }
 }
 
 $csrf = csrf_token();
@@ -163,6 +255,57 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
 .bag-section-header{padding:8px 16px 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;background:#f8f8f8;border-bottom:1px solid #f0f0f0;}
 .bag-section-header.danger{color:#dc3545;background:#fff5f5;}
 .bag-empty{padding:24px 16px;text-align:center;color:#aaa;font-size:13px;}
+
+/* ── Tab nav ─────────────────────────────────────────────────────────────── */
+.tab-nav{display:flex;background:#fff;border-bottom:2px solid #e8ecf4;position:sticky;top:64px;z-index:190;}
+.tab-btn{flex:1;padding:12px 8px;text-align:center;font-size:13px;font-weight:600;color:#64748b;background:none;border:none;border-bottom:3px solid transparent;margin-bottom:-2px;cursor:pointer;transition:all .15s;}
+.tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);}
+.tab-pane{display:none;}
+.tab-pane.active{display:block;}
+
+/* ── Opname ──────────────────────────────────────────────────────────────── */
+.op-item{background:#fff;border:1.5px solid #dde8ff;border-radius:12px;margin:10px 14px;padding:12px 14px;}
+.op-item.has-selisih{border-color:#ef4444;background:#fff8f8;}
+.op-item.ok{border-color:#10b981;background:#f0fdf4;}
+.op-item.reported{background:#f8fafc;border-color:#e2e8f0;}
+.op-item.reported .op-qty-input,.op-item.reported .qty-btn{opacity:.55;cursor:not-allowed;}
+.badge-reported{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:#059669;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:99px;padding:1px 8px;white-space:nowrap;}
+.op-name{font-size:14px;font-weight:600;color:#1e293b;margin-bottom:2px;}
+.op-sys{font-size:12px;color:#64748b;margin-bottom:10px;}
+.op-qty-row{display:flex;align-items:center;gap:8px;}
+.op-qty-label{font-size:12px;color:#64748b;white-space:nowrap;}
+.op-qty-input{width:72px;border:1.5px solid #c7d8ff;border-radius:8px;padding:6px 6px;font-size:15px;font-weight:700;text-align:center;color:#1e293b;outline:none;}
+.op-qty-input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(32,78,171,.1);}
+.op-selisih{font-size:12px;font-weight:700;margin-left:auto;}
+.op-selisih.minus{color:#ef4444;}
+.op-selisih.plus{color:#10b981;}
+.op-selisih.zero{color:#64748b;}
+.op-ed-row{margin-top:8px;padding-top:8px;border-top:1px solid #e8eef8;display:flex;gap:8px;flex-wrap:wrap;}
+.op-ed-input{width:90px;border:1.5px solid #fde68a;border-radius:8px;padding:5px 6px;font-size:13px;font-weight:600;text-align:center;background:#fffbeb;outline:none;}
+.op-ed-input:focus{border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.1);}
+.op-ed-label{font-size:11px;color:#92400e;font-weight:600;white-space:nowrap;}
+.op-catatan{margin-top:8px;width:100%;border:1.5px solid #e2e8f0;border-radius:8px;padding:6px 8px;font-size:12px;resize:none;outline:none;color:#374151;}
+.op-catatan:focus{border-color:var(--primary);}
+.op-empty{text-align:center;padding:40px 20px;color:#94a3b8;font-size:13px;}
+.op-empty i{font-size:32px;display:block;margin-bottom:10px;opacity:.35;}
+.op-item{position:relative;}
+.op-del-btn{position:absolute;top:8px;right:8px;background:#fee2e2;border:none;border-radius:6px;padding:2px 7px;font-size:13px;color:#ef4444;cursor:pointer;line-height:1.4;}
+.op-del-btn:active{background:#fecaca;}
+.op-add-wrap{margin:0 14px 10px;position:relative;}
+.op-add-input{width:100%;border:1.5px dashed #c7d8ff;border-radius:10px;background:#f8faff;padding:10px 14px;font-size:13px;color:#374151;outline:none;}
+.op-add-input:focus{border-color:var(--primary);border-style:solid;background:#fff;}
+.op-add-input::placeholder{color:#94a3b8;}
+.op-add-drop{position:fixed;background:#fff;border:1.5px solid #c7d8ff;border-radius:10px;box-shadow:0 6px 20px rgba(32,78,171,.12);max-height:220px;overflow-y:auto;z-index:9999;display:none;}
+.op-add-drop.open{display:block;}
+.op-add-opt{padding:10px 14px;font-size:13px;cursor:pointer;border-bottom:1px solid #f0f4ff;display:flex;justify-content:space-between;align-items:center;}
+.op-add-opt:last-child{border-bottom:none;}
+.op-add-opt:active{background:#edf2ff;}
+.op-add-opt .opt-uom{font-size:11px;color:#94a3b8;font-weight:600;}
+.op-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;margin-left:6px;vertical-align:middle;}
+.op-badge.minus{background:#fee2e2;color:#dc2626;}
+.op-badge.plus{background:#dcfce7;color:#16a34a;}
+.op-summary-bar{background:#f0f4ff;border-radius:12px;margin:14px;padding:12px 14px;font-size:13px;color:#374151;display:flex;gap:16px;flex-wrap:wrap;}
+.op-summary-bar span{font-weight:700;}
 </style>
 </head>
 <body>
@@ -198,12 +341,24 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
     </div>
 </div>
 
-<?php if ($pending_count > 0): ?>
-<div class="pending-banner">
-    <i class="fas fa-clock text-warning"></i>
-    <span>Anda memiliki <strong><?= $pending_count ?> request</strong> yang sedang menunggu persetujuan admin.</span>
+<!-- Tab Navigation -->
+<div class="tab-nav">
+    <button id="tabBtnRequest" class="tab-btn<?= $active_tab === 'request' ? ' active' : '' ?>" onclick="switchTab('request',this)">
+        <i class="fas fa-paper-plane me-1"></i>Request Stok
+        <?php if ($pending_count > 0): ?>
+        <span style="background:#f59e0b;color:#fff;border-radius:99px;font-size:10px;padding:1px 6px;margin-left:4px;"><?= $pending_count ?></span>
+        <?php endif; ?>
+    </button>
+    <button id="tabBtnOpname" class="tab-btn<?= $active_tab === 'opname' ? ' active' : '' ?>" onclick="switchTab('opname',this)">
+        <i class="fas fa-clipboard-check me-1"></i>Input Stok
+        <?php if (count($hc_bag_items) > 0): ?>
+        <span style="background:#204EAB;color:#fff;border-radius:99px;font-size:10px;padding:1px 6px;margin-left:4px;"><?= count($hc_bag_items) ?></span>
+        <?php endif; ?>
+    </button>
 </div>
-<?php endif; ?>
+
+<!-- ── TAB: Request Stok ──────────────────────────────────────────────────── -->
+<div id="tab-request" class="tab-pane<?= $active_tab === 'request' ? ' active' : '' ?>">
 
 <!-- Form Request -->
 <form id="requestForm" enctype="multipart/form-data">
@@ -250,10 +405,68 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
     </div>
 </form>
 
-<!-- Submit bar -->
-<div class="submit-bar">
+<!-- Submit bar for Request -->
+<div class="submit-bar" id="submitBarRequest" style="<?= $active_tab === 'request' ? '' : 'display:none;' ?>">
     <button type="button" class="btn-submit" id="submitBtn" <?= empty($klinik_items) ? 'disabled' : '' ?>>
         <i class="fas fa-paper-plane me-2"></i>Kirim Request
+    </button>
+</div>
+
+</div><!-- end #tab-request -->
+
+<!-- ── TAB: Input Stok (Opname) ──────────────────────────────────────────── -->
+<div id="tab-opname" class="tab-pane<?= $active_tab === 'opname' ? ' active' : '' ?>" style="padding-bottom:90px;">
+
+    <?php if ($opname_periode_label): ?>
+    <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:8px 14px;margin:12px 14px 0;font-size:13px;font-weight:600;color:#3730a3;display:flex;align-items:center;gap:6px;">
+        <i class="fas fa-calendar-alt"></i> Laporan untuk SO periode: <?= htmlspecialchars($opname_periode_label) ?>
+    </div>
+    <?php endif; ?>
+
+    <div class="op-summary-bar" id="opSummaryBar">
+        <div><i class="fas fa-box me-1" style="color:#204EAB;"></i>Total item: <span id="opTotalItems"><?= count($hc_bag_items) ?></span></div>
+        <div><i class="fas fa-exclamation-triangle me-1" style="color:#ef4444;"></i>Selisih: <span id="opSelisihCount">0</span></div>
+        <div style="margin-left:auto;font-size:12px;color:#64748b;">Laporan dikirim ke tim accounting untuk divalidasi</div>
+    </div>
+
+    <!-- Search / tambah item -->
+    <div class="op-add-wrap">
+        <input type="text" id="opAddInput" class="op-add-input" placeholder="+ Tambah item...">
+        <div id="opAddDrop" class="op-add-drop"></div>
+    </div>
+
+    <div id="opItemList">
+    <?php foreach ($hc_bag_items as $bi): $reported = !empty($bi['already_reported']); ?>
+    <div class="op-item<?= $reported ? ' reported' : '' ?>" data-id="<?= (int)$bi['barang_id'] ?>" data-sys="<?= (float)$bi['qty_sistem'] ?>" data-mult="<?= (float)$bi['multiplier'] ?>" <?= $reported ? 'data-reported="1"' : '' ?>>
+        <?php if (!$reported): ?>
+        <button type="button" class="op-del-btn" onclick="opRemoveItem(this)" title="Hapus">×</button>
+        <?php endif; ?>
+        <div class="op-name" style="padding-right:28px;"><?= htmlspecialchars($bi['nama_barang']) ?>
+            <?php if ($reported): ?><span class="badge-reported"><i class="fas fa-check-circle"></i> Sudah Lapor</span><?php endif; ?>
+        </div>
+        <div class="op-sys">Stok sistem: <strong><?= (int)round((float)$bi['qty_sistem']) ?></strong> <?= htmlspecialchars($bi['uom']) ?></div>
+        <div class="op-qty-row">
+            <span class="op-qty-label">Qty fisik:</span>
+            <button type="button" class="qty-btn" onclick="opChangeQty(this,-1)" <?= $reported ? 'disabled' : '' ?>>−</button>
+            <input type="number" class="op-qty-input" value="<?= (int)round((float)$bi['qty_sistem']) ?>" min="0" step="1"
+                data-barang-id="<?= (int)$bi['barang_id'] ?>"
+                <?= $reported ? 'disabled' : '' ?>
+                oninput="opUpdateSelisih(this)">
+            <button type="button" class="qty-btn" onclick="opChangeQty(this,1)" <?= $reported ? 'disabled' : '' ?>>+</button>
+            <span class="op-selisih" id="selisih-<?= (int)$bi['barang_id'] ?>"></span>
+        </div>
+        <textarea class="op-catatan" rows="1" placeholder="Catatan (opsional)..."
+            data-barang-id="<?= (int)$bi['barang_id'] ?>" <?= $reported ? 'disabled' : '' ?>></textarea>
+    </div>
+    <?php endforeach; ?>
+    </div>
+
+</div><!-- end #tab-opname -->
+
+<!-- Submit bar for Opname -->
+<div class="submit-bar" id="submitBarOpname" style="<?= $active_tab === 'opname' ? '' : 'display:none;' ?>">
+    <button type="button" class="btn-submit" id="opSubmitBtn" style="background:#10b981;">
+        <i class="fas fa-paper-plane me-2"></i>Kirim Laporan Stok
     </button>
 </div>
 
@@ -265,6 +478,23 @@ let rowCount   = 1;
 
 // Dataset item dari server
 const allItems = <?= json_encode(array_values($klinik_items), JSON_UNESCAPED_UNICODE) ?>;
+const hcBagItems = <?= json_encode(array_values($hc_bag_items), JSON_UNESCAPED_UNICODE) ?>;
+const csrfToken = '<?= $csrf ?>';
+
+// ── Tab switcher ──────────────────────────────────────────────────────────────
+function switchTab(tab, btn) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    if (!btn) btn = document.getElementById(tab === 'opname' ? 'tabBtnOpname' : 'tabBtnRequest');
+    if (btn) btn.classList.add('active');
+    document.getElementById('tab-' + tab)?.classList.add('active');
+    document.getElementById('submitBarRequest').style.display = tab === 'request' ? '' : 'none';
+    document.getElementById('submitBarOpname').style.display  = tab === 'opname'  ? '' : 'none';
+    // Simpan tab yang sedang aktif di URL supaya kalau halaman di-refresh tetap di tab yang sama
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', tab);
+    history.replaceState(null, '', url);
+}
 
 // ── Drawer ───────────────────────────────────────────────────────────────────
 const drawerOverlay = document.getElementById('drawerOverlay');
@@ -533,6 +763,219 @@ document.getElementById('submitBtn').addEventListener('click', () => {
 function escHtml(s) {
     return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+// ── Opname Logic ──────────────────────────────────────────────────────────────
+// Track which barang_id are already in the list
+const opBidSet = new Set(<?= json_encode(array_map(fn($b) => (int)$b['barang_id'], $hc_bag_items)) ?>);
+
+function opChangeQty(btn, delta) {
+    const input = btn.closest('.op-qty-row').querySelector('.op-qty-input');
+    const cur = parseFloat(input.value) || 0;
+    input.value = Math.max(0, Math.round(cur + delta));
+    opUpdateSelisih(input);
+}
+
+function opUpdateSelisih(input) {
+    const card  = input.closest('.op-item');
+    const sys   = parseFloat(card.dataset.sys) || 0;
+    const fisik = parseFloat(input.value) || 0;
+    const diff  = Math.round(fisik - sys);
+    const bid   = input.dataset.barangId;
+    const el    = document.getElementById('selisih-' + bid);
+    if (el) {
+        if (diff === 0) { el.textContent = '✓ Sesuai'; el.className = 'op-selisih zero'; }
+        else { el.textContent = (diff > 0 ? '+' : '') + diff; el.className = 'op-selisih ' + (diff > 0 ? 'plus' : 'minus'); }
+    }
+    card.classList.toggle('has-selisih', diff !== 0);
+    card.classList.toggle('ok', diff === 0);
+    opRefreshSummary();
+}
+
+function opUpdateTotal(input) {
+    const bid  = input.dataset.barangId;
+    const card = document.querySelector('.op-item[data-id="' + bid + '"]');
+    if (!card) return;
+    const lte = parseFloat(card.querySelector('[data-field="ed_lte3m"]')?.value) || 0;
+    const gt  = parseFloat(card.querySelector('[data-field="ed_gt3m"]')?.value) || 0;
+    const totalEl = document.getElementById('ed-total-' + bid);
+    if (totalEl) totalEl.textContent = (lte + gt);
+    const qtyInput = card.querySelector('.op-qty-input');
+    if (qtyInput && (lte > 0 || gt > 0)) { qtyInput.value = lte + gt; opUpdateSelisih(qtyInput); }
+}
+
+function opRefreshSummary() {
+    const cards = document.querySelectorAll('.op-item');
+    const selisih = document.querySelectorAll('.op-item.has-selisih').length;
+    const cntEl = document.getElementById('opTotalItems');
+    const selEl = document.getElementById('opSelisihCount');
+    if (cntEl) cntEl.textContent = cards.length;
+    if (selEl) { selEl.textContent = selisih; selEl.style.color = selisih > 0 ? '#ef4444' : '#10b981'; }
+    opUpdateSubmitBtnState();
+}
+
+// Kalau semua item sudah "Sudah Lapor" (tidak ada yang baru utk dikirim), tombol submit
+// dinonaktifkan dan labelnya diubah supaya tidak terlihat seolah masih bisa kirim laporan lagi.
+function opUpdateSubmitBtnState() {
+    const btn = document.getElementById('opSubmitBtn');
+    if (!btn) return;
+    const hasPending = document.querySelector('.op-item:not([data-reported="1"])') !== null;
+    if (hasPending) {
+        btn.disabled = false;
+        btn.style.background = '';
+        btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Kirim Laporan Stok';
+    } else {
+        btn.disabled = true;
+        btn.style.background = '#94a3b8';
+        btn.innerHTML = '<i class="fas fa-check-circle me-2"></i>Semua Item Sudah Dilaporkan';
+    }
+}
+
+function opRemoveItem(btn) {
+    const card = btn.closest('.op-item');
+    const bid  = parseInt(card.dataset.id);
+    card.remove();
+    opBidSet.delete(bid);
+    opRefreshSummary();
+}
+
+function opAddItemCard(item) {
+    const bid   = parseInt(item.barang_id);
+    if (opBidSet.has(bid)) return;
+    opBidSet.add(bid);
+    // Item baru (bukan dari stok tas yang sudah tercatat) — tidak ada baseline "Stok sistem" tas
+    // yang valid untuk dibandingkan (angka di `allItems` itu stok klinik, bukan stok tas nakes),
+    // jadi jangan ditampilkan supaya tidak menyesatkan.
+    const sys   = 0;
+    const uom   = escHtml(item.uom || '');
+    const mult  = parseFloat(item.multiplier ?? 1);
+    const div = document.createElement('div');
+    div.className = 'op-item';
+    div.dataset.id   = bid;
+    div.dataset.sys  = sys;
+    div.dataset.mult = mult;
+    div.innerHTML = `
+        <button type="button" class="op-del-btn" onclick="opRemoveItem(this)" title="Hapus">×</button>
+        <div class="op-name" style="padding-right:28px;">${escHtml(item.nama_barang)}</div>
+        <div class="op-qty-row">
+            <span class="op-qty-label">Qty fisik:</span>
+            <button type="button" class="qty-btn" onclick="opChangeQty(this,-1)">−</button>
+            <input type="number" class="op-qty-input" value="0" min="0" step="1"
+                data-barang-id="${bid}" oninput="opUpdateSelisih(this)">
+            <button type="button" class="qty-btn" onclick="opChangeQty(this,1)">+</button>
+            <span class="op-selisih" id="selisih-${bid}"></span>
+        </div>
+        <textarea class="op-catatan" rows="1" placeholder="Catatan (opsional)..."
+            data-barang-id="${bid}"></textarea>`;
+    document.getElementById('opItemList').appendChild(div);
+    div.querySelector('.op-qty-input')?.dispatchEvent(new Event('input'));
+    opRefreshSummary();
+    div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Add item search ───────────────────────────────────────────────────────────
+const opAddInput = document.getElementById('opAddInput');
+const opAddDrop  = document.getElementById('opAddDrop');
+
+function opRenderDrop(q) {
+    const results = allItems.filter(it =>
+        !opBidSet.has(parseInt(it.barang_id)) &&
+        it.nama_barang.toLowerCase().includes(q.toLowerCase())
+    ).slice(0, 30);
+    if (!results.length) {
+        opAddDrop.innerHTML = '<div class="op-add-opt" style="color:#aaa;justify-content:center;pointer-events:none;">Tidak ada item</div>';
+    } else {
+        opAddDrop.innerHTML = results.map(it =>
+            `<div class="op-add-opt" data-id="${it.barang_id}" onclick="opSelectItem(${it.barang_id})">
+                <span>${escHtml(it.nama_barang)}</span>
+                <span class="opt-uom">${escHtml(it.uom||'')}</span>
+             </div>`
+        ).join('');
+    }
+    const rect = opAddInput.getBoundingClientRect();
+    opAddDrop.style.left  = rect.left + 'px';
+    opAddDrop.style.top   = (rect.bottom + 4) + 'px';
+    opAddDrop.style.width = rect.width + 'px';
+    opAddDrop.classList.add('open');
+}
+
+opAddInput.addEventListener('input', () => {
+    const q = opAddInput.value.trim();
+    if (q.length === 0) { opAddDrop.classList.remove('open'); return; }
+    opRenderDrop(q);
+});
+opAddInput.addEventListener('focus', () => {
+    if (opAddInput.value.trim()) opRenderDrop(opAddInput.value.trim());
+});
+document.addEventListener('click', e => {
+    if (!opAddInput.contains(e.target) && !opAddDrop.contains(e.target))
+        opAddDrop.classList.remove('open');
+});
+
+function opSelectItem(bid) {
+    const item = allItems.find(it => parseInt(it.barang_id) === bid);
+    if (!item) return;
+    opAddDrop.classList.remove('open');
+    opAddInput.value = '';
+    opAddItemCard(item);
+}
+
+// Initialize selisih badges on load
+document.querySelectorAll('.op-qty-input').forEach(inp => opUpdateSelisih(inp));
+opUpdateSubmitBtnState();
+
+// Submit opname
+document.getElementById('opSubmitBtn')?.addEventListener('click', async () => {
+    const items = [];
+    document.querySelectorAll('.op-item').forEach(card => {
+        if (card.dataset.reported === '1') return; // sudah lapor, jangan kirim ulang
+        const bid      = parseInt(card.dataset.id);
+        const sys      = parseFloat(card.dataset.sys) || 0;
+        const mult     = parseFloat(card.dataset.mult) || 1;
+        const qtyEl    = card.querySelector('.op-qty-input');
+        const qty      = parseFloat(qtyEl?.value) || 0;
+        const ed_lte3m = parseFloat(card.querySelector('[data-field="ed_lte3m"]')?.value) || 0;
+        const ed_gt3m  = parseFloat(card.querySelector('[data-field="ed_gt3m"]')?.value) || 0;
+        const catatan  = card.querySelector('.op-catatan')?.value.trim() || '';
+        // qty is in to_uom — send multiplier so server can convert to from_uom
+        items.push({ barang_id: bid, qty_sistem: sys, qty_fisik: qty, multiplier: mult, ed_lte3m, ed_gt3m, catatan });
+    });
+
+    if (!items.length) { alert('Tidak ada item untuk dilaporkan.'); return; }
+
+    const btn = document.getElementById('opSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...';
+
+    try {
+        const res = await fetch(baseUrl + 'api/hc_stock_validate.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ _csrf: csrfToken, klinik_id: klinikId, items })
+        });
+        const data = await res.json();
+        if (data.success) {
+            btn.innerHTML = '<i class="fas fa-check me-2"></i>Laporan Terkirim!';
+            btn.style.background = '#059669';
+            // Tidak reload — laporan self-report baru masuk ke inventory_stok_opname_detail,
+            // stok tas (inventory_stok_tas_hc) baru berubah setelah admin memvalidasi di halaman SO.
+            // Kalau di-reload sekarang, item yang belum tervalidasi (terutama yang baru ditambah manual)
+            // akan hilang dari daftar walau laporannya sudah tersimpan — jadi list dibiarkan tetap tampil.
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Kirim Laporan Stok';
+                btn.style.background = '';
+            }, 2000);
+        } else {
+            alert('Gagal: ' + (data.message || 'Terjadi kesalahan'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Kirim Laporan Stok';
+        }
+    } catch (e) {
+        alert('Koneksi gagal. Coba lagi.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Kirim Laporan Stok';
+    }
+});
 </script>
 </body>
 </html>

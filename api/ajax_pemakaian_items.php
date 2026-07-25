@@ -38,7 +38,7 @@ if ($jenis === 'hc' && $user_hc_id > 0) {
         FROM inventory_stok_tas_hc st
         JOIN inventory_barang b ON st.barang_id = b.id
         LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-        WHERE st.user_id = $user_hc_id AND st.qty > 0
+        WHERE st.user_id = $user_hc_id AND st.klinik_id = $klinik_id AND st.qty > 0
         ORDER BY b.nama_barang ASC
     ");
     while ($row = $res->fetch_assoc()) {

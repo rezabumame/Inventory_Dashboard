@@ -416,8 +416,8 @@ table.dataTable > thead > tr > td {
 @media (max-width: 768px) {
     .sidebar { transform: translateX(-100%); }
     .sidebar.active { transform: translateX(0); }
-    .main-content { margin-left: 0 !important; padding: 16px; }
-    .top-navbar { padding: 0 16px; margin: -16px -16px 16px -16px; }
+    .main-content { margin-left: 0 !important; padding: 8px 12px 20px; }
+    .top-navbar { padding: 0 12px; margin: -8px -12px 10px -12px; }
     .overlay { display: none; position: fixed; inset: 0; opacity: 0; transition: opacity var(--transition); }
     .overlay.active { display: block; opacity: 1; }
 }

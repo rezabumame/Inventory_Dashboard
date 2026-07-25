@@ -386,7 +386,7 @@ CREATE TABLE IF NOT EXISTS `inventory_stok_tas_hc` (
   `updated_by` int(11) DEFAULT NULL,
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `barang_user` (`barang_id`,`user_id`),
+  UNIQUE KEY `barang_user` (`barang_id`,`user_id`,`klinik_id`),
   KEY `idx_sth_user_barang` (`user_id`,`barang_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=367 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
