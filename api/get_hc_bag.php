@@ -45,7 +45,7 @@ while ($res && ($row = $res->fetch_assoc())) {
 // yang masih unlocked, fallback ke ID terakhir kalau semua terkunci) supaya referensi ini
 // selalu menunjuk ke sesi yang sama dengan tempat laporan nakes benar-benar disimpan.
 $r_opname = $conn->query("SELECT id FROM inventory_stok_opname WHERE klinik_id = $klinik_id
-    ORDER BY (is_locked = 0 OR is_locked IS NULL) DESC, id DESC LIMIT 1");
+    ORDER BY (is_locked = 0 OR is_locked IS NULL) DESC, periode DESC, id DESC LIMIT 1");
 $opname_row = $r_opname ? $r_opname->fetch_assoc() : null;
 $opname_id = $opname_row ? (int)$opname_row['id'] : 0;
 

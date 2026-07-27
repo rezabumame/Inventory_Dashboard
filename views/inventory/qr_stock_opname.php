@@ -179,8 +179,10 @@ if ($lok_data) {
             // baris sama sekali utk lokasi ini.
             $defaultRow = $activeRow;
             if (!$defaultRow) {
+                // Semua sesi sudah terkunci — tampilkan periode (bulan) TERBARU, bukan sekadar ID
+                // terbesar (ID bisa lebih besar utk periode lama yang sempat dibuka-kunci ulang).
                 $rLatest = $conn->query("SELECT id, periode, status$lck_sel FROM inventory_stok_opname
-                    WHERE $loc_cond ORDER BY id DESC LIMIT 1");
+                    WHERE $loc_cond ORDER BY periode DESC, id DESC LIMIT 1");
                 $defaultRow = $rLatest ? $rLatest->fetch_assoc() : null;
             }
 
@@ -542,7 +544,8 @@ if ($can_all && !$lok_data) {
         $curUnlocked = !$cur['is_locked'];
         $rowUnlocked = !$row['is_locked'];
         if ($rowUnlocked && !$curUnlocked) { $so_status_map[$kid] = $row; }
-        elseif ($rowUnlocked === $curUnlocked && $row['id'] > $cur['id']) { $so_status_map[$kid] = $row; }
+        elseif ($rowUnlocked === $curUnlocked && ($row['periode'] > $cur['periode']
+                || ($row['periode'] === $cur['periode'] && $row['id'] > $cur['id']))) { $so_status_map[$kid] = $row; }
     }
     if ($gudang_loc_code !== '') {
         $r_gu_p = $conn->query("SHOW COLUMNS FROM inventory_stok_opname LIKE 'is_gudang_utama'");
@@ -555,7 +558,8 @@ if ($can_all && !$lok_data) {
                 $curUnlocked = !$so_gudang_status['is_locked'];
                 $rowUnlocked = !$row['is_locked'];
                 if ($rowUnlocked && !$curUnlocked) { $so_gudang_status = $row; }
-                elseif ($rowUnlocked === $curUnlocked && $row['id'] > $so_gudang_status['id']) { $so_gudang_status = $row; }
+                elseif ($rowUnlocked === $curUnlocked && ($row['periode'] > $so_gudang_status['periode']
+                        || ($row['periode'] === $so_gudang_status['periode'] && $row['id'] > $so_gudang_status['id']))) { $so_gudang_status = $row; }
             }
         }
     }

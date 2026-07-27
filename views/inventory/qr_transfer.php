@@ -70,7 +70,7 @@ while ($res_ki && ($ri = $res_ki->fetch_assoc())) {
 // (prioritaskan sesi yang masih unlocked, fallback ke ID terakhir kalau semua terkunci) —
 // dipakai utk cek barang_id mana yang SUDAH dilaporkan nakes periode ini.
 $r_opname = $conn->query("SELECT id, periode FROM inventory_stok_opname WHERE klinik_id = $klinik_id
-    ORDER BY (is_locked = 0 OR is_locked IS NULL) DESC, id DESC LIMIT 1");
+    ORDER BY (is_locked = 0 OR is_locked IS NULL) DESC, periode DESC, id DESC LIMIT 1");
 $opname_row = $r_opname ? $r_opname->fetch_assoc() : null;
 $opname_id_now = $opname_row ? (int)$opname_row['id'] : 0;
 $opname_periode_label = ($opname_row && !empty($opname_row['periode']))
