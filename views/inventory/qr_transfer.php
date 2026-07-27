@@ -287,6 +287,20 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
 .badge-reported{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:#059669;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:99px;padding:1px 8px;white-space:nowrap;}
 .op-name{font-size:14px;font-weight:600;color:#1e293b;margin-bottom:2px;}
 .op-sys{font-size:12px;color:#64748b;margin-bottom:10px;}
+
+/* Ringkasan read-only utk item yang sudah dilaporkan periode ini (ganti stepper+input aktif) */
+.op-report-summary{display:flex;align-items:center;gap:10px;margin-top:2px;}
+.op-report-box{flex:1;background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:8px 12px;text-align:center;}
+.op-report-box.is-final{border-color:#c7d8ff;background:#f5f8ff;}
+.op-report-label{font-size:10.5px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em;}
+.op-report-box.is-final .op-report-label{color:#204EAB;}
+.op-report-val{font-size:17px;font-weight:700;color:#1e293b;margin-top:1px;}
+.op-report-val .uom{font-size:11px;font-weight:600;color:#94a3b8;}
+.op-report-arrow{color:#c7d0dc;font-size:13px;flex-shrink:0;}
+.op-report-diff{flex-shrink:0;font-size:11px;font-weight:700;border-radius:99px;padding:3px 9px;white-space:nowrap;}
+.op-report-diff.zero{color:#059669;background:#ecfdf5;}
+.op-report-diff.minus{color:#b45309;background:#fffbeb;}
+.op-report-diff.plus{color:#204EAB;background:#eff6ff;}
 .op-qty-row{display:flex;align-items:center;gap:8px;}
 .op-qty-label{font-size:12px;color:#64748b;white-space:nowrap;}
 .op-qty-input{width:72px;border:1.5px solid #c7d8ff;border-radius:8px;padding:6px 6px;font-size:15px;font-weight:700;text-align:center;color:#1e293b;outline:none;}
@@ -468,19 +482,45 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
         <div class="op-name" style="padding-right:28px;"><?= htmlspecialchars($bi['nama_barang']) ?>
             <?php if ($reported): ?><span class="badge-reported"><i class="fas fa-check-circle"></i> Sudah Lapor</span><?php endif; ?>
         </div>
-        <div class="op-sys"><?= $qty_validated_diff ? 'Divalidasi admin' : 'Stok sistem' ?>: <strong><?= (int)round((float)$bi['qty_sistem']) ?></strong> <?= htmlspecialchars($bi['uom']) ?></div>
+        <?php if ($reported): ?>
+            <?php $diff_final = (int)round((float)$bi['qty_sistem']) - (int)round((float)$qty_display); ?>
+            <div class="op-report-summary">
+                <?php if ($qty_validated_diff): ?>
+                    <div class="op-report-box">
+                        <div class="op-report-label">Lapor Awal</div>
+                        <div class="op-report-val"><?= (int)round((float)$qty_display) ?> <span class="uom"><?= htmlspecialchars($bi['uom']) ?></span></div>
+                    </div>
+                    <i class="fas fa-arrow-right op-report-arrow"></i>
+                    <div class="op-report-box is-final">
+                        <div class="op-report-label">Divalidasi</div>
+                        <div class="op-report-val"><?= (int)round((float)$bi['qty_sistem']) ?> <span class="uom"><?= htmlspecialchars($bi['uom']) ?></span></div>
+                    </div>
+                    <span class="op-report-diff <?= $diff_final === 0 ? 'zero' : ($diff_final > 0 ? 'plus' : 'minus') ?>"><?= $diff_final > 0 ? '+' : '' ?><?= $diff_final ?></span>
+                <?php else: ?>
+                    <div class="op-report-box is-final" style="flex:0 0 auto;min-width:110px;">
+                        <div class="op-report-label">Qty Fisik</div>
+                        <div class="op-report-val"><?= (int)round((float)$qty_display) ?> <span class="uom"><?= htmlspecialchars($bi['uom']) ?></span></div>
+                    </div>
+                    <span class="op-report-diff zero">✓ Sesuai</span>
+                <?php endif; ?>
+            </div>
+        <?php else: ?>
+        <div class="op-sys">Stok sistem: <strong><?= (int)round((float)$bi['qty_sistem']) ?></strong> <?= htmlspecialchars($bi['uom']) ?></div>
         <div class="op-qty-row">
-            <span class="op-qty-label">Qty fisik<?= $qty_validated_diff ? ' (laporan awal)' : '' ?>:</span>
-            <button type="button" class="qty-btn" onclick="opChangeQty(this,-1)" <?= $reported ? 'disabled' : '' ?>>−</button>
+            <span class="op-qty-label">Qty fisik:</span>
+            <button type="button" class="qty-btn" onclick="opChangeQty(this,-1)">−</button>
             <input type="number" class="op-qty-input" value="<?= (int)round((float)$qty_display) ?>" min="0" step="1"
                 data-barang-id="<?= (int)$bi['barang_id'] ?>"
-                <?= $reported ? 'disabled' : '' ?>
                 oninput="opUpdateSelisih(this)">
-            <button type="button" class="qty-btn" onclick="opChangeQty(this,1)" <?= $reported ? 'disabled' : '' ?>>+</button>
+            <button type="button" class="qty-btn" onclick="opChangeQty(this,1)">+</button>
             <span class="op-selisih" id="selisih-<?= (int)$bi['barang_id'] ?>"></span>
         </div>
         <textarea class="op-catatan" rows="1" placeholder="Catatan (opsional)..."
-            data-barang-id="<?= (int)$bi['barang_id'] ?>" <?= $reported ? 'disabled' : '' ?>></textarea>
+            data-barang-id="<?= (int)$bi['barang_id'] ?>"></textarea>
+        <?php endif; ?>
+        <?php if ($reported): ?>
+        <input type="hidden" class="op-qty-input" value="<?= (int)round((float)$qty_display) ?>" data-barang-id="<?= (int)$bi['barang_id'] ?>">
+        <?php endif; ?>
     </div>
     <?php endforeach; ?>
     </div>
@@ -810,8 +850,12 @@ function opUpdateSelisih(input) {
         if (diff === 0) { el.textContent = '✓ Sesuai'; el.className = 'op-selisih zero'; }
         else { el.textContent = (diff > 0 ? '+' : '') + diff; el.className = 'op-selisih ' + (diff > 0 ? 'plus' : 'minus'); }
     }
-    card.classList.toggle('has-selisih', diff !== 0);
-    card.classList.toggle('ok', diff === 0);
+    // Item yang sudah dilaporkan periode ini sudah final (read-only) — jangan ikut dihitung
+    // sbg "selisih perlu perhatian" di ringkasan atas, itu cuma riwayat lapor-vs-validasi.
+    if (card.dataset.reported !== '1') {
+        card.classList.toggle('has-selisih', diff !== 0);
+        card.classList.toggle('ok', diff === 0);
+    }
     opRefreshSummary();
 }
 
