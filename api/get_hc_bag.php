@@ -50,6 +50,10 @@ $opname_row = $r_opname ? $r_opname->fetch_assoc() : null;
 $opname_id = $opname_row ? (int)$opname_row['id'] : 0;
 
 if ($opname_id > 0) {
+    // AND d.qty_aktual IS NULL — item yang SUDAH divalidasi admin (apa pun angkanya, termasuk
+    // divalidasi 0 → barisnya sengaja dihapus dari inventory_stok_tas_hc) tidak boleh muncul
+    // lagi di sini pakai laporan mentah nakes; stok_tas_hc (query di atas) sudah jadi sumber
+    // kebenaran begitu validasi terjadi.
     $res_pending = $conn->query("
         SELECT b.id AS barang_id, b.nama_barang,
                COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom,
@@ -59,7 +63,7 @@ if ($opname_id > 0) {
         JOIN inventory_barang b ON b.id = d.barang_id
         LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
         WHERE d.opname_id = $opname_id AND d.tipe = 'hc' AND d.hc_user_id = $user_id
-          AND d.qty_fisik IS NOT NULL
+          AND d.qty_fisik IS NOT NULL AND d.qty_aktual IS NULL
         ORDER BY b.nama_barang ASC
     ");
     while ($res_pending && ($rp = $res_pending->fetch_assoc())) {
