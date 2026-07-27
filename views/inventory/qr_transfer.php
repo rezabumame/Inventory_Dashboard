@@ -88,6 +88,13 @@ $track_ed_sel = $has_track_ed ? 'b.track_ed,' : '0 AS track_ed,';
 
 $hc_bag_items = [];
 $hc_bag_ids   = [];
+// LEFT JOIN opname_detail periode berjalan supaya, kalau item ini sudah divalidasi admin
+// (qty_aktual masuk ke stok tas → qty_sistem di bawah), laporan ASLI nakes (qty_fisik) tetap
+// bisa dibedakan dari angka hasil validasi — bukan tertimpa begitu saja di tampilan nakes.
+$opname_join = $opname_id_now > 0
+    ? "LEFT JOIN inventory_stok_opname_detail d ON d.opname_id = $opname_id_now AND d.tipe = 'hc'
+        AND d.hc_user_id = $user_id AND d.barang_id = st.barang_id"
+    : '';
 $res_bag = $conn->query("
     SELECT b.id AS barang_id, b.nama_barang, b.kode_barang,
            $track_ed_sel
@@ -95,9 +102,11 @@ $res_bag = $conn->query("
            COALESCE(uc.from_uom, '') AS from_uom,
            COALESCE(uc.multiplier, 1) AS multiplier,
            COALESCE(st.qty, 0) AS qty_sistem
+           " . ($opname_join !== '' ? ', d.qty_fisik AS qty_lapor_raw' : ', NULL AS qty_lapor_raw') . "
     FROM inventory_stok_tas_hc st
     JOIN inventory_barang b ON b.id = st.barang_id
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+    $opname_join
     WHERE st.user_id = $user_id AND st.klinik_id = $klinik_id AND st.qty > 0
     ORDER BY b.nama_barang ASC
 ");
@@ -107,6 +116,11 @@ while ($res_bag && ($rb = $res_bag->fetch_assoc())) {
     $rb['multiplier'] = (float)($rb['multiplier'] ?? 1);
     // Item stok tas ini bisa saja SUDAH dilaporkan ulang periode ini juga — dikunci dari sisi nakes.
     $rb['already_reported'] = isset($reported_bids[$bid]);
+    // Laporan asli nakes periode ini (kalau ada) — beda dari qty_sistem yang sudah jadi angka
+    // hasil validasi admin begitu qty_aktual disimpan ke stok tas.
+    $mult_rb = $rb['multiplier'] > 0 ? $rb['multiplier'] : 1;
+    $rb['qty_lapor'] = ($rb['qty_lapor_raw'] !== null) ? (float)$rb['qty_lapor_raw'] / $mult_rb : null;
+    unset($rb['qty_lapor_raw']);
     $hc_bag_items[] = $rb;
     $hc_bag_ids[$bid] = true;
 }
@@ -437,7 +451,16 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
     </div>
 
     <div id="opItemList">
-    <?php foreach ($hc_bag_items as $bi): $reported = !empty($bi['already_reported']); ?>
+    <?php foreach ($hc_bag_items as $bi):
+        $reported = !empty($bi['already_reported']);
+        // Kalau sudah dilaporkan periode ini, tampilkan laporan ASLI nakes (qty_lapor) sebagai
+        // "Qty fisik" — jangan qty_sistem (yang sudah jadi angka hasil validasi admin begitu
+        // qty_aktual disimpan). Kalau belum pernah lapor periode ini, qty_sistem tetap dipakai
+        // sbg acuan awal (perilaku lama, tidak berubah).
+        $qty_display = ($reported && $bi['qty_lapor'] !== null) ? $bi['qty_lapor'] : $bi['qty_sistem'];
+        $qty_validated_diff = ($reported && $bi['qty_lapor'] !== null
+            && (int)round($bi['qty_lapor']) !== (int)round((float)$bi['qty_sistem']));
+    ?>
     <div class="op-item<?= $reported ? ' reported' : '' ?>" data-id="<?= (int)$bi['barang_id'] ?>" data-sys="<?= (float)$bi['qty_sistem'] ?>" data-mult="<?= (float)$bi['multiplier'] ?>" <?= $reported ? 'data-reported="1"' : '' ?>>
         <?php if (!$reported): ?>
         <button type="button" class="op-del-btn" onclick="opRemoveItem(this)" title="Hapus">×</button>
@@ -445,11 +468,11 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
         <div class="op-name" style="padding-right:28px;"><?= htmlspecialchars($bi['nama_barang']) ?>
             <?php if ($reported): ?><span class="badge-reported"><i class="fas fa-check-circle"></i> Sudah Lapor</span><?php endif; ?>
         </div>
-        <div class="op-sys">Stok sistem: <strong><?= (int)round((float)$bi['qty_sistem']) ?></strong> <?= htmlspecialchars($bi['uom']) ?></div>
+        <div class="op-sys"><?= $qty_validated_diff ? 'Divalidasi admin' : 'Stok sistem' ?>: <strong><?= (int)round((float)$bi['qty_sistem']) ?></strong> <?= htmlspecialchars($bi['uom']) ?></div>
         <div class="op-qty-row">
-            <span class="op-qty-label">Qty fisik:</span>
+            <span class="op-qty-label">Qty fisik<?= $qty_validated_diff ? ' (laporan awal)' : '' ?>:</span>
             <button type="button" class="qty-btn" onclick="opChangeQty(this,-1)" <?= $reported ? 'disabled' : '' ?>>−</button>
-            <input type="number" class="op-qty-input" value="<?= (int)round((float)$bi['qty_sistem']) ?>" min="0" step="1"
+            <input type="number" class="op-qty-input" value="<?= (int)round((float)$qty_display) ?>" min="0" step="1"
                 data-barang-id="<?= (int)$bi['barang_id'] ?>"
                 <?= $reported ? 'disabled' : '' ?>
                 oninput="opUpdateSelisih(this)">
