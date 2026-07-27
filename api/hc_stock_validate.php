@@ -93,7 +93,14 @@ try {
         $status  = $selisih == 0 ? 'ok' : 'selisih';
 
         if ($has_ed_cols) {
-            // Manual UPSERT — do not rely on UNIQUE KEY existence in DB
+            // Manual UPSERT — tidak ada UNIQUE KEY di DB (sengaja dilepas utk multi-riwayat scan
+            // klinik, lihat scripts/migrate.php). Pakai MySQL advisory lock supaya cek-lalu-insert
+            // ini tidak bisa diselang request lain yg konkuren (double-submit/race) → cegah 2 baris
+            // laporan HC utk (opname, barang, nakes) yang sama.
+            $lock_name = "hc_so_{$opname_id}_{$barang_id}_{$user_id}";
+            $rLock = $conn->query("SELECT GET_LOCK('" . $conn->real_escape_string($lock_name) . "', 5) AS got");
+            $got_lock = $rLock && (int)($rLock->fetch_assoc()['got'] ?? 0) === 1;
+
             $rEx = $conn->query("SELECT id, qty_fisik FROM inventory_stok_opname_detail
                 WHERE opname_id=$opname_id AND barang_id=$barang_id AND hc_user_id=$user_id AND tipe='hc' LIMIT 1");
             $exRow   = $rEx ? $rEx->fetch_assoc() : null;
@@ -101,6 +108,7 @@ try {
             if ($existId > 0 && $exRow['qty_fisik'] !== null) {
                 // Sudah pernah dilaporkan periode ini — jangan timpa, lewati.
                 $skipped++;
+                if ($got_lock) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($lock_name) . "')");
                 continue;
             }
             if ($existId > 0) {
@@ -114,6 +122,7 @@ try {
                     (opname_id, barang_id, hc_user_id, tipe, stok_sistem, qty_fisik, selisih, ed_lte3m, ed_gt3m, catatan, status)
                     VALUES ($opname_id, $barang_id, $user_id, 'hc', $qty_sistem, $qty_fisik, $selisih, $ed_lte3m, $ed_gt3m, '$catatan', '$status')");
             }
+            if ($got_lock) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($lock_name) . "')");
         } else {
             // Legacy path (no hc_user_id column)
             $conn->query("INSERT INTO inventory_stok_opname_detail

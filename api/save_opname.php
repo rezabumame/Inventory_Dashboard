@@ -149,7 +149,12 @@ try {
 
             if ($tipe === 'hc') {
                 // HC: satu baris per (opname, barang, nakes) — upsert manual (bukan lagi via unique key,
-                // karena constraint dilepas agar riwayat scan Klinik bisa multi-baris)
+                // karena constraint dilepas agar riwayat scan Klinik bisa multi-baris). Advisory lock
+                // supaya cek-lalu-insert ini tidak diselang request lain yg konkuren (double-submit/race).
+                $hc_lock_name = "hc_so_{$opname_id}_{$barang_id}_" . ($hc_user_id > 0 ? $hc_user_id : 0);
+                $rHcLock = $conn->query("SELECT GET_LOCK('" . $conn->real_escape_string($hc_lock_name) . "', 5) AS got");
+                $got_hc_lock = $rHcLock && (int)($rHcLock->fetch_assoc()['got'] ?? 0) === 1;
+
                 $existing_id = 0;
                 $rExist = $conn->query("SELECT id FROM inventory_stok_opname_detail WHERE opname_id=$opname_id AND barang_id=$barang_id AND tipe='hc' AND $hc_where LIMIT 1");
                 if ($rExist) $existing_id = (int)($rExist->fetch_assoc()['id'] ?? 0);
@@ -172,26 +177,30 @@ try {
                 } else {
                     $qty_val = $qty_fisik !== null ? $qty_fisik : 'NULL';
                     $sel_val = $selisih   !== null ? $selisih   : 'NULL';
-                    $akt_val = $has_qty_aktual_col ? ($qty_aktual !== null ? $qty_aktual : $qty_val) : null;
+                    // HC: qty_aktual (Stok Aktual, hasil validasi admin) HARUS independen dari qty_fisik
+                    // (laporan nakes) — jangan pernah ikut ditimpa hanya krn payload ini menyimpan qty_fisik
+                    // tanpa qty_aktual eksplisit, supaya validasi yang sudah ada tidak rusak/salah satuan.
+                    $akt_val = $has_qty_aktual_col && $qty_aktual !== null ? $qty_aktual : null;
                     $exp_col = $has_ed_expired_col ? ', ed_expired' : '';
                     $exp_ins = $has_ed_expired_col ? ", $ed_expired" : '';
                     $exp_set = $has_ed_expired_col ? ", ed_expired=$ed_expired" : '';
                     if ($existing_id > 0) {
-                        $akt_set = $has_qty_aktual_col ? ", qty_aktual=$akt_val" : '';
+                        $akt_set = ($has_qty_aktual_col && $akt_val !== null) ? ", qty_aktual=$akt_val" : '';
                         $conn->query("UPDATE inventory_stok_opname_detail SET
                             stok_sistem=$stok_sistem, qty_fisik=$qty_val, selisih=$sel_val$akt_set,
                             ed_lte3m=$ed_lte3m, ed_gt3m=$ed_gt3m$exp_set, catatan='$catatan', status='$status'
                             WHERE id=$existing_id");
                         $detail_id = $existing_id;
                     } else {
-                        $akt_col = $has_qty_aktual_col ? ', qty_aktual' : '';
-                        $akt_ins = $has_qty_aktual_col ? ", $akt_val" : '';
+                        $akt_col = ($has_qty_aktual_col && $akt_val !== null) ? ', qty_aktual' : '';
+                        $akt_ins = ($has_qty_aktual_col && $akt_val !== null) ? ", $akt_val" : '';
                         $conn->query("INSERT INTO inventory_stok_opname_detail
                             (opname_id, barang_id, hc_user_id, tipe, stok_sistem, qty_fisik$akt_col, selisih, ed_lte3m, ed_gt3m$exp_col, catatan, status)
                             VALUES ($opname_id, $barang_id, $hc_val, '$tipe', $stok_sistem, $qty_val$akt_ins, $sel_val, $ed_lte3m, $ed_gt3m$exp_ins, '$catatan', '$status')");
                         $detail_id = (int)$conn->insert_id;
                     }
                 }
+                if ($got_hc_lock) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($hc_lock_name) . "')");
             } else {
                 // Klinik: setiap simpan = 1 riwayat scan baru, kecuali detail_id eksplisit dikirim (edit riwayat tertentu)
                 $req_detail_id = isset($d['detail_id']) ? (int)$d['detail_id'] : 0;

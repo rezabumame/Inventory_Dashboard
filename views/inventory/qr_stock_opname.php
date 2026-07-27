@@ -702,6 +702,19 @@ const baseUrl   = '<?= base_url() ?>';
 const csrfToken = '<?= $csrf ?>';
 let _bulkSoResolve = null;
 
+// Periode "bulan berjalan" dihitung dari jam KLIEN saat tombol diklik, bukan dibekukan dari
+// tanggal server saat halaman dimuat — supaya aksi bulk/export tidak salah sasaran periode
+// kalau admin membuka halaman sebelum tengah malam lalu baru klik tombolnya setelah lewat.
+function currentPeriodeYm() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function currentPeriodeLabel() {
+    const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const d = new Date();
+    return names[d.getMonth()] + ' ' + d.getFullYear();
+}
+
 function bulkSoModalClose(ok) {
     document.getElementById('bulkSoModal').style.display = 'none';
     if (_bulkSoResolve) { _bulkSoResolve(ok); _bulkSoResolve = null; }
@@ -719,11 +732,12 @@ function bulkSoConfirm(title, msg, color) {
 }
 
 async function bulkSoPeriode(action, btn) {
+    const periodeLabel = currentPeriodeLabel();
     const labels = {open:'Buka SO Semua', lock:'Kunci SO Semua'};
     const colors = {open:'#204EAB', lock:'#dc2626'};
     const msgs   = {
-        open: 'Semua SO periode <?= date('F Y') ?> yang belum dibuka akan dibuat, dan yang terkunci akan dibuka kembali.',
-        lock: 'Semua SO periode <?= date('F Y') ?> yang sedang buka akan dikunci.'
+        open: 'Semua SO periode ' + periodeLabel + ' yang belum dibuka akan dibuat, dan yang terkunci akan dibuka kembali.',
+        lock: 'Semua SO periode ' + periodeLabel + ' yang sedang buka akan dikunci.'
     };
     const ok = await bulkSoConfirm(labels[action], msgs[action], colors[action]);
     if (!ok) return;
@@ -735,7 +749,7 @@ async function bulkSoPeriode(action, btn) {
         const res = await fetch(baseUrl + 'api/bulk_so_periode.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action, periode: '<?= date('Y-m') ?>', _csrf: csrfToken})
+            body: JSON.stringify({action, periode: currentPeriodeYm(), _csrf: csrfToken})
         });
         const d = await res.json();
         btn.disabled = false;
@@ -753,8 +767,8 @@ async function bulkSoPeriode(action, btn) {
 }
 
 async function bulkResetSo(btn) {
-    const periodeLabel = '<?= date('F Y') ?>';
-    const periode      = '<?= date('Y-m') ?>';
+    const periodeLabel = currentPeriodeLabel();
+    const periode      = currentPeriodeYm();
     const ok = await bulkSoConfirm(
         'Reset SO Semua — ' + periodeLabel,
         'SEMUA data item SO ' + periodeLabel + ' yang belum terkunci akan dihapus. Header SO tetap ada dan bisa diisi ulang dari nol.\n\nSO yang sudah dikunci tidak akan terpengaruh.',
@@ -805,7 +819,7 @@ async function exportAllSoExcel(btn) {
     }
 
     try {
-        const periode = '<?= date('Y-m') ?>';
+        const periode = currentPeriodeYm();
         const res  = await fetch(baseUrl + 'api/export_all_so.php?periode=' + periode + '&_csrf=' + encodeURIComponent(csrfToken));
         const data = await res.json();
         if (!data.success) { alert('Gagal: ' + data.message); btn.disabled=false; btn.innerHTML=origHtml; return; }
@@ -1613,30 +1627,6 @@ function _soModal(title, msg, okLabel, okColor, showCancel) {
 }
 const soAlert   = (msg, title='Info')               => _soModal(title, msg, 'OK', '#204EAB', false);
 const soConfirm = (msg, title='Konfirmasi', okColor='#204EAB') => _soModal(title, msg, 'Ya, Lanjutkan', okColor, true);
-
-// Prompt angka kecil (dipakai admin utk koreksi "Stok Nakes") — return null kalau dibatalkan.
-function soPromptNumber(title, label, initialValue) {
-    return new Promise(resolve => {
-        const el = document.createElement('div');
-        el.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;';
-        el.innerHTML = `<div style="background:#fff;border-radius:16px;padding:26px 26px 20px;max-width:360px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.18);">
-            <div style="font-weight:700;font-size:.95rem;color:#1e293b;margin-bottom:4px;">${title}</div>
-            <div style="font-size:.83rem;color:#475569;margin-bottom:14px;">${label}</div>
-            <input type="number" min="0" step="any" id="_soPromptInput" value="${initialValue ?? ''}"
-                style="width:100%;border:1.5px solid #c7d8ff;border-radius:8px;padding:8px 10px;font-size:.95rem;font-weight:700;text-align:center;margin-bottom:18px;outline:none;">
-            <div style="display:flex;gap:10px;justify-content:flex-end;">
-                <button data-action="cancel" style="border:1.5px solid #e2e8f0;background:#fff;color:#475569;border-radius:8px;padding:7px 18px;font-weight:600;font-size:.85rem;cursor:pointer;">Batal</button>
-                <button data-action="ok" style="border:none;background:#204EAB;color:#fff;border-radius:8px;padding:7px 20px;font-weight:700;font-size:.85rem;cursor:pointer;">Simpan</button>
-            </div></div>`;
-        document.body.appendChild(el);
-        const input = el.querySelector('#_soPromptInput');
-        const close = val => { document.body.removeChild(el); resolve(val); };
-        el.querySelector('[data-action="ok"]').onclick = () => close(input.value);
-        el.querySelector('[data-action="cancel"]').onclick = () => close(null);
-        el.onclick = e => { if (e.target === el) close(null); };
-        setTimeout(() => { input.focus(); input.select(); }, 50);
-    });
-}
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function escHtml(s) {
@@ -3120,55 +3110,6 @@ function hcOnCatatanChange(bid, val) {
     _hcSaveTimer[bid] = setTimeout(() => hcAutoSaveItem(uid, bid), 1500);
 }
 
-// Koreksi langsung angka "Stok Nakes" (qty_fisik laporan nakes) oleh admin/SPV — dipakai kalau
-// nakes salah input dan admin perlu membetulkan tanpa harus hapus+minta nakes lapor ulang.
-async function hcEditNakesQty(bid) {
-    if (soIsLocked || soNoPeriod) return;
-    const uid   = hcSelectedUid;
-    const entry = hcValidations[uid]?.[bid];
-    if (!entry) return;
-    const item = entry.item;
-    const uom  = item.uom || item.satuan || '';
-    const mult = parseFloat(item.multiplier || 0);
-    const nakesRaw = entry.nakes_qty !== null && entry.nakes_qty !== undefined ? parseFloat(entry.nakes_qty) : null;
-    const curVal = (nakesRaw !== null && mult > 1) ? parseFloat((nakesRaw / mult).toFixed(4)) : nakesRaw;
-
-    const val = await soPromptNumber(
-        'Koreksi Stok Nakes',
-        escHtml(item.nama_barang) + ' — dalam ' + escHtml(uom),
-        curVal ?? ''
-    );
-    if (val === null || val === '') return;
-    const newQty = parseFloat(val);
-    if (isNaN(newQty) || newQty < 0) { soAlert('Angka tidak valid.', 'Error'); return; }
-
-    // qty_fisik disimpan dalam from_uom (satuan dasar) — konsisten dgn api/hc_stock_validate.php
-    const qtyFisikBase = mult > 1 ? newQty * mult : newQty;
-
-    try {
-        const res = await fetch(baseUrl + 'api/save_opname.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                _csrf: csrfToken, klinik_id: lokId, is_gudang: isGudang, periode: soPeriode,
-                details: [{
-                    barang_id: bid, tipe: 'hc', hc_user_id: uid,
-                    stok_sistem: entry.odoo_qty ?? 0,
-                    qty_fisik: qtyFisikBase,
-                    ed_expired: 0, ed_lte3m: 0, ed_gt3m: 0,
-                    catatan: entry.catatan || '',
-                }]
-            })
-        });
-        const d = await res.json();
-        if (!d.success) { soAlert('Gagal menyimpan: ' + (d.message || 'Error'), 'Error'); return; }
-        entry.nakes_qty = qtyFisikBase;
-        hcRenderTable();
-    } catch (e) {
-        soAlert('Koneksi gagal saat menyimpan.', 'Error');
-    }
-}
-
 async function hcDeleteItem(bid) {
     if (soIsLocked || soNoPeriod) return;
     const uid   = hcSelectedUid;
@@ -3319,12 +3260,9 @@ function hcRenderTable() {
         const sesuaiBg  = '#f1f5f9';
         const sesuaiClr = '#64748b';
         const sesuaiBrd = '1px solid #e2e8f0';
-        const nakesEditBtn = (soIsLocked || soNoPeriod) ? '' :
-            '<button onclick="hcEditNakesQty(' + bid + ')" title="Koreksi Stok Nakes" ' +
-            'style="background:none;border:none;padding:0;margin-left:5px;cursor:pointer;color:#94a3b8;"><i class="fas fa-pen" style="font-size:.68rem;"></i></button>';
         const nakesDisplay = (nakesQ !== null
             ? '<b>' + nakesQ + '</b> <span style="font-size:.7rem;color:#94a3b8;">' + uom + '</span>'
-            : '<span style="color:#cbd5e1;">belum lapor</span>') + nakesEditBtn;
+            : '<span style="color:#cbd5e1;">belum lapor</span>');
 
         // Checker = current logged-in user (admin verifier), only when actual_qty is set
         let checkerBadge = '';
