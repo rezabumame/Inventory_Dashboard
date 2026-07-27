@@ -272,9 +272,15 @@ try {
             $b_id  = (int)$hrow['barang_id'];
             $u_id  = (int)$hrow['hc_user_id'];
             $q_val = (float)$hrow['final_qty'];
-            $conn->query("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
-                VALUES ($b_id, $u_id, $klinik_id, $q_val, $user_id, NOW())
-                ON DUPLICATE KEY UPDATE qty = $q_val, updated_by = $user_id, updated_at = NOW()");
+            if ($q_val <= 0) {
+                // Divalidasi 0 = item itu memang tidak ada di tas nakes — hapus barisnya
+                // (bukan simpan qty=0), supaya benar-benar hilang dari semua tampilan stok tas.
+                $conn->query("DELETE FROM inventory_stok_tas_hc WHERE barang_id=$b_id AND user_id=$u_id AND klinik_id=$klinik_id");
+            } else {
+                $conn->query("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
+                    VALUES ($b_id, $u_id, $klinik_id, $q_val, $user_id, NOW())
+                    ON DUPLICATE KEY UPDATE qty = $q_val, updated_by = $user_id, updated_at = NOW()");
+            }
         }
     } elseif ($has_hc_col && !empty($hc_pairs_in_payload)) {
         // Fallback: qty_aktual column absent — use qty_fisik but divide by multiplier (stored in from_uom)
@@ -291,9 +297,13 @@ try {
             $b_id  = (int)$hrow['barang_id'];
             $u_id  = (int)$hrow['hc_user_id'];
             $q_val = (float)$hrow['final_qty'];
-            $conn->query("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
-                VALUES ($b_id, $u_id, $klinik_id, $q_val, $user_id, NOW())
-                ON DUPLICATE KEY UPDATE qty = $q_val, updated_by = $user_id, updated_at = NOW()");
+            if ($q_val <= 0) {
+                $conn->query("DELETE FROM inventory_stok_tas_hc WHERE barang_id=$b_id AND user_id=$u_id AND klinik_id=$klinik_id");
+            } else {
+                $conn->query("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
+                    VALUES ($b_id, $u_id, $klinik_id, $q_val, $user_id, NOW())
+                    ON DUPLICATE KEY UPDATE qty = $q_val, updated_by = $user_id, updated_at = NOW()");
+            }
         }
     }
 
