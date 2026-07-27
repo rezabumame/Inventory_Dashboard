@@ -102,7 +102,7 @@ $res_bag = $conn->query("
            COALESCE(uc.from_uom, '') AS from_uom,
            COALESCE(uc.multiplier, 1) AS multiplier,
            COALESCE(st.qty, 0) AS qty_sistem
-           " . ($opname_join !== '' ? ', d.qty_fisik AS qty_lapor_raw' : ', NULL AS qty_lapor_raw') . "
+           " . ($opname_join !== '' ? ', d.qty_fisik AS qty_lapor_raw, d.qty_aktual AS qty_aktual_now' : ', NULL AS qty_lapor_raw, NULL AS qty_aktual_now') . "
     FROM inventory_stok_tas_hc st
     JOIN inventory_barang b ON b.id = st.barang_id
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
@@ -120,6 +120,9 @@ while ($res_bag && ($rb = $res_bag->fetch_assoc())) {
     // hasil validasi admin begitu qty_aktual disimpan ke stok tas.
     $mult_rb = $rb['multiplier'] > 0 ? $rb['multiplier'] : 1;
     $rb['qty_lapor'] = ($rb['qty_lapor_raw'] !== null) ? (float)$rb['qty_lapor_raw'] / $mult_rb : null;
+    // qty_aktual (sudah dalam to_uom, tidak perlu konversi) — HARUS scoped ke opname_id_now,
+    // bukan qty_sistem (cache stok tas) yang bisa berisi angka lama lintas periode/reset.
+    $rb['qty_aktual_now'] = ($rb['qty_aktual_now'] !== null) ? (float)$rb['qty_aktual_now'] : null;
     unset($rb['qty_lapor_raw']);
     $hc_bag_items[] = $rb;
     $hc_bag_ids[$bid] = true;
@@ -468,12 +471,16 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
     <?php foreach ($hc_bag_items as $bi):
         $reported = !empty($bi['already_reported']);
         // Kalau sudah dilaporkan periode ini, tampilkan laporan ASLI nakes (qty_lapor) sebagai
-        // "Qty fisik" — jangan qty_sistem (yang sudah jadi angka hasil validasi admin begitu
-        // qty_aktual disimpan). Kalau belum pernah lapor periode ini, qty_sistem tetap dipakai
+        // "Qty fisik" — jangan qty_sistem (cache stok tas, bisa berisi angka lama lintas
+        // periode/reset). Kalau belum pernah lapor periode ini, qty_sistem tetap dipakai
         // sbg acuan awal (perilaku lama, tidak berubah).
         $qty_display = ($reported && $bi['qty_lapor'] !== null) ? $bi['qty_lapor'] : $bi['qty_sistem'];
-        $qty_validated_diff = ($reported && $bi['qty_lapor'] !== null
-            && (int)round($bi['qty_lapor']) !== (int)round((float)$bi['qty_sistem']));
+        // "Divalidasi" HARUS berdasarkan qty_aktual milik sesi (opname_id_now) yang sedang
+        // berjalan — bukan qty_sistem, supaya item yang belum divalidasi periode ini (qty_aktual
+        // masih kosong) tidak salah dianggap "sudah divalidasi" hanya krn cache stok tas lama.
+        $has_validated_now = ($reported && $bi['qty_aktual_now'] !== null);
+        $qty_validated_diff = ($has_validated_now && $bi['qty_lapor'] !== null
+            && (int)round($bi['qty_lapor']) !== (int)round($bi['qty_aktual_now']));
     ?>
     <div class="op-item<?= $reported ? ' reported' : '' ?>" data-id="<?= (int)$bi['barang_id'] ?>" data-sys="<?= (float)$bi['qty_sistem'] ?>" data-mult="<?= (float)$bi['multiplier'] ?>" <?= $reported ? 'data-reported="1"' : '' ?>>
         <?php if (!$reported): ?>
@@ -483,7 +490,7 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
             <?php if ($reported): ?><span class="badge-reported"><i class="fas fa-check-circle"></i> Sudah Lapor</span><?php endif; ?>
         </div>
         <?php if ($reported): ?>
-            <?php $diff_final = (int)round((float)$bi['qty_sistem']) - (int)round((float)$qty_display); ?>
+            <?php $diff_final = $has_validated_now ? ((int)round($bi['qty_aktual_now']) - (int)round((float)$qty_display)) : 0; ?>
             <div class="op-report-summary">
                 <?php if ($qty_validated_diff): ?>
                     <div class="op-report-box">
@@ -493,7 +500,7 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
                     <i class="fas fa-arrow-right op-report-arrow"></i>
                     <div class="op-report-box is-final">
                         <div class="op-report-label">Divalidasi</div>
-                        <div class="op-report-val"><?= (int)round((float)$bi['qty_sistem']) ?> <span class="uom"><?= htmlspecialchars($bi['uom']) ?></span></div>
+                        <div class="op-report-val"><?= (int)round($bi['qty_aktual_now']) ?> <span class="uom"><?= htmlspecialchars($bi['uom']) ?></span></div>
                     </div>
                     <span class="op-report-diff <?= $diff_final === 0 ? 'zero' : ($diff_final > 0 ? 'plus' : 'minus') ?>"><?= $diff_final > 0 ? '+' : '' ?><?= $diff_final ?></span>
                 <?php else: ?>
@@ -501,7 +508,7 @@ body{background:#f0f4fb;font-family:'Segoe UI',sans-serif;min-height:100vh;paddi
                         <div class="op-report-label">Qty Fisik</div>
                         <div class="op-report-val"><?= (int)round((float)$qty_display) ?> <span class="uom"><?= htmlspecialchars($bi['uom']) ?></span></div>
                     </div>
-                    <span class="op-report-diff zero">✓ Sesuai</span>
+                    <span class="op-report-diff zero"><?= $has_validated_now ? '✓ Sesuai' : '✓ Terkirim' ?></span>
                 <?php endif; ?>
             </div>
         <?php else: ?>
