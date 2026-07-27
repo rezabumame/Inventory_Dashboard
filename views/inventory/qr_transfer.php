@@ -139,7 +139,7 @@ if ($opname_id_now > 0 && !empty($reported_bids)) {
                COALESCE(NULLIF(uc.to_uom,''), b.satuan) AS uom,
                COALESCE(uc.from_uom, '') AS from_uom,
                COALESCE(uc.multiplier, 1) AS multiplier,
-               d.qty_fisik AS qty_fisik_raw
+               d.qty_fisik AS qty_fisik_raw, d.qty_aktual AS qty_aktual_raw
         FROM inventory_stok_opname_detail d
         JOIN inventory_barang b ON b.id = d.barang_id
         LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
@@ -156,8 +156,12 @@ if ($opname_id_now > 0 && !empty($reported_bids)) {
         $rp['track_ed']   = (int)($rp['track_ed'] ?? 0);
         $rp['multiplier'] = $mult;
         $rp['qty_sistem'] = (float)$rp['qty_fisik_raw'] / $mult;
+        // Item ini tidak (lagi) ada di stok tas sama sekali — qty_lapor = laporan asli nakes,
+        // qty_aktual_now diambil kalau admin sempat validasi tapi tidak masuk cache (mis. divalidasi 0).
+        $rp['qty_lapor'] = $rp['qty_sistem'];
+        $rp['qty_aktual_now'] = ($rp['qty_aktual_raw'] !== null) ? (float)$rp['qty_aktual_raw'] : null;
         $rp['already_reported'] = true; // sudah lapor periode ini — read-only utk nakes
-        unset($rp['qty_fisik_raw']);
+        unset($rp['qty_fisik_raw'], $rp['qty_aktual_raw']);
         $hc_bag_items[] = $rp;
         $hc_bag_ids[$bid] = true;
     }
