@@ -41,10 +41,11 @@ while ($res && ($row = $res->fetch_assoc())) {
 
 // Item yang sudah dilaporkan (self-report) tapi belum divalidasi admin (belum masuk
 // inventory_stok_tas_hc) — tetap tampilkan pakai laporan sendiri sbg acuan sementara.
-// Resolusi opname_id HARUS sama persis dengan api/hc_stock_validate.php (baris terakhir
-// milik klinik ini, apa pun periode/status kuncinya) supaya referensi ini selalu menunjuk
-// ke sesi yang sama dengan tempat laporan nakes benar-benar disimpan.
-$r_opname = $conn->query("SELECT id FROM inventory_stok_opname WHERE klinik_id = $klinik_id ORDER BY id DESC LIMIT 1");
+// Resolusi opname_id HARUS sama persis dengan api/hc_stock_validate.php (prioritaskan sesi
+// yang masih unlocked, fallback ke ID terakhir kalau semua terkunci) supaya referensi ini
+// selalu menunjuk ke sesi yang sama dengan tempat laporan nakes benar-benar disimpan.
+$r_opname = $conn->query("SELECT id FROM inventory_stok_opname WHERE klinik_id = $klinik_id
+    ORDER BY (is_locked = 0 OR is_locked IS NULL) DESC, id DESC LIMIT 1");
 $opname_row = $r_opname ? $r_opname->fetch_assoc() : null;
 $opname_id = $opname_row ? (int)$opname_row['id'] : 0;
 

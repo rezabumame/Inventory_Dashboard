@@ -48,9 +48,10 @@ try {
     if ($has_per_hc) {
         // Laporan nakes murni angka pembanding (bukan bagian proses SO resmi admin) — jadi TIDAK PERNAH
         // menunggu periode dibuka, dan TIDAK PERNAH membuka periode baru atau menembus status kunci.
-        // Selalu simpan ke periode TERAKHIR milik klinik ini apa adanya, terkunci ataupun tidak.
+        // Prioritas: periode yang masih terbuka (unlocked) — kalau ada, meski itu periode lama.
+        // Kalau semua sudah terkunci, baru simpan ke periode TERAKHIR (bulan berjalan) apa adanya.
         $rOp = $conn->query("SELECT id, periode FROM inventory_stok_opname
-            WHERE klinik_id = $klinik_id ORDER BY id DESC LIMIT 1");
+            WHERE klinik_id = $klinik_id ORDER BY (is_locked = 0 OR is_locked IS NULL) DESC, id DESC LIMIT 1");
         $opRow = $rOp ? $rOp->fetch_assoc() : null;
         $opname_id = $opRow ? (int)$opRow['id'] : 0;
         if (!$opname_id) throw new RuntimeException('Belum ada SO yang pernah dibuka untuk klinik ini. Hubungi admin gudang.');
