@@ -935,7 +935,7 @@ async function exportAllSoExcel(btn) {
         // Helper: konversi ke base UOM (from_uom). Semua qty di file export SUDAH dalam base UOM.
         const convOf = (mult, fromUom, toUom) => {
             const hasKonv = mult > 0 && mult !== 1 && fromUom && fromUom !== toUom;
-            return { hasKonv, konv: hasKonv ? mult : '', toBase: v => (v === '' || v === null || v === undefined) ? '' : (hasKonv ? parseFloat((v * mult).toFixed(4)) : v) };
+            return { hasKonv, konv: hasKonv ? mult : 1, toBase: v => (v === '' || v === null || v === undefined) ? '' : (hasKonv ? parseFloat((v * mult).toFixed(4)) : v) };
         };
 
         // ── 1 sheet per lokasi (klinik/gudang), + 1 sheet HC per klinik yang punya data HC ──
@@ -2724,7 +2724,7 @@ function soExportExcel() {
         const toUom         = e.item.uom || e.item.satuan || '';
         const hasKonv       = mult > 0 && mult !== 1 && fromUom;
         const toBase        = v => hasKonv ? parseFloat((v * mult).toFixed(4)) : v;
-        const konversi      = hasKonv ? mult : '';
+        const konversi      = hasKonv ? mult : 1;
         const expDet = Object.keys(expMap);
         const lteDet = Object.keys(lteMap);
         const gtDet  = Object.keys(gtMap);
@@ -2832,7 +2832,7 @@ function soExportExcel() {
         });
         aggMap.forEach(agg => {
             const hasKonv  = agg.mult > 0 && agg.mult !== 1 && agg.fromUom && agg.fromUom !== agg.toUom;
-            const konversi = hasKonv ? agg.mult : '';
+            const konversi = hasKonv ? agg.mult : 1;
             const qty = agg.has_qty ? parseFloat(agg.qty_total.toFixed(4)) : '';
             // Tandai kalau totalnya campuran validasi admin & laporan mentah nakes yg belum dicek,
             // supaya pembaca laporan tahu sebagian angka ini belum resmi divalidasi.
