@@ -67,16 +67,21 @@ try {
     if ($has_periode_col) {
         // Sesi aktif = baris yang belum dikunci untuk lokasi ini, apa pun periodenya —
         // supaya sesi yang berjalan lewat tengah malam (lintas bulan kalender) tidak terputus.
+        // status='draft' (sesi auto-create dari laporan nakes, belum pernah "dibuka" admin sendiri)
+        // dikecualikan — endpoint ini dipakai admin utk validasi, tidak boleh menulis ke sesi yang
+        // belum diakui admin ada. Tie-break periode DESC dulu (bukan cuma id DESC) konsisten dgn
+        // resolusi di tempat lain, supaya tidak salah pilih periode lama yang sempat dibuka-kunci ulang.
         $lck_sel2  = $has_locked_col ? 'is_locked' : '0 AS is_locked';
         $lock_cond = $has_locked_col ? "AND (is_locked = 0 OR is_locked IS NULL)" : '';
+        $draft_cond2 = "AND (status IS NULL OR status != 'draft')";
         if ($is_gudang) {
             $rOp = $conn->query("SELECT id, periode, $lck_sel2 FROM inventory_stok_opname
-                WHERE is_gudang_utama = 1 $lock_cond
-                ORDER BY id DESC LIMIT 1");
+                WHERE is_gudang_utama = 1 $lock_cond $draft_cond2
+                ORDER BY periode DESC, id DESC LIMIT 1");
         } else {
             $rOp = $conn->query("SELECT id, periode, $lck_sel2 FROM inventory_stok_opname
-                WHERE klinik_id = $klinik_id $lock_cond
-                ORDER BY id DESC LIMIT 1");
+                WHERE klinik_id = $klinik_id $lock_cond $draft_cond2
+                ORDER BY periode DESC, id DESC LIMIT 1");
         }
         $opRow = $rOp ? $rOp->fetch_assoc() : null;
         $opname_id = $opRow ? (int)$opRow['id'] : 0;

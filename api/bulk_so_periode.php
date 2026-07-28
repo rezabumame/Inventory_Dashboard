@@ -50,7 +50,7 @@ foreach ($kliniks as $kl) {
     $kid  = (int)$kl['id'];
     $nama = $kl['nama_klinik'];
 
-    $rOp = $conn->query("SELECT id, is_locked FROM inventory_stok_opname
+    $rOp = $conn->query("SELECT id, is_locked, status FROM inventory_stok_opname
         WHERE klinik_id = $kid AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
     $opRow = $rOp ? $rOp->fetch_assoc() : null;
 
@@ -67,22 +67,52 @@ foreach ($kliniks as $kl) {
             $results[] = ['klinik' => $nama, 'status' => 'skip', 'msg' => "sesi periode {$activeRow['periode']} masih berjalan"];
             $skipped++; continue;
         }
+        // Advisory lock (nama sama persis dgn api/open_so_periode.php & api/hc_stock_validate.php)
+        // supaya bulk-open tidak race dgn nakes yg bersamaan auto-create sesi draft.
+        $lock_name = $conn->real_escape_string("so_open_klinik_$kid");
+        $rLock = $conn->query("SELECT GET_LOCK('$lock_name', 5) AS got");
+        $got_lock = $rLock && (int)($rLock->fetch_assoc()['got'] ?? 0) === 1;
+        if (!$got_lock) {
+            $results[] = ['klinik' => $nama, 'status' => 'error', 'msg' => 'sedang diproses permintaan lain, coba lagi'];
+            $errors++; continue;
+        }
+        // Re-cek setelah dapat lock — barangkali nakes baru saja bikin baris draft.
+        $rOp2 = $conn->query("SELECT id, is_locked, status FROM inventory_stok_opname
+            WHERE klinik_id = $kid AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
+        $opRow = $rOp2 ? $rOp2->fetch_assoc() : null;
+
         if ($opRow) {
-            if (!(int)($opRow['is_locked'] ?? 0)) { $results[] = ['klinik' => $nama, 'status' => 'skip', 'msg' => 'sudah buka']; $skipped++; continue; }
+            if ($opRow['status'] === 'draft') {
+                // Sesi auto-create dari laporan nakes — promosikan, jangan dianggap "sudah buka".
+                $oid = (int)$opRow['id'];
+                $ok  = $conn->query("UPDATE inventory_stok_opname SET status='open', is_locked=0 WHERE id=$oid");
+                if ($ok) { $results[] = ['klinik' => $nama, 'status' => 'ok', 'msg' => 'dibuka']; $opened++; }
+                else { $results[] = ['klinik' => $nama, 'status' => 'error', 'msg' => $conn->error]; $errors++; }
+                $conn->query("SELECT RELEASE_LOCK('$lock_name')"); continue;
+            }
+            if (!(int)($opRow['is_locked'] ?? 0)) {
+                $results[] = ['klinik' => $nama, 'status' => 'skip', 'msg' => 'sudah buka']; $skipped++;
+                $conn->query("SELECT RELEASE_LOCK('$lock_name')"); continue;
+            }
             // Terkunci → buka kembali (aman krn sudah dipastikan tidak ada sesi lain yg masih terbuka)
             $oid = (int)$opRow['id'];
             $ok  = $conn->query("UPDATE inventory_stok_opname SET is_locked=0, locked_by=NULL, locked_at=NULL, status='open' WHERE id=$oid");
             if ($ok) { $results[] = ['klinik' => $nama, 'status' => 'ok', 'msg' => 'dibuka kembali']; $opened++; }
             else { $results[] = ['klinik' => $nama, 'status' => 'error', 'msg' => $conn->error]; $errors++; }
-            continue;
+            $conn->query("SELECT RELEASE_LOCK('$lock_name')"); continue;
         }
         $ok = $conn->query("INSERT INTO inventory_stok_opname (klinik_id, user_id, tanggal_mulai, tanggal_selesai, status, catatan, periode, is_locked)
             VALUES ($kid, $user_id, '$now', '$now', 'open', '', '$safe_per', 0)");
         if ($ok && $conn->insert_id) { $results[] = ['klinik' => $nama, 'status' => 'ok', 'msg' => 'dibuka']; $opened++; }
         else { $results[] = ['klinik' => $nama, 'status' => 'error', 'msg' => $conn->error]; $errors++; }
+        $conn->query("SELECT RELEASE_LOCK('$lock_name')");
 
     } elseif ($action === 'lock') {
         if (!$opRow) { $results[] = ['klinik' => $nama, 'status' => 'skip', 'msg' => 'belum dibuka']; $skipped++; continue; }
+        if ($opRow['status'] === 'draft') {
+            // Belum pernah "dibuka" admin sungguhan — jangan langsung dikunci, harus lewat "Buka SO" dulu.
+            $results[] = ['klinik' => $nama, 'status' => 'skip', 'msg' => 'belum dibuka']; $skipped++; continue;
+        }
         if ((int)($opRow['is_locked'] ?? 0)) { $results[] = ['klinik' => $nama, 'status' => 'skip', 'msg' => 'sudah terkunci']; $skipped++; continue; }
         $oid = (int)$opRow['id'];
         $ok  = $conn->query("UPDATE inventory_stok_opname SET is_locked=1, locked_by=$user_id, locked_at='$now', status='locked' WHERE id=$oid");
@@ -119,17 +149,30 @@ if ($gudang_loc !== '' && $has_gu_col) {
         if ($guHasOtherActive) {
             $results[] = ['klinik' => 'Gudang Utama', 'status' => 'skip', 'msg' => "sesi periode {$guActiveRow['periode']} masih berjalan"];
             $skipped++;
-        } elseif (!$guRow) {
-            $ok = $conn->query("INSERT INTO inventory_stok_opname (klinik_id, is_gudang_utama, user_id, tanggal_mulai, tanggal_selesai, status, catatan, periode, is_locked)
-                VALUES (NULL, 1, $user_id, '$now', '$now', 'open', '', '$safe_per', 0)");
-            if ($ok && $conn->insert_id) { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'ok', 'msg' => 'dibuka']; $opened++; }
-            else { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'error', 'msg' => $conn->error]; $errors++; }
-        } elseif ((int)($guRow['is_locked'] ?? 0)) {
-            $oid = (int)$guRow['id'];
-            $ok  = $conn->query("UPDATE inventory_stok_opname SET is_locked=0, locked_by=NULL, locked_at=NULL, status='open' WHERE id=$oid");
-            if ($ok) { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'ok', 'msg' => 'dibuka kembali']; $opened++; }
-            else { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'error', 'msg' => $conn->error]; $errors++; }
-        } else { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'skip', 'msg' => 'sudah buka']; $skipped++; }
+        } else {
+            $rGuLock = $conn->query("SELECT GET_LOCK('so_open_gudang', 5) AS got");
+            $got_gu_lock = $rGuLock && (int)($rGuLock->fetch_assoc()['got'] ?? 0) === 1;
+            if (!$got_gu_lock) {
+                $results[] = ['klinik' => 'Gudang Utama', 'status' => 'error', 'msg' => 'sedang diproses permintaan lain, coba lagi'];
+                $errors++;
+            } else {
+                $rGu2 = $conn->query("SELECT id, is_locked FROM inventory_stok_opname
+                    WHERE is_gudang_utama = 1 AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
+                $guRow = $rGu2 ? $rGu2->fetch_assoc() : null;
+                if (!$guRow) {
+                    $ok = $conn->query("INSERT INTO inventory_stok_opname (klinik_id, is_gudang_utama, user_id, tanggal_mulai, tanggal_selesai, status, catatan, periode, is_locked)
+                        VALUES (NULL, 1, $user_id, '$now', '$now', 'open', '', '$safe_per', 0)");
+                    if ($ok && $conn->insert_id) { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'ok', 'msg' => 'dibuka']; $opened++; }
+                    else { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'error', 'msg' => $conn->error]; $errors++; }
+                } elseif ((int)($guRow['is_locked'] ?? 0)) {
+                    $oid = (int)$guRow['id'];
+                    $ok  = $conn->query("UPDATE inventory_stok_opname SET is_locked=0, locked_by=NULL, locked_at=NULL, status='open' WHERE id=$oid");
+                    if ($ok) { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'ok', 'msg' => 'dibuka kembali']; $opened++; }
+                    else { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'error', 'msg' => $conn->error]; $errors++; }
+                } else { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'skip', 'msg' => 'sudah buka']; $skipped++; }
+                $conn->query("SELECT RELEASE_LOCK('so_open_gudang')");
+            }
+        }
     } elseif ($action === 'lock' && $guRow && !(int)($guRow['is_locked'] ?? 0)) {
         $oid = (int)$guRow['id'];
         $ok  = $conn->query("UPDATE inventory_stok_opname SET is_locked=1, locked_by=$user_id, locked_at='$now', status='locked' WHERE id=$oid");

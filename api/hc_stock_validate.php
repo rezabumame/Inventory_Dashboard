@@ -47,15 +47,48 @@ try {
 
     if ($has_per_hc) {
         // Laporan nakes murni angka pembanding (bukan bagian proses SO resmi admin) — jadi TIDAK PERNAH
-        // menunggu periode dibuka, dan TIDAK PERNAH membuka periode baru atau menembus status kunci.
+        // menunggu periode dibuka, dan TIDAK PERNAH menembus periode LAMA yang terkunci.
         // Prioritas: periode yang masih terbuka (unlocked) — kalau ada, meski itu periode lama.
-        // Kalau semua sudah terkunci, baru simpan ke periode TERAKHIR (bulan berjalan) apa adanya.
-        $rOp = $conn->query("SELECT id, periode FROM inventory_stok_opname
+        // Kalau tidak ada sama sekali (semua terkunci ATAU belum pernah ada SO sama sekali),
+        // targetnya BULAN KALENDER BERJALAN — dibuat otomatis kalau belum ada barisnya.
+        $rOp = $conn->query("SELECT id, periode, is_locked FROM inventory_stok_opname
             WHERE klinik_id = $klinik_id
             ORDER BY (is_locked = 0 OR is_locked IS NULL) DESC, periode DESC, id DESC LIMIT 1");
         $opRow = $rOp ? $rOp->fetch_assoc() : null;
-        $opname_id = $opRow ? (int)$opRow['id'] : 0;
-        if (!$opname_id) throw new RuntimeException('Belum ada SO yang pernah dibuka untuk klinik ini. Hubungi admin gudang.');
+        $has_unlocked_row = $opRow && !(int)($opRow['is_locked'] ?? 0);
+        $opname_id = $has_unlocked_row ? (int)$opRow['id'] : 0;
+
+        if (!$opname_id) {
+            // Tidak ada sesi yang masih terbuka — advisory lock cegah 2 nakes yang submit
+            // bersamaan sama-sama membuat baris utk bulan berjalan yang sama.
+            // Nama lock HARUS sama persis dgn api/open_so_periode.php & api/bulk_so_periode.php —
+            // supaya nakes yg auto-create sesi draft dan admin yg klik "Buka SO" pada saat
+            // bersamaan saling menunggu, bukan sama-sama lolos cek "belum ada baris" dan
+            // sama-sama insert (yang salah satunya jadi baris draft yatim, tersembunyi selamanya).
+            $lock_name = "so_open_klinik_$klinik_id";
+            $rLock = $conn->query("SELECT GET_LOCK('" . $conn->real_escape_string($lock_name) . "', 5) AS got");
+            $got_lock = $rLock && (int)($rLock->fetch_assoc()['got'] ?? 0) === 1;
+
+            // Re-cek: barangkali baris utk bulan berjalan sudah ada (mis. dikunci hari ini juga,
+            // atau request lain sudah bikin duluan).
+            $safe_per = $conn->real_escape_string($periode);
+            $rCur = $conn->query("SELECT id FROM inventory_stok_opname
+                WHERE klinik_id = $klinik_id AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
+            $opname_id = $rCur ? (int)($rCur->fetch_assoc()['id'] ?? 0) : 0;
+
+            if (!$opname_id) {
+                // status='draft' (bukan 'open') menandai baris ini SENGAJA belum dianggap "dibuka
+                // admin" — sampai admin klik "Buka SO" sungguhan (yang akan mempromosikan baris
+                // draft ini jadi status normal, bukan bikin baris baru), semua tampilan admin
+                // (dashboard, halaman SO) tetap menunjukkan "Belum Dibuka" utk periode ini.
+                $conn->query("INSERT INTO inventory_stok_opname
+                    (klinik_id, user_id, tanggal_mulai, tanggal_selesai, status, catatan, periode, is_locked)
+                    VALUES ($klinik_id, $user_id, '$now', '$now', 'draft', '', '$safe_per', 0)");
+                $opname_id = (int)$conn->insert_id;
+            }
+            if ($got_lock) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($lock_name) . "')");
+            if (!$opname_id) throw new RuntimeException('Gagal membuat sesi SO otomatis: ' . $conn->error);
+        }
     } else {
         // Fallback legacy: cari/buat berdasarkan hari ini
         $rOp = $conn->query("SELECT id FROM inventory_stok_opname

@@ -99,10 +99,13 @@ $qKl = $conn->query("SELECT k.id, k.nama_klinik, k.alamat, k.kode_klinik, k.kode
     FROM inventory_klinik k WHERE k.status = 'active' ORDER BY k.nama_klinik ASC");
 while ($qKl && ($r = $qKl->fetch_assoc())) $kliniks[] = $r;
 
-// Fetch opname headers for this period
+// Fetch opname headers for this period — status='draft' (sesi auto-create dari laporan nakes,
+// belum pernah "dibuka" admin) dikecualikan, konsisten dgn semua tampilan admin lain. Tanpa ini,
+// export bisa membocorkan laporan nakes yang belum direview admin sbg seolah SO sudah dibuka.
 $opname_map = []; // klinik_id → opname_id
 $qOp = $conn->query("SELECT id, klinik_id, is_locked FROM inventory_stok_opname
-    WHERE periode = '$safe_per' AND klinik_id IS NOT NULL ORDER BY id ASC");
+    WHERE periode = '$safe_per' AND klinik_id IS NOT NULL AND (status IS NULL OR status != 'draft')
+    ORDER BY id ASC");
 while ($qOp && ($r = $qOp->fetch_assoc())) {
     $kid = (int)$r['klinik_id'];
     $opname_map[$kid] = ['id' => (int)$r['id'], 'is_locked' => (int)$r['is_locked']];

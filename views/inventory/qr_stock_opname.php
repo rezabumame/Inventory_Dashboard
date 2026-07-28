@@ -159,18 +159,31 @@ if ($lok_data) {
         $can_query = !$lok_gudang || $has_gu_col;
 
         if ($can_query) {
-            // Daftar semua periode yang pernah ada utk lokasi ini (utk selector riwayat)
+            // Daftar semua periode yang pernah ada utk lokasi ini (utk selector riwayat) — status='draft'
+            // (sesi auto-create dari laporan nakes, belum pernah diklik "Buka SO") disembunyikan.
             $rAll = $conn->query("SELECT periode, MAX(is_locked) AS is_locked FROM inventory_stok_opname
-                WHERE $loc_cond AND periode IS NOT NULL GROUP BY periode ORDER BY periode DESC");
+                WHERE $loc_cond AND periode IS NOT NULL AND (status IS NULL OR status != 'draft')
+                GROUP BY periode ORDER BY periode DESC");
             while ($rAll && ($ar = $rAll->fetch_assoc())) {
                 $so_all_periods[$ar['periode']] = (int)($ar['is_locked'] ?? 0);
+            }
+            // Bulan kalender berjalan selalu tampil di dropdown, walau belum pernah dibuka sama
+            // sekali — supaya jelas itu bulan yang "sedang ditunggu", bukan cuma riwayat lama.
+            // Ditandai null (beda dari 0/1 = beneran ada baris) supaya labelnya jelas "belum dibuka".
+            $so_cur_ym = date('Y-m');
+            if (!isset($so_all_periods[$so_cur_ym])) {
+                $so_all_periods = [$so_cur_ym => null] + $so_all_periods;
             }
 
             // Sesi aktif = baris yang belum dikunci utk lokasi ini, apa pun periodenya — supaya
             // sesi yang berjalan lewat tengah malam (lintas bulan kalender) tidak terputus.
+            // status='draft' (sesi auto-create dari laporan nakes) tidak boleh dianggap sesi aktif
+            // ATAUPUN default di halaman admin, sampai admin sungguhan klik "Buka SO" (yang akan
+            // mempromosikan baris draft ini, lihat api/open_so_periode.php).
+            $draft_cond = "AND (status IS NULL OR status != 'draft')";
             $lock_cond = $so_has_locked ? "AND (is_locked = 0 OR is_locked IS NULL)" : '';
             $rActive = $conn->query("SELECT id, periode, status$lck_sel FROM inventory_stok_opname
-                WHERE $loc_cond $lock_cond ORDER BY id DESC LIMIT 1");
+                WHERE $loc_cond $lock_cond $draft_cond ORDER BY id DESC LIMIT 1");
             $activeRow = $rActive ? $rActive->fetch_assoc() : null;
 
             // Kalau tidak ada sesi yang masih terbuka, tampilan default TETAP harus menunjukkan
@@ -182,8 +195,17 @@ if ($lok_data) {
                 // Semua sesi sudah terkunci — tampilkan periode (bulan) TERBARU, bukan sekadar ID
                 // terbesar (ID bisa lebih besar utk periode lama yang sempat dibuka-kunci ulang).
                 $rLatest = $conn->query("SELECT id, periode, status$lck_sel FROM inventory_stok_opname
-                    WHERE $loc_cond ORDER BY periode DESC, id DESC LIMIT 1");
+                    WHERE $loc_cond $draft_cond ORDER BY periode DESC, id DESC LIMIT 1");
                 $defaultRow = $rLatest ? $rLatest->fetch_assoc() : null;
+
+                // Tapi kalau periode terkunci terakhir itu BUKAN bulan kalender berjalan (mis. Juni
+                // sudah dikunci, sekarang sudah Juli tapi Juli belum pernah dibuka) — jangan tampilkan
+                // data Juni itu sbg default seolah masih relevan. Perlakukan sbg "belum dibuka" utk
+                // bulan berjalan, konsisten dgn dashboard picker. Riwayat Juni tetap bisa dilihat lewat
+                // dropdown "Sesi Aktif" (permintaan eksplisit ?periode= di bawah tetap jalan).
+                if ($defaultRow && $defaultRow['periode'] !== date('Y-m')) {
+                    $defaultRow = null;
+                }
             }
 
             // Kalau user eksplisit minta lihat 1 periode historis (?periode=YYYY-MM) dan itu BUKAN periode default
@@ -194,7 +216,7 @@ if ($lok_data) {
                 && (!$defaultRow || $defaultRow['periode'] !== $view_periode_req)) {
                 $safe_view_per = $conn->real_escape_string($view_periode_req);
                 $rView = $conn->query("SELECT id, periode, status$lck_sel FROM inventory_stok_opname
-                    WHERE $loc_cond AND periode = '$safe_view_per' ORDER BY id DESC LIMIT 1");
+                    WHERE $loc_cond AND periode = '$safe_view_per' $draft_cond ORDER BY id DESC LIMIT 1");
                 $viewRow = $rView ? $rView->fetch_assoc() : null;
                 if ($viewRow) { $opRow = $viewRow; $is_historical_view = true; }
             }
@@ -533,8 +555,10 @@ table.so-table tbody tr.so-main-row > td{padding:10px 12px;border-bottom:1px sol
 $so_status_map    = []; // klinik_id → [id, is_locked, status, periode]
 $so_gudang_status = null;
 if ($can_all && !$lok_data) {
+    // status='draft' = sesi yang tercipta OTOMATIS dari laporan nakes (belum pernah diklik "Buka SO"
+    // oleh admin) — sengaja disembunyikan dari tampilan admin sampai benar-benar dipromosikan.
     $rSoSt = $conn->query("SELECT klinik_id, id, is_locked, periode, COALESCE(status,'open') AS status
-        FROM inventory_stok_opname WHERE klinik_id IS NOT NULL
+        FROM inventory_stok_opname WHERE klinik_id IS NOT NULL AND (status IS NULL OR status != 'draft')
         ORDER BY id ASC");
     while ($rSoSt && ($r = $rSoSt->fetch_assoc())) {
         $kid = (int)$r['klinik_id'];
@@ -562,6 +586,36 @@ if ($can_all && !$lok_data) {
                         || ($row['periode'] === $so_gudang_status['periode'] && $row['id'] > $so_gudang_status['id']))) { $so_gudang_status = $row; }
             }
         }
+    }
+
+    // Kalau hasil akhirnya TERKUNCI dan periode-nya BUKAN bulan kalender berjalan (mis. Juni sudah
+    // dikunci, sekarang sudah Juli tapi Juli belum pernah dibuka) — jangan tampilkan "Terkunci (bulan
+    // lalu)" seolah masih relevan. Anggap "Belum Dibuka" utk bulan berjalan; riwayat lama tetap bisa
+    // dilihat via dropdown "Sesi Aktif" di halaman detail, bukan di picker dashboard ini.
+    $so_cur_ym = date('Y-m');
+    foreach ($so_status_map as $kid => $st) {
+        if ($st['is_locked'] && $st['periode'] !== $so_cur_ym) unset($so_status_map[$kid]);
+    }
+    if ($so_gudang_status && $so_gudang_status['is_locked'] && $so_gudang_status['periode'] !== $so_cur_ym) {
+        $so_gudang_status = null;
+    }
+
+    // Periode UNLOCKED mentah per lokasi (TERMASUK draft) — dipakai murni utk pratinjau dialog
+    // "Buka SO Semua" supaya cocok persis dgn cek konflik di api/bulk_so_periode.php (yang memang
+    // sengaja menganggap draft sbg slot yang beneran terisi). JANGAN dipakai utk badge tampilan.
+    $so_raw_active_periode = []; // klinik_id → periode unlocked (apa pun status-nya)
+    $rRawActive = $conn->query("SELECT klinik_id, periode FROM inventory_stok_opname
+        WHERE klinik_id IS NOT NULL AND (is_locked = 0 OR is_locked IS NULL) ORDER BY id DESC");
+    while ($rRawActive && ($r = $rRawActive->fetch_assoc())) {
+        $kid = (int)$r['klinik_id'];
+        if (!isset($so_raw_active_periode[$kid])) $so_raw_active_periode[$kid] = $r['periode'];
+    }
+    $so_gudang_raw_active_periode = null;
+    if ($gudang_loc_code !== '') {
+        $rRawGu = $conn->query("SELECT periode FROM inventory_stok_opname
+            WHERE is_gudang_utama = 1 AND (is_locked = 0 OR is_locked IS NULL) ORDER BY id DESC LIMIT 1");
+        $rawGuRow = $rRawGu ? $rRawGu->fetch_assoc() : null;
+        $so_gudang_raw_active_periode = $rawGuRow ? $rawGuRow['periode'] : null;
     }
 }
 function so_periode_label_short($periode) {
@@ -690,7 +744,7 @@ foreach ($locations as $l) {
 <div id="bulkSoModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);align-items:center;justify-content:center;">
     <div style="background:#fff;border-radius:16px;padding:28px 28px 22px;max-width:400px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.18);">
         <div style="font-weight:700;font-size:1rem;color:#1e293b;margin-bottom:8px;" id="bulkSoModalTitle">Konfirmasi</div>
-        <div style="font-size:.875rem;color:#475569;margin-bottom:22px;" id="bulkSoModalMsg"></div>
+        <div style="font-size:.875rem;color:#475569;margin-bottom:22px;white-space:pre-line;" id="bulkSoModalMsg"></div>
         <div style="display:flex;gap:10px;justify-content:flex-end;">
             <button onclick="bulkSoModalClose(false)" style="border:1.5px solid #e2e8f0;background:#fff;color:#475569;border-radius:8px;padding:8px 20px;font-weight:600;font-size:.85rem;cursor:pointer;">Batal</button>
             <button id="bulkSoModalOk" onclick="bulkSoModalClose(true)" style="border:none;border-radius:8px;padding:8px 22px;font-weight:700;font-size:.85rem;color:#fff;cursor:pointer;">Ya, Lanjutkan</button>
@@ -701,6 +755,47 @@ foreach ($locations as $l) {
 const baseUrl   = '<?= base_url() ?>';
 const csrfToken = '<?= $csrf ?>';
 let _bulkSoResolve = null;
+
+// Status is_locked/periode per lokasi (klinik + gudang), dipakai utk pratinjau akurat di dialog
+// konfirmasi "Buka SO Semua" — supaya sebelum diklik pun admin sudah tahu lokasi mana yang akan
+// dilewati (krn masih ada sesi periode lain yang berjalan), bukan baru tahu setelah proses selesai.
+const soLocationStatus = <?= json_encode(array_merge(
+    array_map(function($l) use ($so_status_map, $so_raw_active_periode) {
+        $kid = (int)$l['id'];
+        $st  = $so_status_map[$kid] ?? null;
+        return [
+            'nama' => $l['nama_klinik'],
+            'is_locked' => $st ? (int)$st['is_locked'] : null,
+            'periode' => $st['periode'] ?? null,
+            // Termasuk draft — dipakai KHUSUS utk pratinjau konflik, supaya cocok persis dgn cek
+            // server di bulk_so_periode.php (yang memang menganggap draft sbg slot terisi).
+            'raw_active_periode' => $so_raw_active_periode[$kid] ?? null,
+        ];
+    }, $locations),
+    $gudang_loc_code !== '' ? [[
+        'nama' => 'Gudang Utama',
+        'is_locked' => $so_gudang_status ? (int)$so_gudang_status['is_locked'] : null,
+        'periode' => $so_gudang_status['periode'] ?? null,
+        'raw_active_periode' => $so_gudang_raw_active_periode ?? null,
+    ]] : []
+), JSON_UNESCAPED_UNICODE) ?>;
+
+function computeBulkOpenPreview(targetYm) {
+    const willOpen = [], willSkip = [];
+    soLocationStatus.forEach(loc => {
+        const activePer = loc.raw_active_periode;
+        const hasOtherActive = !!activePer && activePer !== targetYm;
+        if (hasOtherActive) willSkip.push(loc.nama + ' (sesi ' + so_periode_label_short_js(activePer) + ' masih berjalan)');
+        else willOpen.push(loc.nama);
+    });
+    return { willOpen, willSkip };
+}
+function so_periode_label_short_js(ym) {
+    const names = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+    const parts = (ym || '').split('-');
+    if (parts.length !== 2) return ym;
+    return names[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+}
 
 // Periode "bulan berjalan" dihitung dari jam KLIEN saat tombol diklik, bukan dibekukan dari
 // tanggal server saat halaman dimuat — supaya aksi bulk/export tidak salah sasaran periode
@@ -733,13 +828,22 @@ function bulkSoConfirm(title, msg, color) {
 
 async function bulkSoPeriode(action, btn) {
     const periodeLabel = currentPeriodeLabel();
+    const targetYm      = currentPeriodeYm();
     const labels = {open:'Buka SO Semua', lock:'Kunci SO Semua'};
     const colors = {open:'#204EAB', lock:'#dc2626'};
-    const msgs   = {
-        open: 'Semua SO periode ' + periodeLabel + ' yang belum dibuka akan dibuat, dan yang terkunci akan dibuka kembali.',
-        lock: 'Semua SO periode ' + periodeLabel + ' yang sedang buka akan dikunci.'
-    };
-    const ok = await bulkSoConfirm(labels[action], msgs[action], colors[action]);
+    let msg;
+    if (action === 'open') {
+        const { willOpen, willSkip } = computeBulkOpenPreview(targetYm);
+        msg = 'SO periode ' + periodeLabel + ' akan dibuat/dibuka kembali untuk: '
+            + (willOpen.length ? willOpen.join(', ') : '(tidak ada lokasi)') + '.';
+        if (willSkip.length) {
+            msg += '\n\nDilewati (masih ada sesi periode lain yang berjalan, kunci dulu kalau mau buka '
+                + periodeLabel + '): ' + willSkip.join(', ') + '.';
+        }
+    } else {
+        msg = 'Semua SO periode ' + periodeLabel + ' yang sedang buka akan dikunci.';
+    }
+    const ok = await bulkSoConfirm(labels[action], msg, colors[action]);
     if (!ok) return;
 
     const origHtml = btn.innerHTML;
@@ -977,7 +1081,7 @@ async function exportAllSoExcel(btn) {
                 <option value="">Sesi Aktif</option>
                 <?php foreach ($so_all_periods as $per => $per_locked): ?>
                 <option value="<?= htmlspecialchars($per) ?>" <?= ($is_historical_view && $so_periode === $per) ? 'selected' : '' ?>>
-                    <?= htmlspecialchars(date('F Y', strtotime($per . '-01'))) ?><?= $per_locked ? ' 🔒' : '' ?>
+                    <?= htmlspecialchars(date('F Y', strtotime($per . '-01'))) ?><?= $per_locked === null ? ' (belum dibuka)' : ($per_locked ? ' 🔒' : '') ?>
                 </option>
                 <?php endforeach; ?>
                 </select>

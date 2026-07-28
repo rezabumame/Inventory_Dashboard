@@ -66,15 +66,26 @@ while ($res_ki && ($ri = $res_ki->fetch_assoc())) {
     $klinik_items[] = $ri;
 }
 
-// Resolusi opname_id HARUS sama persis dengan api/hc_stock_validate.php & api/get_hc_bag.php
-// (prioritaskan sesi yang masih unlocked, fallback ke ID terakhir kalau semua terkunci) —
-// dipakai utk cek barang_id mana yang SUDAH dilaporkan nakes periode ini.
-$r_opname = $conn->query("SELECT id, periode FROM inventory_stok_opname WHERE klinik_id = $klinik_id
+// Resolusi opname_id HARUS sama persis dengan api/hc_stock_validate.php & api/get_hc_bag.php:
+// prioritaskan sesi yang masih unlocked; kalau tidak ada (semua terkunci ATAU belum pernah ada
+// SO sama sekali), target sebenarnya adalah BULAN KALENDER BERJALAN (dibuat otomatis saat nakes
+// benar-benar kirim laporan pertama) — di sini murni utk tampilan, tidak menulis apa pun.
+$r_opname = $conn->query("SELECT id, periode, is_locked FROM inventory_stok_opname WHERE klinik_id = $klinik_id
     ORDER BY (is_locked = 0 OR is_locked IS NULL) DESC, periode DESC, id DESC LIMIT 1");
 $opname_row = $r_opname ? $r_opname->fetch_assoc() : null;
-$opname_id_now = $opname_row ? (int)$opname_row['id'] : 0;
-$opname_periode_label = ($opname_row && !empty($opname_row['periode']))
-    ? date('F Y', strtotime($opname_row['periode'] . '-01')) : null;
+$has_unlocked_row = $opname_row && !(int)($opname_row['is_locked'] ?? 0);
+if ($has_unlocked_row) {
+    $opname_id_now = (int)$opname_row['id'];
+    $opname_periode_label = date('F Y', strtotime($opname_row['periode'] . '-01'));
+} else {
+    $cur_periode = date('Y-m');
+    $safe_cur_per = $conn->real_escape_string($cur_periode);
+    $r_cur_op = $conn->query("SELECT id FROM inventory_stok_opname
+        WHERE klinik_id = $klinik_id AND periode = '$safe_cur_per' ORDER BY id DESC LIMIT 1");
+    $cur_op_row = $r_cur_op ? $r_cur_op->fetch_assoc() : null;
+    $opname_id_now = $cur_op_row ? (int)$cur_op_row['id'] : 0;
+    $opname_periode_label = date('F Y', strtotime($cur_periode . '-01'));
+}
 
 $reported_bids = []; // barang_id => true, sudah ada qty_fisik utk (opname_id_now, user_id) periode ini
 if ($opname_id_now > 0) {

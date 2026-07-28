@@ -41,13 +41,24 @@ while ($res && ($row = $res->fetch_assoc())) {
 
 // Item yang sudah dilaporkan (self-report) tapi belum divalidasi admin (belum masuk
 // inventory_stok_tas_hc) — tetap tampilkan pakai laporan sendiri sbg acuan sementara.
-// Resolusi opname_id HARUS sama persis dengan api/hc_stock_validate.php (prioritaskan sesi
-// yang masih unlocked, fallback ke ID terakhir kalau semua terkunci) supaya referensi ini
-// selalu menunjuk ke sesi yang sama dengan tempat laporan nakes benar-benar disimpan.
-$r_opname = $conn->query("SELECT id FROM inventory_stok_opname WHERE klinik_id = $klinik_id
+// Resolusi opname_id HARUS sama persis dengan api/hc_stock_validate.php: prioritaskan sesi yang
+// masih unlocked; kalau tidak ada (semua terkunci ATAU belum pernah ada SO sama sekali), target
+// sebenarnya adalah bulan kalender berjalan (dibuat otomatis saat nakes kirim laporan pertama)
+// — di sini murni utk referensi baca, tidak menulis apa pun.
+$r_opname = $conn->query("SELECT id, periode, is_locked FROM inventory_stok_opname WHERE klinik_id = $klinik_id
     ORDER BY (is_locked = 0 OR is_locked IS NULL) DESC, periode DESC, id DESC LIMIT 1");
 $opname_row = $r_opname ? $r_opname->fetch_assoc() : null;
-$opname_id = $opname_row ? (int)$opname_row['id'] : 0;
+$has_unlocked_row = $opname_row && !(int)($opname_row['is_locked'] ?? 0);
+if ($has_unlocked_row) {
+    $opname_id = (int)$opname_row['id'];
+} else {
+    $cur_periode = date('Y-m');
+    $safe_cur_per = $conn->real_escape_string($cur_periode);
+    $r_cur_op = $conn->query("SELECT id FROM inventory_stok_opname
+        WHERE klinik_id = $klinik_id AND periode = '$safe_cur_per' ORDER BY id DESC LIMIT 1");
+    $cur_op_row = $r_cur_op ? $r_cur_op->fetch_assoc() : null;
+    $opname_id = $cur_op_row ? (int)$cur_op_row['id'] : 0;
+}
 
 if ($opname_id > 0) {
     // AND d.qty_aktual IS NULL — item yang SUDAH divalidasi admin (apa pun angkanya, termasuk

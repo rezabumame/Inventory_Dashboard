@@ -62,6 +62,13 @@ if ($scope === 'all') {
     while ($rAll && ($row = $rAll->fetch_assoc())) {
         $oid    = (int)$row['id'];
         $label  = $row['klinik_id'] ? 'Klinik #' . $row['klinik_id'] : 'Gudang Utama';
+        // status='draft' = sesi auto-create dari laporan nakes, belum pernah "dibuka" admin — jangan
+        // ikut direset diam-diam lewat "Reset SO Semua", nakes bisa kehilangan laporannya tanpa jejak.
+        if ($row['status'] === 'draft') {
+            $results[] = ['label' => $label, 'status' => 'skip', 'msg' => 'belum dibuka (draft)'];
+            $skipped++;
+            continue;
+        }
         if ((int)$row['is_locked']) {
             $results[] = ['label' => $label, 'status' => 'skip', 'msg' => 'terkunci'];
             $skipped++;
@@ -83,19 +90,22 @@ if ($scope === 'all') {
         if (!$has_gu_col) {
             echo json_encode(['success' => false, 'message' => 'Kolom is_gudang_utama tidak ditemukan.']); exit;
         }
-        $rOp = $conn->query("SELECT id, is_locked FROM inventory_stok_opname
+        $rOp = $conn->query("SELECT id, is_locked, status FROM inventory_stok_opname
             WHERE is_gudang_utama = 1 AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
     } else {
         if ($klinik_id <= 0) {
             echo json_encode(['success' => false, 'message' => 'klinik_id tidak valid.']); exit;
         }
-        $rOp = $conn->query("SELECT id, is_locked FROM inventory_stok_opname
+        $rOp = $conn->query("SELECT id, is_locked, status FROM inventory_stok_opname
             WHERE klinik_id = $klinik_id AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
     }
 
     $opRow = $rOp ? $rOp->fetch_assoc() : null;
     if (!$opRow) {
         echo json_encode(['success' => false, 'message' => "SO periode $periode tidak ditemukan."]); exit;
+    }
+    if ($opRow['status'] === 'draft') {
+        echo json_encode(['success' => false, 'message' => "SO periode $periode belum pernah dibuka admin."]); exit;
     }
     if ((int)$opRow['is_locked']) {
         echo json_encode(['success' => false, 'message' => 'SO terkunci, tidak bisa direset.']); exit;

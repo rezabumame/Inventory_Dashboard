@@ -71,9 +71,18 @@ if ($is_gudang) {
         echo json_encode(['success' => false, 'message' => 'Gagal membuat SO Gudang: ' . $conn->error]);
     }
 } else {
-    $r = $conn->query("SELECT id, periode, is_locked FROM inventory_stok_opname WHERE klinik_id = $klinik_id AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
+    $r = $conn->query("SELECT id, periode, is_locked, status FROM inventory_stok_opname WHERE klinik_id = $klinik_id AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
     $existing = $r ? $r->fetch_assoc() : null;
     if ($existing) {
+        // status='draft' = sesi auto-create dari laporan nakes (belum pernah "dibuka" admin) —
+        // promosikan jadi sesi normal, jangan tolak dgn "sudah terbuka" (laporan yg sudah masuk tetap
+        // ikut terpakai, bukan bikin baris baru/duplikat).
+        if ($existing['status'] === 'draft') {
+            $eid = (int)$existing['id'];
+            $conn->query("UPDATE inventory_stok_opname SET status='open', is_locked=0 WHERE id=$eid");
+            so_open_release($conn, $lock_name);
+            echo json_encode(['success' => true, 'opname_id' => $eid, 'periode' => $periode]); exit;
+        }
         so_open_release($conn, $lock_name);
         if ((int)$existing['is_locked']) {
             echo json_encode(['success' => false, 'message' => "SO periode $periode sudah terkunci. Hanya super_admin yang bisa membuka kembali."]); exit;
