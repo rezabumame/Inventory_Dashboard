@@ -2854,7 +2854,15 @@ function soExportExcel() {
     }
 
     // ── Sheet tambahan: item Stok Klinik yang BELUM ada laporan sama sekali periode ini ──
-    const belumSoItems = soAllItems.filter(it => !soKlinikEntries[it.id]);
+    // Pakai filter relevansi yang SAMA dgn badge "x / y item" di tabel (soRenderKlinikTable) —
+    // bukan semua 700+ item master barang, cuma yang stoknya (Odoo/lokal) tidak 0 di lokasi ini.
+    const belumSoItems = soAllItems.filter(it => {
+        if (soKlinikEntries[it.id]) return false; // sudah di-input, bukan "belum"
+        const odooQ  = soOdooMap[it.kode_barang];
+        if (odooQ !== undefined && odooQ !== null && Number(odooQ) !== 0) return true;
+        const localQ = soLocalStockMap[String(it.id)];
+        return localQ !== undefined && localQ !== null && Number(localQ) !== 0;
+    });
     if (belumSoItems.length > 0) {
         const belumAoa = [
             ['Item Belum Di-SO — ' + klinik],
