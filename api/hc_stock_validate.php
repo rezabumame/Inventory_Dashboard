@@ -38,6 +38,16 @@ $has_ed_cols = ($r_col && $r_col->num_rows > 0);
 $r_per_hc = $conn->query("SHOW COLUMNS FROM inventory_stok_opname LIKE 'periode'");
 $has_per_hc = ($r_per_hc && $r_per_hc->num_rows > 0);
 
+// Advisory lock (GET_LOCK/RELEASE_LOCK) itu session-level, BUKAN bagian dari transaksi — kalau
+// dilepas sebelum transaksi commit, request lain yang menunggu lock itu bisa langsung lolos dan
+// menjalankan cek-lalu-tulisnya sendiri padahal tulisan request pertama BELUM kelihatan (belum
+// commit). Makanya semua RELEASE_LOCK ditunda, dikumpulkan di sini, baru benar-benar dilepas
+// SETELAH commit() — supaya lock benar-benar menutupi seluruh critical section-nya.
+$locks_to_release = [];
+function hc_release_all_locks(mysqli $conn, array $lock_names): void {
+    foreach ($lock_names as $ln) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($ln) . "')");
+}
+
 try {
     $conn->begin_transaction();
 
@@ -86,7 +96,7 @@ try {
                     VALUES ($klinik_id, $user_id, '$now', '$now', 'draft', '', '$safe_per', 0)");
                 $opname_id = (int)$conn->insert_id;
             }
-            if ($got_lock) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($lock_name) . "')");
+            if ($got_lock) $locks_to_release[] = $lock_name;
             if (!$opname_id) throw new RuntimeException('Gagal membuat sesi SO otomatis: ' . $conn->error);
         }
     } else {
@@ -141,7 +151,7 @@ try {
             if ($existId > 0 && $exRow['qty_fisik'] !== null) {
                 // Sudah pernah dilaporkan periode ini — jangan timpa, lewati.
                 $skipped++;
-                if ($got_lock) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($lock_name) . "')");
+                if ($got_lock) $locks_to_release[] = $lock_name;
                 continue;
             }
             if ($existId > 0) {
@@ -155,7 +165,7 @@ try {
                     (opname_id, barang_id, hc_user_id, tipe, stok_sistem, qty_fisik, selisih, ed_lte3m, ed_gt3m, catatan, status)
                     VALUES ($opname_id, $barang_id, $user_id, 'hc', $qty_sistem, $qty_fisik, $selisih, $ed_lte3m, $ed_gt3m, '$catatan', '$status')");
             }
-            if ($got_lock) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($lock_name) . "')");
+            if ($got_lock) $locks_to_release[] = $lock_name;
         } else {
             // Legacy path (no hc_user_id column)
             $conn->query("INSERT INTO inventory_stok_opname_detail
@@ -168,6 +178,7 @@ try {
     }
 
     $conn->commit();
+    hc_release_all_locks($conn, $locks_to_release);
     $skip_msg = $skipped > 0 ? " ($skipped item dilewati krn sudah dilaporkan sebelumnya)" : '';
     echo json_encode([
         'success'    => true,
@@ -178,5 +189,6 @@ try {
     ]);
 } catch (Exception $e) {
     $conn->rollback();
+    hc_release_all_locks($conn, $locks_to_release);
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }

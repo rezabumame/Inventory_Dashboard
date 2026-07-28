@@ -47,12 +47,15 @@ if ($scope === 'entry' && $detail_id <= 0) {
 }
 // Cari sesi aktif: baris yang belum dikunci untuk lokasi ini, apa pun periodenya —
 // supaya sesi yang berjalan lewat tengah malam (lintas bulan kalender) tidak terputus.
+// status='draft' (sesi auto-create dari laporan nakes, belum pernah "dibuka" admin) dikecualikan —
+// endpoint ini dipakai admin utk hapus riwayat hitung, tidak boleh menyentuh sesi yang belum diakui admin ada.
+$draft_cond_del = "AND (status IS NULL OR status != 'draft')";
 if ($is_gudang) {
     $rOp = $conn->query("SELECT id, periode, is_locked FROM inventory_stok_opname
-        WHERE is_gudang_utama = 1 AND (is_locked = 0 OR is_locked IS NULL) ORDER BY id DESC LIMIT 1");
+        WHERE is_gudang_utama = 1 AND (is_locked = 0 OR is_locked IS NULL) $draft_cond_del ORDER BY id DESC LIMIT 1");
 } else {
     $rOp = $conn->query("SELECT id, periode, is_locked FROM inventory_stok_opname
-        WHERE klinik_id = $klinik_id AND (is_locked = 0 OR is_locked IS NULL) ORDER BY id DESC LIMIT 1");
+        WHERE klinik_id = $klinik_id AND (is_locked = 0 OR is_locked IS NULL) $draft_cond_del ORDER BY id DESC LIMIT 1");
 }
 $opRow = $rOp ? $rOp->fetch_assoc() : null;
 if (!$opRow) {

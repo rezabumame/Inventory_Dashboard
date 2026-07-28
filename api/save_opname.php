@@ -57,6 +57,15 @@ $has_periode_col = ($r_per && $r_per->num_rows > 0);
 $r_lck = $conn->query("SHOW COLUMNS FROM inventory_stok_opname LIKE 'is_locked'");
 $has_locked_col  = ($r_lck && $r_lck->num_rows > 0);
 
+// Advisory lock itu session-level, BUKAN bagian dari transaksi — kalau dilepas sebelum transaksi
+// commit, request lain yang menunggu lock bisa langsung lolos cek-lalu-tulis padahal tulisan
+// request ini belum kelihatan (belum commit), jadi tetap bisa lolos duplikat. Semua RELEASE_LOCK
+// ditunda, dikumpulkan di sini, baru dilepas SETELAH commit().
+$locks_to_release = [];
+function so_release_all_locks(mysqli $conn, array $lock_names): void {
+    foreach ($lock_names as $ln) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($ln) . "')");
+}
+
 $conn->begin_transaction();
 try {
     // Cari opname aktif: periode bulan ini (jika kolom periode ada), fallback ke hari ini
@@ -136,6 +145,11 @@ try {
         $selisih    = $qty_fisik !== null ? ($qty_fisik - $stok_sistem) : null;
         $status     = $qty_fisik === null ? 'pending' : ($selisih == 0 ? 'ok' : 'selisih');
         if ($barang_id <= 0) continue;
+        // Breakdown ED (kalau diisi) harus sama dgn qty_fisik — sudah divalidasi di client, ini
+        // defense-in-depth server-side supaya panggilan API langsung tidak bisa menyimpan data
+        // yang totalnya tidak konsisten.
+        $ed_total_chk = $ed_lte3m + $ed_gt3m + $ed_expired;
+        if ($qty_fisik !== null && $ed_total_chk > 0 && abs($ed_total_chk - $qty_fisik) > 0.0001) continue;
 
         // Pastikan hc_user_id (nakes yang datanya diedit) benar-benar milik klinik ini —
         // cegah admin/SPV klinik lain menautkan data ke nakes klinik lain lewat manipulasi request.
@@ -205,7 +219,7 @@ try {
                         $detail_id = (int)$conn->insert_id;
                     }
                 }
-                if ($got_hc_lock) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($hc_lock_name) . "')");
+                if ($got_hc_lock) $locks_to_release[] = $hc_lock_name;
             } else {
                 // Klinik: setiap simpan = 1 riwayat scan baru, kecuali detail_id eksplisit dikirim (edit riwayat tertentu)
                 $req_detail_id = isset($d['detail_id']) ? (int)$d['detail_id'] : 0;
@@ -264,7 +278,12 @@ try {
     }
 
     // Setelah simpan opname_detail, update stok_tas_hc hanya dari qty_aktual (hasil validasi admin, skip untuk gudang)
-    if ($is_gudang) { $conn->commit(); echo json_encode(['success' => true, 'opname_id' => $opname_id, 'detail_ids' => $detail_ids_out, 'message' => 'Stock opname Gudang berhasil disimpan.']); return; }
+    if ($is_gudang) {
+        $conn->commit();
+        so_release_all_locks($conn, $locks_to_release);
+        echo json_encode(['success' => true, 'opname_id' => $opname_id, 'detail_ids' => $detail_ids_out, 'message' => 'Stock opname Gudang berhasil disimpan.']);
+        return;
+    }
 
     // Kumpulkan barang_id+hc_user_id yang ada di payload ini untuk scope sync
     $hc_pairs_in_payload = [];
@@ -322,8 +341,10 @@ try {
     }
 
     $conn->commit();
+    so_release_all_locks($conn, $locks_to_release);
     echo json_encode(['success' => true, 'opname_id' => $opname_id, 'detail_ids' => $detail_ids_out, 'message' => 'Stock opname berhasil disimpan dan stok tas HC telah diperbarui.']);
 } catch (Exception $e) {
     $conn->rollback();
+    so_release_all_locks($conn, $locks_to_release);
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }

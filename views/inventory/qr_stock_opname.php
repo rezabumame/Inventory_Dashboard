@@ -244,6 +244,7 @@ if ($lok_data) {
         $today_so = date('Y-m-d');
         $rOpToday = $lok_gudang ? null : $conn->query("SELECT id FROM inventory_stok_opname
             WHERE klinik_id = $lok_id AND DATE(tanggal_mulai) = '$today_so'
+            AND (status IS NULL OR status != 'draft')
             ORDER BY id DESC LIMIT 1");
         $opRow = $rOpToday ? $rOpToday->fetch_assoc() : null;
         if ($opRow) { $opname_id_today = (int)$opRow['id']; $opname_status = 'open'; }
@@ -975,7 +976,11 @@ async function exportAllSoExcel(btn) {
                 const mult  = parseFloat(r.multiplier || 0);
                 const toUom = r.uom || r.satuan || '';
                 const c     = convOf(mult, r.from_uom || '', toUom);
-                return [r.kode_barang||'', r.nama_barang||'', toUom, c.konv,
+                // Kolom "Satuan" harus ikut satuan angka Qty Fisik yang diekspor (base/from_uom),
+                // bukan to_uom tampilan layar — kalau tidak, angka bisa salah dibaca berkali-kali
+                // lipat (mis. "240 Box" padahal sebenarnya 240 pcs).
+                const satuanExport = c.hasKonv ? (r.from_uom || toUom) : toUom;
+                return [r.kode_barang||'', r.nama_barang||'', satuanExport, c.konv,
                     tglOf(r.ed_expired_dates), c.toBase(r.ed_expired) || '',
                     tglOf(r.ed_lte3m_dates),   c.toBase(r.ed_lte3m)   || '',
                     tglOf(r.ed_gt3m_dates),    c.toBase(r.ed_gt3m)    || '',
@@ -1029,7 +1034,8 @@ async function exportAllSoExcel(btn) {
                         : (agg.hasValidated && agg.hasRaw) ? 'Sebagian belum divalidasi'
                         : agg.hasValidated ? 'Tervalidasi'
                         : 'Belum divalidasi (laporan nakes)';
-                    hcRows.push([agg.kode, agg.nama, agg.uom, c.konv, '', '', '', '', '', '', qty, statusValidasi, agg.catatan.join(' | ')]);
+                    const satuanExportHc = c.hasKonv ? (agg.from_uom || agg.uom) : agg.uom;
+                    hcRows.push([agg.kode, agg.nama, satuanExportHc, c.konv, '', '', '', '', '', '', qty, statusValidasi, agg.catatan.join(' | ')]);
                 });
                 const hcKode = shortKode(kl.kode_hc) || klKode;
                 appendHcSheet('HC ' + hcKode, hcRows);
@@ -1460,25 +1466,44 @@ async function exportAllSoExcel(btn) {
 <!-- ═══════════════════════════════════════════════════════ GABUNGAN HC ═════ -->
 <div id="so-tab-gabungan" style="display:none;">
 <?php
-// Sum all HC stok per barang_id
-$hc_combined = [];
-foreach ($hc_stocks as $uid => $stok) {
-    foreach ($stok as $bid => $qty) {
-        $hc_combined[$bid] = ($hc_combined[$bid] ?? 0) + $qty;
+// Sum all HC stok per barang_id — prioritaskan qty_aktual (hasil validasi admin/SPV) kalau sudah
+// ada, sama seperti logic export Excel (buildHcGabunganSheet), jangan selalu pakai laporan mentah
+// nakes. Dilacak juga status validasinya (tervalidasi/mentah/campuran) supaya pembaca tabel tahu
+// kalau totalnya masih ada bagian yang belum dicek admin — konsisten dgn kolom "Status Validasi" di export.
+$hc_combined = []; // barang_id => ['total' (to_uom), 'has_validated', 'has_raw']
+foreach ($hc_detail as $uid => $stok) {
+    foreach ($stok as $bid => $d) {
+        $it_g = $items_map[$bid] ?? null;
+        $mult_g = $it_g ? (float)($it_g['multiplier'] ?? 0) : 0;
+        if (!isset($hc_combined[$bid])) $hc_combined[$bid] = ['total' => 0.0, 'has_validated' => false, 'has_raw' => false];
+        if ($d['qty_aktual'] !== null) {
+            // qty_aktual sudah dalam to_uom, tambahkan langsung
+            $hc_combined[$bid]['total'] += (float)$d['qty_aktual'];
+            $hc_combined[$bid]['has_validated'] = true;
+        } else {
+            // qty_fisik (laporan mentah nakes) dalam from_uom — konversi ke to_uom
+            $qty_raw_g = (float)$d['qty'];
+            $hc_combined[$bid]['total'] += ($mult_g > 1) ? ($qty_raw_g / $mult_g) : $qty_raw_g;
+            $hc_combined[$bid]['has_raw'] = true;
+        }
     }
 }
 // Merge with odoo_hc
 $gabungan_rows = [];
 foreach ($items_map as $bid => $it) {
-    $kode      = $it['kode_barang'];
-    $qty_hc_raw = $hc_combined[$bid] ?? null;
-    $qty_odoo  = $odoo_hc[$kode] ?? null;
-    if ($qty_hc_raw === null && $qty_odoo === null) continue;
-    // HC nakes enters qty in from_uom (satuan); odoo_hc is already / multiplier (to_uom)
-    // Convert qty_hc to to_uom for correct comparison
-    $mult_g  = (float)($it['multiplier'] ?? 0);
-    $qty_hc  = ($qty_hc_raw !== null && $mult_g > 1) ? ((float)$qty_hc_raw / $mult_g) : (float)($qty_hc_raw ?? 0);
-    $gabungan_rows[$bid] = ['item' => $it, 'qty_hc' => $qty_hc, 'qty_odoo' => (float)($qty_odoo ?? 0)];
+    $kode     = $it['kode_barang'];
+    $hc_info  = $hc_combined[$bid] ?? null;
+    $qty_odoo = $odoo_hc[$kode] ?? null;
+    if ($hc_info === null && $qty_odoo === null) continue;
+    $status_validasi = $hc_info === null ? null
+        : (($hc_info['has_validated'] && $hc_info['has_raw']) ? 'partial'
+        : ($hc_info['has_validated'] ? 'validated' : 'raw'));
+    $gabungan_rows[$bid] = [
+        'item' => $it,
+        'qty_hc' => $hc_info['total'] ?? 0.0,
+        'qty_odoo' => (float)($qty_odoo ?? 0),
+        'status_validasi' => $status_validasi,
+    ];
 }
 ?>
 <div class="so-card">
@@ -1514,6 +1539,7 @@ foreach ($items_map as $bid => $it) {
             <tr>
                 <th style="min-width:180px;">Nama Barang</th>
                 <th class="text-end">Total Stok HC</th>
+                <th class="text-center">Status Validasi</th>
                 <th class="text-end">Stok Odoo HC<?php if ($role !== 'super_admin'): ?> <i class="fas fa-lock" style="font-size:.65rem;color:#94a3b8;"></i><?php endif; ?></th>
                 <th class="text-center">Selisih</th>
                 <th class="text-center">% Selisih</th>
@@ -1531,6 +1557,17 @@ foreach ($items_map as $bid => $it) {
                 <div style="font-size:.72rem;color:#94a3b8;font-family:monospace;"><?= htmlspecialchars($row['item']['kode_barang']) ?></div>
             </td>
             <td class="qty-cell"><?= number_format($row['qty_hc'],0,',','.') ?></td>
+            <td class="text-center">
+                <?php if ($row['status_validasi'] === 'validated'): ?>
+                <span style="background:#dcfce7;color:#166534;border-radius:6px;font-size:.68rem;font-weight:700;padding:2px 8px;white-space:nowrap;">Tervalidasi</span>
+                <?php elseif ($row['status_validasi'] === 'partial'): ?>
+                <span style="background:#fef3c7;color:#92400e;border-radius:6px;font-size:.68rem;font-weight:700;padding:2px 8px;white-space:nowrap;">Sebagian belum divalidasi</span>
+                <?php elseif ($row['status_validasi'] === 'raw'): ?>
+                <span style="background:#fee2e2;color:#991b1b;border-radius:6px;font-size:.68rem;font-weight:700;padding:2px 8px;white-space:nowrap;">Belum divalidasi</span>
+                <?php else: ?>
+                <span style="color:#cbd5e1;">—</span>
+                <?php endif; ?>
+            </td>
             <td class="qty-cell"><?= ($role === 'super_admin') ? ($row['qty_odoo'] ? number_format($row['qty_odoo'],0,',','.') : '<span style="color:#aaa">—</span>') : '<span style="color:#94a3b8;font-style:italic;">*</span>' ?></td>
             <td class="text-center">
                 <?php if ($role !== 'super_admin'): ?>
@@ -1791,13 +1828,23 @@ const soSavedRows   = <?= json_encode($saved_klinik_rows ?? [], JSON_UNESCAPED_U
 const soCurrentUserId   = <?= (int)($current_user_id ?? 0) ?>;
 const soCurrentUserName = <?= json_encode($current_user_name ?? 'Saya', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 
-// Barcode lookup: any barcode variant → item
+// Barcode lookup: any barcode variant → item. Kalau 1 kode ternyata terdaftar di lebih dari 1
+// barang (mis. barcode vendor kepencet sama / typo copy-paste barcode_internal), JANGAN diam-diam
+// pilih salah satu — tandai ambigu supaya scan-nya ditolak dgn pesan jelas, bukan salah catat qty
+// ke barang yang salah tanpa ada yang sadar.
 const soBarcodeMap = {};
+const soAmbiguousBarcodes = new Set();
+function soRegisterBarcode(code, it) {
+    if (!code) return;
+    const key = String(code).toLowerCase();
+    if (soBarcodeMap[key] && soBarcodeMap[key].id !== it.id) { soAmbiguousBarcodes.add(key); return; }
+    soBarcodeMap[key] = it;
+}
 soAllItems.forEach(it => {
-    if (it.kode_barang)       soBarcodeMap[it.kode_barang.toLowerCase()]       = it;
-    if (it.barcode)           soBarcodeMap[it.barcode.toLowerCase()]           = it;
-    if (it.barcode_internal)  soBarcodeMap[it.barcode_internal.toLowerCase()]  = it;
-    (it.vendor_barcodes || []).forEach(vb => { if (vb) soBarcodeMap[vb.toLowerCase()] = it; });
+    soRegisterBarcode(it.kode_barang, it);
+    soRegisterBarcode(it.barcode, it);
+    soRegisterBarcode(it.barcode_internal, it);
+    (it.vendor_barcodes || []).forEach(vb => soRegisterBarcode(vb, it));
 });
 
 // 3-month cutoff from today
@@ -1878,6 +1925,10 @@ function soProcessScan(val) {
     val = (val || '').trim();
     const statusEl = document.getElementById('soScanStatus');
     if (!val) return;
+    if (soAmbiguousBarcodes.has(val.toLowerCase())) {
+        statusEl.innerHTML = '<span style="color:#dc2626;"><i class="fas fa-exclamation-triangle me-1"></i>Kode ' + escHtml(val) + ' terdaftar di lebih dari 1 barang — hubungi admin gudang utk perbaiki data barcode.</span>';
+        return;
+    }
     const found = soBarcodeMap[val.toLowerCase()];
     if (found) {
         statusEl.innerHTML = '<span style="color:#059669;"><i class="fas fa-check-circle me-1"></i>' + escHtml(found.nama_barang) + '</span>';
@@ -2150,6 +2201,15 @@ async function soConfirmItem() {
         else edGt += qty;
     });
     const odooQ = soOdooMap[item.kode_barang] ?? null;
+
+    // Breakdown ED (kalau diisi) harus sama dgn Qty Fisik — biasanya sudah otomatis sinkron lewat
+    // soRecalcEdTotals(), tapi bisa beda kalau user edit Qty Fisik manual sesudahnya tanpa balik ke
+    // ED. Jangan biarkan tersimpan diam-diam beda, supaya laporan ED tidak pernah salah total.
+    const edTotal = edExpired + edLte + edGt;
+    if (edTotal > 0 && edTotal !== qtyFisik) {
+        soAlert(`Total breakdown ED (${edTotal}) tidak sama dengan Qty Fisik (${qtyFisik}). Samakan dulu sebelum simpan.`, 'Breakdown ED Tidak Sesuai');
+        return;
+    }
 
     // Disable button & show saving state
     const saveBtn = document.querySelector('#modalSoKlinik .modal-footer .btn:not(.btn-outline-secondary)');
@@ -2681,10 +2741,11 @@ function soExportExcel() {
         const gtTgl     = gtDet.length  ? gtDet.map(m => fmtEd(m)).join(', ')  : '';
         const gtQty     = totalGt  > 0 ? totalGt  : '';
         const qtyFisikKonv = e.qty_total != null ? toBase(e.qty_total) : '';
+        const satuanExportSingle = hasKonv ? (fromUom || toUom) : toUom;
         aoa.push([
             e.item.kode_barang || '',
             e.item.nama_barang || '',
-            toUom,
+            satuanExportSingle,
             konversi,
             expTgl, expQty,
             lteTgl, lteQty,
@@ -2779,7 +2840,8 @@ function soExportExcel() {
                 : (agg.hasValidated && agg.hasRaw) ? 'Sebagian belum divalidasi'
                 : agg.hasValidated ? 'Tervalidasi'
                 : 'Belum divalidasi (laporan nakes)';
-            aoa.push([agg.kode, agg.nama, agg.toUom, konversi, '', '', '', '', '', '', qty, statusValidasi, agg.catatan.join(' | ')]);
+            const satuanExportGab = hasKonv ? (agg.fromUom || agg.toUom) : agg.toUom;
+            aoa.push([agg.kode, agg.nama, satuanExportGab, konversi, '', '', '', '', '', '', qty, statusValidasi, agg.catatan.join(' | ')]);
         });
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         ws['!merges'] = [{ s:{r:0,c:0}, e:{r:0,c:12} }, { s:{r:1,c:0}, e:{r:1,c:12} }];
@@ -3002,8 +3064,12 @@ function hcProcessScan(val) {
     val = (val || '').trim();
     const st = document.getElementById('hcScanStatus');
     if (!val) return;
-    const found = soBarcodeMap[val.toLowerCase()];
     document.getElementById('hcScanInput').value = '';
+    if (soAmbiguousBarcodes.has(val.toLowerCase())) {
+        st.innerHTML = '<span style="color:#dc2626;"><i class="fas fa-exclamation-triangle me-1"></i>Kode ' + escHtml(val) + ' terdaftar di lebih dari 1 barang — hubungi admin gudang utk perbaiki data barcode.</span>';
+        return;
+    }
+    const found = soBarcodeMap[val.toLowerCase()];
     if (!found) {
         st.innerHTML = '<span style="color:#dc2626;"><i class="fas fa-times-circle me-1"></i>Barcode tidak dikenali: ' + escHtml(val) + '</span>';
         return;

@@ -29,14 +29,17 @@ if (!$is_gudang && $klinik_id <= 0) {
 
 $safe_per = $conn->real_escape_string($periode);
 
+// status='draft' (sesi auto-create dari laporan nakes, belum pernah "dibuka" admin) dikecualikan —
+// tidak boleh dikunci langsung, harus lewat "Buka SO" dulu (yang mempromosikan baris draft ini).
 if ($is_gudang) {
-    $r = $conn->query("SELECT id, is_locked FROM inventory_stok_opname WHERE is_gudang_utama = 1 AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
+    $r = $conn->query("SELECT id, is_locked, status FROM inventory_stok_opname WHERE is_gudang_utama = 1 AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
 } else {
-    $r = $conn->query("SELECT id, is_locked FROM inventory_stok_opname WHERE klinik_id = $klinik_id AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
+    $r = $conn->query("SELECT id, is_locked, status FROM inventory_stok_opname WHERE klinik_id = $klinik_id AND periode = '$safe_per' ORDER BY id DESC LIMIT 1");
 }
 $row = $r ? $r->fetch_assoc() : null;
 
 if (!$row) { echo json_encode(['success' => false, 'message' => "SO periode $periode tidak ditemukan."]); exit; }
+if ($row['status'] === 'draft') { echo json_encode(['success' => false, 'message' => "SO periode $periode belum pernah dibuka admin."]); exit; }
 $opname_id = (int)$row['id'];
 
 $now = date('Y-m-d H:i:s');
