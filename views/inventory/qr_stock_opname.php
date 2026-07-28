@@ -2853,6 +2853,26 @@ function soExportExcel() {
         XLSX.utils.book_append_sheet(wb, buildHcGabunganSheet(hcRowsForExport), 'SO HC');
     }
 
+    // ── Sheet tambahan: item Stok Klinik yang BELUM ada laporan sama sekali periode ini ──
+    const belumSoItems = soAllItems.filter(it => !soKlinikEntries[it.id]);
+    if (belumSoItems.length > 0) {
+        const belumAoa = [
+            ['Item Belum Di-SO — ' + klinik],
+            ['Periode SO: ' + soPeriodeLabel + ' | Tanggal Export: ' + today],
+            [],
+            ['Kode Barang', 'Nama Barang', 'Satuan', 'Stok Sistem'],
+        ];
+        belumSoItems.forEach(it => {
+            const toUomBelum = it.uom || it.satuan || '';
+            const odooQ = soOdooMap[it.kode_barang];
+            belumAoa.push([it.kode_barang || '', it.nama_barang || '', toUomBelum, (odooQ ?? '')]);
+        });
+        const wsBelum = XLSX.utils.aoa_to_sheet(belumAoa);
+        wsBelum['!merges'] = [{ s:{r:0,c:0}, e:{r:0,c:3} }, { s:{r:1,c:0}, e:{r:1,c:3} }];
+        wsBelum['!cols']   = [{wch:16},{wch:36},{wch:8},{wch:12}];
+        XLSX.utils.book_append_sheet(wb, wsBelum, 'Belum Di-SO');
+    }
+
     const klinikSlug = klinik.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
     XLSX.writeFile(wb, 'SO_' + klinikSlug + '_Periode-' + soPeriode + '.xlsx');
 }
@@ -3611,8 +3631,12 @@ async function hcSaveAll() {
 </div>
 
 <script>
-// escHtml sudah dideklarasikan di script block di atas (baris ~1490) — function declaration
-// otomatis jadi global, jadi tinggal reuse langsung di sini tanpa perlu didefinisikan ulang.
+// escHtml TIDAK selalu ada dari script block di atas — block itu cuma render kalau ada klinik
+// yang dipilih ($lok_data), sedangkan E-Catalog (block ini) muncul juga di halaman picker (belum
+// pilih klinik). Deklarasikan sendiri di sini (aman kalau ke-declare 2x, JS cuma pakai yg terakhir).
+function escHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
 
 // ── E-Catalog Barcode ─────────────────────────────────────────────────────────
 let _bcCatData = null;
