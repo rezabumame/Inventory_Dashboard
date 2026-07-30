@@ -5,6 +5,11 @@ require_once __DIR__ . '/../config/settings.php';
 
 header('Content-Type: application/json');
 
+// Seluruh logic dibungkus try/catch(Throwable) supaya error PHP apa pun (fatal error, exception
+// dari mysqli, dll) selalu balik sbg JSON yang jelas — bukan halaman error HTML mentah yang bikin
+// JS gagal parse ("Unexpected token '<'"). Ini juga memudahkan diagnosa langsung dari popup di UI.
+try {
+
 // Aksi bulk (buka/kunci/reset SO Semua lokasi sekaligus) hanya untuk super_admin.
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'super_admin') {
     echo json_encode(['success' => false, 'message' => 'Hanya super_admin yang bisa melakukan aksi bulk SO.']); exit;
@@ -207,3 +212,10 @@ echo json_encode([
     'summary' => $summary,
     'results' => $results,
 ]);
+
+} catch (\Throwable $e) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'PHP Error: ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine(),
+    ]);
+}

@@ -4,6 +4,10 @@ require_once __DIR__ . '/../config/database.php';
 
 header('Content-Type: application/json');
 
+// Seluruh logic dibungkus try/catch(Throwable) supaya error PHP apa pun selalu balik sbg JSON
+// yang jelas — bukan halaman error HTML mentah yang bikin JS gagal parse.
+try {
+
 $allowed = ['super_admin', 'admin_gudang'];
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', $allowed)) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']); exit;
@@ -106,4 +110,11 @@ if ($is_gudang) {
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal membuat SO: ' . $conn->error]);
     }
+}
+
+} catch (\Throwable $e) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'PHP Error: ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine(),
+    ]);
 }
