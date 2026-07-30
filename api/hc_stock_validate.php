@@ -45,7 +45,7 @@ $has_per_hc = ($r_per_hc && $r_per_hc->num_rows > 0);
 // SETELAH commit() — supaya lock benar-benar menutupi seluruh critical section-nya.
 $locks_to_release = [];
 function hc_release_all_locks(mysqli $conn, array $lock_names): void {
-    foreach ($lock_names as $ln) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($ln) . "')");
+    foreach ($lock_names as $ln) advisory_release_lock($conn, $ln);
 }
 
 try {
@@ -76,8 +76,7 @@ try {
             // bersamaan saling menunggu, bukan sama-sama lolos cek "belum ada baris" dan
             // sama-sama insert (yang salah satunya jadi baris draft yatim, tersembunyi selamanya).
             $lock_name = "so_open_klinik_$klinik_id";
-            $rLock = $conn->query("SELECT GET_LOCK('" . $conn->real_escape_string($lock_name) . "', 5) AS got");
-            $got_lock = $rLock && (int)($rLock->fetch_assoc()['got'] ?? 0) === 1;
+            $got_lock  = advisory_get_lock($conn, $lock_name, 5)['got'];
 
             // Re-cek: barangkali baris utk bulan berjalan sudah ada (mis. dikunci hari ini juga,
             // atau request lain sudah bikin duluan).
@@ -141,8 +140,7 @@ try {
             // ini tidak bisa diselang request lain yg konkuren (double-submit/race) → cegah 2 baris
             // laporan HC utk (opname, barang, nakes) yang sama.
             $lock_name = "hc_so_{$opname_id}_{$barang_id}_{$user_id}";
-            $rLock = $conn->query("SELECT GET_LOCK('" . $conn->real_escape_string($lock_name) . "', 5) AS got");
-            $got_lock = $rLock && (int)($rLock->fetch_assoc()['got'] ?? 0) === 1;
+            $got_lock  = advisory_get_lock($conn, $lock_name, 5)['got'];
 
             $rEx = $conn->query("SELECT id, qty_fisik FROM inventory_stok_opname_detail
                 WHERE opname_id=$opname_id AND barang_id=$barang_id AND hc_user_id=$user_id AND tipe='hc' LIMIT 1");

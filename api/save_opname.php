@@ -63,7 +63,7 @@ $has_locked_col  = ($r_lck && $r_lck->num_rows > 0);
 // ditunda, dikumpulkan di sini, baru dilepas SETELAH commit().
 $locks_to_release = [];
 function so_release_all_locks(mysqli $conn, array $lock_names): void {
-    foreach ($lock_names as $ln) $conn->query("SELECT RELEASE_LOCK('" . $conn->real_escape_string($ln) . "')");
+    foreach ($lock_names as $ln) advisory_release_lock($conn, $ln);
 }
 
 $conn->begin_transaction();
@@ -171,8 +171,7 @@ try {
                 // karena constraint dilepas agar riwayat scan Klinik bisa multi-baris). Advisory lock
                 // supaya cek-lalu-insert ini tidak diselang request lain yg konkuren (double-submit/race).
                 $hc_lock_name = "hc_so_{$opname_id}_{$barang_id}_" . ($hc_user_id > 0 ? $hc_user_id : 0);
-                $rHcLock = $conn->query("SELECT GET_LOCK('" . $conn->real_escape_string($hc_lock_name) . "', 5) AS got");
-                $got_hc_lock = $rHcLock && (int)($rHcLock->fetch_assoc()['got'] ?? 0) === 1;
+                $got_hc_lock  = advisory_get_lock($conn, $hc_lock_name, 5)['got'];
 
                 $existing_id = 0;
                 $rExist = $conn->query("SELECT id FROM inventory_stok_opname_detail WHERE opname_id=$opname_id AND barang_id=$barang_id AND tipe='hc' AND $hc_where LIMIT 1");

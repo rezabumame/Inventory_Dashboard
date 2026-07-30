@@ -26,13 +26,12 @@ $safe_per = $conn->real_escape_string($periode);
 
 // Advisory lock per lokasi supaya 2 klik "Buka SO" nyaris bersamaan tidak lolos berbarengan
 // melewati pengecekan "belum ada sesi aktif" dan sama-sama bikin baris baru (race condition).
-$lock_name = $conn->real_escape_string($is_gudang ? 'so_open_gudang' : "so_open_klinik_$klinik_id");
-$rLock = $conn->query("SELECT GET_LOCK('$lock_name', 5) AS got");
-$got_lock = $rLock && (int)($rLock->fetch_assoc()['got'] ?? 0) === 1;
-if (!$got_lock) {
+$lock_name = $is_gudang ? 'so_open_gudang' : "so_open_klinik_$klinik_id";
+$lock      = advisory_get_lock($conn, $lock_name, 5);
+if (!$lock['got'] && $lock['supported']) {
     echo json_encode(['success' => false, 'message' => 'Sedang diproses permintaan lain, coba lagi sebentar.']); exit;
 }
-function so_open_release($conn, $lock_name) { $conn->query("SELECT RELEASE_LOCK('$lock_name')"); }
+function so_open_release($conn, $lock_name) { advisory_release_lock($conn, $lock_name); }
 
 if ($is_gudang) {
     // Cek apakah kolom is_gudang_utama sudah ada

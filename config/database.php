@@ -94,4 +94,33 @@ if (!function_exists('safe_query')) {
         }
     }
 }
+
+// Advisory lock (GET_LOCK/RELEASE_LOCK) — dipakai di beberapa endpoint SO utk cegah race
+// condition. Tidak semua backend MySQL-compatible mendukungnya secara penuh (mis. TiDB versi
+// lama bisa menolak fungsi ini), jadi dibungkus try/catch: kalau fungsinya sendiri gagal/tidak
+// didukung, lanjut TANPA lock (terima risiko race kecil) daripada bikin seluruh fitur gagal total
+// dengan error PHP mentah. Yang benar-benar diblok cuma kalau lock-nya SUPPORTED tapi sedang dipakai
+// request lain (got=false, supported=true).
+if (!function_exists('advisory_get_lock')) {
+    function advisory_get_lock(mysqli $conn, string $lock_name, int $timeout = 5): array {
+        try {
+            $safe = $conn->real_escape_string($lock_name);
+            $r = $conn->query("SELECT GET_LOCK('$safe', $timeout) AS got");
+            $got = $r && (int)($r->fetch_assoc()['got'] ?? 0) === 1;
+            return ['got' => $got, 'supported' => true];
+        } catch (mysqli_sql_exception $e) {
+            return ['got' => false, 'supported' => false];
+        }
+    }
+}
+if (!function_exists('advisory_release_lock')) {
+    function advisory_release_lock(mysqli $conn, string $lock_name): void {
+        try {
+            $safe = $conn->real_escape_string($lock_name);
+            $conn->query("SELECT RELEASE_LOCK('$safe')");
+        } catch (mysqli_sql_exception $e) {
+            // Abaikan — kalau GET_LOCK tidak didukung, RELEASE_LOCK juga tidak perlu/tidak bisa.
+        }
+    }
+}
 ?>

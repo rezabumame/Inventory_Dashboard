@@ -69,10 +69,9 @@ foreach ($kliniks as $kl) {
         }
         // Advisory lock (nama sama persis dgn api/open_so_periode.php & api/hc_stock_validate.php)
         // supaya bulk-open tidak race dgn nakes yg bersamaan auto-create sesi draft.
-        $lock_name = $conn->real_escape_string("so_open_klinik_$kid");
-        $rLock = $conn->query("SELECT GET_LOCK('$lock_name', 5) AS got");
-        $got_lock = $rLock && (int)($rLock->fetch_assoc()['got'] ?? 0) === 1;
-        if (!$got_lock) {
+        $lock_name = "so_open_klinik_$kid";
+        $lock = advisory_get_lock($conn, $lock_name, 5);
+        if (!$lock['got'] && $lock['supported']) {
             $results[] = ['klinik' => $nama, 'status' => 'error', 'msg' => 'sedang diproses permintaan lain, coba lagi'];
             $errors++; continue;
         }
@@ -88,24 +87,24 @@ foreach ($kliniks as $kl) {
                 $ok  = $conn->query("UPDATE inventory_stok_opname SET status='open', is_locked=0 WHERE id=$oid");
                 if ($ok) { $results[] = ['klinik' => $nama, 'status' => 'ok', 'msg' => 'dibuka']; $opened++; }
                 else { $results[] = ['klinik' => $nama, 'status' => 'error', 'msg' => $conn->error]; $errors++; }
-                $conn->query("SELECT RELEASE_LOCK('$lock_name')"); continue;
+                advisory_release_lock($conn, $lock_name); continue;
             }
             if (!(int)($opRow['is_locked'] ?? 0)) {
                 $results[] = ['klinik' => $nama, 'status' => 'skip', 'msg' => 'sudah buka']; $skipped++;
-                $conn->query("SELECT RELEASE_LOCK('$lock_name')"); continue;
+                advisory_release_lock($conn, $lock_name); continue;
             }
             // Terkunci → buka kembali (aman krn sudah dipastikan tidak ada sesi lain yg masih terbuka)
             $oid = (int)$opRow['id'];
             $ok  = $conn->query("UPDATE inventory_stok_opname SET is_locked=0, locked_by=NULL, locked_at=NULL, status='open' WHERE id=$oid");
             if ($ok) { $results[] = ['klinik' => $nama, 'status' => 'ok', 'msg' => 'dibuka kembali']; $opened++; }
             else { $results[] = ['klinik' => $nama, 'status' => 'error', 'msg' => $conn->error]; $errors++; }
-            $conn->query("SELECT RELEASE_LOCK('$lock_name')"); continue;
+            advisory_release_lock($conn, $lock_name); continue;
         }
         $ok = $conn->query("INSERT INTO inventory_stok_opname (klinik_id, user_id, tanggal_mulai, tanggal_selesai, status, catatan, periode, is_locked)
             VALUES ($kid, $user_id, '$now', '$now', 'open', '', '$safe_per', 0)");
         if ($ok && $conn->insert_id) { $results[] = ['klinik' => $nama, 'status' => 'ok', 'msg' => 'dibuka']; $opened++; }
         else { $results[] = ['klinik' => $nama, 'status' => 'error', 'msg' => $conn->error]; $errors++; }
-        $conn->query("SELECT RELEASE_LOCK('$lock_name')");
+        advisory_release_lock($conn, $lock_name);
 
     } elseif ($action === 'lock') {
         if (!$opRow) { $results[] = ['klinik' => $nama, 'status' => 'skip', 'msg' => 'belum dibuka']; $skipped++; continue; }
@@ -150,9 +149,8 @@ if ($gudang_loc !== '' && $has_gu_col) {
             $results[] = ['klinik' => 'Gudang Utama', 'status' => 'skip', 'msg' => "sesi periode {$guActiveRow['periode']} masih berjalan"];
             $skipped++;
         } else {
-            $rGuLock = $conn->query("SELECT GET_LOCK('so_open_gudang', 5) AS got");
-            $got_gu_lock = $rGuLock && (int)($rGuLock->fetch_assoc()['got'] ?? 0) === 1;
-            if (!$got_gu_lock) {
+            $guLock = advisory_get_lock($conn, 'so_open_gudang', 5);
+            if (!$guLock['got'] && $guLock['supported']) {
                 $results[] = ['klinik' => 'Gudang Utama', 'status' => 'error', 'msg' => 'sedang diproses permintaan lain, coba lagi'];
                 $errors++;
             } else {
@@ -170,7 +168,7 @@ if ($gudang_loc !== '' && $has_gu_col) {
                     if ($ok) { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'ok', 'msg' => 'dibuka kembali']; $opened++; }
                     else { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'error', 'msg' => $conn->error]; $errors++; }
                 } else { $results[] = ['klinik' => 'Gudang Utama', 'status' => 'skip', 'msg' => 'sudah buka']; $skipped++; }
-                $conn->query("SELECT RELEASE_LOCK('so_open_gudang')");
+                advisory_release_lock($conn, 'so_open_gudang');
             }
         }
     } elseif ($action === 'lock' && $guRow && !(int)($guRow['is_locked'] ?? 0)) {
