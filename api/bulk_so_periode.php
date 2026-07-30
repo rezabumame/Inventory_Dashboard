@@ -10,6 +10,12 @@ header('Content-Type: application/json');
 // JS gagal parse ("Unexpected token '<'"). Ini juga memudahkan diagnosa langsung dari popup di UI.
 try {
 
+// Kolom status di beberapa environment (mis. live) masih ENUM('draft','selesai','batal') tanpa
+// 'open'/'locked' — di mode SQL strict itu bikin INSERT/UPDATE gagal ("Data truncated for column
+// status"). Pastikan dulu nilai yang dipakai kode ini sah di enum-nya (no-op kalau sudah ada).
+ensure_enum_value($conn, 'inventory_stok_opname', 'status', 'open');
+ensure_enum_value($conn, 'inventory_stok_opname', 'status', 'locked');
+
 // Aksi bulk (buka/kunci/reset SO Semua lokasi sekaligus) hanya untuk super_admin.
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'super_admin') {
     echo json_encode(['success' => false, 'message' => 'Hanya super_admin yang bisa melakukan aksi bulk SO.']); exit;

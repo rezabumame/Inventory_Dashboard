@@ -4,6 +4,16 @@ require_once __DIR__ . '/../config/database.php';
 
 header('Content-Type: application/json');
 
+// Seluruh logic dibungkus try/catch(Throwable) supaya error PHP apa pun selalu balik sbg JSON
+// yang jelas, bukan halaman error HTML mentah yang bikin JS gagal parse.
+try {
+
+// Kolom status di beberapa environment (mis. live) masih ENUM('draft','selesai','batal') tanpa
+// 'open'/'locked' — di mode SQL strict itu bikin UPDATE gagal ("Data truncated for column
+// status"). Pastikan dulu nilai yang dipakai kode ini sah di enum-nya (no-op kalau sudah ada).
+ensure_enum_value($conn, 'inventory_stok_opname', 'status', 'open');
+ensure_enum_value($conn, 'inventory_stok_opname', 'status', 'locked');
+
 // Hanya super_admin yang bisa lock / unlock
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'super_admin') {
     echo json_encode(['success' => false, 'message' => 'Hanya super_admin yang bisa mengunci / membuka SO.']); exit;
@@ -61,3 +71,10 @@ if ($action === 'lock') {
 }
 
 echo json_encode(['success' => true, 'action' => $action, 'opname_id' => $opname_id]);
+
+} catch (\Throwable $e) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'PHP Error: ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine(),
+    ]);
+}

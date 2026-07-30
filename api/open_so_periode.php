@@ -8,6 +8,12 @@ header('Content-Type: application/json');
 // yang jelas — bukan halaman error HTML mentah yang bikin JS gagal parse.
 try {
 
+// Kolom status di beberapa environment (mis. live) masih ENUM('draft','selesai','batal') tanpa
+// 'open'/'locked' — di mode SQL strict itu bikin INSERT/UPDATE gagal ("Data truncated for column
+// status"). Pastikan dulu nilai yang dipakai kode ini sah di enum-nya (no-op kalau sudah ada).
+ensure_enum_value($conn, 'inventory_stok_opname', 'status', 'open');
+ensure_enum_value($conn, 'inventory_stok_opname', 'status', 'locked');
+
 $allowed = ['super_admin', 'admin_gudang'];
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', $allowed)) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']); exit;
