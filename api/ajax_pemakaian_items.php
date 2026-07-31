@@ -91,6 +91,48 @@ if ($jenis === 'hc' && $user_hc_id > 0) {
                 ];
             }
         }
+
+        // Item yang stoknya cuma pernah masuk lewat Request Barang/transfer internal (tidak pernah
+        // ke-sync dari Odoo di lokasi ini) tidak akan pernah punya baris di inventory_stock_mirror,
+        // jadi tidak ikut kena query di atas — walau stok efektifnya (via stock_effective(), yg sudah
+        // dipakai juga di ringkasan stok) sebenarnya > 0. Cari tambahan dari riwayat transaksi supaya
+        // tetap muncul di pencarian Input BHP.
+        $existing_bids = array_map('intval', array_column($items, 'barang_id'));
+        $level_for_tx  = ($jenis === 'hc') ? 'hc' : 'klinik';
+        $ref_types     = ($jenis === 'hc')
+            ? ['hc_petugas_transfer', 'pemakaian_bhp_revision']
+            : ['transfer', 'hc_petugas_transfer', 'pemakaian_bhp_revision'];
+        $ref_list      = implode(',', array_map(fn($t) => "'" . $conn->real_escape_string($t) . "'", $ref_types));
+        $level_esc     = $conn->real_escape_string($level_for_tx);
+        $exclude_cond  = $existing_bids ? ('AND b.id NOT IN (' . implode(',', $existing_bids) . ')') : '';
+
+        $res_extra = $conn->query("
+            SELECT DISTINCT b.id as barang_id, b.nama_barang, b.kode_barang,
+                   COALESCE(uc.to_uom, b.satuan) as satuan,
+                   COALESCE(uc.from_uom, '') as uom_odoo,
+                   COALESCE(uc.multiplier, 1) as uom_ratio
+            FROM inventory_transaksi_stok ts
+            JOIN inventory_barang b ON b.id = ts.barang_id
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+            WHERE ts.level = '$level_esc' AND ts.level_id = $klinik_id
+              AND ts.referensi_tipe IN ($ref_list) $exclude_cond
+        ");
+        while ($row = $res_extra->fetch_assoc()) {
+            $bid = (int)$row['barang_id'];
+            $ef = stock_effective($conn, $klinik_id, ($jenis === 'hc'), $bid);
+            if (!$ef['ok'] || $ef['on_hand'] <= 0) continue; // cuma munculin kalau memang ada stoknya
+            $mult = (float)($row['uom_ratio'] ?? 1);
+            if ($mult <= 0) $mult = 1;
+            $items[] = [
+                'barang_id' => $bid,
+                'nama_barang' => (string)$row['nama_barang'],
+                'kode_barang' => (string)$row['kode_barang'],
+                'satuan' => (string)$row['satuan'],
+                'uom_odoo' => (string)$row['uom_odoo'],
+                'uom_ratio' => $mult,
+                'qty' => (float)$ef['on_hand'] * $mult
+            ];
+        }
     }
 }
 
