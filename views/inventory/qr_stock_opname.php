@@ -1434,6 +1434,10 @@ async function exportAllSoExcel(btn) {
           <i class="fas fa-search" style="position:absolute;right:9px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,.85);font-size:.7rem;pointer-events:none;"></i>
         </div>
         <span id="hcItemBadge" style="background:rgba(255,255,255,.25);border-radius:99px;padding:2px 12px;font-size:.78rem;">0 item</span>
+        <button type="button" onclick="hcDeleteNakesReport()" title="Hapus semua laporan nakes ini periode berjalan, supaya bisa lapor ulang"
+            style="background:rgba(220,38,38,.85);border:none;color:#fff;border-radius:7px;padding:4px 10px;font-size:.75rem;font-weight:600;cursor:pointer;white-space:nowrap;">
+            <i class="fas fa-trash-alt me-1"></i>Hapus Laporan
+        </button>
         <span id="hcAutoSaveStatus" style="font-size:.72rem;color:rgba(255,255,255,.75);display:none;">
           <i class="fas fa-check-circle me-1" style="color:#86efac;"></i>Tersimpan otomatis
         </span>
@@ -3357,6 +3361,34 @@ async function hcDeleteItem(bid) {
     if (pill) {
         const cnt = Object.keys(hcValidations[uid] || {}).length;
         pill.textContent = cnt > 0 ? cnt + ' item' : 'belum lapor';
+    }
+}
+
+// Hapus SEMUA laporan mandiri nakes ini (periode berjalan) supaya bisa lapor ulang dari nol.
+// Sengaja TIDAK di-gate oleh soIsLocked — ini aksi koreksi admin, boleh dilakukan meski SO
+// sedang terkunci (sama seperti laporan nakes sendiri yang memang menembus status kunci).
+async function hcDeleteNakesReport() {
+    const uid = hcSelectedUid;
+    if (!uid) return;
+    const ok = await soConfirm(
+        'Hapus SEMUA laporan <b>' + escHtml(hcSelectedNama) + '</b> periode ' + escHtml(soPeriodeLabel) + '?<br>' +
+        '<span style="color:#64748b;font-size:.82rem;">Item yang sudah divalidasi admin tidak hilang datanya, cuma laporan nakes-nya yang dikosongkan supaya bisa lapor ulang. Item yang belum divalidasi akan dihapus total.</span>',
+        'Hapus Laporan Nakes', '#dc2626'
+    );
+    if (!ok) return;
+
+    try {
+        const res = await fetch(baseUrl + 'api/hc_delete_nakes_report.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ _csrf: csrfToken, klinik_id: lokId, hc_user_id: uid }),
+        });
+        const d = await res.json();
+        if (!d.success) { soAlert(d.message || 'Gagal menghapus laporan.', 'Error'); return; }
+        await soAlert(d.message, 'Berhasil');
+        location.reload();
+    } catch (e) {
+        soAlert('Koneksi gagal: ' + e.message, 'Error');
     }
 }
 
