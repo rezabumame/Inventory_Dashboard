@@ -111,14 +111,21 @@ try {
         $qty = (float)$item['qty'];
 
         if ($jenis_pemakaian === 'hc' && !empty($user_hc_id)) {
-            // Return to HC Bag
-            $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-            $stmt_upd->bind_param("diiii", $qty, $user_id, $bid, $user_hc_id, $klinik_id);
+            // Return to HC Bag. Baris bisa saja sudah terhapus (mis. qty tas HC pernah turun ke 0
+            // lalu barisnya dibuang oleh proses validasi SO), jadi pakai upsert supaya stok tetap
+            // balik walau barisnya harus dibuat ulang, bukan diam-diam gagal (UPDATE 0 baris).
+            $stmt_upd = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
+                VALUES (?, ?, ?, ?, ?, NOW())
+                ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+            $stmt_upd->bind_param("iiidi", $bid, $user_hc_id, $klinik_id, $qty, $user_id);
             $stmt_upd->execute();
         } elseif ($jenis_pemakaian === 'klinik') {
-            // Return to Clinic Stock
-            $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
-            $stmt_upd->bind_param("diii", $qty, $user_id, $bid, $klinik_id);
+            // Return to Clinic Stock. Sama, pakai upsert agar tetap balik walau barisnya belum/sudah
+            // tidak ada di inventory_stok_gudang_klinik.
+            $stmt_upd = $conn->prepare("INSERT INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty, updated_by, updated_at)
+                VALUES (?, ?, ?, ?, NOW())
+                ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+            $stmt_upd->bind_param("iidi", $bid, $klinik_id, $qty, $user_id);
             $stmt_upd->execute();
         }
     }

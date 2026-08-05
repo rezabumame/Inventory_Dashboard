@@ -842,7 +842,7 @@ if ($default_modal_klinik_id) {
                                                         data-bs-toggle="modal" data-bs-target="#modalEdit">
                                                         <i class="fas fa-edit"></i>
                                                     </button>
-                                                    <?php if (!$is_over_2_days): ?>
+                                                    <?php if (!$is_over_2_days || $is_super_admin): ?>
                                                         <button class="btn btn-danger delete-pemakaian" data-id="<?= $row['id'] ?>"
                                                             data-nomor="<?= htmlspecialchars($row['nomor_pemakaian']) ?>"
                                                             data-tanggal="<?= $usage_date ?>" title="Hapus">
