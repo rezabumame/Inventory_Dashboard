@@ -155,6 +155,12 @@ $cat_meta = [
 .section-title  { display:flex;align-items:center;gap:10px;font-weight:700;color:#1e293b;font-size:.95rem; }
 .section-icon   { width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0; }
 
+/* ── Edit Batch ED (SweetAlert2 custom form) ─────────────────────── */
+.swal-ed-popup   { border-radius:18px!important; }
+.swal-ed-label   { display:block;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px; }
+.swal-ed-input   { width:100%;box-sizing:border-box;height:44px;padding:0 14px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;color:#1e293b;outline:none;transition:border-color .15s,box-shadow .15s;font-family:inherit; }
+.swal-ed-input:focus { border-color:#204EAB;box-shadow:0 0 0 3px rgba(32,78,171,.12); }
+
 /* ── QR card ──────────────────────────────────────────────────── */
 .qr-empty-state    { padding:14px 16px;background:#f8faff;border-radius:12px;border:2px dashed #d1d9ef; }
 .qr-generated-card { background:#f8faff;border-radius:14px;border:1px solid #e2e8f0;padding:18px 20px; }
@@ -1001,9 +1007,12 @@ function toggleEdMsg(on) {
     document.getElementById('edOnMsg').style.display  = on ? 'block' : 'none';
 }
 
+let _edBatchBarangId = null;
+
 function loadEdBatches(barangId) {
     const wrap = document.getElementById('edBatchList');
     if (!wrap) return;
+    _edBatchBarangId = barangId;
     wrap.innerHTML = '<p class="small text-muted mb-0"><i class="fas fa-spinner fa-spin me-1"></i>Memuat...</p>';
     fetch('api/get_barang_ed.php?barang_id=' + barangId)
         .then(r => r.json())
@@ -1015,15 +1024,108 @@ function loadEdBatches(barangId) {
             wrap.innerHTML = '<div class="d-flex flex-wrap gap-2 mt-1">' +
                 res.batches.map(b => {
                     const label = formatEDMonth(b.ed_date);
+                    const ketAttr = escHtmlAttr(b.keterangan || '');
+                    const actions = kelolaCanEdit ? `
+                               <i class="fas fa-pen" title="Edit" data-ed-id="${b.id}" data-ed-date="${b.ed_date}" data-ed-ket="${ketAttr}" onclick="editEdBatch(this)" style="cursor:pointer;font-size:10px;margin-left:2px;"></i>
+                               <i class="fas fa-trash" title="Hapus" data-ed-id="${b.id}" onclick="deleteEdBatch(this)" style="cursor:pointer;font-size:10px;margin-left:2px;color:#b91c1c;"></i>` : '';
                     return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">
                                <i class="fas fa-check-circle" style="font-size:10px;"></i>${label}
-                               ${b.keterangan ? `<span style="font-weight:400;opacity:.8;">· ${b.keterangan}</span>` : ''}
+                               ${b.keterangan ? `<span style="font-weight:400;opacity:.8;">· ${escHtmlAttr(b.keterangan)}</span>` : ''}
+                               ${actions}
                            </span>`;
                 }).join('') + '</div>';
         })
         .catch(() => {
             wrap.innerHTML = '';
         });
+}
+
+function escHtmlAttr(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function editEdBatch(el) {
+    if (!kelolaCanEdit) return;
+    const id = el.dataset.edId;
+    const currentEdDate = el.dataset.edDate;
+    const currentKeterangan = el.dataset.edKet;
+
+    Swal.fire({
+        target: document.getElementById('modalKelola') || document.body,
+        showClass: { popup: '' },
+        hideClass: { popup: '' },
+        customClass: { popup: 'swal-ed-popup' },
+        title: '',
+        html: `
+            <div style="text-align:left;">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:22px;">
+                    <div class="section-icon" style="width:40px;height:40px;border-radius:10px;background:#fef3c7;">
+                        <i class="fas fa-calendar-times" style="color:#d97706;font-size:1rem;"></i>
+                    </div>
+                    <div style="font-size:18px;font-weight:700;color:#1e293b;">Edit Batch ED</div>
+                </div>
+                <label class="swal-ed-label">Tanggal ED</label>
+                <input type="date" id="swalEdDate" class="swal-ed-input" style="margin-bottom:16px;" value="${currentEdDate}">
+                <label class="swal-ed-label">Keterangan (opsional)</label>
+                <input type="text" id="swalEdKet" class="swal-ed-input" value="${escHtmlAttr(currentKeterangan)}" placeholder="mis. no batch">
+            </div>`,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Simpan',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#204EAB',
+        cancelButtonColor: '#94a3b8',
+        buttonsStyling: true,
+        reverseButtons: true,
+        preConfirm: () => {
+            const newDate = document.getElementById('swalEdDate').value;
+            const newKet = document.getElementById('swalEdKet').value;
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+                Swal.showValidationMessage('Tanggal ED wajib diisi dengan format yang benar.');
+                return false;
+            }
+            return { newDate, newKet };
+        }
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        const { newDate, newKet } = result.value;
+        const body = new URLSearchParams({ id, barang_id: _edBatchBarangId, ed_date: newDate, keterangan: newKet.trim(), _csrf: csrfToken });
+        fetch('api/save_barang_ed.php', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
+            .then(r => r.json())
+            .then(res => {
+                if (!res.success) { Swal.fire('Gagal', res.message || 'Gagal update ED.', 'error'); return; }
+                loadEdBatches(_edBatchBarangId);
+                Swal.fire({icon:'success', title:'Tersimpan!', timer:1200, showConfirmButton:false});
+            })
+            .catch(() => Swal.fire('Error', 'Gagal menghubungi server.', 'error'));
+    });
+}
+
+function deleteEdBatch(el) {
+    if (!kelolaCanEdit) return;
+    const id = el.dataset.edId;
+    Swal.fire({
+        target: document.getElementById('modalKelola') || document.body,
+        customClass: { popup: 'swal-ed-popup' },
+        title: 'Hapus batch ED ini?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Ya, Hapus!',
+        cancelButtonText: 'Batal'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        const body = new URLSearchParams({ id, _csrf: csrfToken });
+        fetch('api/delete_barang_ed.php', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
+            .then(r => r.json())
+            .then(res => {
+                if (!res.success) { Swal.fire('Gagal', res.message || 'Gagal hapus ED.', 'error'); return; }
+                loadEdBatches(_edBatchBarangId);
+                Swal.fire({icon:'success', title:'Terhapus!', timer:1200, showConfirmButton:false});
+            })
+            .catch(() => Swal.fire('Error', 'Gagal menghubungi server.', 'error'));
+    });
 }
 
 function formatEDMonth(val) {

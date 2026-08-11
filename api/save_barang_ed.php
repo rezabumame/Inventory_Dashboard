@@ -17,11 +17,18 @@ if (!csrf_validate($_POST['_csrf'] ?? '')) {
     echo json_encode(['success' => false, 'message' => 'CSRF validation failed']); exit;
 }
 
+$edit_id    = (int)($_POST['id'] ?? 0);
 $barang_id  = (int)($_POST['barang_id']  ?? 0);
 $ed_date    = trim((string)($_POST['ed_date'] ?? $_POST['ed_month'] ?? ''));
 $keterangan = trim((string)($_POST['keterangan'] ?? ''));
 $klinik_id  = ($_POST['klinik_id'] ?? '') !== '' ? (int)$_POST['klinik_id'] : null;
 $user_id    = (int)$_SESSION['user_id'];
+
+// Mengedit batch ED yang sudah tercatat hanya boleh super_admin — role lain cuma boleh
+// menambah batch baru saat inbound (izin di $allowed di atas).
+if ($edit_id > 0 && $role !== 'super_admin') {
+    echo json_encode(['success' => false, 'message' => 'Hanya super_admin yang bisa mengubah batch ED.']); exit;
+}
 
 if ($barang_id <= 0) {
     echo json_encode(['success' => false, 'message' => 'barang_id tidak valid.']); exit;
@@ -34,6 +41,19 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $ed_date)) {
 $klinik_cond = $klinik_id !== null ? "klinik_id = $klinik_id" : "klinik_id IS NULL";
 $ed_esc      = $conn->real_escape_string($ed_date);
 $ket_esc     = $conn->real_escape_string($keterangan);
+
+if ($edit_id > 0) {
+    $klinik_val = $klinik_id !== null ? $klinik_id : 'NULL';
+    $ok = $conn->query("UPDATE inventory_barang_ed
+        SET ed_month = '$ed_esc', keterangan = " . ($ket_esc !== '' ? "'$ket_esc'" : "NULL") . ", klinik_id = $klinik_val
+        WHERE id = $edit_id AND barang_id = $barang_id");
+    if ($ok) {
+        echo json_encode(['success' => true, 'id' => $edit_id, 'message' => "ED $ed_date berhasil diperbarui."]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal update: ' . $conn->error]);
+    }
+    exit;
+}
 
 $exists = $conn->query("SELECT id FROM inventory_barang_ed
     WHERE barang_id = $barang_id AND $klinik_cond AND ed_month = '$ed_esc' LIMIT 1");
