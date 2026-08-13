@@ -473,28 +473,33 @@ try {
             $is_lokal = (int)($old_item['is_lokal'] ?? 0);
 
             if ($is_lokal) {
-                // Return to Local Stock
+                // Return to Local Stock (baris bisa saja belum ada — pastikan ada dulu)
+                $conn->query("INSERT IGNORE INTO inventory_stok_lokal (barang_lokal_id, klinik_id, qty) VALUES ($obid, " . (int)$old_header['klinik_id'] . ", 0)");
                 $stmt_upd = $conn->prepare("UPDATE inventory_stok_lokal SET qty = qty + ? WHERE barang_lokal_id = ? AND klinik_id = ?");
                 $stmt_upd->bind_param("dii", $oqty, $obid, $old_header['klinik_id']);
                 $stmt_upd->execute();
-                
+
                 // Log history reversal
-                $stmt_hist = $conn->prepare("INSERT INTO inventory_history_lokal (barang_lokal_id, klinik_id, tipe, qty_sebelum, qty_perubahan, qty_sesudah, keterangan, created_by) 
+                $stmt_hist = $conn->prepare("INSERT INTO inventory_history_lokal (barang_lokal_id, klinik_id, tipe, qty_sebelum, qty_perubahan, qty_sesudah, keterangan, created_by)
                     SELECT ?, ?, 'tambah', qty - ?, ?, qty, ?, ? FROM inventory_stok_lokal WHERE barang_lokal_id = ? AND klinik_id = ?");
                 $ket = "Reversal Pemakaian (Edit/Delete) " . $old_header['nomor_pemakaian'];
                 $stmt_hist->bind_param("idddisii", $obid, $old_header['klinik_id'], $oqty, $oqty, $ket, $created_by, $obid, $old_header['klinik_id']);
                 $stmt_hist->execute();
 
             } elseif ($old_header['jenis_pemakaian'] === 'hc' && !empty($old_header['user_hc_id'])) {
-                // Return to HC Bag
+                // Return to HC Bag (upsert — baris tas HC bisa sudah terhapus, mis. qty pernah 0)
                 $old_uid = (int)$old_header['user_hc_id'];
-                $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-                $stmt_upd->bind_param("diiii", $oqty, $created_by, $obid, $old_uid, $old_header['klinik_id']);
+                $stmt_upd = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
+                    VALUES (?, ?, ?, ?, ?, NOW())
+                    ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                $stmt_upd->bind_param("iiidi", $obid, $old_uid, $old_header['klinik_id'], $oqty, $created_by);
                 $stmt_upd->execute();
             } elseif ($old_header['jenis_pemakaian'] === 'klinik') {
-                // Return to Clinic Stock
-                $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
-                $stmt_upd->bind_param("diii", $oqty, $created_by, $obid, $old_header['klinik_id']);
+                // Return to Clinic Stock (upsert)
+                $stmt_upd = $conn->prepare("INSERT INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty, updated_by, updated_at)
+                    VALUES (?, ?, ?, ?, NOW())
+                    ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                $stmt_upd->bind_param("iidi", $obid, $old_header['klinik_id'], $oqty, $created_by);
                 $stmt_upd->execute();
             }
         }

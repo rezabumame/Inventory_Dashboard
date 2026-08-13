@@ -56,11 +56,10 @@ try {
     $is_super_admin = $_SESSION['role'] === 'super_admin';
     $reason = $_POST['reason'] ?? '';
 
-    // Super Admin can delete anything
-    if (!$is_super_admin && $is_over_2_days) {
-        throw new Exception("Data yang sudah lewat 2 hari tidak dapat dihapus, hanya diperbolehkan untuk edit.");
-    }
-    
+    // Super Admin can delete anything. Non-super-admin roles are handled below: same-day is a
+    // direct delete (creator/admin_klinik), past-day routes admin_klinik through an SPV-approval
+    // request instead of being blocked outright — a blanket "over 2 days -> reject" check here
+    // used to short-circuit BEFORE that request branch could ever run, making it dead code.
     if (!$is_super_admin) {
         if ($is_today) {
             // Same day: Creator or Admin Klinik of the same clinic can delete

@@ -2293,7 +2293,7 @@ if ($default_modal_klinik_id) {
         // --- MODAL EDIT LOGIC ---
         let editRowIndex = 0;
 
-        function makeEditRow(idx, barangId, qty, satuan, catatan, uomMode, detailId, isExisting, isLokal = 0) {
+        function makeEditRow(idx, barangId, qty, satuan, catatan, uomMode, detailId, isExisting, isLokal = 0, detailIds = null) {
             const formattedQty = qty ? fmtQty(qty) : '';
             const existing = isExisting ? 1 : 0;
             const lockExistingAttr = isExisting ? 'disabled' : '';
@@ -2321,6 +2321,7 @@ if ($default_modal_klinik_id) {
                     <input type="hidden" name="items[${idx}][is_lokal]" class="edit-is-lokal-hidden" value="${isLokal}">
                     <input type="hidden" name="items[${idx}][catatan_item]" value="${catatan || ''}">
                     <input type="hidden" class="edit-detail-id" value="${detailId || ''}">
+                    <input type="hidden" class="edit-detail-ids" value='${JSON.stringify(detailIds && detailIds.length ? detailIds : (detailId ? [detailId] : []))}'>
                 </td>
                 <td class="p-2">
                     <select class="form-select form-select-sm edit-op-select">
@@ -2455,9 +2456,16 @@ if ($default_modal_klinik_id) {
                                         catatan_item: [],
                                         uom_mode: d.uom_mode || 'oper',
                                         is_lokal: d.is_lokal || 0,
-                                        id: d.id // keep first id for reference if needed
+                                        // Barang_id yang sama bisa punya BEBERAPA baris detail asli (mis. "Gabungan N
+                                        // Pasien" — 1 baris per pasien). Ditampilkan sebagai 1 baris gabungan di sini,
+                                        // tapi SEMUA id aslinya harus dilacak (bukan cuma yang pertama) supaya waktu
+                                        // disimpan tidak ada baris lama yang "nyangkut" dan bikin qty membengkak.
+                                        ids: [d.id],
+                                        id: d.id
                                     };
                                     groupedDetails.push(detailMap[key]);
+                                } else {
+                                    detailMap[key].ids.push(d.id);
                                 }
                                 detailMap[key].qty += parseFloat(d.qty) || 0;
                                 if (d.catatan_item && !detailMap[key].catatan_item.includes(d.catatan_item)) {
@@ -2467,7 +2475,7 @@ if ($default_modal_klinik_id) {
 
                             groupedDetails.forEach(function (d) {
                                 const catatanJoin = d.catatan_item.join(', ');
-                                const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, catatanJoin, d.uom_mode, d.id, true, d.is_lokal || 0);
+                                const rowHtml = makeEditRow(editRowIndex, d.barang_id, d.qty, d.satuan, catatanJoin, d.uom_mode, d.id, true, d.is_lokal || 0, d.ids);
                                 $('#editItemTableBody').append(rowHtml);
                                 const $row = $('#editItemTableBody tr:last');
                                 const $barangSelect = $row.find('.edit-barang-select');
@@ -2788,6 +2796,9 @@ if ($default_modal_klinik_id) {
                 const op = String($row.find('.edit-op-select').val() || '');
                 const isExisting = String($row.data('existing') || '0') === '1';
                 const detailId = Number($row.find('.edit-detail-id').val() || 0);
+                let detailIds = [];
+                try { detailIds = JSON.parse($row.find('.edit-detail-ids').val() || '[]'); } catch (e) { detailIds = []; }
+                if (!detailIds.length && detailId > 0) detailIds = [detailId];
                 const rawVal = $row.find('.edit-barang-select').val() || '';
                 const parts = rawVal.split('|');
                 const barangId = Number(parts[0] || 0);
@@ -2810,7 +2821,10 @@ if ($default_modal_klinik_id) {
                         invalid = 'Detail item hapus tidak valid.';
                         return false;
                     }
-                    ops.push({ op: 'remove', detail_id: detailId });
+                    // Baris gabungan bisa mewakili lebih dari 1 baris detail asli (mis. per pasien) —
+                    // hapus SEMUA id aslinya, bukan cuma yang pertama, supaya tidak ada sisa qty yang
+                    // "nyangkut" balik lewat pass "kept" di backend.
+                    detailIds.forEach(function (did) { ops.push({ op: 'remove', detail_id: did }); });
                     return true;
                 }
                 if (barangId <= 0 || qty <= 0) {
@@ -2823,6 +2837,10 @@ if ($default_modal_klinik_id) {
                         return false;
                     }
                     ops.push({ op: 'update', detail_id: detailId, barang_id: barangId, is_lokal: isLokal, qty: qty, satuan: satuan, catatan_item: catatanItem });
+                    // Kalau baris ini gabungan beberapa detail asli, id pertama dipakai untuk update
+                    // (qty baru sudah mewakili total gabungan), sisanya harus dihapus supaya tidak
+                    // ikut ditambahkan balik sebagai "kept" oleh backend dan bikin qty membengkak.
+                    detailIds.slice(1).forEach(function (did) { ops.push({ op: 'remove', detail_id: did }); });
                 } else if (op === 'add') {
                     const uomMode = String($row.find('.edit-uom-select').val() || 'oper');
                     ops.push({ op: 'add', barang_id: barangId, is_lokal: isLokal, qty: qty, satuan: satuan, catatan_item: catatanItem, uom_mode: uomMode });

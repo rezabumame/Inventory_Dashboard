@@ -133,24 +133,35 @@ try {
                 $is_lokal = (int)($item['is_lokal'] ?? 0);
 
                 if ($is_lokal) {
+                    // INSERT IGNORE dulu supaya baris pasti ada sebelum UPDATE/SELECT history di
+                    // bawah — kalau barisnya sempat terhapus (mis. stok pernah presis 0), UPDATE
+                    // biasa akan diam-diam 0 baris ter-affect dan stok gagal balik tanpa error.
+                    $conn->query("INSERT IGNORE INTO inventory_stok_lokal (barang_lokal_id, klinik_id, qty) VALUES ($bid, " . (int)$klinik_id . ", 0)");
                     $stmt_upd = $conn->prepare("UPDATE inventory_stok_lokal SET qty = qty + ? WHERE barang_lokal_id = ? AND klinik_id = ?");
                     $stmt_upd->bind_param("dii", $qty, $bid, $klinik_id);
                     exec_or_throw($stmt_upd, 'Reverse stock Lokal');
 
                     // History Lokal
-                    $stmt_hist = $conn->prepare("INSERT INTO inventory_history_lokal (barang_lokal_id, klinik_id, tipe, qty_sebelum, qty_perubahan, qty_sesudah, keterangan, created_by) 
+                    $stmt_hist = $conn->prepare("INSERT INTO inventory_history_lokal (barang_lokal_id, klinik_id, tipe, qty_sebelum, qty_perubahan, qty_sesudah, keterangan, created_by)
                         SELECT ?, ?, 'tambah', qty - ?, ?, qty, ?, ? FROM inventory_stok_lokal WHERE barang_lokal_id = ? AND klinik_id = ?");
                     $ket = "Reversal Pemakaian (Delete Approve) " . $header['nomor_pemakaian'];
                     $stmt_hist->bind_param("iiddsiii", $bid, $klinik_id, $qty, $qty, $ket, $user_id, $bid, $klinik_id);
                     exec_or_throw($stmt_hist, 'Log history reversal lokal');
 
                 } elseif ($jenis_pemakaian === 'hc' && !empty($user_hc_id)) {
-                    $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-                    $stmt_upd->bind_param("diiii", $qty, $user_id, $bid, $user_hc_id, $klinik_id);
+                    // Upsert: baris tas HC bisa sudah terhapus (mis. qty pernah presis 0 lalu
+                    // dibuang saat validasi SO) — UPDATE biasa akan diam-diam gagal mengembalikan
+                    // stok kalau barisnya tidak ada.
+                    $stmt_upd = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
+                        VALUES (?, ?, ?, ?, ?, NOW())
+                        ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                    $stmt_upd->bind_param("iiidi", $bid, $user_hc_id, $klinik_id, $qty, $user_id);
                     exec_or_throw($stmt_upd, 'Reverse stock HC');
                 } elseif ($jenis_pemakaian === 'klinik') {
-                    $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
-                    $stmt_upd->bind_param("diii", $qty, $user_id, $bid, $klinik_id);
+                    $stmt_upd = $conn->prepare("INSERT INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty, updated_by, updated_at)
+                        VALUES (?, ?, ?, ?, NOW())
+                        ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                    $stmt_upd->bind_param("iidi", $bid, $klinik_id, $qty, $user_id);
                     exec_or_throw($stmt_upd, 'Reverse stock Klinik');
                 }
             }
@@ -208,6 +219,7 @@ try {
 
                     if ($is_lokal) {
                         // Lokal stock deduction
+                        $conn->query("INSERT IGNORE INTO inventory_stok_lokal (barang_lokal_id, klinik_id, qty) VALUES ($bid, " . (int)$klinik_id_ctx . ", 0)");
                         $stmt_get = $conn->prepare("SELECT qty FROM inventory_stok_lokal WHERE barang_lokal_id = ? AND klinik_id = ?");
                         $stmt_get->bind_param("ii", $bid, $klinik_id_ctx);
                         $stmt_get->execute();
@@ -233,16 +245,21 @@ try {
                     $eff = stock_effective($conn, $klinik_id_ctx, $jenis_pemakaian_ctx === 'hc', $bid);
                     $qty_sebelum = $eff['ok'] ? (float)($eff['on_hand'] ?? 0) : 0.0;
 
-                    // Adjust stock based on delta
+                    // Adjust stock based on delta (upsert: baris bisa saja belum/tidak ada lagi)
+                    $neg_delta = -$qty_delta;
                     if ($jenis_pemakaian_ctx === 'hc' && !empty($user_hc_id_ctx)) {
-                        $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-                        $stmt_upd->bind_param("diiii", $qty_delta, $user_id, $bid, $user_hc_id_ctx, $klinik_id_ctx);
+                        $stmt_upd = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
+                            VALUES (?, ?, ?, ?, ?, NOW())
+                            ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                        $stmt_upd->bind_param("iiidi", $bid, $user_hc_id_ctx, $klinik_id_ctx, $neg_delta, $user_id);
                         exec_or_throw($stmt_upd, 'Apply delta stock HC');
                         $level = 'hc';
                         $level_id = $user_hc_id_ctx;
                     } else {
-                        $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
-                        $stmt_upd->bind_param("diii", $qty_delta, $user_id, $bid, $klinik_id_ctx);
+                        $stmt_upd = $conn->prepare("INSERT INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty, updated_by, updated_at)
+                            VALUES (?, ?, ?, ?, NOW())
+                            ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                        $stmt_upd->bind_param("iidi", $bid, $klinik_id_ctx, $neg_delta, $user_id);
                         exec_or_throw($stmt_upd, 'Apply delta stock Klinik');
                         $level = 'klinik';
                         $level_id = $klinik_id_ctx;
@@ -273,37 +290,100 @@ try {
                 // Sync the PARENT's item detail list to reflect the now-applied deltas.
                 // Without this, the parent's inventory_pemakaian_bhp_detail rows stay frozen at
                 // their original creation-time values forever, even though stock/ledger are correct.
-                foreach ($delta_items as $delta_item) {
-                    $bid = (int)$delta_item['barang_id'];
-                    $is_lokal_d = (int)($delta_item['is_lokal'] ?? 0);
-                    $qty_delta = (float)$delta_item['qty'];
-                    $satuan_d = (string)($delta_item['satuan'] ?? '');
-                    $catatan_d = (string)($delta_item['catatan_item'] ?? '');
-
-                    if (abs($qty_delta) < 0.000001) continue;
-
-                    $stmt_find = $conn->prepare("SELECT id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ? AND barang_id = ? AND is_lokal = ? LIMIT 1");
-                    $stmt_find->bind_param("iii", $parent_id, $bid, $is_lokal_d);
-                    $stmt_find->execute();
-                    $existing_detail = $stmt_find->get_result()->fetch_assoc();
-
-                    $old_qty = $existing_detail ? (float)$existing_detail['qty'] : 0.0;
-                    $new_qty = $old_qty + $qty_delta;
-
-                    if ($new_qty <= 0.000001) {
-                        if ($existing_detail) {
-                            $stmt_del_detail = $conn->prepare("DELETE FROM inventory_pemakaian_bhp_detail WHERE id = ?");
-                            $stmt_del_detail->bind_param("i", $existing_detail['id']);
+                //
+                // Prefer items_ops (carries the explicit detail_id chosen at request time — the SAME
+                // row the direct-edit path in process_pemakaian_bhp.php would have touched) over
+                // matching by barang_id alone. Matching by barang_id (old delta_items-only approach)
+                // is ambiguous whenever the parent has MULTIPLE detail rows for the same barang_id —
+                // e.g. "Gabungan N Pasien" records store 1 row per patient — and could silently
+                // update/delete the wrong row, corrupting the parent's item list for future edits.
+                $items_ops_sync = $pending_data['items_ops'] ?? null;
+                if (is_array($items_ops_sync) && !empty($items_ops_sync)) {
+                    foreach ($items_ops_sync as $iop) {
+                        $iop_type = (string)($iop['op'] ?? '');
+                        if ($iop_type === 'update') {
+                            $did = (int)($iop['detail_id'] ?? 0);
+                            $after = $iop['after'] ?? [];
+                            if ($did <= 0) continue;
+                            $qty_u = (float)($after['qty'] ?? 0);
+                            if ($qty_u <= 0.000001) {
+                                $stmt_del_detail = $conn->prepare("DELETE FROM inventory_pemakaian_bhp_detail WHERE id = ? AND pemakaian_bhp_id = ?");
+                                $stmt_del_detail->bind_param("ii", $did, $parent_id);
+                                exec_or_throw($stmt_del_detail, 'Sync parent detail (update->remove)');
+                            } else {
+                                $bid_u = (int)($after['barang_id'] ?? 0);
+                                $isl_u = (int)($after['is_lokal'] ?? 0);
+                                $sat_u = (string)($after['satuan'] ?? '');
+                                $cat_u = (string)($after['catatan_item'] ?? '');
+                                $stmt_upd_detail = $conn->prepare("UPDATE inventory_pemakaian_bhp_detail SET barang_id = ?, is_lokal = ?, qty = ?, satuan = ?, catatan_item = ? WHERE id = ? AND pemakaian_bhp_id = ?");
+                                $stmt_upd_detail->bind_param("iidssii", $bid_u, $isl_u, $qty_u, $sat_u, $cat_u, $did, $parent_id);
+                                exec_or_throw($stmt_upd_detail, 'Sync parent detail (update)');
+                            }
+                        } elseif ($iop_type === 'remove') {
+                            $did = (int)($iop['detail_id'] ?? 0);
+                            if ($did <= 0) continue;
+                            $stmt_del_detail = $conn->prepare("DELETE FROM inventory_pemakaian_bhp_detail WHERE id = ? AND pemakaian_bhp_id = ?");
+                            $stmt_del_detail->bind_param("ii", $did, $parent_id);
                             exec_or_throw($stmt_del_detail, 'Sync parent detail (remove)');
+                        } elseif ($iop_type === 'add') {
+                            $bid_a = (int)($iop['barang_id'] ?? 0);
+                            $isl_a = (int)($iop['is_lokal'] ?? 0);
+                            $qty_a = (float)($iop['qty'] ?? 0);
+                            $sat_a = (string)($iop['satuan'] ?? '');
+                            $cat_a = (string)($iop['catatan_item'] ?? '');
+                            $uom_mode_a = trim((string)($iop['uom_mode'] ?? 'oper'));
+                            if ($bid_a <= 0 || $qty_a <= 0.000001) continue;
+                            // 'add' qty is entered in whatever unit the user picked (uom_mode);
+                            // detail rows are always stored in the base/to_uom unit, so convert here
+                            // the same way process_pemakaian_bhp.php does when building delta_items.
+                            if ($uom_mode_a === 'odoo' && !$isl_a) {
+                                $stmt_ratio = $conn->prepare("SELECT COALESCE(uc.multiplier, 1) AS ratio FROM inventory_barang b LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang WHERE b.id = ? LIMIT 1");
+                                $stmt_ratio->bind_param("i", $bid_a);
+                                $stmt_ratio->execute();
+                                $ratio_row = $stmt_ratio->get_result()->fetch_assoc();
+                                $ratio_a = max((float)($ratio_row['ratio'] ?? 1), 0.000001);
+                                $qty_a = $qty_a / $ratio_a;
+                            }
+                            $stmt_ins_detail = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, is_lokal, qty, satuan, catatan_item) VALUES (?, ?, ?, ?, ?, ?)");
+                            $stmt_ins_detail->bind_param("iiidss", $parent_id, $bid_a, $isl_a, $qty_a, $sat_a, $cat_a);
+                            exec_or_throw($stmt_ins_detail, 'Sync parent detail (add)');
                         }
-                    } elseif ($existing_detail) {
-                        $stmt_upd_detail = $conn->prepare("UPDATE inventory_pemakaian_bhp_detail SET qty = ?, satuan = ?, catatan_item = ? WHERE id = ?");
-                        $stmt_upd_detail->bind_param("dssi", $new_qty, $satuan_d, $catatan_d, $existing_detail['id']);
-                        exec_or_throw($stmt_upd_detail, 'Sync parent detail (update)');
-                    } else {
-                        $stmt_ins_detail = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, is_lokal, qty, satuan, catatan_item) VALUES (?, ?, ?, ?, ?, ?)");
-                        $stmt_ins_detail->bind_param("iiidss", $parent_id, $bid, $is_lokal_d, $new_qty, $satuan_d, $catatan_d);
-                        exec_or_throw($stmt_ins_detail, 'Sync parent detail (insert)');
+                    }
+                } else {
+                    // Fallback for older pending revisions created before items_ops was tracked.
+                    // Best-effort only: ambiguous if a barang_id appears in multiple parent detail rows.
+                    foreach ($delta_items as $delta_item) {
+                        $bid = (int)$delta_item['barang_id'];
+                        $is_lokal_d = (int)($delta_item['is_lokal'] ?? 0);
+                        $qty_delta = (float)$delta_item['qty'];
+                        $satuan_d = (string)($delta_item['satuan'] ?? '');
+                        $catatan_d = (string)($delta_item['catatan_item'] ?? '');
+
+                        if (abs($qty_delta) < 0.000001) continue;
+
+                        $stmt_find = $conn->prepare("SELECT id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ? AND barang_id = ? AND is_lokal = ? LIMIT 1");
+                        $stmt_find->bind_param("iii", $parent_id, $bid, $is_lokal_d);
+                        $stmt_find->execute();
+                        $existing_detail = $stmt_find->get_result()->fetch_assoc();
+
+                        $old_qty = $existing_detail ? (float)$existing_detail['qty'] : 0.0;
+                        $new_qty = $old_qty + $qty_delta;
+
+                        if ($new_qty <= 0.000001) {
+                            if ($existing_detail) {
+                                $stmt_del_detail = $conn->prepare("DELETE FROM inventory_pemakaian_bhp_detail WHERE id = ?");
+                                $stmt_del_detail->bind_param("i", $existing_detail['id']);
+                                exec_or_throw($stmt_del_detail, 'Sync parent detail (remove)');
+                            }
+                        } elseif ($existing_detail) {
+                            $stmt_upd_detail = $conn->prepare("UPDATE inventory_pemakaian_bhp_detail SET qty = ?, satuan = ?, catatan_item = ? WHERE id = ?");
+                            $stmt_upd_detail->bind_param("dssi", $new_qty, $satuan_d, $catatan_d, $existing_detail['id']);
+                            exec_or_throw($stmt_upd_detail, 'Sync parent detail (update)');
+                        } else {
+                            $stmt_ins_detail = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, is_lokal, qty, satuan, catatan_item) VALUES (?, ?, ?, ?, ?, ?)");
+                            $stmt_ins_detail->bind_param("iiidss", $parent_id, $bid, $is_lokal_d, $new_qty, $satuan_d, $catatan_d);
+                            exec_or_throw($stmt_ins_detail, 'Sync parent detail (insert)');
+                        }
                     }
                 }
 
@@ -337,12 +417,16 @@ try {
                     $rbid = (int)$ots['barang_id'];
                     if ($ots['tipe_transaksi'] === 'out') {
                         if ($jenis_pemakaian === 'hc' && !empty($user_hc_id)) {
-                            $stmt_rv = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-                            $stmt_rv->bind_param("diiii", $rqty, $user_id, $rbid, $user_hc_id, $kid);
+                            $stmt_rv = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
+                                VALUES (?, ?, ?, ?, ?, NOW())
+                                ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                            $stmt_rv->bind_param("iiidi", $rbid, $user_hc_id, $kid, $rqty, $user_id);
                             exec_or_throw($stmt_rv, 'Reverse old stock HC');
                         } else {
-                            $stmt_rv = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
-                            $stmt_rv->bind_param("diii", $rqty, $user_id, $rbid, $kid);
+                            $stmt_rv = $conn->prepare("INSERT INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty, updated_by, updated_at)
+                                VALUES (?, ?, ?, ?, NOW())
+                                ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                            $stmt_rv->bind_param("iidi", $rbid, $kid, $rqty, $user_id);
                             exec_or_throw($stmt_rv, 'Reverse old stock Klinik');
                         }
                     }
@@ -358,6 +442,7 @@ try {
                     if ($bid <= 0 || $qty <= 0) continue;
 
                     if ($is_lokal) {
+                        $conn->query("INSERT IGNORE INTO inventory_stok_lokal (barang_lokal_id, klinik_id, qty) VALUES ($bid, " . (int)$kid . ", 0)");
                         $stmt_get = $conn->prepare("SELECT qty FROM inventory_stok_lokal WHERE barang_lokal_id = ? AND klinik_id = ?");
                         $stmt_get->bind_param("ii", $bid, $kid);
                         $stmt_get->execute();
@@ -377,19 +462,24 @@ try {
                         continue;
                     }
 
-                    // Stock deduction
+                    // Stock deduction (upsert: baris bisa saja belum ada)
                     $eff = stock_effective($conn, $kid, $jenis_pemakaian === 'hc', $bid);
                     $qty_sebelum = $eff['ok'] ? (float)($eff['on_hand'] ?? 0) : 0.0;
-                    
+                    $neg_qty = -$qty;
+
                     if ($jenis_pemakaian === 'hc' && !empty($user_hc_id)) {
-                        $stmt_s = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-                        $stmt_s->bind_param("diiii", $qty, $user_id, $bid, $user_hc_id, $kid);
+                        $stmt_s = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
+                            VALUES (?, ?, ?, ?, ?, NOW())
+                            ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                        $stmt_s->bind_param("iiidi", $bid, $user_hc_id, $kid, $neg_qty, $user_id);
                         exec_or_throw($stmt_s, 'Deduct stock HC');
                         $level = 'hc';
                         $level_id = $user_hc_id;
                     } else {
-                        $stmt_s = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
-                        $stmt_s->bind_param("diii", $qty, $user_id, $bid, $kid);
+                        $stmt_s = $conn->prepare("INSERT INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty, updated_by, updated_at)
+                            VALUES (?, ?, ?, ?, NOW())
+                            ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                        $stmt_s->bind_param("iidi", $bid, $kid, $neg_qty, $user_id);
                         exec_or_throw($stmt_s, 'Deduct stock Klinik');
                         $level = 'klinik';
                         $level_id = $kid;
@@ -495,6 +585,7 @@ try {
                 exec_or_throw($stmt_ins, 'Insert detail');
 
                 if ($is_lokal) {
+                    $conn->query("INSERT IGNORE INTO inventory_stok_lokal (barang_lokal_id, klinik_id, qty) VALUES ($bid, " . (int)$klinik_new . ", 0)");
                     $stmt_get = $conn->prepare("SELECT qty FROM inventory_stok_lokal WHERE barang_lokal_id = ? AND klinik_id = ?");
                     $stmt_get->bind_param("ii", $bid, $klinik_new);
                     $stmt_get->execute();
@@ -514,20 +605,25 @@ try {
                     continue;
                 }
 
-                // Stock deduction
+                // Stock deduction (upsert: baris bisa saja belum ada)
                 $eff = stock_effective($conn, $klinik_new, $jenis_new === 'hc', $bid);
                 $qty_sebelum = $eff['ok'] ? (float)($eff['on_hand'] ?? 0) : 0.0;
-                
+                $neg_qty = -$qty;
+
                 if ($jenis_new === 'hc' && !empty($user_hc_new)) {
                     $uid = (int)$user_hc_new;
-                    $stmt_s = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-                    $stmt_s->bind_param("diiii", $qty, $user_id, $bid, $uid, $klinik_new);
+                    $stmt_s = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
+                        VALUES (?, ?, ?, ?, ?, NOW())
+                        ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                    $stmt_s->bind_param("iiidi", $bid, $uid, $klinik_new, $neg_qty, $user_id);
                     exec_or_throw($stmt_s, 'Deduct stock HC');
                     $level = 'hc';
                     $level_id = $uid;
                 } else {
-                    $stmt_s = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
-                    $stmt_s->bind_param("diii", $qty, $user_id, $bid, $klinik_new);
+                    $stmt_s = $conn->prepare("INSERT INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty, updated_by, updated_at)
+                        VALUES (?, ?, ?, ?, NOW())
+                        ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty), updated_by = VALUES(updated_by), updated_at = NOW()");
+                    $stmt_s->bind_param("iidi", $bid, $klinik_new, $neg_qty, $user_id);
                     exec_or_throw($stmt_s, 'Deduct stock Klinik');
                     $level = 'klinik';
                     $level_id = (int)$klinik_new;
