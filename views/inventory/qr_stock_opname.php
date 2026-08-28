@@ -1639,8 +1639,19 @@ foreach ($items_map as $bid => $it) {
         <div id="soModalOdooRef" style="background:#f0f4ff;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:.85rem;"></div>
         <!-- ED Section -->
         <div id="soModalEdSection">
-          <div class="fw-semibold mb-2" style="font-size:.85rem;color:#374151;">
+          <div class="fw-semibold mb-1" style="font-size:.85rem;color:#374151;">
             <i class="fas fa-calendar-alt me-1" style="color:#f59e0b;"></i>Tambah ED:
+          </div>
+          <div class="mb-2" style="font-size:.72rem;color:#6b7280;line-height:1.5;">
+            <div><i class="fas fa-info-circle me-1"></i>Jika barang memerlukan pencatatan ED, <b>pilih atau tambahkan ED terlebih dahulu</b>. Qty Fisik akan terisi secara otomatis.</div>
+            <div class="mt-1">Jika barang <b>tidak memerlukan ED</b>, langsung isi <b>Qty Fisik</b> pada kolom di bawah.</div>
+          </div>
+          <!-- Quick-pick ED dari batch yang sudah dicatat saat Inbound -->
+          <div id="soModalEdQuickPickWrap" style="display:none;margin-bottom:10px;">
+            <div style="font-size:.72rem;color:#6b7280;font-weight:600;margin-bottom:5px;">
+              <i class="fas fa-box-open me-1"></i>Pilih dari batch Inbound:
+            </div>
+            <div id="soModalEdQuickPicks" class="d-flex flex-wrap gap-2"></div>
           </div>
           <!-- Manual ED input -->
           <div class="d-flex align-items-center gap-2 mb-3" style="background:#f8faff;border-radius:8px;padding:7px 10px;border:1px dashed #c7d8ff;">
@@ -1664,12 +1675,15 @@ foreach ($items_map as $bid => $it) {
           </div>
         </div>
         <!-- Qty Fisik -->
-        <div class="d-flex align-items-center gap-3 mb-3">
+        <div class="d-flex align-items-center gap-3 mb-1">
           <label class="fw-semibold" style="font-size:.85rem;color:#374151;white-space:nowrap;">Qty Fisik:</label>
           <input type="number" id="soModalQtyFisik" min="0" step="1"
             class="form-control text-center fw-bold"
             style="width:110px;border-radius:8px;font-size:1rem;border:2px solid #c7d8ff;">
           <span id="soModalUom" class="text-muted" style="font-size:.85rem;white-space:nowrap;"></span>
+        </div>
+        <div id="soModalQtyLockHint" style="display:none;font-size:.72rem;color:#6366f1;margin-bottom:12px;">
+          <i class="fas fa-lock me-1"></i>Terkunci — otomatis dari total qty ED di atas. Hapus semua baris ED kalau mau isi manual.
         </div>
         <!-- Catatan -->
         <div>
@@ -1829,6 +1843,9 @@ const soOdooMap     = <?= json_encode($odoo_klinik, JSON_UNESCAPED_UNICODE | JSO
 // barang_id (string) → qty lokal (stok gudang klinik / gudang utama)
 const soLocalStockMap = <?= json_encode(array_map('floatval', $klinik_stock ?? []), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const soSavedRows   = <?= json_encode($saved_klinik_rows ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+// barang_id (string) → [{id, ed_month, ket}] — batch ED yang sudah pernah dicatat saat Inbound,
+// ditawarkan sebagai pilihan cepat di modal input SO supaya tidak perlu ketik ulang tanggalnya.
+const soEdRecords   = <?= json_encode($ed_records ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const soCurrentUserId   = <?= (int)($current_user_id ?? 0) ?>;
 const soCurrentUserName = <?= json_encode($current_user_name ?? 'Saya', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 
@@ -2037,6 +2054,8 @@ function openSoModal(item, editEntry = null) {
 
     // Always show ED section with manual input option
     document.getElementById('soModalEdSection').style.display = '';
+    // Batch ED yang sudah dicatat saat Inbound utk barang ini — tawarkan sbg pilihan cepat
+    soRenderEdQuickPicks(id);
 
     // Info panel: ringkasan riwayat lain yang sudah ada untuk item ini (per checker, dijumlahkan)
     let otherInfoHtml = '';
@@ -2109,6 +2128,15 @@ function openSoModal(item, editEntry = null) {
     soModalBsInst.show();
 }
 
+// Kalau user sudah keburu isi Qty Fisik SEBELUM pilih/tambah ED, jangan buang angkanya —
+// pindahkan ke baris ED pertama yang baru ditambahkan (baru dikunci ke mode otomatis).
+function soCaptureStrayQtyFisik() {
+    const hasRows = document.getElementById('soModalEdRows').children.length > 0;
+    if (hasRows) return '';
+    const val = parseFloat(document.getElementById('soModalQtyFisik').value);
+    return (!isNaN(val) && val > 0) ? val : '';
+}
+
 function soAddEdRow(edMonth, ket, kategori, initQty = '') {
     const rows = document.getElementById('soModalEdRows');
     if (rows.querySelector(`[data-ed-month="${edMonth}"]`)) return;
@@ -2149,6 +2177,33 @@ function soRemoveEdRow(btn, edMonth) {
     }
 }
 
+function soRenderEdQuickPicks(barangId) {
+    const wrap = document.getElementById('soModalEdQuickPickWrap');
+    const box  = document.getElementById('soModalEdQuickPicks');
+    box.innerHTML = '';
+    const records = soEdRecords[String(barangId)] || soEdRecords[barangId] || [];
+    if (!records.length) { wrap.style.display = 'none'; return; }
+    // Yang dipilih di sini cukup tanggal ED-nya — beberapa batch (nomor beda) yang kebetulan
+    // punya tanggal ED sama digabung jadi 1 pilihan saja, tidak perlu dobel per nomor batch.
+    const seen = new Set();
+    const uniqueByMonth = [];
+    records.forEach(r => {
+        if (seen.has(r.ed_month)) return;
+        seen.add(r.ed_month);
+        uniqueByMonth.push(r);
+    });
+    uniqueByMonth.forEach(r => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm';
+        btn.style.cssText = 'background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;border-radius:20px;font-size:.76rem;font-weight:600;padding:4px 12px;';
+        btn.innerHTML = `<i class="fas fa-plus me-1" style="font-size:.65rem;"></i>${escHtml(fmtEd(r.ed_month))}`;
+        btn.onclick = () => soAddEdRow(r.ed_month, '', soEdKategori(r.ed_month), soCaptureStrayQtyFisik());
+        box.appendChild(btn);
+    });
+    wrap.style.display = '';
+}
+
 function soAddManualEd() {
     const monthInput = document.getElementById('soManualEdMonth');
     const ketInput   = document.getElementById('soManualEdKet');
@@ -2161,7 +2216,7 @@ function soAddManualEd() {
     const edMonth  = val; // already YYYY-MM-DD
     const kategori = soEdKategori(edMonth);
     const ket      = ketInput.value.trim();
-    soAddEdRow(edMonth, ket, kategori);
+    soAddEdRow(edMonth, ket, kategori, soCaptureStrayQtyFisik());
     monthInput.value = '';
     ketInput.value   = '';
     monthInput.focus();
@@ -2179,7 +2234,24 @@ function soRecalcEdTotals() {
     document.getElementById('soTotalLte').textContent = lte;
     document.getElementById('soTotalGt').textContent  = gt;
     document.getElementById('soTotalAll').textContent  = expired + lte + gt;
-    if (expired + lte + gt > 0) document.getElementById('soModalQtyFisik').value = expired + lte + gt;
+
+    const qtyInput = document.getElementById('soModalQtyFisik');
+    const lockHint = document.getElementById('soModalQtyLockHint');
+    const hasEdRows = document.querySelectorAll('#soModalEdRows [data-ed-month]').length > 0;
+    if (hasEdRows) {
+        // Ada ED yang dipilih → Qty Fisik WAJIB mengikuti total ED, jangan bisa diketik manual
+        // supaya tidak pernah mismatch dengan breakdown ED-nya.
+        qtyInput.value = expired + lte + gt;
+        qtyInput.readOnly = true;
+        qtyInput.style.background = '#f1f5f9';
+        qtyInput.style.cursor = 'not-allowed';
+        lockHint.style.display = '';
+    } else {
+        qtyInput.readOnly = false;
+        qtyInput.style.background = '';
+        qtyInput.style.cursor = '';
+        lockHint.style.display = 'none';
+    }
 }
 
 async function soConfirmItem() {
