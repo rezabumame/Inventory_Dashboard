@@ -2051,6 +2051,10 @@ function openSoModal(item, editEntry = null) {
     // Clear ED rows and totals
     document.getElementById('soModalEdRows').innerHTML = '';
     document.getElementById('soModalEdTotals').style.display = 'none';
+    // Reset status kunci Qty Fisik dari item sebelumnya — kalau tidak, item baru yang belum
+    // punya baris ED sama sekali ikut kebawa "Terkunci" nempel dari modal item sebelumnya.
+    document.getElementById('soModalQtyFisik').value = '';
+    soRecalcEdTotals();
 
     // Always show ED section with manual input option
     document.getElementById('soModalEdSection').style.display = '';
