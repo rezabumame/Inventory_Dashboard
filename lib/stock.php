@@ -133,6 +133,174 @@ function stock_reserve_qty(mysqli $conn, int $klinik_id, int $barang_id, string 
     return (float)($r && $r->num_rows > 0 ? ($r->fetch_assoc()['qty'] ?? 0) : 0);
 }
 
+/**
+ * Versi batch dari stock_effective() — hitung stok efektif untuk BANYAK barang sekaligus
+ * di 1 klinik/HC, lewat query agregat (GROUP BY barang_id) alih-alih memanggil
+ * stock_effective() satu-per-satu per barang (yang tiap panggilannya ~9 query).
+ *
+ * Formula & urutan logikanya HARUS identik dengan stock_effective() — ini cuma versi
+ * "banyak sekaligus" dari fungsi yang sama, dipakai di tempat yang butuh hitung banyak
+ * barang dalam 1 request (mis. pencarian item Input BHP), BUKAN pengganti stock_effective()
+ * itu sendiri (yang tetap dipakai apa adanya di tempat-tempat single-item lain).
+ *
+ * @return array barang_id => hasil sama persis dgn stock_effective()
+ */
+function stock_effective_batch(mysqli $conn, int $klinik_id, bool $is_hc, array $barang_ids): array {
+    $klinik_id = (int)$klinik_id;
+    $barang_ids = array_values(array_unique(array_map('intval', $barang_ids)));
+    $barang_ids = array_filter($barang_ids, fn($v) => $v > 0);
+    if (empty($barang_ids)) return [];
+    $ids_str = implode(',', $barang_ids);
+
+    $loc = '';
+    $level = 'klinik';
+    if ($klinik_id === 0 && !$is_hc) {
+        $level = 'gudang_utama';
+        if (function_exists('get_setting')) {
+            $gudang_loc = trim((string)get_setting('odoo_location_gudang_utama', ''));
+            if ($gudang_loc !== '') $loc = stock_resolve_location($conn, $gudang_loc);
+        }
+    } else {
+        $kl = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1")->fetch_assoc();
+        $kode_klinik = trim((string)($kl['kode_klinik'] ?? ''));
+        $kode_homecare = trim((string)($kl['kode_homecare'] ?? ''));
+        $loc = $is_hc ? stock_resolve_location($conn, $kode_homecare) : stock_resolve_location($conn, $kode_klinik);
+        $level = $is_hc ? 'hc' : 'klinik';
+    }
+
+    if ($loc === '') {
+        $out = [];
+        foreach ($barang_ids as $bid) $out[$bid] = ['ok' => false, 'message' => 'Kode lokasi belum diisi', 'available' => 0, 'on_hand' => 0];
+        return $out;
+    }
+
+    $res_b = $conn->query("SELECT id, kode_barang, odoo_product_id, nama_barang FROM inventory_barang WHERE id IN ($ids_str)");
+    $barang_map = [];
+    while ($row = $res_b->fetch_assoc()) $barang_map[(int)$row['id']] = $row;
+
+    // kode_barang dijamin unik di inventory_barang_uom_conversion (constraint uniq_kode_barang),
+    // jadi tidak ada ambiguitas "baris mana yang kepakai" seperti kalau ada duplikat.
+    $mult_map = [];
+    $res_mult = $conn->query("
+        SELECT b.id AS barang_id, c.multiplier
+        FROM inventory_barang b
+        JOIN inventory_barang_uom_conversion c ON c.kode_barang = b.kode_barang
+        WHERE b.id IN ($ids_str)
+    ");
+    while ($row = $res_mult->fetch_assoc()) {
+        $m = (float)($row['multiplier'] ?? 1);
+        if ($m <= 0) $m = 1;
+        $mult_map[(int)$row['barang_id']] = $m;
+    }
+
+    $last_update = stock_last_update($conn, $loc);
+    $loc_esc = $conn->real_escape_string(trim($loc));
+
+    // Baseline (mirror qty) per barang — replikasi persis stock_match_clause(): cocokkan
+    // by kode_barang ATAU odoo_product_id (skip kalau kolom itu kosong di barang-nya).
+    $baseline_map = [];
+    $res_baseline = $conn->query("
+        SELECT b.id AS barang_id, MAX(sm.qty) AS qty
+        FROM inventory_barang b
+        JOIN inventory_stock_mirror sm
+          ON TRIM(sm.location_code) = '$loc_esc'
+         AND (
+               (b.kode_barang <> '' AND TRIM(sm.kode_barang) = TRIM(b.kode_barang))
+            OR (b.odoo_product_id <> '' AND TRIM(sm.odoo_product_id) = TRIM(b.odoo_product_id))
+         )
+        WHERE b.id IN ($ids_str)
+        GROUP BY b.id
+    ");
+    while ($row = $res_baseline->fetch_assoc()) $baseline_map[(int)$row['barang_id']] = (float)($row['qty'] ?? 0);
+
+    $pending_map = [];
+    if ($last_update !== '') {
+        $lu_esc = $conn->real_escape_string($last_update);
+        $level_esc = $conn->real_escape_string($level);
+        $types = $level === 'hc' ? ['hc_petugas_transfer', 'pemakaian_bhp_revision'] : ['transfer', 'hc_petugas_transfer', 'pemakaian_bhp_revision'];
+        $type_list = implode(',', array_map(fn($t) => "'" . $conn->real_escape_string($t) . "'", $types));
+        $res_pending = $conn->query("
+            SELECT barang_id,
+                COALESCE(SUM(CASE WHEN tipe_transaksi='in' THEN qty ELSE 0 END),0) AS qty_in,
+                COALESCE(SUM(CASE WHEN tipe_transaksi='out' THEN qty ELSE 0 END),0) AS qty_out
+            FROM inventory_transaksi_stok
+            WHERE level = '$level_esc' AND level_id = $klinik_id AND barang_id IN ($ids_str)
+              AND created_at > '$lu_esc' AND referensi_tipe IN ($type_list)
+            GROUP BY barang_id
+        ");
+        while ($row = $res_pending->fetch_assoc()) {
+            $pending_map[(int)$row['barang_id']] = ['in' => (float)$row['qty_in'], 'out' => (float)$row['qty_out']];
+        }
+    }
+
+    $sellout_map = [];
+    $reserve_map = [];
+    if ($level !== 'gudang_utama') {
+        $lu_sell = $last_update !== '' ? $conn->real_escape_string($last_update) : '2000-01-01 00:00:00';
+        $jenis_cond = $is_hc ? "pb.jenis_pemakaian = 'hc'" : "pb.jenis_pemakaian <> 'hc'";
+        $res_sell = $conn->query("
+            SELECT pbd.barang_id, COALESCE(SUM(pbd.qty),0) AS qty
+            FROM inventory_pemakaian_bhp_detail pbd
+            JOIN inventory_pemakaian_bhp pb ON pb.id = pbd.pemakaian_bhp_id
+            WHERE pb.klinik_id = $klinik_id AND $jenis_cond AND pb.created_at > '$lu_sell'
+              AND pbd.barang_id IN ($ids_str) AND pb.status = 'active'
+            GROUP BY pbd.barang_id
+        ");
+        while ($row = $res_sell->fetch_assoc()) $sellout_map[(int)$row['barang_id']] = (float)$row['qty'];
+
+        $today = $conn->real_escape_string(date('Y-m-d'));
+        $reserve_cond = $is_hc ? "bp.status_booking LIKE '%HC%'" : "bp.status_booking LIKE '%Clinic%'";
+        $field = $is_hc ? "CASE WHEN bd.qty_reserved_hc > 0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END" : "CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END";
+        $res_res = $conn->query("
+            SELECT bd.barang_id, COALESCE(SUM($field),0) AS qty
+            FROM inventory_booking_detail bd
+            JOIN inventory_booking_pemeriksaan bp ON bd.booking_id = bp.id
+            WHERE bp.klinik_id = $klinik_id AND bp.status IN ('booked','rescheduled','pending_edit')
+              AND $reserve_cond AND bp.tanggal_pemeriksaan >= '$today' AND bd.barang_id IN ($ids_str)
+            GROUP BY bd.barang_id
+        ");
+        while ($row = $res_res->fetch_assoc()) $reserve_map[(int)$row['barang_id']] = (float)$row['qty'];
+    }
+
+    $out = [];
+    foreach ($barang_ids as $bid) {
+        if (!isset($barang_map[$bid])) {
+            $out[$bid] = ['ok' => false, 'message' => 'Barang tidak ditemukan', 'available' => 0, 'on_hand' => 0];
+            continue;
+        }
+        $mult = $mult_map[$bid] ?? 1;
+        if ($mult <= 0) $mult = 1;
+        $baseline_raw = $baseline_map[$bid] ?? 0;
+        $baseline = $baseline_raw / $mult;
+        $pending = $pending_map[$bid] ?? ['in' => 0.0, 'out' => 0.0];
+        $sellout = ($level === 'gudang_utama') ? 0 : ($sellout_map[$bid] ?? 0);
+        $reserve = ($level === 'gudang_utama') ? 0 : ($reserve_map[$bid] ?? 0);
+
+        $avail = (float)$baseline + (float)$pending['in'] - (float)$pending['out'] - (float)$sellout - (float)$reserve;
+        if ($avail < 0) $avail = 0;
+        $avail = (float)round($avail, 4);
+
+        $on_hand = (float)$baseline + (float)$pending['in'] - (float)$pending['out'];
+        if ($on_hand < 0) $on_hand = 0;
+        $on_hand = (float)round($on_hand, 4);
+
+        $out[$bid] = [
+            'ok' => true,
+            'location' => $loc,
+            'last_update' => $last_update,
+            'baseline' => $baseline,
+            'pending_in' => (float)$pending['in'],
+            'pending_out' => (float)$pending['out'],
+            'sellout' => (float)$sellout,
+            'reserve' => (float)$reserve,
+            'available' => $avail,
+            'on_hand' => $on_hand,
+            'barang_name' => (string)($barang_map[$bid]['nama_barang'] ?? '')
+        ];
+    }
+    return $out;
+}
+
 function fmt_qty($v) {
     $n = (float)($v ?? 0);
     if (abs($n - round($n)) < 0.00005) return number_format((int)round($n), 0, ',', '.');

@@ -350,7 +350,10 @@ if ($active_tab === 'stok') {
                     }
 
                     if ($selected_klinik !== 'gudang_utama') {
-                        $acc_daily_usage = $is_history_date ? 0 : calculate_accumulated_usage($selected_klinik, (int)$r['barang_id']);
+                        // Pakai $usage_map yang sudah dihitung sekali di blok OPTIMASI di atas,
+                        // jangan hitung ulang lewat calculate_accumulated_usage() (dulu dobel-hitung
+                        // persis di loop yang sama).
+                        $acc_daily_usage = $is_history_date ? 0 : ($usage_map[(int)$r['barang_id']] ?? 0);
                         $r['acc_daily_usage'] = $acc_daily_usage;
                     }
 

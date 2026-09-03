@@ -24,24 +24,49 @@ function get_daily_usage_rate($klinik_id, $barang_id) {
 }
 
 /**
- * Mengecek apakah sebuah tanggal adalah hari operasional untuk klinik tertentu
+ * Mengecek apakah sebuah tanggal adalah hari operasional untuk klinik tertentu.
+ *
+ * Di-cache per klinik_id per request (static array): kalender-override & jadwal
+ * mingguan untuk klinik itu di-fetch 1x saat pertama dibutuhkan, lalu semua
+ * pemanggilan berikutnya (tanggal apapun) tinggal baca dari memori — tidak ada
+ * query lagi. Ini dipakai berulang di loop harian (mis. stok_klinik.php,
+ * calculate_accumulated_usage()) yang sebelumnya bisa memicu ribuan query per
+ * halaman. Urutan prioritas & nilai baliknya SAMA PERSIS seperti sebelumnya,
+ * cuma sumber datanya dari cache, bukan query berulang.
  */
 function is_operational_day($klinik_id, $date) {
     global $conn;
+    static $calendar_cache = [];
+    static $schedule_cache = [];
+    static $loaded = [];
+
     $kid = (int)$klinik_id;
-    $d = $conn->real_escape_string($date);
-    $day_of_week = (int)date('w', strtotime($date)); // 0=Sun, 6=Sat
+
+    if (!isset($loaded[$kid])) {
+        $calendar_cache[$kid] = [];
+        $res_cal = $conn->query("SELECT date, is_operational FROM inventory_operational_calendar WHERE klinik_id = $kid");
+        while ($res_cal && ($row = $res_cal->fetch_assoc())) {
+            $calendar_cache[$kid][$row['date']] = (bool)$row['is_operational'];
+        }
+
+        $schedule_cache[$kid] = [];
+        $res_sch = $conn->query("SELECT day_of_week, is_open FROM inventory_operational_schedule WHERE klinik_id = $kid");
+        while ($res_sch && ($row = $res_sch->fetch_assoc())) {
+            $schedule_cache[$kid][(int)$row['day_of_week']] = (bool)$row['is_open'];
+        }
+
+        $loaded[$kid] = true;
+    }
 
     // 1. Cek Override Kalender (Libur/Event khusus)
-    $res_cal = $conn->query("SELECT is_operational FROM inventory_operational_calendar WHERE klinik_id = $kid AND date = '$d'");
-    if ($res_cal && ($row = $res_cal->fetch_assoc())) {
-        return (bool)$row['is_operational'];
+    if (isset($calendar_cache[$kid][$date])) {
+        return $calendar_cache[$kid][$date];
     }
 
     // 2. Cek Jadwal Rutin Mingguan
-    $res_sch = $conn->query("SELECT is_open FROM inventory_operational_schedule WHERE klinik_id = $kid AND day_of_week = $day_of_week");
-    if ($res_sch && ($row = $res_sch->fetch_assoc())) {
-        return (bool)$row['is_open'];
+    $day_of_week = (int)date('w', strtotime($date)); // 0=Sun, 6=Sat
+    if (isset($schedule_cache[$kid][$day_of_week])) {
+        return $schedule_cache[$kid][$day_of_week];
     }
 
     // 3. Default: Buka

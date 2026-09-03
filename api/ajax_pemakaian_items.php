@@ -75,9 +75,20 @@ if ($jenis === 'hc' && $user_hc_id > 0) {
             ORDER BY b.nama_barang ASC
         ");
         
+        // Ambil semua baris dulu, lalu hitung stok efektif utk SEMUA barang sekaligus lewat
+        // stock_effective_batch() (query agregat) — bukan panggil stock_effective() satu-satu per
+        // baris (dulu bisa ribuan query utk 1 lokasi dgn ratusan barang). Hasilnya identik persis,
+        // cuma jauh lebih sedikit query. Urutan tampil tetap ikuti urutan nama dari $res di atas.
+        $mirror_rows = [];
+        $mirror_bids = [];
         while ($row = $res->fetch_assoc()) {
+            $mirror_rows[] = $row;
+            $mirror_bids[] = (int)$row['barang_id'];
+        }
+        $ef_map = stock_effective_batch($conn, $klinik_id, ($jenis === 'hc'), $mirror_bids);
+        foreach ($mirror_rows as $row) {
             $bid = (int)$row['barang_id'];
-            $ef = stock_effective($conn, $klinik_id, ($jenis === 'hc'), $bid);
+            $ef = $ef_map[$bid] ?? ['ok' => false];
             if ($ef['ok']) { // Tampilkan semua item termasuk stok 0/negatif (izinkan input seperti mode upload)
                 $mult = (float)($row['uom_ratio'] ?? 1);
                 $items[] = [
@@ -117,9 +128,16 @@ if ($jenis === 'hc' && $user_hc_id > 0) {
             WHERE ts.level = '$level_esc' AND ts.level_id = $klinik_id
               AND ts.referensi_tipe IN ($ref_list) $exclude_cond
         ");
+        $extra_rows = [];
+        $extra_bids = [];
         while ($row = $res_extra->fetch_assoc()) {
+            $extra_rows[] = $row;
+            $extra_bids[] = (int)$row['barang_id'];
+        }
+        $ef_extra_map = stock_effective_batch($conn, $klinik_id, ($jenis === 'hc'), $extra_bids);
+        foreach ($extra_rows as $row) {
             $bid = (int)$row['barang_id'];
-            $ef = stock_effective($conn, $klinik_id, ($jenis === 'hc'), $bid);
+            $ef = $ef_extra_map[$bid] ?? ['ok' => false];
             if (!$ef['ok'] || $ef['on_hand'] <= 0) continue; // cuma munculin kalau memang ada stoknya
             $mult = (float)($row['uom_ratio'] ?? 1);
             if ($mult <= 0) $mult = 1;

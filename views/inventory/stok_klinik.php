@@ -525,6 +525,9 @@ if ($active_tab == 'stok') {
                         
                         // Daily Usage Accumulation
                         $item_daily_usage = $usage_map[(int)$r['barang_id']] ?? 0;
+                        // Simpan ke $r supaya loop render di bawah pakai nilai ini, bukan hitung
+                        // ulang dari nol lewat calculate_accumulated_usage() (dulu dobel-hitung).
+                        $r['item_daily_usage'] = $item_daily_usage;
 
                         if ($is_history_date) {
                             $cur_stok_onsite += (float)($r['rb_out_transfer'] ?? 0) - (float)($r['rb_in_transfer'] ?? 0) + (float)($r['rb_sellout_klinik'] ?? 0);
@@ -1417,10 +1420,12 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
                             
                              $total_stok = $stok_onsite + ($show_hc ? $stok_hc : 0);
                             
-                            // Daily Usage logic
+                            // Daily Usage logic — pakai nilai yang sudah dihitung sekali di atas
+                            // ($usage_map, di-inject ke $row['item_daily_usage']), jangan hitung
+                            // ulang lewat calculate_accumulated_usage() (dulu dobel-hitung & lambat).
                             $acc_daily_usage = 0;
                             if (!$is_history_date && $selected_klinik !== 'gudang_utama') {
-                                $acc_daily_usage = calculate_accumulated_usage($selected_klinik, $row['barang_id']);
+                                $acc_daily_usage = $row['item_daily_usage'] ?? 0;
                             }
 
                             $total_sellout = $sellout + ($show_hc ? $sellout_hc : 0);
