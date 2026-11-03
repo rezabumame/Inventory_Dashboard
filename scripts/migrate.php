@@ -500,7 +500,7 @@ try {
         UNIQUE KEY uniq_client (client_request_id, created_by)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); });
 
-    run_migration_task("Table: inventory_booking_history", function() use ($conn) { 
+    run_migration_task("Table: inventory_booking_history", function() use ($conn) {
         return m_ensure_table($conn, "inventory_booking_history", "CREATE TABLE IF NOT EXISTS inventory_booking_history (
             id INT AUTO_INCREMENT PRIMARY KEY,
             booking_id INT NOT NULL,
@@ -513,6 +513,38 @@ try {
             INDEX (booking_id),
             INDEX (user_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+    });
+
+    // Integrasi otomatis BHP (n8n + Metabase) -- pemetaan admin_id sumber -> user_id kita,
+    // dipakai oleh api/bhp_auto_sync.php supaya tidak perlu cocokkan nama nakes berulang tiap run.
+    run_migration_task("Table: inventory_nakes_external_mapping", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_nakes_external_mapping", "CREATE TABLE IF NOT EXISTS inventory_nakes_external_mapping (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            external_admin_id VARCHAR(50) NOT NULL,
+            user_id INT NOT NULL,
+            matched_by ENUM('manual','auto_name') NOT NULL DEFAULT 'auto_name',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_external_admin_id (external_admin_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    });
+
+    // Tracking per baris sumber BHP auto-sync -- dipakai bhp_auto_sync.php supaya baris yang
+    // qty-nya tidak berubah dilewati total di run berikutnya, bukan dihapus-bangun-ulang terus.
+    run_migration_task("Table: inventory_bhp_sync_tracking", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_bhp_sync_tracking", "CREATE TABLE IF NOT EXISTS inventory_bhp_sync_tracking (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            source_key VARCHAR(191) NOT NULL,
+            pemakaian_bhp_detail_id INT NOT NULL,
+            pemakaian_bhp_id INT NOT NULL,
+            barang_id INT NOT NULL,
+            klinik_id INT NOT NULL,
+            jenis ENUM('klinik','hc') NOT NULL,
+            user_hc_id INT NULL,
+            last_qty DECIMAL(18,4) NOT NULL DEFAULT 0,
+            last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_source_key (source_key)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
     });
 
     // Columns

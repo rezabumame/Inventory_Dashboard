@@ -669,7 +669,14 @@ try {
         }
 
         $reason2 = ' | Ditolak: ' . $reason;
-        $stmt_rj = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'rejected', approval_reason = CONCAT(COALESCE(approval_reason, ''), ?) WHERE id = ?");
+        if ((string)($header['status'] ?? '') === 'pending_delete') {
+            // Record ini aktif & stoknya sudah terpotong sebelum permintaan hapus diajukan --
+            // reject berarti BATALKAN penghapusan, bukan ikut membuang recordnya dari laporan
+            // "active" (yang akan bikin stok tetap kepotong tapi datanya hilang dari rekap).
+            $stmt_rj = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'active', approval_reason = CONCAT(COALESCE(approval_reason, ''), ?) WHERE id = ?");
+        } else {
+            $stmt_rj = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'rejected', approval_reason = CONCAT(COALESCE(approval_reason, ''), ?) WHERE id = ?");
+        }
         $stmt_rj->bind_param("si", $reason2, $id);
         exec_or_throw($stmt_rj, 'Reject request');
         $msg = "Permintaan telah ditolak.";

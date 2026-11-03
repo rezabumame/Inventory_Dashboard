@@ -610,7 +610,6 @@ if (!function_exists('compact_transaction_note')) {
         </div>
     </div>
 
-
 </div>
 
 <style>

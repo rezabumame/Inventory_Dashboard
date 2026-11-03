@@ -52,6 +52,9 @@ if ($type === 'sellout_clinic' || $type === 'sellout_hc') {
         $sync_filter = "AND pb.tanggal >= '$ms' AND pb.created_at > '$sa'";
     }
 
+    // GROUP BY per nomor BHP -- satu header bisa punya banyak baris inventory_transaksi_stok
+    // terpisah (tiap baris sumber dari auto-sync Metabase/CIS dicatat sendiri-sendiri, lihat
+    // api/bhp_auto_sync.php), jadi digabung di sini biar 1 nomor BHP = 1 baris tampilan.
     $sql = "
         SELECT
             pb.id            AS bhp_id,
@@ -59,10 +62,10 @@ if ($type === 'sellout_clinic' || $type === 'sellout_hc') {
             pb.tanggal,
             pb.jenis_pemakaian,
             pb.is_auto,
-            pb.created_at,
             pb.change_actor_name,
             u.nama_lengkap   AS created_by_name,
-            CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END AS qty
+            SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) AS qty,
+            COUNT(*)         AS transaksi_count
         FROM inventory_transaksi_stok ts
         JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id
         LEFT JOIN inventory_users u ON u.id = pb.created_by
@@ -72,19 +75,21 @@ if ($type === 'sellout_clinic' || $type === 'sellout_hc') {
           AND $jenis_filter
           AND pb.status = 'active'
           $sync_filter
-        ORDER BY pb.tanggal DESC, pb.created_at DESC
+        GROUP BY pb.id, pb.nomor_pemakaian, pb.tanggal, pb.jenis_pemakaian, pb.is_auto, pb.change_actor_name, u.nama_lengkap
+        ORDER BY pb.tanggal DESC, pb.id DESC
         LIMIT 200
     ";
 
     $res = $conn->query($sql);
     while ($res && ($r = $res->fetch_assoc())) {
         $rows[] = [
-            'bhp_id'        => (int)$r['bhp_id'],
-            'nomor'         => $r['nomor_pemakaian'] ?? '-',
-            'tanggal'       => $r['tanggal'] ? date('d M Y', strtotime($r['tanggal'])) : '-',
-            'jenis'         => $r['is_auto'] ? 'BHP-AUT' : strtoupper((string)$r['jenis_pemakaian']),
-            'qty'           => (float)$r['qty'],
-            'petugas'       => $r['change_actor_name'] ?: ($r['created_by_name'] ?: '-'),
+            'bhp_id'          => (int)$r['bhp_id'],
+            'nomor'           => $r['nomor_pemakaian'] ?? '-',
+            'tanggal'         => $r['tanggal'] ? date('d M Y', strtotime($r['tanggal'])) : '-',
+            'jenis'           => $r['is_auto'] ? 'BHP-AUT' : strtoupper((string)$r['jenis_pemakaian']),
+            'qty'             => (float)$r['qty'],
+            'petugas'         => $r['change_actor_name'] ?: ($r['created_by_name'] ?: '-'),
+            'transaksi_count' => (int)$r['transaksi_count'],
         ];
     }
 

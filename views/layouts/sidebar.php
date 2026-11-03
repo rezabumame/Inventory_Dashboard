@@ -92,12 +92,6 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
-        <?php if (in_array($role, ['super_admin', 'admin_hc'])): ?>
-        <a href="index.php?page=hc_distribution" class="sidebar-link <?= $current_page == 'hc_distribution' ? 'active' : '' ?>">
-            <i class="fas fa-project-diagram"></i> HC Distribution
-        </a>
-        <?php endif; ?>
-
         <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'])): ?>
         <a href="index.php?page=qr_inbound" class="sidebar-link <?= $current_page == 'qr_inbound' ? 'active' : '' ?>">
             <i class="fas fa-truck-loading"></i> Inbound Barang

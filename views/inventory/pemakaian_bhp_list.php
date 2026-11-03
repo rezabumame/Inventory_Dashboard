@@ -188,14 +188,14 @@ if ($active_tab == 'list') {
     }
 
     $q_pending = "
-        SELECT pb.tanggal AS tgl, COUNT(*) AS cnt
+        SELECT pb.tanggal AS tgl, pb.jenis_pemakaian, k.nama_klinik, COUNT(*) AS cnt
         FROM inventory_pemakaian_bhp pb
         LEFT JOIN inventory_klinik k ON pb.klinik_id = k.id
         LEFT JOIN inventory_users u_created ON pb.created_by = u_created.id
         LEFT JOIN inventory_users u_hc ON pb.user_hc_id = u_hc.id
         WHERE $base_where $search_where_list AND (pb.is_auto = 0 OR '$user_role' = 'super_admin')
           AND pb.status IN ('pending_edit', 'pending_delete', 'pending_approval_spv', 'pending_add')
-        GROUP BY pb.tanggal
+        GROUP BY pb.tanggal, pb.klinik_id, pb.jenis_pemakaian
         ORDER BY tgl DESC
         LIMIT 30
     ";
@@ -210,6 +210,8 @@ if ($active_tab == 'list') {
     while ($rp = $res_pending->fetch_assoc()) {
         $pending_verifikasi[] = [
             'tgl' => (string) ($rp['tgl'] ?? ''),
+            'klinik' => (string) ($rp['nama_klinik'] ?? '-'),
+            'jenis' => (string) ($rp['jenis_pemakaian'] ?? ''),
             'cnt' => (int) ($rp['cnt'] ?? 0)
         ];
     }
@@ -450,14 +452,15 @@ if ($default_modal_klinik_id) {
             <div class="small">
                 <div class="fw-bold mb-1">Ada Pemakaian BHP yang belum diverifikasi/di-approve (Pending).</div>
                 <div class="text-muted">
-                    <?php
-                    $parts = [];
-                    foreach ($pending_verifikasi as $pv) {
-                        $tgl = $pv['tgl'] ? date('d/m/Y', strtotime($pv['tgl'])) : '-';
-                        $parts[] = $tgl . ' (' . (int) $pv['cnt'] . ')';
-                    }
-                    echo htmlspecialchars(implode(', ', $parts));
-                    ?>
+                    <ul class="mb-0 ps-3 mt-1">
+                        <?php foreach ($pending_verifikasi as $pv):
+                            $tgl = $pv['tgl'] ? date('d/m/Y', strtotime($pv['tgl'])) : '-';
+                            $klinik = htmlspecialchars($pv['klinik'] ?: '-');
+                            $jenis = (stripos((string) $pv['jenis'], 'hc') !== false) ? 'HC' : 'Klinik';
+                            ?>
+                            <li><?= $tgl ?> - <strong><?= $klinik ?></strong> (<?= $jenis ?>) - <?= (int) $pv['cnt'] ?> item</li>
+                        <?php endforeach; ?>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -652,6 +655,111 @@ if ($default_modal_klinik_id) {
 
     .grayscale {
         filter: grayscale(1);
+    }
+
+    /* Riwayat (History) tab -- timeline style, sama seperti Booking */
+    #bhpDetailTabs .nav-link {
+        color: rgba(255, 255, 255, 0.7);
+        background: rgba(0, 0, 0, 0.15);
+        border: none !important;
+        margin-bottom: 0;
+    }
+
+    #bhpDetailTabs .nav-link:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+    }
+
+    #bhpDetailTabs .nav-link.active {
+        color: #204EAB !important;
+        background: #ffffff !important;
+        box-shadow: none;
+    }
+
+    .history-item {
+        position: relative;
+        padding-left: 25px;
+        padding-bottom: 20px;
+        border-left: 2px solid #e2e8f0;
+    }
+
+    .history-item:last-child {
+        border-left-color: transparent;
+    }
+
+    .history-dot {
+        position: absolute;
+        left: -7px;
+        top: 0;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #cbd5e1;
+    }
+
+    .history-dot.active {
+        background: #204EAB;
+    }
+
+    .history-time {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        margin-bottom: 2px;
+    }
+
+    .history-user {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #334155;
+    }
+
+    .history-action {
+        font-size: 0.85rem;
+        color: #64748b;
+    }
+
+    .history-item-list {
+        border: 1px solid #eef0f5;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .history-item-row {
+        display: grid;
+        grid-template-columns: 1fr 90px 55px;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        font-size: 0.78rem;
+        background: #fff;
+    }
+
+    .history-item-row:nth-child(even) {
+        background: #fafbfc;
+    }
+
+    .history-item-name {
+        color: #475569;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .history-item-qty {
+        font-weight: 700;
+        white-space: nowrap;
+        text-align: right;
+    }
+
+    .history-item-right {
+        display: contents;
+    }
+
+    .history-item-ba {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        white-space: nowrap;
+        text-align: right;
     }
 
     /* CIRCULAR PAGINATION STYLING */
@@ -1161,17 +1269,50 @@ if ($default_modal_klinik_id) {
 
 <!-- Modal Detail -->
 <div class="modal fade" id="modalDetail" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content border-0 shadow">
-            <div class="modal-header border-0 py-3" style="background-color: #204EAB; color: white;">
-                <h5 class="modal-title fw-bold text-white"><i class="fas fa-info-circle me-2"></i>Detail Pemakaian BHP
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            <div class="modal-header pb-0 border-0" style="background-color: #204EAB; color: white;">
+                <div class="d-flex flex-column w-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                        <h5 class="modal-title fw-bold text-white"><i class="fas fa-info-circle me-2"></i>Detail Pemakaian BHP</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <ul class="nav nav-tabs border-0 px-2" id="bhpDetailTabs" role="tablist" style="gap: 4px; margin-bottom: -1px;">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active py-2 px-4 fw-bold border-0 rounded-top" id="bhp-info-tab"
+                                data-bs-toggle="tab" data-bs-target="#bhp-info-pane" type="button" role="tab"
+                                style="font-size: 0.85rem;">
+                                <i class="fas fa-info-circle me-1"></i>Informasi
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link py-2 px-4 fw-bold border-0 rounded-top" id="bhp-history-tab"
+                                data-bs-toggle="tab" data-bs-target="#bhp-history-pane" type="button" role="tab"
+                                style="font-size: 0.85rem;" onclick="loadBhpHistory()">
+                                <i class="fas fa-history me-1"></i>History
+                            </button>
+                        </li>
+                    </ul>
+                </div>
             </div>
-            <div class="modal-body p-0" id="modalDetailContent">
-                <div class="text-center py-5">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
+            <div class="modal-body p-0">
+                <div class="tab-content" id="bhpDetailTabContent">
+                    <div class="tab-pane fade show active" id="bhp-info-pane" role="tabpanel">
+                        <div id="modalDetailContent">
+                            <div class="text-center py-5">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade p-3" id="bhp-history-pane" role="tabpanel">
+                        <div id="bhpHistoryBody">
+                            <div class="text-center py-5 text-muted">
+                                <i class="fas fa-spinner fa-spin d-block h4 mb-2"></i>
+                                <span>Memuat riwayat...</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1893,8 +2034,12 @@ if ($default_modal_klinik_id) {
         }
 
         // View detail
+        window.currentBhpDetailId = null;
         $('.view-detail').on('click', function () {
             const id = $(this).data('id');
+            window.currentBhpDetailId = id;
+            $('#bhp-info-tab').tab('show');
+            $('#bhpHistoryBody').html('<div class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin d-block h4 mb-2"></i><span>Memuat riwayat...</span></div>');
             $('#modalDetail').modal('show');
             $('#modalDetailContent').html('<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>');
 
@@ -1910,6 +2055,70 @@ if ($default_modal_klinik_id) {
                 }
             });
         });
+
+        window.loadBhpHistory = function () {
+            var id = window.currentBhpDetailId;
+            if (!id) return;
+            var $body = $('#bhpHistoryBody');
+            $body.html('<div class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin d-block h4 mb-2"></i><span>Memuat riwayat...</span></div>');
+
+            $.ajax({
+                url: 'actions/get_pemakaian_bhp_history.php',
+                method: 'GET',
+                data: { id: id },
+                dataType: 'json',
+                success: function (res) {
+                    if (!res.success) {
+                        $body.html('<div class="alert alert-danger mx-2">' + (res.message || 'Gagal memuat riwayat') + '</div>');
+                        return;
+                    }
+                    if (!res.data || res.data.length === 0) {
+                        $body.html('<div class="text-center py-5 text-muted"><i class="fas fa-history d-block h3 mb-2 opacity-50"></i>Belum ada riwayat perubahan.</div>');
+                        return;
+                    }
+                    var actionBadge = {
+                        'create': '<span class="badge bg-light text-dark fw-normal border ms-1 x-small">create</span>',
+                        'approve': '<span class="badge bg-success-subtle text-success border border-success-subtle ms-1 x-small">approve</span>',
+                        'reject': '<span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1 x-small">reject</span>',
+                        'stok': '<span class="badge bg-light text-dark fw-normal border ms-1 x-small">stok</span>'
+                    };
+                    var esc = function (s) { return $('<div>').text(s || '').html(); };
+                    var html = '<div class="px-2 pt-2">';
+                    res.data.forEach(function (item) {
+                        var badge = actionBadge[item.action] || '';
+                        var itemsHtml = '';
+                        if (item.items && item.items.length) {
+                            itemsHtml = '<div class="history-item-list mt-1">';
+                            item.items.forEach(function (it) {
+                                var isPlus = it.label.indexOf('+') === 0;
+                                var beforeAfter = (it.before !== undefined && it.after !== undefined)
+                                    ? '<span class="history-item-ba">' + esc(it.before) + ' &rarr; ' + esc(it.after) + '</span>'
+                                    : '';
+                                itemsHtml += '<div class="history-item-row">' +
+                                    '<span class="history-item-name">' + esc(it.nama) + '</span>' +
+                                    '<span class="history-item-right">' + beforeAfter +
+                                    '<span class="history-item-qty ' + (isPlus ? 'text-success' : 'text-danger') + '">' + esc(it.label) + '</span></span>' +
+                                    '</div>';
+                            });
+                            itemsHtml += '</div>';
+                        }
+                        html += `
+                <div class="history-item">
+                    <div class="history-dot active"></div>
+                    <div class="history-time">${item.created_at}</div>
+                    <div class="history-user">${esc(item.user_name)}${badge}</div>
+                    <div class="history-action">${esc(item.notes || '')}</div>
+                    ${itemsHtml}
+                </div>`;
+                    });
+                    html += '</div>';
+                    $body.html(html);
+                },
+                error: function () {
+                    $body.html('<div class="alert alert-danger mx-2">Gagal memuat riwayat.</div>');
+                }
+            });
+        };
 
         // Delete pemakaian
         $('.delete-pemakaian').on('click', function () {

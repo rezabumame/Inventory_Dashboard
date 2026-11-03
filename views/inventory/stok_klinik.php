@@ -345,32 +345,65 @@ if ($active_tab == 'stok') {
                     WHERE ts.referensi_tipe = 'pemakaian_bhp' AND pb2.klinik_id $klinik_filter_sql AND pb2.jenis_pemakaian = 'hc'$filter_pb2_hc AND pb2.status = 'active' GROUP BY ts.barang_id");
                 $agg_sellout_h = []; while($r = $res_agg_sell_h->fetch_assoc()) $agg_sellout_h[(int)$r['barang_id']] = (float)$r['total'];
 
-                $rb_in_transfer_sql = "0";
-                $rb_out_transfer_sql = "0";
-                $rb_in_transfer_hc_sql = "0";
-                $rb_out_transfer_hc_sql = "0";
-                $rb_sellout_klinik_sql = "0";
-                $rb_sellout_hc_sql = "0";
                 $hc_user_filter_sql = "EXISTS (SELECT 1 FROM inventory_users u_hc WHERE u_hc.id = ts.level_id AND u_hc.klinik_id $klinik_filter_sql)";
-                
+                $gudang_or_clause = (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (ts.level = 'gudang_utama')" : "");
+
+                // 5. Aggregate In/Out Transfer Klinik (dulu correlated subquery per baris barang -- lihat git history)
+                $res_agg_in = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts
+                    WHERE ((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)$gudang_or_clause)
+                    AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')$filter_ts_klinik GROUP BY ts.barang_id");
+                $agg_in_transfer = []; while($r = $res_agg_in->fetch_assoc()) $agg_in_transfer[(int)$r['barang_id']] = (float)$r['total'];
+
+                $res_agg_out = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts
+                    WHERE ((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)$gudang_or_clause)
+                    AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')$filter_ts_klinik GROUP BY ts.barang_id");
+                $agg_out_transfer = []; while($r = $res_agg_out->fetch_assoc()) $agg_out_transfer[(int)$r['barang_id']] = (float)$r['total'];
+
+                // 6. Aggregate In/Out Transfer HC
+                $res_agg_in_hc = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts
+                    WHERE ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc GROUP BY ts.barang_id");
+                $agg_in_transfer_hc = []; while($r = $res_agg_in_hc->fetch_assoc()) $agg_in_transfer_hc[(int)$r['barang_id']] = (float)$r['total'];
+
+                $res_agg_out_hc = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts
+                    WHERE ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc GROUP BY ts.barang_id");
+                $agg_out_transfer_hc = []; while($r = $res_agg_out_hc->fetch_assoc()) $agg_out_transfer_hc[(int)$r['barang_id']] = (float)$r['total'];
+
+                // 7. Aggregate Rollback (mode histori) -- default kosong kalau bukan mode histori
+                $agg_rb_in_transfer = [];
+                $agg_rb_out_transfer = [];
+                $agg_rb_sellout_klinik = [];
+                $agg_rb_in_transfer_hc = [];
+                $agg_rb_out_transfer_hc = [];
+                $agg_rb_sellout_hc = [];
+
                 // Siapkan timestamp untuk subquery rollback (selalu siapkan jika mode history)
                 $rb_ts_start = $conn->real_escape_string($filter_end_ts);
                 $rb_ts_min = $conn->real_escape_string($month_start_ts);
-                
+
                 if ($is_history_date) {
                     // General Rollback SQL using last_update_general
                     $rb_ts_end = $last_update_general !== '' ? $conn->real_escape_string($last_update_general) : $conn->real_escape_string(date('Y-m-d H:i:s'));
-                    
+
                     $rb_level_filter = "((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (ts.level = 'gudang_utama')" : "") . ")";
                     $rb_pb_filter = "(pb.klinik_id $klinik_filter_sql" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (pb.jenis_pemakaian = 'gudang_utama')" : "") . ")"; // assuming jenis_pemakaian exists for gudang
 
-                    $rb_in_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND $rb_level_filter AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-                    $rb_out_transfer_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND $rb_level_filter AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-                    $rb_sellout_klinik_sql = "(SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0) FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id WHERE ts.barang_id = b.id AND ts.referensi_tipe = 'pemakaian_bhp' AND $rb_pb_filter AND TRIM(pb.jenis_pemakaian) != 'hc' AND pb.status = 'active' AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
+                    $res_rb_in = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts WHERE $rb_level_filter AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
+                    while($r = $res_rb_in->fetch_assoc()) $agg_rb_in_transfer[(int)$r['barang_id']] = (float)$r['total'];
 
-                    $rb_in_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-                    $rb_out_transfer_hc_sql = "(SELECT COALESCE(SUM(ts.qty), 0) FROM inventory_transaksi_stok ts WHERE ts.barang_id = b.id AND ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
-                    $rb_sellout_hc_sql = "(SELECT COALESCE(SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END), 0) FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id WHERE ts.barang_id = b.id AND ts.referensi_tipe = 'pemakaian_bhp' AND pb.klinik_id $klinik_filter_sql AND TRIM(pb.jenis_pemakaian) = 'hc' AND pb.status = 'active' AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min')";
+                    $res_rb_out = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts WHERE $rb_level_filter AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
+                    while($r = $res_rb_out->fetch_assoc()) $agg_rb_out_transfer[(int)$r['barang_id']] = (float)$r['total'];
+
+                    $res_rb_sk = $conn->query("SELECT ts.barang_id, SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) as total FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id WHERE ts.referensi_tipe = 'pemakaian_bhp' AND $rb_pb_filter AND TRIM(pb.jenis_pemakaian) != 'hc' AND pb.status = 'active' AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
+                    while($r = $res_rb_sk->fetch_assoc()) $agg_rb_sellout_klinik[(int)$r['barang_id']] = (float)$r['total'];
+
+                    $res_rb_in_hc = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts WHERE ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
+                    while($r = $res_rb_in_hc->fetch_assoc()) $agg_rb_in_transfer_hc[(int)$r['barang_id']] = (float)$r['total'];
+
+                    $res_rb_out_hc = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts WHERE ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
+                    while($r = $res_rb_out_hc->fetch_assoc()) $agg_rb_out_transfer_hc[(int)$r['barang_id']] = (float)$r['total'];
+
+                    $res_rb_sh = $conn->query("SELECT ts.barang_id, SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) as total FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id WHERE ts.referensi_tipe = 'pemakaian_bhp' AND pb.klinik_id $klinik_filter_sql AND TRIM(pb.jenis_pemakaian) = 'hc' AND pb.status = 'active' AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
+                    while($r = $res_rb_sh->fetch_assoc()) $agg_rb_sellout_hc[(int)$r['barang_id']] = (float)$r['total'];
                 }
 
                 $query = "SELECT 
@@ -392,38 +425,16 @@ if ($active_tab == 'stok') {
                             0 as reserve_hc,
                             0 as sellout_klinik,
                             0 as sellout_hc,
-                            (SELECT COALESCE(SUM(ts.qty), 0)
-                             FROM inventory_transaksi_stok ts
-                             WHERE ts.barang_id = b.id
-                             AND ((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (ts.level = 'gudang_utama')" : "") . ")
-                             AND ts.tipe_transaksi = 'in'
-                             AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')$filter_ts_klinik) as in_transfer,
-                            (SELECT COALESCE(SUM(ts.qty), 0)
-                             FROM inventory_transaksi_stok ts
-                             WHERE ts.barang_id = b.id
-                             AND ((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (ts.level = 'gudang_utama')" : "") . ")
-                             AND ts.tipe_transaksi = 'out'
-                             AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer')$filter_ts_klinik) as out_transfer,
-                            (SELECT COALESCE(SUM(ts.qty), 0)
-                             FROM inventory_transaksi_stok ts
-                             WHERE ts.barang_id = b.id
-                             AND ts.level = 'hc'
-                             AND $hc_user_filter_sql
-                             AND ts.tipe_transaksi = 'in'
-                             AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc) as in_transfer_hc,
-                            (SELECT COALESCE(SUM(ts.qty), 0)
-                             FROM inventory_transaksi_stok ts
-                             WHERE ts.barang_id = b.id
-                             AND ts.level = 'hc'
-                             AND $hc_user_filter_sql
-                             AND ts.tipe_transaksi = 'out'
-                             AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc) as out_transfer_hc,
-                            $rb_in_transfer_sql as rb_in_transfer,
-                            $rb_out_transfer_sql as rb_out_transfer,
-                            $rb_in_transfer_hc_sql as rb_in_transfer_hc,
-                            $rb_out_transfer_hc_sql as rb_out_transfer_hc,
-                            $rb_sellout_klinik_sql as rb_sellout_klinik,
-                            $rb_sellout_hc_sql as rb_sellout_hc
+                            0 as in_transfer,
+                            0 as out_transfer,
+                            0 as in_transfer_hc,
+                            0 as out_transfer_hc,
+                            0 as rb_in_transfer,
+                            0 as rb_out_transfer,
+                            0 as rb_in_transfer_hc,
+                            0 as rb_out_transfer_hc,
+                            0 as rb_sellout_klinik,
+                            0 as rb_sellout_hc
                           FROM inventory_barang b
                           LEFT JOIN (
                             SELECT sm1.odoo_product_id, SUM(sm1.qty) as qty
@@ -519,6 +530,16 @@ if ($active_tab == 'stok') {
                         $r['reserve_hc'] = $agg_reserve_hc[$bid] ?? 0;
                         $r['sellout_klinik'] = $agg_sellout_k[$bid] ?? 0;
                         $r['sellout_hc'] = $agg_sellout_h[$bid] ?? 0;
+                        $r['in_transfer'] = $agg_in_transfer[$bid] ?? 0;
+                        $r['out_transfer'] = $agg_out_transfer[$bid] ?? 0;
+                        $r['in_transfer_hc'] = $agg_in_transfer_hc[$bid] ?? 0;
+                        $r['out_transfer_hc'] = $agg_out_transfer_hc[$bid] ?? 0;
+                        $r['rb_in_transfer'] = $agg_rb_in_transfer[$bid] ?? 0;
+                        $r['rb_out_transfer'] = $agg_rb_out_transfer[$bid] ?? 0;
+                        $r['rb_in_transfer_hc'] = $agg_rb_in_transfer_hc[$bid] ?? 0;
+                        $r['rb_out_transfer_hc'] = $agg_rb_out_transfer_hc[$bid] ?? 0;
+                        $r['rb_sellout_klinik'] = $agg_rb_sellout_klinik[$bid] ?? 0;
+                        $r['rb_sellout_hc'] = $agg_rb_sellout_hc[$bid] ?? 0;
 
                         $cur_stok_onsite = (float)($r['qty'] ?? 0);
                         $cur_stok_hc = (float)($r['stok_hc'] ?? 0);
@@ -981,8 +1002,11 @@ async function openSelloutReserveDetail(barangId, namaBarang, type, expectedTota
                 var jenisBadge = r.jenis === 'BHP-AUT'
                     ? '<span class="badge bg-secondary">AUT</span>'
                     : `<span class="badge bg-${r.jenis === 'HC' ? 'warning text-dark' : 'primary'}">${r.jenis}</span>`;
+                var txCount = (r.transaksi_count || 1) > 1
+                    ? `<br><span class="text-muted" style="font-size:11px;">(${r.transaksi_count} transaksi)</span>`
+                    : '';
                 html += `<tr>
-                    <td class="fw-semibold">${escH(r.nomor)}</td>
+                    <td class="fw-semibold">${escH(r.nomor)}${txCount}</td>
                     <td>${escH(r.tanggal)}</td>
                     <td class="text-center">${jenisBadge}</td>
                     <td class="text-center fw-bold ${r.qty < 0 ? 'text-primary' : 'text-danger'}">${fmtNum(r.qty)}</td>
@@ -1021,7 +1045,8 @@ async function openSelloutReserveDetail(barangId, namaBarang, type, expectedTota
         if (diff > 0.001) {
             footer.innerHTML = `<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>Total detail (${fmtNum(data.total)}) berbeda dari kolom (${fmtNum(expectedTotal)}) — mungkin ada transaksi di luar filter periode.</span>`;
         } else {
-            footer.textContent = `${rows.length} transaksi · Total: ${fmtNum(data.total)}`;
+            var countLabel = isSellout ? `${rows.length} nomor BHP` : `${rows.length} transaksi`;
+            footer.textContent = `${countLabel} · Total: ${fmtNum(data.total)}`;
         }
     } catch(e) {
         body.innerHTML = `<div class="alert alert-danger">Gagal memuat: ${e.message}</div>`;

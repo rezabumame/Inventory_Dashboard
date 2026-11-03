@@ -100,7 +100,7 @@ try {
     }
 
     // 2. Reverse stock before deleting details
-    $stmt = $conn->prepare("SELECT barang_id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+    $stmt = $conn->prepare("SELECT barang_id, is_lokal, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $details = $stmt->get_result();
@@ -108,8 +108,24 @@ try {
     while ($item = $details->fetch_assoc()) {
         $bid = (int)$item['barang_id'];
         $qty = (float)$item['qty'];
+        $is_lokal = (int)($item['is_lokal'] ?? 0);
 
-        if ($jenis_pemakaian === 'hc' && !empty($user_hc_id)) {
+        if ($is_lokal) {
+            // INSERT IGNORE dulu supaya baris pasti ada sebelum UPDATE -- kalau barisnya sempat
+            // terhapus (mis. stok pernah presis 0), UPDATE biasa akan diam-diam 0 baris ter-affect
+            // dan stok gagal balik tanpa error.
+            $conn->query("INSERT IGNORE INTO inventory_stok_lokal (barang_lokal_id, klinik_id, qty) VALUES ($bid, " . (int)$klinik_id . ", 0)");
+            $stmt_upd = $conn->prepare("UPDATE inventory_stok_lokal SET qty = qty + ? WHERE barang_lokal_id = ? AND klinik_id = ?");
+            $stmt_upd->bind_param("dii", $qty, $bid, $klinik_id);
+            $stmt_upd->execute();
+
+            // History Lokal
+            $stmt_hist = $conn->prepare("INSERT INTO inventory_history_lokal (barang_lokal_id, klinik_id, tipe, qty_sebelum, qty_perubahan, qty_sesudah, keterangan, created_by)
+                SELECT ?, ?, 'tambah', qty - ?, ?, qty, ?, ? FROM inventory_stok_lokal WHERE barang_lokal_id = ? AND klinik_id = ?");
+            $ket = "Reversal Pemakaian (Delete) " . $header['nomor_pemakaian'];
+            $stmt_hist->bind_param("iiddsiii", $bid, $klinik_id, $qty, $qty, $ket, $user_id, $bid, $klinik_id);
+            $stmt_hist->execute();
+        } elseif ($jenis_pemakaian === 'hc' && !empty($user_hc_id)) {
             // Return to HC Bag. Baris bisa saja sudah terhapus (mis. qty tas HC pernah turun ke 0
             // lalu barisnya dibuang oleh proses validasi SO), jadi pakai upsert supaya stok tetap
             // balik walau barisnya harus dibuat ulang, bukan diam-diam gagal (UPDATE 0 baris).
