@@ -87,17 +87,18 @@ Karena sync jalan tiap 1 jam, jendela H-1/H+1 ini jauh lebih lebar dari interval
 ### 4.1. Auth
 Header `X-Api-Key`, dibandingkan dengan `hash_equals()` ke key yang tersimpan di `inventory_app_settings` (key `bhp_auto_api_key`). Bukan session/CSRF karena dipanggil mesin (n8n), bukan browser.
 
-### 4.2. Pemetaan klinik
+### 4.2. Pemetaan klinik (Dinamis by Alamat/Nama/Kode)
+Sama seperti pada modul Upload Excel, sistem mencari `id` klinik secara dinamis dari tabel `inventory_klinik` berdasarkan `alamat`, `nama_klinik`, atau `kode_klinik` (bukan mengunci angka id database), sehingga tahan terhadap perbedaan ID database antara local & production:
 ```php
-const BRANCH_MAP = [
-    '1' => 3,  // Cideng
-    '2' => 4,  // TB Simatupang
-    '3' => 5,  // BSD
-    '5' => 11, // Puri
-    '8' => 12, // Kelapa Gading
+const BRANCH_PATTERNS = [
+    '1' => ['alamat' => 'Cideng',        'nama' => '%Cideng%',     'kode' => 'CDG%', 'default_id' => 3],
+    '2' => ['alamat' => 'TBS',           'nama' => '%Simatupang%', 'kode' => 'TBS%', 'default_id' => 4],
+    '3' => ['alamat' => 'BSD',           'nama' => '%BSD%',        'kode' => 'BSD%', 'default_id' => 5],
+    '5' => ['alamat' => 'Puri',          'nama' => '%Puri%',       'kode' => 'PRI%', 'default_id' => 11],
+    '8' => ['alamat' => 'Kelapa Gading', 'nama' => '%Gading%',     'kode' => 'GAD%', 'default_id' => 12],
 ];
 ```
-`clinic_branch_id` dari sumber (nilai id di `bumame_branch`) dipetakan ke `klinik_id` kita. Branch yang tidak ada di peta ini (misal Makassar) otomatis di-skip dengan alasan "di luar whitelist klinik yang sudah siap".
+`clinic_branch_id` dari sumber (nilai id di `bumame_branch`) dicocokkan ke whitelist di atas lalu di-resolve ke database. Branch yang tidak ada di pola ini (misal Makassar) otomatis di-skip dengan alasan "di luar whitelist klinik yang sudah siap".
 
 ### 4.3. Satu nomor BHP per (klinik/nakes + tanggal)
 `find_or_create_header()` mencari header `inventory_pemakaian_bhp` yang sudah ada untuk kombinasi `(klinik_id, tanggal, jenis_pemakaian, user_hc_id, change_source='sistem_integrasi', status='active')`. Kalau ketemu, baris baru/berubah ditempelkan ke nomor itu. Kalau belum ada, baru dibuatkan nomor baru (`BHP-{kode_klinik}-{YYMM}-{seq}`, pakai `next_sequence()` yang sama dengan jalur manual/Excel).

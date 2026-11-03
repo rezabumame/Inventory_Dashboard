@@ -54,7 +54,18 @@ if ($api_key === '') {
     ]);
     exit;
 }
-$given_key = $_SERVER['HTTP_X_API_KEY'] ?? '';
+$given_key = $_SERVER['HTTP_X_API_KEY'] ?? $_SERVER['HTTP_X_APIKEY'] ?? $_SERVER['X_API_KEY'] ?? '';
+if ($given_key === '' && function_exists('getallheaders')) {
+    $all_headers = getallheaders();
+    foreach ($all_headers as $h_name => $h_val) {
+        if (strcasecmp($h_name, 'X-Api-Key') === 0 || strcasecmp($h_name, 'X-ApiKey') === 0) {
+            $given_key = $h_val;
+            break;
+        }
+    }
+}
+$given_key = trim((string)$given_key);
+
 if (!hash_equals($api_key, $given_key)) {
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Unauthorized: X-Api-Key tidak valid.']);
@@ -73,13 +84,60 @@ $rows = $payload['rows'];
 // Mapping klinik: source branch_id (bumame_branch.id) -> klinik_id kita. Cuma 5 klinik yang
 // sudah dikonfirmasi; tambah 1 baris kalau ada klinik baru. Makassar (MKS) sengaja TIDAK
 // dimasukkan -- masih manual sampai datanya siap di Metabase.
-const BRANCH_MAP = [
-    '1' => 3,  // Cideng
-    '2' => 4,  // TB Simatupang
-    '3' => 5,  // BSD
-    '5' => 11, // Puri
-    '8' => 12, // Kelapa Gading
+// Whitelist branch sumber (bumame_branch.id di CIS/Metabase) beserta kata kunci pencocokan ke master klinik.
+// Menggunakan resolusi dinamis by alamat, nama_klinik, dan kode_klinik (sama seperti pola upload Excel)
+// agar 100% independen dari angka ID database (kebal terhadap perbedaan ID antara local & prod).
+const BRANCH_PATTERNS = [
+    '1' => ['alamat' => 'Cideng',        'nama' => '%Cideng%',     'kode' => 'CDG%', 'default_id' => 3],
+    '2' => ['alamat' => 'TBS',           'nama' => '%Simatupang%', 'kode' => 'TBS%', 'default_id' => 4],
+    '3' => ['alamat' => 'BSD',           'nama' => '%BSD%',        'kode' => 'BSD%', 'default_id' => 5],
+    '5' => ['alamat' => 'Puri',          'nama' => '%Puri%',       'kode' => 'PRI%', 'default_id' => 11],
+    '8' => ['alamat' => 'Kelapa Gading', 'nama' => '%Gading%',     'kode' => 'GAD%', 'default_id' => 12],
 ];
+
+function resolve_klinik_id(mysqli $conn, string $branch_id, string $branch_name = ''): ?int {
+    static $cache = [];
+    $cache_key = $branch_id . '|' . $branch_name;
+    if (array_key_exists($cache_key, $cache)) return $cache[$cache_key];
+
+    if (!isset(BRANCH_PATTERNS[$branch_id])) {
+        // Fallback: jika branch_id belum di-mapping tapi branch_name ada, coba cari by alamat/nama (seperti upload Excel)
+        $b_clean = trim($branch_name);
+        if ($b_clean !== '') {
+            $esc_b = $conn->real_escape_string($b_clean);
+            $r = $conn->query("SELECT id FROM inventory_klinik 
+                WHERE status = 'active' AND (alamat = '$esc_b' OR nama_klinik LIKE '%$esc_b%') 
+                LIMIT 1");
+            if ($r && $r->num_rows > 0) {
+                $id = (int)$r->fetch_assoc()['id'];
+                $cache[$cache_key] = $id;
+                return $id;
+            }
+        }
+        $cache[$cache_key] = null;
+        return null;
+    }
+
+    $p = BRANCH_PATTERNS[$branch_id];
+    $esc_alamat = $conn->real_escape_string($p['alamat']);
+    $esc_nama   = $conn->real_escape_string($p['nama']);
+    $esc_kode   = $conn->real_escape_string($p['kode']);
+
+    // Cari ID klinik di database secara dinamis:
+    // Cek berdasarkan alamat persis (misal 'TBS', 'Cideng', 'Puri') OR nama_klinik OR kode_klinik
+    $r = $conn->query("SELECT id FROM inventory_klinik 
+        WHERE status = 'active' AND (alamat = '$esc_alamat' OR nama_klinik LIKE '$esc_nama' OR kode_klinik LIKE '$esc_kode') 
+        ORDER BY (alamat = '$esc_alamat') DESC LIMIT 1");
+
+    if ($r && $r->num_rows > 0) {
+        $id = (int)$r->fetch_assoc()['id'];
+    } else {
+        $id = (int)$p['default_id'];
+    }
+
+    $cache[$cache_key] = $id;
+    return $id;
+}
 
 function klinik_nama(mysqli $conn, int $klinik_id): string {
     static $cache = [];
@@ -257,12 +315,13 @@ foreach ($rows as $i => $row) {
     $tanggal = date('Y-m-d', $ts);
 
     $branch_id = clean_num($row['clinic_branch_id'] ?? '');
-    if (!isset(BRANCH_MAP[$branch_id])) {
-        $branch_label = (string)($row['clinic_branch_name'] ?? "branch_id $branch_id");
-        $skipped[] = ['row' => $i, 'klinik' => "$branch_label (belum siap otomasi)", 'reason' => "di luar whitelist klinik yang sudah siap"];
+    $branch_label = (string)($row['clinic_branch_name'] ?? '');
+    $klinik_id = resolve_klinik_id($conn, (string)$branch_id, $branch_label);
+    if ($klinik_id === null) {
+        $branch_disp = $branch_label !== '' ? $branch_label : "branch_id $branch_id";
+        $skipped[] = ['row' => $i, 'klinik' => "$branch_disp (belum siap otomasi)", 'reason' => "di luar whitelist klinik yang sudah siap"];
         continue;
     }
-    $klinik_id = BRANCH_MAP[$branch_id];
     $klinik_label = klinik_nama($conn, $klinik_id);
 
     $is_del_raw = $row['is_deleted'] ?? 0;
@@ -359,7 +418,9 @@ foreach ($valid_rows as $vr) {
     $groups[$key]['rows'][] = $vr;
 }
 
-$created_by = 1; // super_admin, dipakai sbg pemilik teknis record otomatis
+// Cari ID super admin aktif yang valid (di Prod otomatis dapat ID 91 milik Mas Reza, di local dapat ID 1)
+$r_sa = $conn->query("SELECT id FROM inventory_users WHERE role = 'super_admin' AND status = 'active' ORDER BY id ASC LIMIT 1");
+$created_by = ($r_sa && $r_sa->num_rows > 0) ? (int)$r_sa->fetch_assoc()['id'] : 91;
 $stat_new = 0;
 $stat_updated = 0;
 $stat_deleted = 0;
