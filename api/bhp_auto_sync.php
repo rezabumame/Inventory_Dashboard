@@ -158,6 +158,21 @@ function user_nama(mysqli $conn, ?int $user_id): ?string {
     return $nama;
 }
 
+// Klinik yang TERDAFTAR buat nakes ini di sistem kita (bukan klinik dari baris sumber).
+// Dipakai utk validasi silang: kalau baris sumber nunjuk klinik lain dari klinik terdaftar
+// nakesnya, dianggap mencurigakan (salah input di CIS/HC, atau mapping admin_id salah orang)
+// -- lebih aman di-skip & dilaporkan daripada diam-diam dicatat ke klinik yang salah.
+function user_klinik_id(mysqli $conn, ?int $user_id): ?int {
+    if (!$user_id) return null;
+    static $cache = [];
+    if (array_key_exists($user_id, $cache)) return $cache[$user_id];
+    $r = $conn->query("SELECT klinik_id FROM inventory_users WHERE id = $user_id LIMIT 1");
+    $row = $r && $r->num_rows > 0 ? $r->fetch_assoc() : null;
+    $kid = ($row && $row['klinik_id'] !== null) ? (int)$row['klinik_id'] : null;
+    $cache[$user_id] = $kid;
+    return $kid;
+}
+
 function clean_num($v) {
     if ($v === null) return null;
     $s = str_replace(',', '', (string)$v);
@@ -376,6 +391,25 @@ foreach ($rows as $i => $row) {
             continue;
         }
         $user_hc_id = $res['user_id'];
+
+        // Validasi silang: klinik di baris sumber HARUS sama dengan klinik terdaftar nakesnya.
+        // Mapping admin_id di inventory_nakes_external_mapping itu lintas-klinik (sekali ke-mapping,
+        // selalu dipakai) -- tanpa cek ini, nakes yang terdaftar di klinik A tapi ada baris sumber
+        // dari klinik B (salah input di CIS/HC, atau nakes lagi di-cover sementara) bakal diam-diam
+        // kecatat ke stok klinik B. Lebih aman di-skip & dilaporkan daripada nebak.
+        if ($user_hc_id && !$is_deleted) {
+            $nakes_klinik_id = user_klinik_id($conn, $user_hc_id);
+            if ($nakes_klinik_id !== null && $nakes_klinik_id !== $klinik_id) {
+                $nakes_klinik_label = klinik_nama($conn, $nakes_klinik_id);
+                $nakes_nm = user_nama($conn, $user_hc_id) ?? $nama_nakes;
+                $skipped[] = [
+                    'row' => $i,
+                    'klinik' => $klinik_label,
+                    'reason' => "nakes '$nakes_nm' terdaftar di klinik '$nakes_klinik_label', tapi baris sumber ini dari klinik '$klinik_label' -- mismatch, perlu dicek manual",
+                ];
+                continue;
+            }
+        }
     }
 
     // Identitas unik per baris sumber -- WAJIB pakai source_row_id (id baris eiui/bhp_consumable_item
@@ -469,6 +503,17 @@ foreach ($groups as $g) {
                 $track_bid = (int)($track['barang_id'] ?: $vr['barang_id']);
                 $hdr_id = (int)$track['pemakaian_bhp_id'];
 
+                // Kalau baris detailnya sudah dihapus manual oleh admin (stok sudah dibalikkan
+                // manual juga lewat jalur hapus biasa), jangan balikkan stok lagi di sini --
+                // itu akan jadi double-reversal. Cukup hormati & tandai tracking selesai.
+                $r_det_chk = $conn->query("SELECT id FROM inventory_pemakaian_bhp_detail WHERE id = $detail_id LIMIT 1");
+                if (!$r_det_chk || $r_det_chk->num_rows === 0) {
+                    $tid_chk = (int)$track['id'];
+                    $conn->query("UPDATE inventory_bhp_sync_tracking SET last_qty = 0, last_seen_at = NOW() WHERE id = $tid_chk");
+                    $stat_removed_respected++;
+                    continue;
+                }
+
                 if ($old_qty > 0) {
                     if ($header === null) {
                         $r_h = $conn->query("SELECT id, nomor_pemakaian FROM inventory_pemakaian_bhp WHERE id = $hdr_id LIMIT 1")->fetch_assoc();
@@ -531,29 +576,54 @@ foreach ($groups as $g) {
 
             $old_qty = (float)$track['last_qty'];
             $new_qty = $vr['jumlah'];
-            if (abs($new_qty - $old_qty) < 0.000001) {
+            $old_bid = (int)$track['barang_id'];
+            $new_bid = (int)$vr['barang_id'];
+            $item_changed = ($old_bid > 0 && $new_bid > 0 && $old_bid !== $new_bid);
+
+            if (!$item_changed && abs($new_qty - $old_qty) < 0.000001) {
                 // Tidak berubah -- lewati total, tidak disentuh.
                 $stat_unchanged++;
                 continue;
             }
 
-            // Berubah -- sesuaikan SELISIHNYA saja.
             if ($header === null) {
                 $r_h = $conn->query("SELECT id, nomor_pemakaian FROM inventory_pemakaian_bhp WHERE id = " . (int)$track['pemakaian_bhp_id'] . " LIMIT 1")->fetch_assoc();
                 $header = ['id' => (int)$track['pemakaian_bhp_id'], 'nomor' => $r_h['nomor_pemakaian'] ?? '', 'is_new' => false];
             }
-            $delta = $new_qty - $old_qty; // positif = tambah pemakaian, negatif = koreksi turun
-            $stmt_u = $conn->prepare("UPDATE inventory_pemakaian_bhp_detail SET qty = ? WHERE id = ?");
-            $stmt_u->bind_param("di", $new_qty, $detail_id);
-            $stmt_u->execute();
-
-            adjust_stock($conn, $jenis, $klinik_id, $user_hc_id, $vr['barang_id'], -$delta);
-            log_transaksi($conn, $jenis, $klinik_id, $user_hc_id, $vr['barang_id'], -$delta, $header['id'], $header['nomor'], $created_by);
-
-            $stmt_tu = $conn->prepare("UPDATE inventory_bhp_sync_tracking SET last_qty = ? WHERE id = ?");
             $tid = (int)$track['id'];
-            $stmt_tu->bind_param("di", $new_qty, $tid);
-            $stmt_tu->execute();
+
+            if ($item_changed) {
+                // Item diganti di sumber (barang_id beda) -- balikkan stok PENUH item lama,
+                // lalu potong stok PENUH item baru. Selisih qty saja tidak cukup karena
+                // ini 2 item yang berbeda, bukan koreksi qty untuk item yang sama.
+                $cat_swap = "Sync otomatis " . ($header['nomor'] ?? '') . " (Item diganti di sumber CIS/HC)";
+                adjust_stock($conn, $jenis, $klinik_id, $user_hc_id ?? (int)($track['user_hc_id'] ?? 0), $old_bid, +$old_qty);
+                log_transaksi($conn, $jenis, $klinik_id, $user_hc_id ?? (int)($track['user_hc_id'] ?? 0), $old_bid, +$old_qty, $header['id'], $header['nomor'], $created_by, $cat_swap);
+
+                adjust_stock($conn, $jenis, $klinik_id, $user_hc_id, $new_bid, -$new_qty);
+                log_transaksi($conn, $jenis, $klinik_id, $user_hc_id, $new_bid, -$new_qty, $header['id'], $header['nomor'], $created_by, $cat_swap);
+
+                $stmt_u = $conn->prepare("UPDATE inventory_pemakaian_bhp_detail SET barang_id = ?, qty = ?, satuan = ? WHERE id = ?");
+                $stmt_u->bind_param("idsi", $new_bid, $new_qty, $vr['satuan'], $detail_id);
+                $stmt_u->execute();
+
+                $stmt_tu = $conn->prepare("UPDATE inventory_bhp_sync_tracking SET barang_id = ?, last_qty = ? WHERE id = ?");
+                $stmt_tu->bind_param("idi", $new_bid, $new_qty, $tid);
+                $stmt_tu->execute();
+            } else {
+                // Berubah -- sesuaikan SELISIHNYA saja.
+                $delta = $new_qty - $old_qty; // positif = tambah pemakaian, negatif = koreksi turun
+                $stmt_u = $conn->prepare("UPDATE inventory_pemakaian_bhp_detail SET qty = ? WHERE id = ?");
+                $stmt_u->bind_param("di", $new_qty, $detail_id);
+                $stmt_u->execute();
+
+                adjust_stock($conn, $jenis, $klinik_id, $user_hc_id, $vr['barang_id'], -$delta);
+                log_transaksi($conn, $jenis, $klinik_id, $user_hc_id, $vr['barang_id'], -$delta, $header['id'], $header['nomor'], $created_by);
+
+                $stmt_tu = $conn->prepare("UPDATE inventory_bhp_sync_tracking SET last_qty = ? WHERE id = ?");
+                $stmt_tu->bind_param("di", $new_qty, $tid);
+                $stmt_tu->execute();
+            }
             $stat_updated++;
             $touched++;
             $group_updated++;
@@ -561,6 +631,27 @@ foreach ($groups as $g) {
         }
 
         $conn->commit();
+
+        // Cleanup BHP-AUT (estimasi booking, is_auto=1) untuk klinik+tanggal+jenis yang sama
+        // setelah data real berhasil tercatat -- pola sama persis dengan yang dipakai jalur
+        // manual/Excel upload (lihat process_pemakaian_bhp.php "Step 2: Comprehensive cleanup
+        // by date + jenis"). SENGAJA tidak membalikkan stok di sini -- ini cuma meniru pola
+        // yang sudah terbukti aman di jalur lain, bukan logic baru.
+        if ($touched > 0) {
+            $date_only = date('Y-m-d', strtotime($tanggal));
+            $tgl_like = $date_only . '%';
+            $stmt_find_auto = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal LIKE ?");
+            $stmt_find_auto->bind_param("iss", $klinik_id, $jenis, $tgl_like);
+            $stmt_find_auto->execute();
+            $res_auto = $stmt_find_auto->get_result();
+            while ($row_auto = $res_auto->fetch_assoc()) {
+                $auto_id = (int)$row_auto['id'];
+                $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $auto_id");
+                $conn->query("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = $auto_id");
+                $conn->query("DELETE FROM inventory_pemakaian_bhp WHERE id = $auto_id AND is_auto = 1");
+            }
+        }
+
         if ($touched > 0 && $header !== null) {
             $header_is_new = (bool)($header['is_new'] ?? false);
             if ($header_is_new) $stat_bhp_baru++;

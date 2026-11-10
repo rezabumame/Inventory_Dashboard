@@ -680,6 +680,8 @@ try {
         $stmt_rj->bind_param("si", $reason2, $id);
         exec_or_throw($stmt_rj, 'Reject request');
         $msg = "Permintaan telah ditolak.";
+    } else {
+        throw new Exception("Action tidak dikenal: $action");
     }
 
     $conn->commit();

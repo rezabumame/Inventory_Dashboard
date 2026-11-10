@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/settings.php';
-require_once __DIR__ . '/../lib/usage.php';
 
 header('Content-Type: application/json');
 
@@ -30,8 +29,8 @@ $klinik_id = $is_all_klinik ? 0 : (int)$klinik_id_raw;
 $barang_id = (int)($_POST['barang_id'] ?? 0);
 $tanggal = (string)($_POST['tanggal'] ?? '');
 $include_gudang = !empty($_POST['include_gudang']);
-$reserve_window = trim((string)($_POST['reserve_window'] ?? '30'));
-if (!in_array($reserve_window, ['7', '30', 'month', 'all'], true)) $reserve_window = '30';
+$reserve_window = trim((string)($_POST['reserve_window'] ?? '7'));
+if (!in_array($reserve_window, ['7', '30', 'month', 'all'], true)) $reserve_window = '7';
 
 if ($barang_id <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal)) {
     echo json_encode(['success' => false, 'message' => 'Invalid parameters'], JSON_UNESCAPED_UNICODE);
@@ -447,14 +446,6 @@ if ($is_history) {
     $stock_as_of_hc = $baseline_hc - ($rb['out_transfer_hc'] - $rb['in_transfer_hc'] + $rb['sellout_hc']);
 }
 
-// Daily usage (accumulated) — uses same logic as main table
-$daily_usage_rate = 0.0;
-if (!$is_history) {
-    $daily_usage_rate = $is_all_klinik
-        ? calculate_accumulated_usage('all', $barang_id)
-        : calculate_accumulated_usage($klinik_id, $barang_id);
-}
-
 // Per-klinik breakdown (only when all klinik)
 $per_klinik = [];
 if ($is_all_klinik) {
@@ -520,9 +511,6 @@ if ($is_all_klinik) {
             $ak_stock_hc = $ak_hc - ($ak_rb_out_hc - $ak_rb_in_hc + $ak_sell_hc);
         }
 
-        // Accumulated daily usage per klinik (same logic as main table)
-        $ak_daily = $is_history ? 0.0 : calculate_accumulated_usage($ak_id, $barang_id);
-
         // Reserve per klinik
         $ak_res_on = 0.0; $ak_res_hc = 0.0;
         $t_esc2 = $conn->real_escape_string($tanggal);
@@ -531,7 +519,7 @@ if ($is_all_klinik) {
         $r = $conn->query("SELECT COALESCE(SUM(CASE WHEN bd.qty_reserved_hc>0 THEN bd.qty_reserved_hc ELSE bd.qty_gantung END),0) AS q FROM inventory_booking_detail bd JOIN inventory_booking_pemeriksaan bp ON bd.booking_id=bp.id WHERE bd.barang_id=$barang_id AND bp.klinik_id=$ak_id AND bp.status IN ('booked','rescheduled','pending_edit') AND bp.status_booking LIKE '%HC%' AND bp.tanggal_pemeriksaan>='$t_esc2' $_res_date_filter_upper");
         if ($r) $ak_res_hc = (float)($r->fetch_assoc()['q'] ?? 0);
 
-        $ak_on_hand = ($ak_stock_on + $ak_stock_hc) - $ak_daily;
+        $ak_on_hand = $ak_stock_on + $ak_stock_hc;
 
         $per_klinik[] = [
             'id'          => $ak_id,
@@ -540,7 +528,6 @@ if ($is_all_klinik) {
             'stock_hc'    => $ak_stock_hc + $ak_sell_hc,
             'sellout_on'  => $ak_sell_on,
             'sellout_hc'  => $ak_sell_hc,
-            'daily_usage' => round($ak_daily, 0),
             'on_hand'     => $ak_on_hand,
             'reserve_on'  => $ak_res_on,
             'reserve_hc'  => $ak_res_hc,
@@ -582,7 +569,6 @@ if ($is_all_klinik) {
             'stock_hc'    => 0.0,
             'sellout_on'  => $ak_gd_sell,
             'sellout_hc'  => 0.0,
-            'daily_usage' => 0.0,
             'on_hand'     => $ak_gd_on,
             'is_gudang'   => true,
         ]);
@@ -647,7 +633,6 @@ echo json_encode([
         'to_uom' => (string)($b['satuan'] ?? ($conv['to_uom'] ?? '')),
         'multiplier' => $multiplier
     ],
-    'daily_usage' => round($daily_usage_rate, 2),
     'per_klinik' => $per_klinik,
     'rollback' => $rb,
     'reserve' => $reserve,

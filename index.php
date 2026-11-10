@@ -45,12 +45,6 @@ if (!in_array($page, $public_pages) && !isset($_SESSION['user_id'])) {
     redirect('index.php?page=login');
 }
 
-// Auto sync daily usage if month changed
-if (isset($_SESSION['user_id'])) {
-    require_once 'lib/usage.php';
-    maybe_auto_sync();
-}
-
 // Pages yang pakai layout mobile penuh (tanpa sidebar/header standar)
 $mobile_pages = ['qr_transfer'];
 
@@ -170,8 +164,8 @@ switch ($page) {
     case 'odoo_format_config':
         include 'views/settings/odoo_format_config.php';
         break;
-    case 'daily_usage_config':
-        include 'views/settings/inventory_usage.php';
+    case 'bhp_klinik_mismatch':
+        include 'views/settings/bhp_klinik_mismatch.php';
         break;
     case 'mcu_realization':
         include 'views/mcu/realization.php';

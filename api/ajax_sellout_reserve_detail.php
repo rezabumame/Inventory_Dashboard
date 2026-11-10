@@ -19,14 +19,6 @@ if (!in_array($type, $valid_types, true) || $barang_id <= 0) {
 }
 
 // ── Klinik filter ─────────────────────────────────────────────────────────────
-if ($klinik_id === 'all' || (int)$klinik_id === 0) {
-    $klinik_filter = "1=1";
-} else {
-    $kid = (int)$klinik_id;
-    $klinik_filter = "bp.klinik_id = $kid";
-    $pb_klinik_filter = "pb.klinik_id = $kid";
-}
-
 if ($klinik_id !== 'all' && (int)$klinik_id > 0) {
     $kid = (int)$klinik_id;
     $bp_filter  = "bp.klinik_id = $kid";
@@ -103,8 +95,8 @@ if ($type === 'sellout_clinic' || $type === 'sellout_hc') {
         : "CASE WHEN bd.qty_reserved_onsite > 0 THEN bd.qty_reserved_onsite ELSE bd.qty_gantung END";
 
     $today = date('Y-m-d');
-    $reserve_window = trim((string)($_GET['reserve_window'] ?? '30'));
-    if (!in_array($reserve_window, ['7', '30', 'month', 'all'], true)) $reserve_window = '30';
+    $reserve_window = trim((string)($_GET['reserve_window'] ?? '7'));
+    if (!in_array($reserve_window, ['7', '30', 'month', 'all'], true)) $reserve_window = '7';
     switch ($reserve_window) {
         case '7':     $reserve_end = date('Y-m-d', strtotime('+7 days')); break;
         case 'month': $reserve_end = date('Y-m-t'); break;

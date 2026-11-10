@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/settings.php';
 require_once __DIR__ . '/../../lib/stock.php';
-require_once __DIR__ . '/../../lib/usage.php';
 check_role(['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'cs', 'petugas_hc']);
 try {
     $conn->query("
@@ -32,23 +31,18 @@ if ($can_filter_klinik) {
 
 $selected_pemeriksaan = isset($_GET['pemeriksaan_id']) ? (int)$_GET['pemeriksaan_id'] : '';
 $today_date = date('Y-m-d');
-$min_filter_date = date('Y-m-01');
-$filter_date = isset($_GET['tanggal']) ? (string)$_GET['tanggal'] : $today_date;
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $filter_date)) $filter_date = $today_date;
-if (strtotime($filter_date) > strtotime($today_date)) $filter_date = $today_date;
-if (strtotime($filter_date) < strtotime($min_filter_date)) $filter_date = $min_filter_date;
+// Halaman ini sekarang selalu menampilkan stok TERKINI (hari ini) -- filter tanggal
+// lampau/rekonstruksi historis dihapus (sumber bug fatal di versi publik, dan cuma
+// menambah kompleksitas yang tidak dipakai).
+$filter_date = $today_date;
 $month_start = date('Y-m-01', strtotime($filter_date));
-$month_end = date('Y-m-t', strtotime($filter_date));
 $month_start_ts = $month_start . ' 00:00:00';
-$filter_end_ts = $filter_date . ' 23:59:59';
-$is_history_date = ($filter_date !== $today_date);
-$filter_date_label = date('d M Y', strtotime($filter_date));
 $can_use_zero_filter = in_array($_SESSION['role'], ['super_admin', 'admin_gudang', 'admin_klinik']);
 $show_zero = isset($_GET['show_zero']) ? ($_GET['show_zero'] == '1') : false;
 
 // Reserve window filter
-$reserve_window = isset($_GET['reserve_window']) ? (string)$_GET['reserve_window'] : '30';
-if (!in_array($reserve_window, ['7', '30', 'month', 'all'], true)) $reserve_window = '30';
+$reserve_window = isset($_GET['reserve_window']) ? (string)$_GET['reserve_window'] : '7';
+if (!in_array($reserve_window, ['7', '30', 'month', 'all'], true)) $reserve_window = '7';
 switch ($reserve_window) {
     case '7':     $reserve_end_date = date('Y-m-d', strtotime('+7 days')); break;
     case 'month': $reserve_end_date = date('Y-m-t'); break;
@@ -281,38 +275,29 @@ if ($active_tab == 'stok') {
             if ($selected_klinik === 'all' || $kode_klinik !== '') {
                 $last_update_date = $last_update_general !== '' ? date('Y-m-d', strtotime($last_update_general)) : '';
 
-                if ($is_history_date) {
-                    $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_date) . "' AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'";
-                    $filter_bp_hc = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($filter_date) . "' AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($month_end) . "'";
-                    $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.created_at <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
-                    $filter_pb_hc = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . " 00:00:00' AND pb.created_at <= '" . $conn->real_escape_string($filter_date) . " 23:59:59'";
-                    $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at <= '" . $conn->real_escape_string($filter_end_ts) . "'";
+                if ($last_update_general !== '') {
+                    $last_update_time = date('H:i:s', strtotime($last_update_general));
+                    // Task Fix: Bookings are always local and never synced to Odoo.
+                    // We should subtract ALL active bookings for the current period, regardless of Odoo sync time.
+                    $reserve_upper = $reserve_end_date !== '' ? " AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($reserve_end_date) . "'" : '';
+                    $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($today_date) . "'" . $reserve_upper;
+
+                    // Sellout (Pemakaian) should only subtract what's NOT in Odoo yet.
+                    // We use a 5-minute buffer to account for the sync duration (race condition).
+                    $sync_buffer_ts = date('Y-m-d H:i:s', strtotime($last_update_general));
+                    $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "' AND pb.created_at > '" . $conn->real_escape_string($sync_buffer_ts) . "'";
+                    $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at > '" . $conn->real_escape_string($sync_buffer_ts) . "'";
+
+                    $filter_bp_hc = $filter_bp_onsite;
+                    $filter_pb_hc = $filter_pb_klinik;
                     $filter_ts_hc = $filter_ts_klinik;
                 } else {
-                    if ($last_update_general !== '') {
-                        $last_update_time = date('H:i:s', strtotime($last_update_general));
-                        // Task Fix: Bookings are always local and never synced to Odoo.
-                        // We should subtract ALL active bookings for the current period, regardless of Odoo sync time.
-                        $reserve_upper = $reserve_end_date !== '' ? " AND bp.tanggal_pemeriksaan <= '" . $conn->real_escape_string($reserve_end_date) . "'" : '';
-                        $filter_bp_onsite = " AND bp.tanggal_pemeriksaan >= '" . $conn->real_escape_string($today_date) . "'" . $reserve_upper;
-                        
-                        // Sellout (Pemakaian) should only subtract what's NOT in Odoo yet.
-                        // We use a 5-minute buffer to account for the sync duration (race condition).
-                        $sync_buffer_ts = date('Y-m-d H:i:s', strtotime($last_update_general));
-                        $filter_pb_klinik = " AND pb.tanggal >= '" . $conn->real_escape_string($month_start) . "' AND pb.created_at > '" . $conn->real_escape_string($sync_buffer_ts) . "'";
-                        $filter_ts_klinik = " AND ts.created_at >= '" . $conn->real_escape_string($month_start_ts) . "' AND ts.created_at > '" . $conn->real_escape_string($sync_buffer_ts) . "'";
-                        
-                        $filter_bp_hc = $filter_bp_onsite;
-                        $filter_pb_hc = $filter_pb_klinik;
-                        $filter_ts_hc = $filter_ts_klinik;
-                    } else {
-                        $filter_bp_onsite = " AND 1=0";
-                        $filter_pb_klinik = " AND 1=0";
-                        $filter_ts_klinik = " AND 1=0";
-                        $filter_bp_hc = " AND 1=0";
-                        $filter_pb_hc = " AND 1=0";
-                        $filter_ts_hc = " AND 1=0";
-                    }
+                    $filter_bp_onsite = " AND 1=0";
+                    $filter_pb_klinik = " AND 1=0";
+                    $filter_ts_klinik = " AND 1=0";
+                    $filter_bp_hc = " AND 1=0";
+                    $filter_pb_hc = " AND 1=0";
+                    $filter_ts_hc = " AND 1=0";
                 }
 
                 $filter_pb2_klinik = str_replace("pb.", "pb2.", $filter_pb_klinik);
@@ -368,45 +353,7 @@ if ($active_tab == 'stok') {
                     WHERE ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe = 'hc_petugas_transfer'$filter_ts_hc GROUP BY ts.barang_id");
                 $agg_out_transfer_hc = []; while($r = $res_agg_out_hc->fetch_assoc()) $agg_out_transfer_hc[(int)$r['barang_id']] = (float)$r['total'];
 
-                // 7. Aggregate Rollback (mode histori) -- default kosong kalau bukan mode histori
-                $agg_rb_in_transfer = [];
-                $agg_rb_out_transfer = [];
-                $agg_rb_sellout_klinik = [];
-                $agg_rb_in_transfer_hc = [];
-                $agg_rb_out_transfer_hc = [];
-                $agg_rb_sellout_hc = [];
-
-                // Siapkan timestamp untuk subquery rollback (selalu siapkan jika mode history)
-                $rb_ts_start = $conn->real_escape_string($filter_end_ts);
-                $rb_ts_min = $conn->real_escape_string($month_start_ts);
-
-                if ($is_history_date) {
-                    // General Rollback SQL using last_update_general
-                    $rb_ts_end = $last_update_general !== '' ? $conn->real_escape_string($last_update_general) : $conn->real_escape_string(date('Y-m-d H:i:s'));
-
-                    $rb_level_filter = "((ts.level = 'klinik' AND ts.level_id $klinik_filter_sql)" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (ts.level = 'gudang_utama')" : "") . ")";
-                    $rb_pb_filter = "(pb.klinik_id $klinik_filter_sql" . (($include_gudang || $selected_klinik === 'gudang_utama') ? " OR (pb.jenis_pemakaian = 'gudang_utama')" : "") . ")"; // assuming jenis_pemakaian exists for gudang
-
-                    $res_rb_in = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts WHERE $rb_level_filter AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
-                    while($r = $res_rb_in->fetch_assoc()) $agg_rb_in_transfer[(int)$r['barang_id']] = (float)$r['total'];
-
-                    $res_rb_out = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts WHERE $rb_level_filter AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
-                    while($r = $res_rb_out->fetch_assoc()) $agg_rb_out_transfer[(int)$r['barang_id']] = (float)$r['total'];
-
-                    $res_rb_sk = $conn->query("SELECT ts.barang_id, SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) as total FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id WHERE ts.referensi_tipe = 'pemakaian_bhp' AND $rb_pb_filter AND TRIM(pb.jenis_pemakaian) != 'hc' AND pb.status = 'active' AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
-                    while($r = $res_rb_sk->fetch_assoc()) $agg_rb_sellout_klinik[(int)$r['barang_id']] = (float)$r['total'];
-
-                    $res_rb_in_hc = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts WHERE ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'in' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
-                    while($r = $res_rb_in_hc->fetch_assoc()) $agg_rb_in_transfer_hc[(int)$r['barang_id']] = (float)$r['total'];
-
-                    $res_rb_out_hc = $conn->query("SELECT ts.barang_id, SUM(ts.qty) as total FROM inventory_transaksi_stok ts WHERE ts.level = 'hc' AND $hc_user_filter_sql AND ts.tipe_transaksi = 'out' AND ts.referensi_tipe IN ('transfer','hc_petugas_transfer') AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
-                    while($r = $res_rb_out_hc->fetch_assoc()) $agg_rb_out_transfer_hc[(int)$r['barang_id']] = (float)$r['total'];
-
-                    $res_rb_sh = $conn->query("SELECT ts.barang_id, SUM(CASE WHEN ts.tipe_transaksi = 'out' THEN ts.qty ELSE -ts.qty END) as total FROM inventory_transaksi_stok ts JOIN inventory_pemakaian_bhp pb ON pb.id = ts.referensi_id WHERE ts.referensi_tipe = 'pemakaian_bhp' AND pb.klinik_id $klinik_filter_sql AND TRIM(pb.jenis_pemakaian) = 'hc' AND pb.status = 'active' AND ts.created_at > '$rb_ts_start' AND ts.created_at <= '$rb_ts_end' AND ts.created_at >= '$rb_ts_min' GROUP BY ts.barang_id");
-                    while($r = $res_rb_sh->fetch_assoc()) $agg_rb_sellout_hc[(int)$r['barang_id']] = (float)$r['total'];
-                }
-
-                $query = "SELECT 
+                $query = "SELECT
                             $selected_klinik_id_sql as klinik_id,
                             '$kode_klinik_esc' as kode_klinik,
                             '$kode_homecare_esc' as kode_homecare,
@@ -428,13 +375,7 @@ if ($active_tab == 'stok') {
                             0 as in_transfer,
                             0 as out_transfer,
                             0 as in_transfer_hc,
-                            0 as out_transfer_hc,
-                            0 as rb_in_transfer,
-                            0 as rb_out_transfer,
-                            0 as rb_in_transfer_hc,
-                            0 as rb_out_transfer_hc,
-                            0 as rb_sellout_klinik,
-                            0 as rb_sellout_hc
+                            0 as out_transfer_hc
                           FROM inventory_barang b
                           LEFT JOIN (
                             SELECT sm1.odoo_product_id, SUM(sm1.qty) as qty
@@ -480,48 +421,6 @@ if ($active_tab == 'stok') {
                 try {
                     $conn->query("SET SQL_BIG_SELECTS=1");
                     
-                    // --- OPTIMASI START ---
-                    // 1. Pre-fetch Daily Usage Data (Eager Loading)
-                    $usage_map = [];
-                    if (!$is_history_date && $selected_klinik !== 'gudang_utama' && $selected_klinik !== '') {
-                        // Kita ambil rate penggunaan harian untuk semua barang sekaligus dari tabel config yang benar
-                        $res_rates = $conn->query("SELECT barang_id, mode, manual_value, last_calculated_rate FROM inventory_daily_usage_config WHERE klinik_id $klinik_filter_sql");
-                        $rates_map = [];
-                        while ($rr = $res_rates->fetch_assoc()) {
-                            $rate = ($rr['mode'] === 'manual') ? (float)$rr['manual_value'] : (float)$rr['last_calculated_rate'];
-                            $rates_map[(int)$rr['barang_id']] = round($rate, 0);
-                        }
-
-                        // Ambil tanggal terakhir realisasi untuk semua barang sekaligus
-                        $res_last_all = $conn->query("SELECT pbd.barang_id, MAX(pb.tanggal) as last_date 
-                                                    FROM inventory_pemakaian_bhp pb 
-                                                    JOIN inventory_pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
-                                                    WHERE pb.klinik_id $klinik_filter_sql AND pb.status = 'active'
-                                                    AND (pb.is_auto = 0 OR pb.is_auto IS NULL)
-                                                    GROUP BY pbd.barang_id");
-                        $last_dates_map = [];
-                        while ($rl = $res_last_all->fetch_assoc()) $last_dates_map[(int)$rl['barang_id']] = $rl['last_date'];
-
-                        // Pre-calculate accumulated usage untuk semua barang yang punya rate
-                        $today = date('Y-m-d');
-                        foreach ($rates_map as $bid => $rate) {
-                            if ($rate <= 0) continue;
-                            $last_date = $last_dates_map[$bid] ?? date('Y-m-01', strtotime('-1 day'));
-                            
-                            $accumulated = 0;
-                            $current = date('Y-m-d', strtotime($last_date . ' +1 day'));
-                            while ($current <= $today) {
-                                // Kita asumsikan is_operational_day untuk klinik ini di-cache atau diproses massal
-                                if (is_operational_day($selected_klinik, $current)) {
-                                    $accumulated += $rate;
-                                }
-                                $current = date('Y-m-d', strtotime($current . ' +1 day'));
-                            }
-                            $usage_map[$bid] = (float)round($accumulated, 0);
-                        }
-                    }
-                    // --- OPTIMASI END ---
-
                     $result = $conn->query($query);
                     while ($r = $result->fetch_assoc()) {
                         $bid = (int)$r['barang_id'];
@@ -534,32 +433,14 @@ if ($active_tab == 'stok') {
                         $r['out_transfer'] = $agg_out_transfer[$bid] ?? 0;
                         $r['in_transfer_hc'] = $agg_in_transfer_hc[$bid] ?? 0;
                         $r['out_transfer_hc'] = $agg_out_transfer_hc[$bid] ?? 0;
-                        $r['rb_in_transfer'] = $agg_rb_in_transfer[$bid] ?? 0;
-                        $r['rb_out_transfer'] = $agg_rb_out_transfer[$bid] ?? 0;
-                        $r['rb_in_transfer_hc'] = $agg_rb_in_transfer_hc[$bid] ?? 0;
-                        $r['rb_out_transfer_hc'] = $agg_rb_out_transfer_hc[$bid] ?? 0;
-                        $r['rb_sellout_klinik'] = $agg_rb_sellout_klinik[$bid] ?? 0;
-                        $r['rb_sellout_hc'] = $agg_rb_sellout_hc[$bid] ?? 0;
 
                         $cur_stok_onsite = (float)($r['qty'] ?? 0);
                         $cur_stok_hc = (float)($r['stok_hc'] ?? 0);
-                        
-                        // Daily Usage Accumulation
-                        $item_daily_usage = $usage_map[(int)$r['barang_id']] ?? 0;
-                        // Simpan ke $r supaya loop render di bawah pakai nilai ini, bukan hitung
-                        // ulang dari nol lewat calculate_accumulated_usage() (dulu dobel-hitung).
-                        $r['item_daily_usage'] = $item_daily_usage;
 
-                        if ($is_history_date) {
-                            $cur_stok_onsite += (float)($r['rb_out_transfer'] ?? 0) - (float)($r['rb_in_transfer'] ?? 0) + (float)($r['rb_sellout_klinik'] ?? 0);
-                            $cur_stok_hc += (float)($r['rb_out_transfer_hc'] ?? 0) - (float)($r['rb_in_transfer_hc'] ?? 0) + (float)($r['rb_sellout_hc'] ?? 0);
-                            $cur_on_hand = $cur_stok_onsite + ($show_hc ? $cur_stok_hc : 0);
-                        } else {
-                            $cur_stok_onsite += (float)($r['in_transfer'] ?? 0) - (float)($r['out_transfer'] ?? 0);
-                            $cur_stok_hc += (float)($r['in_transfer_hc'] ?? 0) - (float)($r['out_transfer_hc'] ?? 0);
-                            $cur_total_sellout = (float)($r['sellout_klinik'] ?? 0) + ($show_hc ? (float)($r['sellout_hc'] ?? 0) : 0);
-                            $cur_on_hand = ($cur_stok_onsite + ($show_hc ? $cur_stok_hc : 0)) - $cur_total_sellout;
-                        }
+                        $cur_stok_onsite += (float)($r['in_transfer'] ?? 0) - (float)($r['out_transfer'] ?? 0);
+                        $cur_stok_hc += (float)($r['in_transfer_hc'] ?? 0) - (float)($r['out_transfer_hc'] ?? 0);
+                        $cur_total_sellout = (float)($r['sellout_klinik'] ?? 0) + ($show_hc ? (float)($r['sellout_hc'] ?? 0) : 0);
+                        $cur_on_hand = ($cur_stok_onsite + ($show_hc ? $cur_stok_hc : 0)) - $cur_total_sellout;
 
                         if (!$show_zero && $can_use_zero_filter && $cur_on_hand <= 0) {
                             continue;
@@ -567,15 +448,9 @@ if ($active_tab == 'stok') {
 
                         $rows[] = $r;
                         $summary_stok['total_items']++;
-                        $summary_stok['total_daily_usage'] = ($summary_stok['total_daily_usage'] ?? 0) + $item_daily_usage;
 
-                        if ($is_history_date) {
-                            $summary_stok['total_qty'] += $cur_stok_onsite;
-                            $summary_stok['total_qty_hc'] += $cur_stok_hc;
-                        } else {
-                            $summary_stok['total_qty'] += $cur_stok_onsite;
-                            $summary_stok['total_qty_hc'] += $cur_stok_hc;
-                        }
+                        $summary_stok['total_qty'] += $cur_stok_onsite;
+                        $summary_stok['total_qty_hc'] += $cur_stok_hc;
                         $summary_stok['reserve_onsite'] += (float)($r['reserve_onsite'] ?? 0);
                         $summary_stok['reserve_hc'] += (float)($r['reserve_hc'] ?? 0);
                         $summary_stok['total_sellout_klinik'] += (float)($r['sellout_klinik'] ?? 0);
@@ -727,12 +602,6 @@ if ($active_tab == 'stok') {
             <?php endif; ?>
             <div class="col-md-2">
                 <label class="form-label fw-bold small mb-1">
-                    <i class="fas fa-calendar-alt text-primary"></i> Tanggal
-                </label>
-                <input type="date" name="tanggal" class="form-control" value="<?= htmlspecialchars($filter_date) ?>" min="<?= htmlspecialchars($min_filter_date) ?>" max="<?= htmlspecialchars($today_date) ?>" onchange="this.form.submit()">
-            </div>
-            <div class="col-md-2">
-                <label class="form-label fw-bold small mb-1">
                     <i class="fas fa-bookmark text-primary"></i> Periode Reservasi
                 </label>
                 <select name="reserve_window" class="form-select" onchange="this.form.submit()">
@@ -756,7 +625,7 @@ if ($active_tab == 'stok') {
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
             <div class="col-auto ms-auto">
                 <div class="d-flex flex-column align-items-end pt-1">
-                    <button type="button" class="btn btn-outline-primary btn-sm refresh-btn d-flex align-items-center justify-content-center gap-2 py-2" onclick="confirmSync(this)" <?= $is_history_date ? 'disabled' : '' ?>>
+                    <button type="button" class="btn btn-outline-primary btn-sm refresh-btn d-flex align-items-center justify-content-center gap-2 py-2" onclick="confirmSync(this)">
                         <i class="fas fa-sync-alt"></i><span>Refresh Odoo</span>
                     </button>
                     <div class="last-update mt-1 text-end" id="lastUpdateText" style="font-size: 0.7rem;">Last Sync: <?= htmlspecialchars($last_update_text ?? '-') ?></div>
@@ -765,15 +634,6 @@ if ($active_tab == 'stok') {
             </div>
             <?php endif; ?>
         </form>
-        <?php if ($selected_klinik && $is_history_date): ?>
-            <div class="alert alert-warning mt-3 mb-0 d-flex align-items-start gap-2">
-                <i class="fas fa-history mt-1"></i>
-                <div>
-                    <div class="fw-semibold">Mode Rekonstruksi Stok (Per Tanggal)</div>
-                    <div class="small">Menampilkan estimasi stok per tanggal <?= htmlspecialchars(date('d M Y', strtotime($filter_date))) ?> berdasarkan data transaksi <?= htmlspecialchars(date('d M Y', strtotime($month_start))) ?> s/d <?= htmlspecialchars(date('d M Y', strtotime($filter_date))) ?>. Kolom IN/OUT/Sellout ditampilkan 0 karena stok sudah direkonstruksi; Reserve dihitung dari tanggal reservasi (tanggal_pemeriksaan) mulai <?= htmlspecialchars(date('d M Y', strtotime($filter_date))) ?> hingga akhir bulan.</div>
-                </div>
-            </div>
-        <?php endif; ?>
     </div>
 </div>
 
@@ -877,19 +737,6 @@ if ($active_tab == 'stok') {
         </div>
     </div>
     <?php endif; ?>
-    <div class="col-md">
-        <div class="card h-100" style="background-color: #f1f5f9;">
-            <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-uppercase fw-semibold" style="color: #64748b; font-size: 0.65rem;">Est. Usage</div>
-                        <div class="h4 mb-0 fw-bold" style="color: #334155;"><?= fmt_qty($summary_stok['total_daily_usage'] ?? 0) ?></div>
-                    </div>
-                    <i class="fas fa-clock fa-lg" style="color: #94a3b8; opacity: 0.5;"></i>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <?php if ($selected_klinik): ?>
@@ -933,10 +780,9 @@ if ($active_tab == 'stok') {
 window.__stokKlinikContext = {
     klinikId: <?= json_encode($selected_klinik) ?>,
     tanggal: "<?= htmlspecialchars($filter_date) ?>",
-    tanggalLabel: "<?= htmlspecialchars($filter_date_label) ?>",
+    tanggalLabel: "<?= htmlspecialchars(date('d M Y', strtotime($filter_date))) ?>",
     includeGudang: <?= $include_gudang ? 'true' : 'false' ?>,
     syncAfterTs: "<?= htmlspecialchars($sync_buffer_ts ?? $last_update_general ?? '') ?>",
-    isHistoryDate: <?= $is_history_date ? 'true' : 'false' ?>,
     reserveWindow: "<?= htmlspecialchars($reserve_window) ?>"
 };
 
@@ -1055,7 +901,7 @@ async function openSelloutReserveDetail(barangId, namaBarang, type, expectedTota
 
 function escH(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage = 0, stockTotal = 0) {
+function openStokBreakdown(barangId, namaBarang, type = 'onhand', stockTotal = 0) {
     var modalEl = document.getElementById('modalStokBreakdown');
     var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
@@ -1066,7 +912,7 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
         url: 'api/ajax_stok_klinik_breakdown.php',
         method: 'POST',
         dataType: 'json',
-        data: { klinik_id: window.__stokKlinikContext.klinikId, barang_id: barangId, tanggal: window.__stokKlinikContext.tanggal, include_gudang: window.__stokKlinikContext.includeGudang ? 1 : 0, reserve_window: window.__stokKlinikContext.reserveWindow || '30' }
+        data: { klinik_id: window.__stokKlinikContext.klinikId, barang_id: barangId, tanggal: window.__stokKlinikContext.tanggal, include_gudang: window.__stokKlinikContext.includeGudang ? 1 : 0, reserve_window: window.__stokKlinikContext.reserveWindow || '7' }
     }).then(function(res) {
         if (!res || !res.success) {
             body.innerHTML = '<div class="alert alert-danger mb-0">Gagal memuat detail.</div>';
@@ -1085,7 +931,6 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
         var reserveOn = reserve.onsite || 0;
         var reserveHc = reserve.hc || 0;
         var result = res.result || {};
-        var dailyUsage = accDailyUsage > 0 ? accDailyUsage : parseFloat(res.daily_usage || 0);
         var stockTotalVal = stockTotal > 0 ? stockTotal : (result.stock_total || 0);
         var perKlinik = Array.isArray(res.per_klinik) ? res.per_klinik : [];
 
@@ -1137,8 +982,7 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
                             <div class="h5 mb-0 fw-bold text-success">${fmtNum(stockTotalVal)}</div>
                         ` : `
                             <div class="x-small text-dark text-uppercase fw-bold" style="font-size: 0.65rem;">Available Stok</div>
-                            <div class="h5 mb-0 fw-bold text-success">${fmtNum((result.tersedia || 0) - dailyUsage)}</div>
-                            ${dailyUsage > 0 ? `<div class="x-small text-muted mt-1">${fmtNum(result.tersedia || 0)} &minus; <span class="fw-semibold">${fmtNum(dailyUsage)}</span> est. usage</div>` : ''}
+                            <div class="h5 mb-0 fw-bold text-success">${fmtNum(result.tersedia || 0)}</div>
                         `}
                     </div>
                 </div>
@@ -1264,7 +1108,6 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
                                             <th class="text-center">${type === 'available' ? 'On Hand HC' : 'Stok HC'}</th>
                                             <th class="text-center">${type === 'available' ? 'Reserve Clinic' : 'Sellout Clinic'}</th>
                                             <th class="text-center">${type === 'available' ? 'Reserve HC' : 'Sellout HC'}</th>
-                                            ${type === 'available' ? '<th class="text-center">Est. Usage</th>' : ''}
                                             <th class="text-center">${type === 'available' ? 'Available' : 'On Hand'}</th>
                                         </tr>
                                     </thead>
@@ -1285,7 +1128,6 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
                                                     : '<td class="text-center text-danger">' + (k.sellout_on > 0 ? fmtNum(k.sellout_on) : '<span class="text-muted">-</span>') + '</td>' +
                                                       '<td class="text-center text-danger">' + (k.sellout_hc > 0 ? fmtNum(k.sellout_hc) : '<span class="text-muted">-</span>') + '</td>'
                                                 ) +
-                                                (type === 'available' ? '<td class="text-center text-danger">' + (!isGudang && k.daily_usage > 0 ? fmtNum(k.daily_usage) : '<span class="text-muted">-</span>') + '</td>' : '') +
                                                 '<td class="text-center fw-bold text-success">' + fmtNum(type === 'available' ? (k.available !== undefined ? k.available : onHand) : onHand) + '</td>' +
                                                 '</tr>';
                                         }).join('')}
@@ -1416,10 +1258,8 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
                             <?php if ($show_hc): ?><th class="text-center">Sellout HC</th><?php endif; ?>
                             <th class="text-center">Reserve Clinic</th>
                             <?php if ($show_hc): ?><th class="text-center">Reserve HC</th><?php endif; ?>
-                             <th class="text-center">Est. Usage</th>
                             <th class="text-center">On Hand Stok</th>
                             <th class="text-center">Available Stok</th>
-                            <?php if ($is_history_date): ?><th>Detail</th><?php endif; ?>
                         </tr>
                     </thead>
                     <tbody>
@@ -1435,31 +1275,14 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
                             $out_transfer = $row['out_transfer'] ?? 0;
                             $in_transfer_hc = $row['in_transfer_hc'] ?? 0;
                             $out_transfer_hc = $row['out_transfer_hc'] ?? 0;
-                            if ($is_history_date) {
-                                $stok_onsite = $stok_onsite + (float)($row['rb_out_transfer'] ?? 0) - (float)($row['rb_in_transfer'] ?? 0) + (float)($row['rb_sellout_klinik'] ?? 0);
-                                $stok_hc = $stok_hc + (float)($row['rb_out_transfer_hc'] ?? 0) - (float)($row['rb_in_transfer_hc'] ?? 0) + (float)($row['rb_sellout_hc'] ?? 0);
-                            } else {
-                                $stok_onsite = $stok_onsite + (float)$in_transfer - (float)$out_transfer;
-                                $stok_hc = $stok_hc + (float)$in_transfer_hc - (float)$out_transfer_hc;
-                            }
-                            
+                            $stok_onsite = $stok_onsite + (float)$in_transfer - (float)$out_transfer;
+                            $stok_hc = $stok_hc + (float)$in_transfer_hc - (float)$out_transfer_hc;
+
                              $total_stok = $stok_onsite + ($show_hc ? $stok_hc : 0);
-                            
-                            // Daily Usage logic — pakai nilai yang sudah dihitung sekali di atas
-                            // ($usage_map, di-inject ke $row['item_daily_usage']), jangan hitung
-                            // ulang lewat calculate_accumulated_usage() (dulu dobel-hitung & lambat).
-                            $acc_daily_usage = 0;
-                            if (!$is_history_date && $selected_klinik !== 'gudang_utama') {
-                                $acc_daily_usage = $row['item_daily_usage'] ?? 0;
-                            }
 
                             $total_sellout = $sellout + ($show_hc ? $sellout_hc : 0);
-                            if ($is_history_date) {
-                                $on_hand = $total_stok;
-                            } else {
-                                $on_hand = $total_stok - $total_sellout;
-                            }
-                            $available = $on_hand - $reserve_total - $acc_daily_usage;
+                            $on_hand = $total_stok - $total_sellout;
+                            $available = $on_hand - $reserve_total;
                         ?>
                         <tr>
                             <td class="text-center">
@@ -1480,7 +1303,7 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
                                         echo '<div class="'.$onsite_class.'">' . fmt_qty($stok_onsite) . '</div>';
                                     ?>
                                 </div>
-                                <?php if (!$is_history_date && (((float)$in_transfer) > 0 || ((float)$out_transfer) > 0)): ?>
+                                <?php if (((float)$in_transfer) > 0 || ((float)$out_transfer) > 0): ?>
                                     <div class="d-flex align-items-center justify-content-center gap-2 small mt-1">
                                         <div class="d-flex align-items-center gap-1">
                                             <i class="fas fa-arrow-down text-success" style="font-size: 0.7rem;"></i>
@@ -1560,22 +1383,12 @@ function openStokBreakdown(barangId, namaBarang, type = 'onhand', accDailyUsage 
                                 <?= fmt_qty($reserve_hc) ?>
                             </td>
                             <?php endif; ?>
-                            <td class="text-center" style="background-color: #f1f5f9;">
-                                <div style="color: #334155;" class="<?= $acc_daily_usage > 0 ? 'fw-bold' : '' ?>"><?= fmt_qty($acc_daily_usage) ?></div>
-                            </td>
-                            <td class="text-center <?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'onhand', <?= (float)$acc_daily_usage ?>, <?= (float)$on_hand ?>)">
+                            <td class="text-center <?= $on_hand < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'onhand', <?= (float)$on_hand ?>)">
                                 <?= fmt_qty($on_hand) ?>
                             </td>
-                            <td class="text-center <?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'available', <?= (float)$acc_daily_usage ?>, <?= (float)$on_hand ?>)">
+                            <td class="text-center <?= $available < 0 ? 'text-danger fw-bold' : 'text-success fw-bold' ?>" style="cursor: pointer;" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'available', <?= (float)$on_hand ?>)">
                                 <?= fmt_qty($available) ?>
                             </td>
-                            <?php if ($is_history_date): ?>
-                            <td class="text-center">
-                                <a href="javascript:void(0)" class="text-decoration-none" onclick="openStokBreakdown(<?= (int)$row['barang_id'] ?>, '<?= htmlspecialchars($row['nama_barang'], ENT_QUOTES) ?>', 'onhand', <?= (float)$acc_daily_usage ?>, <?= (float)$on_hand ?>); return false;">
-                                    <i class="fas fa-info-circle"></i>
-                                </a>
-                            </td>
-                            <?php endif; ?>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>

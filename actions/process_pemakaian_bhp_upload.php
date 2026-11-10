@@ -74,6 +74,12 @@ function run_upload_process($conn) {
     $user_id = $_SESSION['user_id'] ?? null;
     if (!$user_id) throw new Exception("Session expired. Silakan login kembali.");
 
+    $allowed_roles = ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik', 'petugas_hc'];
+    if (!in_array($_SESSION['role'] ?? '', $allowed_roles, true)) {
+        throw new Exception("Akses ditolak. Role Anda tidak diizinkan mengunggah Pemakaian BHP.");
+    }
+    require_csrf();
+
     $is_ajax = (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest') || isset($_POST['ajax']);
     $action = $_POST['action'] ?? '';
 
@@ -306,9 +312,20 @@ function process_confirmed_upload($conn, $user_id, $is_ajax) {
         }
     }
 
+    // Kunci per klinik+jenis (pola yang sama dipakai jalur lain, lihat
+    // stock_pemakaian_bhp_{klinik_id}_{jenis}) -- bukan 1 lock global, supaya upload untuk
+    // klinik/jenis yang berbeda tidak saling blocking satu sama lain.
+    $lock_names = [];
+    foreach ($transactions as $tx) {
+        $m = $tx['meta'];
+        $lock_names[] = "stock_pemakaian_bhp_{$m['klinik_id']}_{$m['jenis']}";
+    }
+    $lock_names = array_values(array_unique($lock_names));
+    sort($lock_names); // urutan konsisten biar tidak deadlock antar request
+
     $conn->begin_transaction();
-    $locks = acquire_named_locks($conn, ['inventory_bhp_process']);
-    
+    $locks = acquire_named_locks($conn, $lock_names);
+
     try {
         // --- CLEANUP AUTO-DEDUCTION BY DATE, CLINIC & TYPE ---
         // Collect all unique clinic + date + jenis combinations from the transactions

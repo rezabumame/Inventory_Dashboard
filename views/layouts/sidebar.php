@@ -168,12 +168,6 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         </a>
         <?php endif; ?>
 
-        <?php if ($role === 'spv_klinik'): ?>
-        <a href="index.php?page=daily_usage_config" class="sidebar-link <?= $current_page == 'daily_usage_config' ? 'active' : '' ?>">
-            <i class="fas fa-calendar-alt"></i> Kalender Klinik
-        </a>
-        <?php endif; ?>
-
         <div class="sidebar-heading">MASTER DATA</div>
         <a href="index.php?page=barang" class="sidebar-link <?= $current_page == 'barang' ? 'active' : '' ?>">
             <i class="fas fa-box"></i> Database Barang
@@ -206,8 +200,8 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         <a href="index.php?page=odoo_format_config" class="sidebar-link <?= $current_page == 'odoo_format_config' ? 'active' : '' ?>">
             <i class="fas fa-file-invoice"></i> Format Odoo
         </a>
-        <a href="index.php?page=daily_usage_config" class="sidebar-link <?= $current_page == 'daily_usage_config' ? 'active' : '' ?>">
-            <i class="fas fa-clock"></i> Est. Usage
+        <a href="index.php?page=bhp_klinik_mismatch" class="sidebar-link <?= $current_page == 'bhp_klinik_mismatch' ? 'active' : '' ?>">
+            <i class="fas fa-map-marker-alt"></i> Klinik Mismatch BHP
         </a>
         <?php endif; ?>
 

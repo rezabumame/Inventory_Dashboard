@@ -19,11 +19,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         
         $stmt = $conn->prepare("INSERT INTO inventory_users (username, password, nama_lengkap, role, klinik_id) VALUES (?, ?, ?, ?, ?)");
         $stmt->bind_param("ssssi", $username, $password, $nama_lengkap, $role, $klinik_id);
-        
-        if ($stmt->execute()) {
+
+        try {
+            $stmt->execute();
             $success = "User berhasil ditambahkan.";
-        } else {
-            $error = "Gagal menambahkan user: " . $conn->error;
+        } catch (mysqli_sql_exception $e) {
+            if ($e->getCode() === 1062) {
+                $error = "Username \"$username\" sudah dipakai, silakan pakai username lain.";
+            } else {
+                $error = "Gagal menambahkan user: " . $e->getMessage();
+            }
         }
     }
     
@@ -37,16 +42,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $sql = "UPDATE inventory_users SET nama_lengkap = ?, role = ?, klinik_id = ? WHERE id = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("ssii", $nama_lengkap, $role, $klinik_id, $id);
-        
-        if ($stmt->execute()) {
+
+        try {
+            $stmt->execute();
             // Update password if provided
             if (!empty($_POST['password'])) {
                 $pass = password_hash($_POST['password'], PASSWORD_DEFAULT);
-                $conn->query("UPDATE inventory_users SET password = '$pass' WHERE id = $id");
+                $stmt_pw = $conn->prepare("UPDATE inventory_users SET password = ? WHERE id = ?");
+                $stmt_pw->bind_param("si", $pass, $id);
+                $stmt_pw->execute();
             }
             $success = "User berhasil diperbarui.";
-        } else {
-            $error = "Gagal memperbarui user.";
+        } catch (mysqli_sql_exception $e) {
+            $error = "Gagal memperbarui user: " . $e->getMessage();
         }
     }
     
@@ -55,10 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         if ($id == $_SESSION['user_id']) {
             $error = "Anda tidak bisa menghapus akun sendiri.";
         } else {
-            if ($conn->query("DELETE FROM inventory_users WHERE id = $id")) {
+            try {
+                $conn->query("DELETE FROM inventory_users WHERE id = $id");
                 $success = "User berhasil dihapus.";
-            } else {
-                $error = "Gagal menghapus user.";
+            } catch (mysqli_sql_exception $e) {
+                $error = "Gagal menghapus user: user ini masih punya data terkait (transaksi/booking/dll), tidak bisa dihapus.";
             }
         }
     }
