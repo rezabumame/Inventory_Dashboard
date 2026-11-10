@@ -1,5 +1,6 @@
 <?php
 check_role(['super_admin', 'admin_klinik']);
+require_once __DIR__ . '/../../lib/stock.php';
 
 $role = (string)($_SESSION['role'] ?? '');
 $user_klinik_id = (int)($_SESSION['klinik_id'] ?? 0);
@@ -55,6 +56,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $stmt->bind_param($types, ...$params);
                         $stmt->execute();
                         $message = '<div class="alert alert-success mb-3">Petugas HC berhasil diupdate.</div>';
+
+                        // Nakes pindah klinik terdaftar -- otomatis kembalikan SEMUA barang di
+                        // tasnya (klinik lama) ke stok onsite klinik lama, supaya tidak ada yang
+                        // "nyangkut" dan bikin mismatch kayak kasus-kasus sebelumnya.
+                        $old_klinik_id = (int)$row_old['klinik_id'];
+                        if ($old_klinik_id > 0 && $old_klinik_id !== $klinik_id) {
+                            $ret = hc_full_return($conn, $id, $old_klinik_id, (int)$_SESSION['user_id'], 'Pindah klinik terdaftar');
+                            if ($ret['ok']) {
+                                $message = '<div class="alert alert-success mb-3">Petugas HC berhasil diupdate & dipindahkan. ' . htmlspecialchars($ret['message']) . '</div>';
+                            } else {
+                                $message = '<div class="alert alert-warning mb-3">Petugas HC berhasil diupdate & dipindahkan, TAPI pengembalian stok otomatis GAGAL: ' . htmlspecialchars($ret['message']) . '. Silakan proses manual lewat menu Return Petugas → Onsite.</div>';
+                            }
+                        }
                     }
                 } else {
                     if ($password === '') {
@@ -97,6 +111,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+    } elseif ($action === 'claim') {
+        // Pindahkan nakes yang SAAT INI terdaftar di klinik LAIN, ke klinik Admin Klinik yang
+        // melakukan aksi ini. SENGAJA cuma ubah klinik_id (+ trigger full-return stok tas ke
+        // klinik lama) -- TIDAK ikut ubah username/password/nama/status milik nakes itu, supaya
+        // Admin Klinik tidak bisa "nyerempet" edit data orang dari klinik lain di luar yg diminta.
+        if ($can_choose_klinik) {
+            $message = '<div class="alert alert-danger mb-3">Fitur ini khusus Admin Klinik.</div>';
+        } elseif ($id <= 0 || $user_klinik_id <= 0) {
+            $message = '<div class="alert alert-danger mb-3">Data tidak valid.</div>';
+        } else {
+            $row_old = $conn->query("SELECT id, nama_lengkap, klinik_id FROM inventory_users WHERE id = $id AND role = 'petugas_hc' LIMIT 1")->fetch_assoc();
+            if (!$row_old) {
+                $message = '<div class="alert alert-danger mb-3">Petugas tidak ditemukan.</div>';
+            } elseif ((int)$row_old['klinik_id'] === $user_klinik_id) {
+                $message = '<div class="alert alert-warning mb-3">Petugas ini sudah terdaftar di klinik Anda.</div>';
+            } else {
+                $r_kh = $conn->query("SELECT nama_klinik, kode_homecare FROM inventory_klinik WHERE id = $user_klinik_id LIMIT 1")->fetch_assoc();
+                $kode_homecare = trim((string)($r_kh['kode_homecare'] ?? ''));
+                if ($kode_homecare === '') {
+                    $message = '<div class="alert alert-danger mb-3">Klinik Anda belum memiliki Kode Homecare. Isi dulu di Data Klinik.</div>';
+                } else {
+                    $old_klinik_id = (int)$row_old['klinik_id'];
+                    $stmt = $conn->prepare("UPDATE inventory_users SET klinik_id = ? WHERE id = ? AND role = 'petugas_hc'");
+                    $stmt->bind_param("ii", $user_klinik_id, $id);
+                    $stmt->execute();
+
+                    $ret = hc_full_return($conn, $id, $old_klinik_id, (int)$_SESSION['user_id'], 'Ditarik ke ' . ($r_kh['nama_klinik'] ?? 'klinik lain'));
+                    $nama_nakes = htmlspecialchars((string)$row_old['nama_lengkap']);
+                    if ($ret['ok']) {
+                        $message = '<div class="alert alert-success mb-3">' . $nama_nakes . ' berhasil dipindahkan ke klinik Anda. ' . htmlspecialchars($ret['message']) . '</div>';
+                    } else {
+                        $message = '<div class="alert alert-warning mb-3">' . $nama_nakes . ' berhasil dipindahkan ke klinik Anda, TAPI pengembalian stok otomatis GAGAL: ' . htmlspecialchars($ret['message']) . '. Silakan proses manual lewat menu Return Petugas → Onsite.</div>';
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -129,6 +179,26 @@ $res = $conn->query("
     ORDER BY k.nama_klinik ASC, u.nama_lengkap ASC
 ");
 while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
+
+// Pencarian nakes DI KLINIK LAIN, khusus Admin Klinik -- buat fitur "Pindahkan ke Klinik Saya".
+$claim_results = [];
+$claim_query = '';
+if (!$can_choose_klinik) {
+    $claim_query = trim((string)($_GET['claim_q'] ?? ''));
+    if ($claim_query !== '') {
+        $cq = $conn->real_escape_string($claim_query);
+        $res_claim = $conn->query("
+            SELECT u.id, u.username, u.nama_lengkap, u.klinik_id, k.nama_klinik
+            FROM inventory_users u
+            JOIN inventory_klinik k ON k.id = u.klinik_id
+            WHERE u.role = 'petugas_hc' AND u.klinik_id != $user_klinik_id
+              AND (u.nama_lengkap LIKE '%$cq%' OR u.username LIKE '%$cq%')
+            ORDER BY u.nama_lengkap ASC
+            LIMIT 20
+        ");
+        while ($res_claim && ($row = $res_claim->fetch_assoc())) $claim_results[] = $row;
+    }
+}
 ?>
 
 <div class="container-fluid">
@@ -177,6 +247,52 @@ while ($res && ($row = $res->fetch_assoc())) $petugas[] = $row;
                     </select>
                 </div>
             </form>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if (!$can_choose_klinik): ?>
+    <div class="card shadow-sm mb-3 border-warning-subtle">
+        <div class="card-body">
+            <div class="fw-semibold mb-2"><i class="fas fa-user-plus text-warning me-1"></i>Pindahkan Nakes dari Klinik Lain</div>
+            <div class="small text-muted mb-2">Cari nakes yang saat ini terdaftar di klinik LAIN. Memindahkan akan otomatis mengembalikan semua stok di tasnya ke klinik lama (full return), lalu klinik terdaftarnya diubah jadi klinik Anda.</div>
+            <form method="GET" class="row g-2 align-items-end mb-2">
+                <input type="hidden" name="page" value="petugas_hc">
+                <div class="col-md-6">
+                    <input type="text" name="claim_q" class="form-control" placeholder="Cari nama atau username nakes..." value="<?= htmlspecialchars($claim_query) ?>">
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-outline-primary"><i class="fas fa-search me-1"></i>Cari</button>
+                </div>
+            </form>
+            <?php if ($claim_query !== ''): ?>
+                <?php if (empty($claim_results)): ?>
+                    <div class="text-muted small">Tidak ada nakes dari klinik lain yang cocok dengan pencarian ini.</div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="bg-light"><tr><th>Nama</th><th>Username</th><th>Klinik Saat Ini</th><th></th></tr></thead>
+                            <tbody>
+                                <?php foreach ($claim_results as $cr): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($cr['nama_lengkap']) ?></td>
+                                    <td><?= htmlspecialchars($cr['username']) ?></td>
+                                    <td><span class="badge bg-secondary"><?= htmlspecialchars($cr['nama_klinik']) ?></span></td>
+                                    <td class="text-end">
+                                        <form method="POST" class="m-0 form-claim-nakes" data-nama="<?= htmlspecialchars($cr['nama_lengkap'], ENT_QUOTES) ?>" data-klinik-lama="<?= htmlspecialchars($cr['nama_klinik'], ENT_QUOTES) ?>">
+                                            <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
+                                            <input type="hidden" name="action" value="claim">
+                                            <input type="hidden" name="id" value="<?= (int)$cr['id'] ?>">
+                                            <button type="submit" class="btn btn-sm btn-warning"><i class="fas fa-arrow-right me-1"></i>Pindahkan ke Klinik Saya</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
         </div>
     </div>
     <?php endif; ?>
@@ -371,4 +487,27 @@ function openPetugasModal(data) {
         title.innerHTML = '<i class="fas fa-user-nurse me-2"></i>' + (data && data.id ? 'Edit Petugas HC' : 'Tambah Petugas HC');
     }
 }
+
+document.querySelectorAll('.form-claim-nakes').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var nama = form.dataset.nama;
+        var klinikLama = form.dataset.klinikLama;
+        Swal.fire({
+            title: 'Pindahkan Nakes?',
+            html: 'Pindahkan <strong>' + nama + '</strong> dari <strong>' + klinikLama + '</strong> ke klinik Anda?<br><br>' +
+                  '<div class="text-start small text-muted"><i class="fas fa-info-circle me-1"></i>Semua stok di tasnya akan otomatis dikembalikan ke klinik lama (full return).</div>',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ffc107',
+            confirmButtonText: '<i class="fas fa-arrow-right me-1"></i>Ya, Pindahkan',
+            cancelButtonText: 'Batal',
+            reverseButtons: true
+        }).then(function (result) {
+            if (result.isConfirmed) {
+                form.submit();
+            }
+        });
+    });
+});
 </script>

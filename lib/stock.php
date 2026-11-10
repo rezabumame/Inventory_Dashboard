@@ -375,3 +375,93 @@ function stock_effective(mysqli $conn, int $klinik_id, bool $is_hc, int $barang_
         'barang_name' => (string)($b['nama_barang'] ?? '')
     ];
 }
+
+/**
+ * Kembalikan SEMUA barang di tas HC seorang petugas (di satu klinik tertentu) ke stok
+ * onsite klinik itu -- "full return" otomatis. Dipakai saat nakes pindah klinik terdaftar,
+ * supaya stok yang masih nyangkut di tasnya tidak ketinggalan di klinik lama.
+ *
+ * Logic & pola transaksinya SAMA PERSIS dengan actions/process_hc_return.php (return manual
+ * per-item) -- bedanya di sini daftar barang+qty-nya diambil otomatis dari semua baris
+ * inventory_stok_tas_hc yang masih > 0, bukan dari input form manual.
+ */
+function hc_full_return(mysqli $conn, int $user_hc_id, int $old_klinik_id, int $created_by, string $catatan = ''): array {
+    if ($user_hc_id <= 0 || $old_klinik_id <= 0) {
+        return ['ok' => false, 'message' => 'Parameter tidak valid.', 'items_returned' => 0];
+    }
+
+    $lock_name = 'stock_hc_transfer_' . $old_klinik_id;
+    $lock_esc = $conn->real_escape_string($lock_name);
+    $rl = $conn->query("SELECT GET_LOCK('$lock_esc', 10) AS got");
+    $got_lock = (int)($rl && $rl->num_rows > 0 ? ($rl->fetch_assoc()['got'] ?? 0) : 0);
+    if ($got_lock !== 1) {
+        return ['ok' => false, 'message' => 'Sistem sedang memproses stok klinik lama, coba lagi sebentar.', 'items_returned' => 0];
+    }
+
+    $items_returned = 0;
+    $conn->begin_transaction();
+    try {
+        $res = $conn->query("SELECT barang_id, qty FROM inventory_stok_tas_hc WHERE user_id = $user_hc_id AND klinik_id = $old_klinik_id AND qty > 0 FOR UPDATE");
+        $rows = [];
+        while ($res && ($r = $res->fetch_assoc())) $rows[] = $r;
+
+        foreach ($rows as $row) {
+            $barang_id = (int)$row['barang_id'];
+            $qty_oper = (float)$row['qty'];
+            if ($barang_id <= 0 || $qty_oper <= 0) continue;
+
+            $conn->query("INSERT IGNORE INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES ($barang_id, $old_klinik_id, 0)");
+            $conn->query("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = $barang_id AND klinik_id = $old_klinik_id FOR UPDATE");
+
+            $ef_on = stock_effective($conn, $old_klinik_id, false, $barang_id);
+            $onsite_before = $ef_on['ok'] ? (float)($ef_on['on_hand'] ?? 0) : 0.0;
+            $ef_hc = stock_effective($conn, $old_klinik_id, true, $barang_id);
+            $hc_before = $ef_hc['ok'] ? (float)($ef_hc['on_hand'] ?? 0) : 0.0;
+
+            $cat_hist = 'Pengembalian otomatis (Nakes pindah klinik)';
+            if ($catatan !== '') $cat_hist .= ' - ' . $catatan;
+            $neg_qty = 0 - $qty_oper;
+            $stmt = $conn->prepare("INSERT INTO inventory_hc_petugas_transfer (klinik_id, user_hc_id, barang_id, qty, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("iiidsi", $old_klinik_id, $user_hc_id, $barang_id, $neg_qty, $cat_hist, $created_by);
+            $stmt->execute();
+            $return_id = (int)$conn->insert_id;
+
+            $stmt_upd_bag = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
+            $stmt_upd_bag->bind_param("diiii", $qty_oper, $created_by, $barang_id, $user_hc_id, $old_klinik_id);
+            $stmt_upd_bag->execute();
+
+            $stmt_upd_klinik = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty + ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
+            $stmt_upd_klinik->bind_param("diii", $qty_oper, $created_by, $barang_id, $old_klinik_id);
+            $stmt_upd_klinik->execute();
+
+            $cat_trans = 'Pengembalian otomatis HC Petugas #' . $return_id;
+            $qty_after_onsite = $onsite_before + $qty_oper;
+            $stmt_trans_on = $conn->prepare("
+                INSERT INTO inventory_transaksi_stok
+                (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
+                VALUES (?, 'klinik', ?, 'in', ?, ?, ?, 'hc_petugas_transfer', ?, ?, ?, NOW())
+            ");
+            $stmt_trans_on->bind_param("iidddisi", $barang_id, $old_klinik_id, $qty_oper, $onsite_before, $qty_after_onsite, $return_id, $cat_trans, $created_by);
+            $stmt_trans_on->execute();
+
+            $qty_after_hc = max(0.0, $hc_before - $qty_oper);
+            $stmt_trans_hc = $conn->prepare("
+                INSERT INTO inventory_transaksi_stok
+                (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
+                VALUES (?, 'hc', ?, 'out', ?, ?, ?, 'hc_petugas_transfer', ?, ?, ?, NOW())
+            ");
+            $stmt_trans_hc->bind_param("iidddisi", $barang_id, $user_hc_id, $qty_oper, $hc_before, $qty_after_hc, $return_id, $cat_trans, $created_by);
+            $stmt_trans_hc->execute();
+
+            $items_returned++;
+        }
+
+        $conn->commit();
+        $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
+        return ['ok' => true, 'message' => "$items_returned barang berhasil dikembalikan ke stok onsite klinik lama.", 'items_returned' => $items_returned];
+    } catch (Throwable $e) {
+        $conn->rollback();
+        $conn->query("SELECT RELEASE_LOCK('$lock_esc')");
+        return ['ok' => false, 'message' => $e->getMessage(), 'items_returned' => 0];
+    }
+}

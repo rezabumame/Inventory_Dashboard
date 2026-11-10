@@ -38,7 +38,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $role = $_POST['role'];
         $klinik_raw = trim((string)($_POST['klinik_id'] ?? ''));
         $klinik_id = $klinik_raw === '' ? null : (int)$klinik_raw;
-        
+
+        $row_old = $conn->query("SELECT role, klinik_id FROM inventory_users WHERE id = " . (int)$id . " LIMIT 1")->fetch_assoc();
+        $old_klinik_id = (int)($row_old['klinik_id'] ?? 0);
+        $old_role = (string)($row_old['role'] ?? '');
+
         $sql = "UPDATE inventory_users SET nama_lengkap = ?, role = ?, klinik_id = ? WHERE id = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("ssii", $nama_lengkap, $role, $klinik_id, $id);
@@ -53,6 +57,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
                 $stmt_pw->execute();
             }
             $success = "User berhasil diperbarui.";
+
+            // Petugas HC pindah klinik terdaftar -- otomatis kembalikan semua stok di tasnya
+            // ke klinik lama (sama persis dgn pola di views/master/petugas_hc.php).
+            if ($old_role === 'petugas_hc' && $old_klinik_id > 0 && $old_klinik_id !== (int)$klinik_id) {
+                require_once __DIR__ . '/../../lib/stock.php';
+                $ret = hc_full_return($conn, $id, $old_klinik_id, (int)$_SESSION['user_id'], 'Pindah klinik terdaftar (via Data User)');
+                if ($ret['ok']) {
+                    $success .= ' ' . $ret['message'];
+                } else {
+                    $error = 'User diperbarui, TAPI pengembalian stok otomatis GAGAL: ' . $ret['message'] . '. Silakan proses manual lewat menu Return Petugas → Onsite.';
+                }
+            }
         } catch (mysqli_sql_exception $e) {
             $error = "Gagal memperbarui user: " . $e->getMessage();
         }
