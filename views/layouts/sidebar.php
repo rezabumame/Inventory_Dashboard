@@ -200,9 +200,6 @@ if (in_array((string)($_SESSION['role'] ?? ''), $roles_with_klinik, true) && !em
         <a href="index.php?page=odoo_format_config" class="sidebar-link <?= $current_page == 'odoo_format_config' ? 'active' : '' ?>">
             <i class="fas fa-file-invoice"></i> Format Odoo
         </a>
-        <a href="index.php?page=bhp_klinik_mismatch" class="sidebar-link <?= $current_page == 'bhp_klinik_mismatch' ? 'active' : '' ?>">
-            <i class="fas fa-map-marker-alt"></i> Klinik Mismatch BHP
-        </a>
         <?php endif; ?>
 
         <?php if (in_array($role, ['super_admin', 'admin_gudang', 'admin_klinik', 'spv_klinik'])): ?>

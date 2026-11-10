@@ -1,0 +1,12 @@
+.git
+.gitignore
+node_modules
+vendor
+.claude
+.agents
+scratch
+*.log
+.env
+.env.*
+uploads
+database_schema.sql
