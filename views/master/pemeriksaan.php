@@ -9,25 +9,15 @@ $can_edit = ($role === 'super_admin');
 //$groups = $conn->query("..."); 
 
 $barangs = $conn->query("
-    (SELECT 
-        b.id, 
-        b.kode_barang, 
-        b.nama_barang, 
-        COALESCE(NULLIF(uc.to_uom, ''), b.satuan) AS satuan, 
-        b.tipe,
-        0 AS is_lokal
+    SELECT
+        b.id,
+        b.kode_barang,
+        b.nama_barang,
+        COALESCE(NULLIF(uc.to_uom, ''), b.satuan) AS satuan,
+        b.tipe
     FROM inventory_barang b
     LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-    WHERE b.kode_barang IS NOT NULL AND b.kode_barang <> '')
-    UNION ALL
-    (SELECT
-        bl.id,
-        '-' AS kode_barang,
-        bl.nama_item AS nama_barang,
-        bl.uom AS satuan,
-        'Support' AS tipe,
-        1 AS is_lokal
-    FROM inventory_barang_lokal bl)
+    WHERE b.kode_barang IS NOT NULL AND b.kode_barang <> ''
     ORDER BY nama_barang ASC
 ");
 $barang_opts = [];
@@ -385,7 +375,7 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                     <select name="barang_id" class="form-select form-select-sm select2" required id="detailBarangId">
                                         <option value="">- Pilih Barang -</option>
                                         <?php foreach($barang_opts as $b): ?>
-                                            <option value="<?= (int)$b['id'] ?>" data-is-lokal="<?= (int)$b['is_lokal'] ?>"><?= htmlspecialchars($b['kode_barang']) ?> - <?= htmlspecialchars($b['nama_barang']) ?> <?= (int)$b['is_lokal'] ? '(Lokal)' : '' ?></option>
+                                            <option value="<?= (int)$b['id'] ?>"><?= htmlspecialchars($b['kode_barang']) ?> - <?= htmlspecialchars($b['nama_barang']) ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
@@ -457,11 +447,10 @@ while($b = $barangs->fetch_assoc()) $barang_opts[] = $b;
                                             <input type="text" name="layanan_list[]" class="form-control form-control-sm" placeholder="Nama Layanan">
                                         </td>
                                         <td>
-                                            <input type="hidden" name="is_lokal_list[]" class="hid-lokal" value="0">
                                             <select name="barang_ids[]" class="form-select form-select-sm select2-modal barang-select-row" required>
                                                 <option value="">- Pilih Barang -</option>
                                                 <?php foreach($barang_opts as $b): ?>
-                                                    <option value="<?= (int)$b['id'] ?>" data-tipe="<?= htmlspecialchars((string)($b['tipe'] ?? '')) ?>" data-is-lokal="<?= (int)$b['is_lokal'] ?>"><?= htmlspecialchars($b['kode_barang']) ?> - <?= htmlspecialchars($b['nama_barang']) ?> <?= (int)$b['is_lokal'] ? '(Lokal)' : '' ?></option>
+                                                    <option value="<?= (int)$b['id'] ?>" data-tipe="<?= htmlspecialchars((string)($b['tipe'] ?? '')) ?>"><?= htmlspecialchars($b['kode_barang']) ?> - <?= htmlspecialchars($b['nama_barang']) ?></option>
                                                 <?php endforeach; ?>
                                             </select>
                                         </td>
@@ -716,7 +705,7 @@ $(document).ready(function() {
 
     // Store clean options HTML for dynamic rows
     const BARANG_OPTIONS_HTML = <?= json_encode(array_reduce($barang_opts, function($carry, $item) {
-        return $carry . '<option value="'.(int)$item['id'].'" data-tipe="'.htmlspecialchars((string)($item['tipe'] ?? '')).'" data-uom="'.htmlspecialchars((string)($item['satuan'] ?? '')).'" data-is-lokal="'.(int)$item['is_lokal'].'">'.htmlspecialchars($item['kode_barang']).' - '.htmlspecialchars($item['nama_barang']).' '.((int)$item['is_lokal'] ? '(Lokal)' : '').'</option>';
+        return $carry . '<option value="'.(int)$item['id'].'" data-tipe="'.htmlspecialchars((string)($item['tipe'] ?? '')).'" data-uom="'.htmlspecialchars((string)($item['satuan'] ?? '')).'">'.htmlspecialchars($item['kode_barang']).' - '.htmlspecialchars($item['nama_barang']).'</option>';
     }, '')) ?>;
 
     $('#btnNewExam').on('click', function() {
@@ -727,9 +716,8 @@ $(document).ready(function() {
         $('#newMappingBody').html('<tr>' +
             '<td><input type="text" name="id_biosys_list[]" class="form-control form-control-sm" placeholder="ID Biosys"></td>' +
             '<td><input type="text" name="layanan_list[]" class="form-control form-control-sm" placeholder="Nama Layanan"></td>' +
-            '<td><input type="hidden" name="is_lokal_list[]" class="hid-lokal" value="0">' +
-            '<select name="barang_ids[]" class="form-select form-select-sm select2-modal barang-select-row" required><option value="">- Pilih Barang -</option>' + 
-            BARANG_OPTIONS_HTML + 
+            '<td><select name="barang_ids[]" class="form-select form-select-sm select2-modal barang-select-row" required><option value="">- Pilih Barang -</option>' +
+            BARANG_OPTIONS_HTML +
             '</select></td>' +
             '<td><input type="number" name="qtys[]" class="form-control form-control-sm text-center" value="1" min="1" required></td>' +
             '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btnRemoveRow"><i class="fas fa-times"></i></button></td>' +
@@ -742,10 +730,9 @@ $(document).ready(function() {
         const newRow = $('<tr>' +
             '<td><input type="text" name="id_biosys_list[]" class="form-control form-control-sm" placeholder="ID Biosys"></td>' +
             '<td><input type="text" name="layanan_list[]" class="form-control form-control-sm" placeholder="Nama Layanan"></td>' +
-            '<td><input type="hidden" name="is_lokal_list[]" class="hid-lokal" value="0">' +
-            '<select name="barang_ids[]" class="form-select form-select-sm select2-modal barang-select-row" required>' + 
-            '<option value="">- Pilih Barang -</option>' + 
-            BARANG_OPTIONS_HTML + 
+            '<td><select name="barang_ids[]" class="form-select form-select-sm select2-modal barang-select-row" required>' +
+            '<option value="">- Pilih Barang -</option>' +
+            BARANG_OPTIONS_HTML +
             '</select></td>' +
             '<td><input type="number" name="qtys[]" class="form-control form-control-sm text-center" value="1" min="1" required></td>' +
             '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btnRemoveRow"><i class="fas fa-times"></i></button></td>' +
@@ -771,9 +758,6 @@ $(document).ready(function() {
         } else if (tipe === 'Support') {
             updateRowTipe(tr, 0);
         }
-
-        const isLokal = data && data.element ? $(data.element).data('is-lokal') : 0;
-        tr.find('.hid-lokal').val(isLokal);
     });
 
     function updateRowTipe(tr, val) {
@@ -1274,8 +1258,7 @@ $(document).ready(function() {
                 qty: qty,
                 id_biosys: idBiosys,
                 layanan: layanan,
-                is_lokal: $('#detailBarangId option:selected').data('is-lokal') || 0,
-                _csrf: PEMERIKSAAN_CSRF 
+                _csrf: PEMERIKSAAN_CSRF
             },
             success: function(res) {
                 if (!res || !res.success) {

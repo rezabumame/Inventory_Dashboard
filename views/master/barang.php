@@ -212,7 +212,6 @@ $cat_meta = [
 <!-- Tabs -->
 <ul class="nav nav-pills mb-4" role="tablist" style="gap:6px;">
     <li class="nav-item"><button class="nav-link active rounded-pill px-4" data-bs-toggle="pill" data-bs-target="#tab-odoo"><i class="fas fa-boxes me-2"></i>Barang Odoo</button></li>
-    <li class="nav-item"><button class="nav-link rounded-pill px-4" data-bs-toggle="pill" data-bs-target="#tab-non-odoo"><i class="fas fa-box-open me-2"></i>Barang Non-Odoo</button></li>
 </ul>
 <style>.nav-pills .nav-link{color:#6c757d;font-weight:500;}.nav-pills .nav-link.active{background-color:#204EAB!important;color:#fff!important;}</style>
 
@@ -345,24 +344,6 @@ $cat_meta = [
         </div>
     </div>
 
-    <!-- ── Non-Odoo Tab ── -->
-    <div class="tab-pane fade" id="tab-non-odoo">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white border-0 pt-4 pb-0 d-flex justify-content-between align-items-center">
-                <h5 class="fw-bold mb-0">Daftar Barang Non-Odoo (Lokal)</h5>
-                <?php if ($can_edit): ?><button class="btn btn-primary btn-sm px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#modalAddItemNonOdoo"><i class="fas fa-plus me-2"></i>Tambah Item</button><?php endif; ?>
-            </div>
-            <div class="card-body">
-                <table id="tableMasterItemNonOdoo" class="table table-hover align-middle datatable" style="width:100%">
-                    <thead class="bg-light"><tr>
-                        <th>Kode Item</th><th>Nama Item</th><th>UOM</th>
-                        <?php if ($can_edit): ?><th class="text-end" style="width:100px;">Aksi</th><?php endif; ?>
-                    </tr></thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
-    </div>
 </div>
 
 
@@ -668,22 +649,7 @@ $cat_meta = [
     </div>
 </div>
 
-<!-- Non-Odoo modals (can_edit only) -->
 <?php if ($can_edit): ?>
-<div class="modal fade" id="modalAddItemNonOdoo" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow-lg">
-        <form id="formAddItemNonOdoo">
-            <div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold text-primary-custom" id="nonOdooModalTitle">Tambah Item Non-Odoo</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body py-4">
-                <input type="hidden" name="id" id="non_odoo_edit_id">
-                <div class="mb-3"><label class="form-label small fw-bold">Nama Item</label><input type="text" name="nama_item" id="non_odoo_edit_nama_item" class="form-control" required></div>
-                <div class="mb-0"><label class="form-label small fw-bold">UOM (Satuan)</label><input type="text" name="uom" id="non_odoo_edit_uom" class="form-control" required></div>
-            </div>
-            <div class="modal-footer border-0 pt-0"><button class="btn btn-light" data-bs-dismiss="modal">Batal</button><button type="submit" class="btn btn-primary px-4">Simpan</button></div>
-        </form>
-    </div></div>
-</div>
-
 <div class="modal fade" id="modalImportMinStok" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow-lg">
         <div class="modal-header border-0 pb-0"><h5 class="modal-title fw-bold text-primary-custom"><i class="fas fa-file-excel me-2"></i>Import Min Stok</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -924,36 +890,7 @@ $(document).ready(function() {
     });
     <?php endif; ?>
 
-    // ── Non-Odoo DataTable ────────────────────────────────────────────────────
-    var tableNonOdoo = $('#tableMasterItemNonOdoo').DataTable({
-        ajax: 'api/ajax_bhp_lokal.php?action=list_master',
-        columns: [
-            {data:'kode_item'},
-            {data:'nama_item', render: d => '<b>'+d+'</b>'},
-            {data:'uom', render: d => '<span class="badge bg-secondary-light text-dark">'+d+'</span>'},
-            <?php if ($can_edit): ?>
-            {data:null, orderable:false, className:'text-end', render: d => `<button class="btn btn-sm btn-outline-primary btn-edit-non-odoo" data-id="${d.id}" data-name="${d.nama_item}" data-uom="${d.uom}"><i class="fas fa-edit me-1"></i>Edit</button>`}
-            <?php endif; ?>
-        ]
-    });
-
     <?php if ($can_edit): ?>
-    $('#formAddItemNonOdoo').submit(function(e) {
-        e.preventDefault();
-        $.post('api/ajax_bhp_lokal.php?action=save_item', $(this).serialize(), function(res) {
-            if (res.success) { $('#modalAddItemNonOdoo').modal('hide'); tableNonOdoo.ajax.reload(); Swal.fire('Berhasil',res.message,'success'); }
-            else Swal.fire('Gagal',res.message,'error');
-        },'json');
-    });
-    $(document).on('click', '.btn-edit-non-odoo', function() {
-        const d = $(this).data();
-        $('#non_odoo_edit_id').val(d.id); $('#non_odoo_edit_nama_item').val(d.name); $('#non_odoo_edit_uom').val(d.uom);
-        $('#nonOdooModalTitle').text('Edit Item Non-Odoo');
-        $('#modalAddItemNonOdoo').modal('show');
-    });
-    $('#modalAddItemNonOdoo').on('hidden.bs.modal', function() {
-        $('#formAddItemNonOdoo')[0].reset(); $('#non_odoo_edit_id').val(''); $('#nonOdooModalTitle').text('Tambah Item Non-Odoo');
-    });
     $('#formImportMinStok').on('submit', function(e) {
         e.preventDefault();
         const btn=$('#btnDoImport'), rd=$('#importResult');

@@ -477,8 +477,17 @@ foreach ($groups as $g) {
         continue;
     }
 
-    $conn->begin_transaction();
-    try {
+    // Retry otomatis kalau kena deadlock InnoDB (errno 1213) -- ini error transient standar
+    // MySQL saat 2 transaksi beririsan lock di urutan berlawanan, BUKAN tanda data rusak.
+    // Advisory lock per klinik+jenis di atas sudah mencegah 2 sync RUN yang SAMA tabrakan,
+    // tapi tidak mencegah deadlock row-level dgn proses lain yg sedang jalan bersamaan
+    // (approve/reject, upload manual, dll). Retry max 3x dgn jeda singkat sebelum menyerah.
+    $max_attempts = 3;
+    $last_error = null;
+    for ($attempt = 1; $attempt <= $max_attempts; $attempt++) {
+        $last_error = null;
+        $conn->begin_transaction();
+        try {
         $header = null; // lazy: baru dibuat/dicari kalau memang ada baris baru/berubah
         $touched = 0;
         $group_new = 0;
@@ -670,15 +679,22 @@ foreach ($groups as $g) {
                 'touched_qty' => $touched_qty,
             ];
         }
-    } catch (\Throwable $e) {
-        $conn->rollback();
-        $errors[] = [
-            'klinik_id' => $klinik_id, 'tanggal' => $tanggal, 'jenis' => $jenis, 'user_hc_id' => $user_hc_id,
-            'message' => 'PHP Error: ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine(),
-        ];
-    } finally {
-        advisory_release_lock($conn, $lock_name);
+        } catch (\Throwable $e) {
+            $conn->rollback();
+            $is_deadlock = ($e instanceof mysqli_sql_exception) && ((int)$e->getCode() === 1213);
+            if ($is_deadlock && $attempt < $max_attempts) {
+                usleep(200000 * $attempt); // backoff singkat: 0.2s, 0.4s, ... sebelum coba lagi
+                continue; // retry seluruh group dari awal
+            }
+            $last_error = [
+                'klinik_id' => $klinik_id, 'tanggal' => $tanggal, 'jenis' => $jenis, 'user_hc_id' => $user_hc_id,
+                'message' => 'PHP Error: ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine(),
+            ];
+        }
+        break; // sukses, atau sudah final error (bukan deadlock / attempt habis) -- keluar retry loop
     }
+    if ($last_error) $errors[] = $last_error;
+    advisory_release_lock($conn, $lock_name);
 }
 
 echo json_encode([

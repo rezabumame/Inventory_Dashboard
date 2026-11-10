@@ -83,12 +83,11 @@ try {
             if ($pid === '') continue;
             
             $pid_esc = $conn->real_escape_string($pid);
-            $res = $conn->query("SELECT barang_id, is_lokal, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
+            $res = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
             while($row = $res->fetch_assoc()) {
                 $bid = intval($row['barang_id']);
-                $isl = intval($row['is_lokal']);
                 $qty = (float)$row['qty_per_pemeriksaan'];
-                $key = "$bid|$isl";
+                $key = (string)$bid;
                 $total_needed[$key] = ($total_needed[$key] ?? 0) + $qty;
             }
         }
@@ -103,19 +102,15 @@ try {
     // 2. Check Effective Availability (Core items only). Core = is_mandatory=1
     $out_of_stock_items = [];
     foreach ($total_needed as $key => $qty_need) {
-        list($bid, $isl) = explode('|', $key);
-        $bid = (int)$bid;
-        $isl = (int)$isl;
+        $bid = (int)$key;
         $qty_need = (float)$qty_need;
 
-        if (!$isl) { // Only check OOS for Odoo items for now
-            $ef = stock_effective($conn, (int)$klinik_id, $is_hc, $bid);
-            if (!$ef['ok']) continue;
-            $available = (float)($ef['available'] ?? 0);
-            if ($available < $qty_need) {
-                $bname = (string)($ef['barang_name'] ?? ("ID:$bid"));
-                $out_of_stock_items[] = "$bname (Sisa: $available, Butuh: $qty_need)";
-            }
+        $ef = stock_effective($conn, (int)$klinik_id, $is_hc, $bid);
+        if (!$ef['ok']) continue;
+        $available = (float)($ef['available'] ?? 0);
+        if ($available < $qty_need) {
+            $bname = (string)($ef['barang_name'] ?? ("ID:$bid"));
+            $out_of_stock_items[] = "$bname (Sisa: $available, Butuh: $qty_need)";
         }
     }
 
@@ -147,7 +142,7 @@ try {
     $conn->query("ALTER TABLE inventory_booking_pasien ADD COLUMN IF NOT EXISTS tanggal_lahir DATE NULL");
 
     $stmt_pasien = $conn->prepare("INSERT INTO inventory_booking_pasien (booking_id, nama_pasien, pemeriksaan_grup_id, nomor_tlp, tanggal_lahir) VALUES (?, ?, ?, ?, ?)");
-    $stmt_detail = $conn->prepare("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, is_lokal, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt_detail = $conn->prepare("INSERT INTO inventory_booking_detail (booking_id, booking_pasien_id, barang_id, qty_gantung, qty_reserved_onsite, qty_reserved_hc) VALUES (?, ?, ?, ?, ?, ?)");
 
     foreach ($patients as $idx => $p) {
         $pnama = !empty($p['nama']) ? $p['nama'] : "Pasien " . ($idx + 1);
@@ -166,10 +161,9 @@ try {
 
             // Insert inventory details for this specific patient
             $pid_esc = $conn->real_escape_string($pid);
-            $res_items = $conn->query("SELECT barang_id, is_lokal, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
+            $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid_esc'");
             while ($res_items && ($i_row = $res_items->fetch_assoc())) {
                 $barang_id = (int)$i_row['barang_id'];
-                $is_lokal = (int)$i_row['is_lokal'];
                 $qty_unit = (float)$i_row['qty_per_pemeriksaan'];
                 if ($qty_unit <= 0) continue;
 
@@ -177,7 +171,7 @@ try {
                 if (stripos((string)$status_booking, 'Clinic') !== false) $qty_onsite = $qty_unit;
                 elseif (stripos((string)$status_booking, 'HC') !== false) $qty_hc = $qty_unit;
 
-                $stmt_detail->bind_param("iiiiddd", $book_id, $pasien_row_id, $barang_id, $is_lokal, $qty_unit, $qty_onsite, $qty_hc);
+                $stmt_detail->bind_param("iiiddd", $book_id, $pasien_row_id, $barang_id, $qty_unit, $qty_onsite, $qty_hc);
                 if (!$stmt_detail->execute()) throw new Exception("Error saving detail: " . $stmt_detail->error);
             }
         }

@@ -25,10 +25,9 @@ $date_only = date('Y-m-d', strtotime($tanggal));
 
 try {
     $query = "
-        SELECT 
-            pbd.barang_id, 
-            pbd.is_lokal,
-            COALESCE(b.nama_barang, bl.nama_item) as nama_barang, 
+        SELECT
+            pbd.barang_id,
+            b.nama_barang,
             COALESCE(b.kode_barang, '') as kode_barang,
             SUM(pbd.qty) as total_qty,
             MAX(pbd.satuan) as satuan,
@@ -36,14 +35,13 @@ try {
             GROUP_CONCAT(DISTINCT pb.id SEPARATOR ',') as source_ids
         FROM inventory_pemakaian_bhp pb
         JOIN inventory_pemakaian_bhp_detail pbd ON pb.id = pbd.pemakaian_bhp_id
-        LEFT JOIN inventory_barang b ON pbd.barang_id = b.id AND pbd.is_lokal = 0
-        LEFT JOIN inventory_barang_lokal bl ON pbd.barang_id = bl.id AND pbd.is_lokal = 1
+        LEFT JOIN inventory_barang b ON pbd.barang_id = b.id
         LEFT JOIN inventory_booking_pemeriksaan bp ON pb.booking_id = bp.id
-        WHERE pb.klinik_id = ? 
-          AND pb.is_auto = 1 
+        WHERE pb.klinik_id = ?
+          AND pb.is_auto = 1
           AND DATE(pb.tanggal) = ?
           AND (pb.jenis_pemakaian = ? OR (pb.jenis_pemakaian = 'clinic' AND ? = 'klinik') OR (pb.jenis_pemakaian = 'klinik' AND ? = 'clinic'))
-        GROUP BY pbd.barang_id, pbd.is_lokal
+        GROUP BY pbd.barang_id
         HAVING total_qty > 0
     ";
 
@@ -56,8 +54,7 @@ try {
     while ($row = $result->fetch_assoc()) {
         $items[] = [
             'barang_id' => (int)$row['barang_id'],
-            'is_lokal' => (int)$row['is_lokal'],
-            'nama_barang' => $row['nama_barang'] . ($row['is_lokal'] ? ' (Lokal)' : ''),
+            'nama_barang' => $row['nama_barang'],
             'kode_barang' => $row['kode_barang'],
             'qty' => (float)$row['total_qty'],
             'satuan' => $row['satuan'],

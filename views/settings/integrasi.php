@@ -46,6 +46,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $t = trim((string)($_POST['gudang_sync_token'] ?? ''));
         set_setting('gudang_sync_token', $t);
         $msg = '<div class="alert alert-success">Token sync gudang utama tersimpan.</div>';
+    } else if ($form_type === 'negative_stock') {
+        $neg_mode_input = (string)($_POST['neg_mode'] ?? 'off');
+        if (!in_array($neg_mode_input, ['off', 'all', 'selected'], true)) $neg_mode_input = 'off';
+        $neg_selected_ids = $_POST['neg_barang_ids'] ?? [];
+        $neg_selected_ids = is_array($neg_selected_ids) ? array_values(array_unique(array_map('intval', $neg_selected_ids))) : [];
+        $neg_apply_to_edit_input = (($_POST['neg_apply_to_edit'] ?? '') === '1') ? '1' : '0';
+        $neg_superadmin_bypass_input = (($_POST['neg_superadmin_bypass'] ?? '') === '1') ? '1' : '0';
+        set_setting('bhp_negative_stock_mode', $neg_mode_input);
+        set_setting('bhp_negative_stock_items', json_encode($neg_selected_ids));
+        set_setting('bhp_negative_stock_apply_to_edit', $neg_apply_to_edit_input);
+        set_setting('bhp_negative_stock_superadmin_bypass', $neg_superadmin_bypass_input);
+        $msg = '<div class="alert alert-success">Pengaturan Izinkan Stok Minus tersimpan.</div>';
     } else if ($form_type === 'schedule') {
         $enabled_input = $_POST['enabled'] ?? '0';
         $enabled = ($enabled_input === '1') ? '1' : '0';
@@ -96,6 +108,17 @@ $public_stok_token = trim((string)get_setting('public_stok_token', ''));
 $scheduler_token_saved = trim((string)get_setting('odoo_sync_token', ''));
 $gudang_sync_token_saved = trim((string)get_setting('gudang_sync_token', ''));
 $gudang_sync_last_run = (int)get_setting('gudang_sync_last_run', '0');
+$neg_mode_saved = get_setting('bhp_negative_stock_mode', 'off');
+$neg_apply_to_edit_saved = get_setting('bhp_negative_stock_apply_to_edit', '0') === '1';
+$neg_superadmin_bypass_saved = get_setting('bhp_negative_stock_superadmin_bypass', '0') === '1';
+$neg_items_saved = json_decode((string)get_setting('bhp_negative_stock_items', '[]'), true);
+if (!is_array($neg_items_saved)) $neg_items_saved = [];
+$neg_barang_selected = [];
+if (!empty($neg_items_saved)) {
+    $neg_ids_str = implode(',', array_map('intval', $neg_items_saved));
+    $res_negb = $conn->query("SELECT id, kode_barang, nama_barang FROM inventory_barang WHERE id IN ($neg_ids_str) ORDER BY nama_barang ASC");
+    while ($row = $res_negb->fetch_assoc()) $neg_barang_selected[] = $row;
+}
 $internal_token = getenv('ODOO_SYNC_SYSTEM_TOKEN') ?: '';
 $schedule_hint_url = '';
 $gudang_sync_hint_url = '';
@@ -593,6 +616,56 @@ $next_due = next_due_text($enabled, $mode, $interval, $weekday, $time, $last_run
                 </form>
             </div>
 
+            <!-- Izinkan Stok Minus (Pemakaian BHP) -->
+            <div class="settings-card mb-3">
+                <div class="card-title-premium">
+                    <i class="fas fa-infinity"></i>
+                    <span>Izinkan Stok Minus (Pemakaian BHP)</span>
+                </div>
+                <p class="small text-muted mb-3">Secara default, barang yang stoknya habis (0) tidak muncul di dropdown "Pilih Barang" saat Tambah Pemakaian BHP (khususnya Stok Tas HC & BHP Lokal). Berlaku global untuk Klinik maupun HC.</p>
+                <form method="POST" id="negStockForm">
+                    <input type="hidden" name="form_type" value="negative_stock">
+                    <div class="mb-3">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input neg-mode-radio" type="radio" name="neg_mode" value="off" id="negModeOff" <?= $neg_mode_saved === 'off' ? 'checked' : '' ?>>
+                            <label class="form-check-label small" for="negModeOff"><strong>Nonaktif</strong> — perilaku normal</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input neg-mode-radio" type="radio" name="neg_mode" value="all" id="negModeAll" <?= $neg_mode_saved === 'all' ? 'checked' : '' ?>>
+                            <label class="form-check-label small" for="negModeAll"><strong>Semua Item</strong> — semua barang selalu muncul, apa pun stoknya</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input neg-mode-radio" type="radio" name="neg_mode" value="selected" id="negModeSelected" <?= $neg_mode_saved === 'selected' ? 'checked' : '' ?>>
+                            <label class="form-check-label small" for="negModeSelected"><strong>Item Tertentu</strong> — cuma barang terpilih di bawah</label>
+                        </div>
+                    </div>
+                    <div id="negSelectedItemsWrap" class="mb-3" style="<?= $neg_mode_saved === 'selected' ? '' : 'display:none;' ?>">
+                        <label class="form-label">Daftar Barang</label>
+                        <select name="neg_barang_ids[]" id="negBarangPicker" class="form-select" multiple style="width:100%;">
+                            <?php foreach ($neg_barang_selected as $b): ?>
+                                <option value="<?= (int)$b['id'] ?>" selected><?= htmlspecialchars($b['kode_barang'] . ' - ' . $b['nama_barang']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div class="form-text">Berlaku untuk barang Odoo (Klinik/HC); BHP Lokal cuma kena mode "Semua Item".</div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="neg_apply_to_edit" value="1" id="negApplyToEdit" <?= $neg_apply_to_edit_saved ? 'checked' : '' ?>>
+                        <label class="form-check-label small" for="negApplyToEdit">
+                            Terapkan juga ke modal <strong>Edit</strong>
+                            <div class="text-muted" style="font-size:0.7rem;">Default: modal Edit selalu nampilin semua barang (supaya tidak ada item kelewat saat koreksi transaksi lama), terlepas dari mode di atas. Centang ini kalau mau Edit ikut terbatas sama seperti Tambah.</div>
+                        </label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="neg_superadmin_bypass" value="1" id="negSuperadminBypass" <?= $neg_superadmin_bypass_saved ? 'checked' : '' ?>>
+                        <label class="form-check-label small" for="negSuperadminBypass">
+                            <strong>Super Admin</strong> bisa akses semua barang
+                            <div class="text-muted" style="font-size:0.7rem;">Kalau dicentang, user dengan role Super Admin SELALU lihat semua barang (apa pun mode di atas, di modal Tambah maupun Edit). Role lain tetap ikut aturan yang di-set.</div>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-premium btn-save w-100"><i class="fas fa-save me-2"></i>Simpan Pengaturan</button>
+                </form>
+            </div>
+
             <!-- Danger Zone -->
             <div class="settings-card danger-zone">
                 <div class="card-title-premium">
@@ -833,6 +906,30 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    $('#negBarangPicker').select2({
+        theme: 'bootstrap-5',
+        width: '100%',
+        placeholder: 'Cari & pilih barang...',
+        ajax: {
+            url: 'api/ajax_barang_search.php',
+            dataType: 'json',
+            delay: 250,
+            data: function (params) { return { q: params.term || '' }; },
+            processResults: function (data) {
+                return { results: (data.items || []).map(function (it) {
+                    return { id: it.id, text: it.kode_barang + ' - ' + it.nama_barang };
+                }) };
+            }
+        },
+        minimumInputLength: 1
+    });
+
+    $('.neg-mode-radio').on('change', function () {
+        $('#negSelectedItemsWrap').toggle($('#negModeSelected').is(':checked'));
+    });
 });
 
 function generateToken() {

@@ -1592,7 +1592,6 @@ if ($default_modal_klinik_id) {
                                                 </select>
                                                 <input type="hidden" name="items[0][satuan]"
                                                     class="modal-satuan-hidden">
-                                                <input type="hidden" name="items[0][is_lokal]" class="modal-is-lokal-hidden" value="0">
                                                 <input type="hidden" name="items[0][catatan_item]" value="">
                                             </td>
                                             <td class="text-center border-start">
@@ -1933,7 +1932,7 @@ if ($default_modal_klinik_id) {
             $.ajax({
                 url: 'api/ajax_pemakaian_items.php',
                 method: 'POST',
-                data: { klinik_id: klinikId, jenis: jenis, user_hc_id: userHcId, _csrf: PEMAKAIAN_CSRF },
+                data: { klinik_id: klinikId, jenis: jenis, user_hc_id: userHcId, context: 'add', _csrf: PEMAKAIAN_CSRF },
                 dataType: 'json',
                 success: function (res) {
                     availableItemsMap = {};
@@ -1988,7 +1987,7 @@ if ($default_modal_klinik_id) {
             $.ajax({
                 url: 'api/ajax_pemakaian_items.php',
                 method: 'POST',
-                data: { klinik_id: klinikId, jenis: jenis, user_hc_id: userHcId, _csrf: PEMAKAIAN_CSRF },
+                data: { klinik_id: klinikId, jenis: jenis, user_hc_id: userHcId, context: 'edit', _csrf: PEMAKAIAN_CSRF },
                 dataType: 'json',
                 success: function (res) {
                     availableItemsMap = {};
@@ -2324,7 +2323,6 @@ if ($default_modal_klinik_id) {
                         <option value="oper">-</option>
                     </select>
                     <input type="hidden" name="items[0][satuan]" class="modal-satuan-hidden">
-                    <input type="hidden" name="items[0][is_lokal]" class="modal-is-lokal-hidden" value="0">
                     <input type="hidden" name="items[0][catatan_item]" value="">
                 </td>
                 <td class="text-center border-start">
@@ -2443,7 +2441,6 @@ if ($default_modal_klinik_id) {
                         <option value="oper">-</option>
                     </select>
                     <input type="hidden" name="items[${modalRowIndex}][satuan]" class="modal-satuan-hidden">
-                    <input type="hidden" name="items[${modalRowIndex}][is_lokal]" class="modal-is-lokal-hidden" value="0">
                     <input type="hidden" name="items[${modalRowIndex}][catatan_item]" value="">
                 </td>
                 <td class="text-center border-start">
@@ -2613,7 +2610,7 @@ if ($default_modal_klinik_id) {
                     $.ajax({
                         url: 'api/ajax_pemakaian_items.php',
                         method: 'POST',
-                        data: { klinik_id: h.klinik_id, jenis: h.jenis_pemakaian, user_hc_id: userHcId, _csrf: PEMAKAIAN_CSRF },
+                        data: { klinik_id: h.klinik_id, jenis: h.jenis_pemakaian, user_hc_id: userHcId, context: 'edit', _csrf: PEMAKAIAN_CSRF },
                         dataType: 'json',
                         success: function (stockRes) {
                             availableItemsMap = {};
@@ -2631,24 +2628,13 @@ if ($default_modal_klinik_id) {
                                 });
                             }
 
-                            // Ensure edited items are in the list (even if out of stock now)
-                            // AND Add current usage back to stock for display in Edit Modal
-                            res.details.forEach(function (d) {
-                                const isl_d = d.is_lokal ? 1 : 0;
-                                const dKey = d.barang_id + '_' + isl_d;
-                                if (!availableItemsMap[dKey]) {
-                                    availableItemsMap[dKey] = {
-                                        id: d.barang_id,
-                                        name: d.nama_barang,
-                                        satuan: d.satuan,
-                                        uom_ratio: 1, // Will be updated by barangMaster if available
-                                        rawQty: 0,
-                                        is_lokal: isl_d
-                                    };
-                                }
-                                // Add back the quantity being edited to the display stock
-                                availableItemsMap[dKey].rawQty += parseFloat(d.qty) || 0;
-                            });
+                            // Catatan: item yang SUDAH ada di transaksi ini sengaja TIDAK lagi di-merge
+                            // ke availableItemsMap (dulu begitu, tapi itu object GLOBAL -- begitu ke-merge
+                            // di sana, baris BARU/kosong yang ditambah lewat "+ Tambah Baris" ikut kebocoran
+                            // nampilin barang itu juga, padahal mestinya cuma baris existing-nya yang boleh).
+                            // Sekarang tiap baris existing dapat <option> ekstra miliknya sendiri secara lokal
+                            // di loop groupedDetails di bawah (lihat ensureOptionForExistingRow), bukan lewat
+                            // availableItemsMap bersama.
 
                             editRowIndex = 0;
                             // Grouping items to avoid duplicates in edit modal
@@ -2660,6 +2646,7 @@ if ($default_modal_klinik_id) {
                                 if (!detailMap[key]) {
                                     detailMap[key] = {
                                         barang_id: d.barang_id,
+                                        nama_barang: d.nama_barang,
                                         qty: 0,
                                         satuan: d.satuan,
                                         catatan_item: [],
@@ -2691,7 +2678,16 @@ if ($default_modal_klinik_id) {
 
                                 // Re-build options with the current availableItemsMap
                                 $barangSelect.html(buildOptionsHtml(h.klinik_id, h.jenis_pemakaian, userHcId));
-                                $barangSelect.val(String(d.barang_id) + '|' + (d.is_lokal ? '1' : '0'));
+                                const ownValue = String(d.barang_id) + '|' + (d.is_lokal ? '1' : '0');
+                                // Kalau barang milik baris ini sendiri tidak ada di availableItemsMap (mis.
+                                // karena stoknya 0/tidak masuk whitelist "Item Tertentu"), tambahkan 1 <option>
+                                // ekstra KHUSUS buat baris ini saja -- supaya tetap terpilih & kelihatan, tapi
+                                // TIDAK ikut masuk ke availableItemsMap global (jadi tidak bocor ke baris lain).
+                                if (!$barangSelect.find(`option[value="${ownValue}"]`).length) {
+                                    const safeName = String(d.nama_barang || '(barang tidak dikenal)').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                                    $barangSelect.append(`<option value="${ownValue}">${safeName}</option>`);
+                                }
+                                $barangSelect.val(ownValue);
 
                                 initBarangSelect2($barangSelect);
 

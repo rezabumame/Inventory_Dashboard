@@ -149,10 +149,6 @@ switch ($page) {
         include 'views/inventory/pemakaian_bhp_list.php';
         break;
 
-    case 'bhp_lokal':
-        include 'views/inventory/bhp_lokal.php';
-        break;
-
     case 'monthly_summary':
         include 'views/laporan/monthly_summary.php';
         break;

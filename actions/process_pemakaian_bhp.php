@@ -232,7 +232,7 @@ try {
                         throw new Exception("Belum ada perubahan item. Pilih minimal 1 operasi Tambah, Ubah, atau Hapus.");
                     }
 
-                    $stmt_old_items = $conn->prepare("SELECT id, barang_id, is_lokal, qty, satuan, catatan_item FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+                    $stmt_old_items = $conn->prepare("SELECT id, barang_id, qty, satuan, catatan_item FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
                     $stmt_old_items->bind_param("i", $edit_id);
                     $stmt_old_items->execute();
                     $old_items_res = $stmt_old_items->get_result();
@@ -263,7 +263,6 @@ try {
                             $validated_ops[] = [
                                 'op' => 'add',
                                 'barang_id' => $bid,
-                                'is_lokal' => (int)($op['is_lokal'] ?? 0),
                                 'qty' => $qty_op,
                                 'satuan' => $satuan_op,
                                 'uom_mode' => trim((string)($op['uom_mode'] ?? 'oper')),
@@ -283,7 +282,6 @@ try {
                                 'detail_id' => $detail_id,
                                 'before' => [
                                     'barang_id' => (int)$before['barang_id'],
-                                    'is_lokal' => (int)($before['is_lokal'] ?? 0),
                                     'qty' => (float)$before['qty'],
                                     'satuan' => (string)$before['satuan'],
                                     'catatan_item' => (string)($before['catatan_item'] ?? '')
@@ -307,14 +305,12 @@ try {
                             'detail_id' => $detail_id,
                             'before' => [
                                 'barang_id' => (int)$before['barang_id'],
-                                'is_lokal' => (int)($before['is_lokal'] ?? 0),
                                 'qty' => (float)$before['qty'],
                                 'satuan' => (string)$before['satuan'],
                                 'catatan_item' => (string)($before['catatan_item'] ?? '')
                             ],
                             'after' => [
                                 'barang_id' => $new_bid,
-                                'is_lokal' => (int)($op['is_lokal'] ?? (int)($before['is_lokal'] ?? 0)),
                                 'qty' => $new_qty,
                                 'satuan' => $new_satuan,
                                 'catatan_item' => (string)($op['catatan_item'] ?? '')
@@ -339,7 +335,7 @@ try {
                         if ($vop['op'] === 'add') {
                             $qty_add = (float)$vop['qty'];
                             $uom_mode_add = trim((string)($vop['uom_mode'] ?? 'oper'));
-                            if ($uom_mode_add === 'odoo' && !(int)($vop['is_lokal'] ?? 0)) {
+                            if ($uom_mode_add === 'odoo') {
                                 $stmt_ratio_add = $conn->prepare("SELECT COALESCE(uc.multiplier, 1) AS ratio FROM inventory_barang b LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang WHERE b.id = ? LIMIT 1");
                                 $stmt_ratio_add->bind_param("i", $vop['barang_id']);
                                 $stmt_ratio_add->execute();
@@ -351,7 +347,6 @@ try {
                                 'barang_id' => (int)$vop['barang_id'],
                                 'qty' => $qty_add,
                                 'satuan' => $vop['satuan'],
-                                'is_lokal' => (int)($vop['is_lokal'] ?? 0),
                                 'catatan_item' => $vop['catatan_item'] ?? ''
                             ];
                         } elseif ($vop['op'] === 'remove') {
@@ -360,7 +355,6 @@ try {
                                 'barang_id' => (int)$before['barang_id'],
                                 'qty' => -(float)$before['qty'],
                                 'satuan' => (string)$before['satuan'],
-                                'is_lokal' => (int)($before['is_lokal'] ?? 0),
                                 'catatan_item' => trim((string)($before['catatan_item'] ?? '')) . ' (removed)'
                             ];
                         } elseif ($vop['op'] === 'update') {
@@ -374,7 +368,6 @@ try {
                                         'barang_id' => (int)$after['barang_id'],
                                         'qty' => $delta_qty,
                                         'satuan' => (string)$after['satuan'],
-                                        'is_lokal' => (int)($after['is_lokal'] ?? 0),
                                         'catatan_item' => $after['catatan_item'] ?? ''
                                     ];
                                 }
@@ -384,14 +377,12 @@ try {
                                     'barang_id' => (int)$before['barang_id'],
                                     'qty' => -(float)$before['qty'],
                                     'satuan' => (string)$before['satuan'],
-                                    'is_lokal' => (int)($before['is_lokal'] ?? 0),
                                     'catatan_item' => trim((string)($before['catatan_item'] ?? '')) . ' (removed)'
                                 ];
                                 $delta_items[] = [
                                     'barang_id' => (int)$after['barang_id'],
                                     'qty' => (float)$after['qty'],
                                     'satuan' => (string)$after['satuan'],
-                                    'is_lokal' => (int)($after['is_lokal'] ?? 0),
                                     'catatan_item' => $after['catatan_item'] ?? ''
                                 ];
                             }
@@ -437,15 +428,14 @@ try {
                     // Insert details for the revision record (now storing DELTAS as requested by user)
                     foreach ($delta_items as $d_it) {
                         $bid = (int)($d_it['barang_id'] ?? 0);
-                        $is_lokal_d = (int)($d_it['is_lokal'] ?? 0);
                         $qty_delta = (float)($d_it['qty'] ?? 0);
                         $sat_it = (string)($d_it['satuan'] ?? '');
                         $cat_it = (string)($d_it['catatan_item'] ?? '');
-                        
+
                         if ($bid <= 0 || abs($qty_delta) < 0.000001) continue;
 
-                        $stmt_det = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, is_lokal, qty, satuan, catatan_item) VALUES (?, ?, ?, ?, ?, ?)");
-                        $stmt_det->bind_param("iiidss", $new_rev_id, $bid, $is_lokal_d, $qty_delta, $sat_it, $cat_it);
+                        $stmt_det = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan, catatan_item) VALUES (?, ?, ?, ?, ?)");
+                        $stmt_det->bind_param("iidss", $new_rev_id, $bid, $qty_delta, $sat_it, $cat_it);
                         $stmt_det->execute();
                     }
                     
@@ -462,7 +452,7 @@ try {
         }
 
         // 2. Reverse stock for old items
-        $stmt = $conn->prepare("SELECT barang_id, is_lokal, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+        $stmt = $conn->prepare("SELECT barang_id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
         $stmt->bind_param("i", $edit_id);
         $stmt->execute();
         $old_details = $stmt->get_result();
@@ -470,23 +460,8 @@ try {
         while ($old_item = $old_details->fetch_assoc()) {
             $obid = (int)$old_item['barang_id'];
             $oqty = (float)$old_item['qty'];
-            $is_lokal = (int)($old_item['is_lokal'] ?? 0);
 
-            if ($is_lokal) {
-                // Return to Local Stock (baris bisa saja belum ada — pastikan ada dulu)
-                $conn->query("INSERT IGNORE INTO inventory_stok_lokal (barang_lokal_id, klinik_id, qty) VALUES ($obid, " . (int)$old_header['klinik_id'] . ", 0)");
-                $stmt_upd = $conn->prepare("UPDATE inventory_stok_lokal SET qty = qty + ? WHERE barang_lokal_id = ? AND klinik_id = ?");
-                $stmt_upd->bind_param("dii", $oqty, $obid, $old_header['klinik_id']);
-                $stmt_upd->execute();
-
-                // Log history reversal
-                $stmt_hist = $conn->prepare("INSERT INTO inventory_history_lokal (barang_lokal_id, klinik_id, tipe, qty_sebelum, qty_perubahan, qty_sesudah, keterangan, created_by)
-                    SELECT ?, ?, 'tambah', qty - ?, ?, qty, ?, ? FROM inventory_stok_lokal WHERE barang_lokal_id = ? AND klinik_id = ?");
-                $ket = "Reversal Pemakaian (Edit/Delete) " . $old_header['nomor_pemakaian'];
-                $stmt_hist->bind_param("idddisii", $obid, $old_header['klinik_id'], $oqty, $oqty, $ket, $created_by, $obid, $old_header['klinik_id']);
-                $stmt_hist->execute();
-
-            } elseif ($old_header['jenis_pemakaian'] === 'hc' && !empty($old_header['user_hc_id'])) {
+            if ($old_header['jenis_pemakaian'] === 'hc' && !empty($old_header['user_hc_id'])) {
                 // Return to HC Bag (upsert — baris tas HC bisa sudah terhapus, mis. qty pernah 0)
                 $old_uid = (int)$old_header['user_hc_id'];
                 $stmt_upd = $conn->prepare("INSERT INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty, updated_by, updated_at)
@@ -508,7 +483,7 @@ try {
         // Must happen before the DELETE in step 3 — querying after delete always returns empty,
         // which previously caused untouched items to be silently dropped on partial edits.
         $orig_items_map = [];
-        $stmt_orig = $conn->prepare("SELECT id, barang_id, is_lokal, qty, satuan, catatan_item FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
+        $stmt_orig = $conn->prepare("SELECT id, barang_id, qty, satuan, catatan_item FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
         $stmt_orig->bind_param("i", $edit_id);
         $stmt_orig->execute();
         $res_orig = $stmt_orig->get_result();
@@ -564,7 +539,6 @@ try {
                         'barang_id' => $op['barang_id'],
                         'qty' => $op['qty'],
                         'satuan' => $op['satuan'],
-                        'is_lokal' => (int)($op['is_lokal'] ?? 0),
                         'uom_mode' => trim((string)($op['uom_mode'] ?? 'oper')),
                         'catatan_item' => $op['catatan_item'] ?? ''
                     ];
@@ -573,7 +547,6 @@ try {
                         'barang_id' => $op['barang_id'],
                         'qty' => $op['qty'],
                         'satuan' => $op['satuan'],
-                        'is_lokal' => (int)($op['is_lokal'] ?? 0),
                         'uom_mode' => 'oper',
                         'catatan_item' => $op['catatan_item'] ?? ''
                     ];
@@ -587,7 +560,6 @@ try {
                         'barang_id' => (int)$orig['barang_id'],
                         'qty' => (float)$orig['qty'],
                         'satuan' => (string)$orig['satuan'],
-                        'is_lokal' => (int)($orig['is_lokal'] ?? 0),
                         'uom_mode' => 'oper',
                         'catatan_item' => (string)($orig['catatan_item'] ?? '')
                     ];
@@ -736,7 +708,6 @@ try {
         $barang_id = $item['barang_id'] ?? null;
         $qty_in = (float)($item['qty'] ?? 0);
         $uom_mode = trim((string)($item['uom_mode'] ?? 'oper'));
-        $is_lokal = (int)($item['is_lokal'] ?? 0);
         $qty = $qty_in;
         $satuan = $item['satuan'] ?? '';
         $catatan_item = $item['catatan_item'] ?? null;
@@ -747,48 +718,35 @@ try {
 
         $barang_id = (int)$barang_id;
 
-        if ($is_lokal) {
-            $stmt_l = $conn->prepare("SELECT nama_item, uom FROM inventory_barang_lokal WHERE id = ? LIMIT 1");
-            $stmt_l->bind_param("i", $barang_id);
-            $stmt_l->execute();
-            $rl = $stmt_l->get_result()->fetch_assoc();
-            if (!$rl) throw new Exception("Barang lokal tidak ditemukan: ID " . $barang_id);
-            $satuan = $rl['uom'];
-            $ratio = 1.0;
-        } else {
-            $stmt_u = $conn->prepare("
-                SELECT
-                    COALESCE(NULLIF(uc.to_uom, ''), b.satuan) AS satuan,
-                    COALESCE(NULLIF(uc.from_uom, ''), '') AS uom_odoo,
-                    COALESCE(uc.multiplier, 1) AS uom_ratio
-                FROM inventory_barang b
-                LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
-                WHERE b.id = ?
-                LIMIT 1
-            ");
-            $stmt_u->bind_param("i", $barang_id);
-            $stmt_u->execute();
-            $r_u = $stmt_u->get_result();
-            $ratio = 1.0;
-            if ($r_u && $r_u->num_rows > 0) {
-                $u = $r_u->fetch_assoc();
-                $satuan = (string)($u['satuan'] ?? '');
-                $ratio = (float)($u['uom_ratio'] ?? 1);
-            }
-            if ($ratio <= 0) $ratio = 1;
+        $stmt_u = $conn->prepare("
+            SELECT
+                COALESCE(NULLIF(uc.to_uom, ''), b.satuan) AS satuan,
+                COALESCE(NULLIF(uc.from_uom, ''), '') AS uom_odoo,
+                COALESCE(uc.multiplier, 1) AS uom_ratio
+            FROM inventory_barang b
+            LEFT JOIN inventory_barang_uom_conversion uc ON uc.kode_barang = b.kode_barang
+            WHERE b.id = ?
+            LIMIT 1
+        ");
+        $stmt_u->bind_param("i", $barang_id);
+        $stmt_u->execute();
+        $r_u = $stmt_u->get_result();
+        $ratio = 1.0;
+        if ($r_u && $r_u->num_rows > 0) {
+            $u = $r_u->fetch_assoc();
+            $satuan = (string)($u['satuan'] ?? '');
+            $ratio = (float)($u['uom_ratio'] ?? 1);
         }
+        if ($ratio <= 0) $ratio = 1;
 
-        if ($uom_mode === 'odoo' && !$is_lokal) {
+        if ($uom_mode === 'odoo') {
             $qty = $qty_in / $ratio;
         } else {
             $qty = $qty_in;
         }
 
         // --- RACE CONDITION FIX: LOCK THE STOCK ROW ---
-        if ($is_lokal) {
-            $conn->query("INSERT IGNORE INTO inventory_stok_lokal (barang_lokal_id, klinik_id, qty) VALUES ($barang_id, $klinik_id, 0)");
-            $conn->query("SELECT qty FROM inventory_stok_lokal WHERE barang_lokal_id = $barang_id AND klinik_id = $klinik_id FOR UPDATE");
-        } elseif ($jenis_pemakaian === 'hc') {
+        if ($jenis_pemakaian === 'hc') {
             $uid = (int)$user_hc_id;
             $conn->query("INSERT IGNORE INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty) VALUES ($barang_id, $uid, $klinik_id, 0)");
             $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = $barang_id AND user_id = $uid AND klinik_id = $klinik_id FOR UPDATE");
@@ -799,11 +757,11 @@ try {
 
         // Insert detail
         $stmt = $conn->prepare("
-            INSERT INTO inventory_pemakaian_bhp_detail 
-            (pemakaian_bhp_id, barang_id, is_lokal, qty, satuan, catatan_item) 
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO inventory_pemakaian_bhp_detail
+            (pemakaian_bhp_id, barang_id, qty, satuan, catatan_item)
+            VALUES (?, ?, ?, ?, ?)
         ");
-        $stmt->bind_param("iiidss", $pemakaian_id, $barang_id, $is_lokal, $qty, $satuan, $catatan_item);
+        $stmt->bind_param("iidss", $pemakaian_id, $barang_id, $qty, $satuan, $catatan_item);
         $stmt->execute();
 
         $level = ($jenis_pemakaian === 'hc') ? 'hc' : 'klinik';
@@ -846,36 +804,16 @@ try {
             $stmt_up->bind_param("diiii", $q, $created_by, $barang_id, $uid, $klinik_id);
             $stmt_up->execute();
 
-        } elseif ($jenis_pemakaian === 'klinik' && !$is_lokal) {
+        } elseif ($jenis_pemakaian === 'klinik') {
             // Potong stok klinik
             $stmt = $conn->prepare("
-                UPDATE inventory_stok_gudang_klinik 
-                SET qty = qty - ?, updated_by = ?, updated_at = NOW() 
+                UPDATE inventory_stok_gudang_klinik
+                SET qty = qty - ?, updated_by = ?, updated_at = NOW()
                 WHERE barang_id = ? AND klinik_id = ?
             ");
             $q = (float)$qty;
             $stmt->bind_param("diii", $q, $created_by, $barang_id, $klinik_id);
             $stmt->execute();
-
-        } elseif ($is_lokal) {
-            // Potong stok lokal (selalu di level klinik, tidak ada tas HC untuk barang lokal saat ini)
-            // Ambil stok sebelum untuk history
-            $stmt_get = $conn->prepare("SELECT qty FROM inventory_stok_lokal WHERE barang_lokal_id = ? AND klinik_id = ?");
-            $stmt_get->bind_param("ii", $barang_id, $klinik_id);
-            $stmt_get->execute();
-            $qty_sebelum = (float)($stmt_get->get_result()->fetch_assoc()['qty'] ?? 0);
-            $qty_sesudah = $qty_sebelum - $qty;
-
-            $stmt_up = $conn->prepare("UPDATE inventory_stok_lokal SET qty = qty - ? WHERE barang_lokal_id = ? AND klinik_id = ?");
-            $stmt_up->bind_param("dii", $qty, $barang_id, $klinik_id);
-            $stmt_up->execute();
-
-            // Record local history
-            $stmt_hist = $conn->prepare("INSERT INTO inventory_history_lokal (barang_lokal_id, klinik_id, tipe, qty_sebelum, qty_perubahan, qty_sesudah, keterangan, created_by) VALUES (?, ?, 'pakai', ?, ?, ?, ?, ?)");
-            $ket = "Pemakaian " . $nomor_pemakaian;
-            if (!empty($catatan_item)) $ket .= " - " . $catatan_item;
-            $stmt_hist->bind_param("idddssi", $barang_id, $klinik_id, $qty_sebelum, $qty, $qty_sesudah, $ket, $created_by);
-            $stmt_hist->execute();
         }
     }
 
