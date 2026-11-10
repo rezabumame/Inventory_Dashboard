@@ -1,12 +1,19 @@
+# Keep VCS metadata, secrets, and local junk out of the image
 .git
 .gitignore
+.env
+*.log
+.DS_Store
+.vscode/
+.idea/
+.trae/
+bumame-credentials.json
+
+# Not needed inside the image build context
 node_modules
 vendor
 .claude
 .agents
 scratch
-*.log
-.env
-.env.*
 uploads
 database_schema.sql
