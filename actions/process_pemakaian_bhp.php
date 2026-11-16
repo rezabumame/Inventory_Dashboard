@@ -4,6 +4,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../lib/counter.php';
 require_once __DIR__ . '/../lib/stock.php';
+require_once __DIR__ . '/../lib/bhp_history.php';
 
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
@@ -451,6 +452,8 @@ try {
             }
         }
 
+        $history_before = bhp_history_snapshot($conn, (int)$edit_id);
+
         // 2. Reverse stock for old items
         $stmt = $conn->prepare("SELECT barang_id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
         $stmt->bind_param("i", $edit_id);
@@ -496,10 +499,23 @@ try {
         $stmt->bind_param("i", $edit_id);
         $stmt->execute();
 
-        // 3b. Delete old transaction records
-        $stmt = $conn->prepare("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = ?");
-        $stmt->bind_param("i", $edit_id);
-        $stmt->execute();
+        // 3b. Ledger (inventory_transaksi_stok). Kalau klinik/jenis/petugas HC tidak berubah, ledger lama
+        // DIPERTAHANKAN dan edit cukup mencatat SELISIH per barang (lihat setelah loop item) -- supaya
+        // histori sebelumnya (mis. run Auto Sync API) tidak hilang. Kalau level stoknya pindah, ledger
+        // lama ada di level yang salah, jadi tetap dihapus & ditulis ulang penuh seperti sebelumnya.
+        $ledger_delta_mode = ((string)$old_header['jenis_pemakaian'] === (string)$jenis_pemakaian)
+            && ((int)$old_header['klinik_id'] === (int)$klinik_id)
+            && ((int)($old_header['user_hc_id'] ?? 0) === (int)($user_hc_id ?? 0));
+        $ledger_old_totals = [];
+        foreach ($orig_items_map as $oi) {
+            $ob = (int)$oi['barang_id'];
+            $ledger_old_totals[$ob] = ($ledger_old_totals[$ob] ?? 0) + (float)$oi['qty'];
+        }
+        if (!$ledger_delta_mode) {
+            $stmt = $conn->prepare("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = ?");
+            $stmt->bind_param("i", $edit_id);
+            $stmt->execute();
+        }
 
         // Update header
         $tanggal_date = date('Y-m-d', strtotime($tanggal));
@@ -690,9 +706,11 @@ try {
         $tgl_like  = $date_only . '%';
         $stmt_find_auto = $conn->prepare("
             SELECT id FROM inventory_pemakaian_bhp
-            WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal LIKE ?
+            WHERE klinik_id = ? AND jenis_pemakaian IN (?, ?) AND is_auto = 1 AND tanggal LIKE ?
         ");
-        $stmt_find_auto->bind_param("iss", $klinik_id, $jenis_pemakaian, $tgl_like);
+        // BHP-AUT dari booking "Selesai" bisa tersimpan sebagai 'clinic' -- cocokkan dua-duanya.
+        $jenis_alt = $jenis_pemakaian === 'klinik' ? 'clinic' : $jenis_pemakaian;
+        $stmt_find_auto->bind_param("isss", $klinik_id, $jenis_pemakaian, $jenis_alt, $tgl_like);
         $stmt_find_auto->execute();
         $res_auto = $stmt_find_auto->get_result();
         while ($row_auto = $res_auto->fetch_assoc()) {
@@ -764,6 +782,9 @@ try {
         $stmt->bind_param("iidss", $pemakaian_id, $barang_id, $qty, $satuan, $catatan_item);
         $stmt->execute();
 
+        $ledger_new_totals[$barang_id] = ($ledger_new_totals[$barang_id] ?? 0) + (float)$qty;
+        $skip_ledger_row = $edit_id && !empty($ledger_delta_mode);
+
         $level = ($jenis_pemakaian === 'hc') ? 'hc' : 'klinik';
         $level_id = ($level === 'hc') ? (int)$user_hc_id : (int)$klinik_id;
         $eff = stock_effective($conn, (int)$klinik_id, $level === 'hc', (int)$barang_id);
@@ -795,7 +816,7 @@ try {
             $created_by,
             $created_at
         );
-        $stmt_trans->execute();
+        if (!$skip_ledger_row) $stmt_trans->execute();
 
         if ($jenis_pemakaian === 'hc') {
             $uid = (int)$user_hc_id;
@@ -814,6 +835,45 @@ try {
             $q = (float)$qty;
             $stmt->bind_param("diii", $q, $created_by, $barang_id, $klinik_id);
             $stmt->execute();
+        }
+    }
+
+    // Edit dgn ledger dipertahankan: catat hanya selisih qty per barang (out = pemakaian naik,
+    // in = pemakaian turun). Stok fisik sudah benar dari reverse-semua + potong-semua di atas.
+    if ($edit_id && !empty($ledger_delta_mode)) {
+        $level = ($jenis_pemakaian === 'hc') ? 'hc' : 'klinik';
+        $level_id = ($level === 'hc') ? (int)$user_hc_id : (int)$klinik_id;
+        $ref_type = 'pemakaian_bhp';
+        $ref_id = (int)$edit_id;
+        $catatan = "BHP " . $nomor_pemakaian . " - Edit manual";
+        $created_at = date('Y-m-d H:i:s');
+        $all_bids = array_unique(array_merge(array_keys($ledger_old_totals), array_keys($ledger_new_totals ?? [])));
+        foreach ($all_bids as $bid) {
+            $delta = (float)(($ledger_new_totals[$bid] ?? 0) - ($ledger_old_totals[$bid] ?? 0));
+            if (abs($delta) < 0.000001) continue;
+            $eff = stock_effective($conn, (int)$klinik_id, $level === 'hc', (int)$bid);
+            $qty_after = $eff['ok'] ? (float)($eff['on_hand'] ?? 0) : 0.0;
+            $qty_before = $qty_after + $delta;
+            $tipe = $delta > 0 ? 'out' : 'in';
+            $qty_abs = abs($delta);
+            $bid_i = (int)$bid;
+            $stmt_dl = $conn->prepare("
+                INSERT INTO inventory_transaksi_stok
+                (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt_dl->bind_param("isisdddsisis", $bid_i, $level, $level_id, $tipe, $qty_abs, $qty_before, $qty_after, $ref_type, $ref_id, $catatan, $created_by, $created_at);
+            $stmt_dl->execute();
+        }
+    }
+
+    if ($edit_id && !empty($history_before)) {
+        $history_after = bhp_history_snapshot($conn, (int)$edit_id);
+        if ($history_after) {
+            $diff = bhp_history_diff($history_before, $history_after);
+            $n_changes = count($diff['fields']) + count($diff['items']);
+            $notes = $n_changes > 0 ? "Edit manual ({$n_changes} perubahan):" : 'Edit manual (tidak ada perubahan data).';
+            bhp_history_log($conn, (int)$edit_id, (string)$nomor_pemakaian, 'edit', $notes, $diff);
         }
     }
 

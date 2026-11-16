@@ -2079,15 +2079,28 @@ if ($default_modal_klinik_id) {
                         'create': '<span class="badge bg-light text-dark fw-normal border ms-1 x-small">create</span>',
                         'approve': '<span class="badge bg-success-subtle text-success border border-success-subtle ms-1 x-small">approve</span>',
                         'reject': '<span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1 x-small">reject</span>',
-                        'stok': '<span class="badge bg-light text-dark fw-normal border ms-1 x-small">stok</span>'
+                        'stok': '<span class="badge bg-light text-dark fw-normal border ms-1 x-small">stok</span>',
+                        'edit': '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 x-small">edit</span>',
+                        'request_delete': '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 x-small">ajukan hapus</span>',
+                        'delete': '<span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1 x-small">hapus</span>'
                     };
                     var esc = function (s) { return $('<div>').text(s || '').html(); };
                     var html = '<div class="px-2 pt-2">';
                     res.data.forEach(function (item) {
                         var badge = actionBadge[item.action] || '';
                         var itemsHtml = '';
+                        if (item.fields && item.fields.length) {
+                            itemsHtml += '<div class="history-item-list mt-1">';
+                            item.fields.forEach(function (f) {
+                                itemsHtml += '<div class="history-item-row">' +
+                                    '<span class="history-item-name">' + esc(f.label) + '</span>' +
+                                    '<span class="history-item-right"><span class="history-item-ba">' + esc(f.before) + ' &rarr; ' + esc(f.after) + '</span></span>' +
+                                    '</div>';
+                            });
+                            itemsHtml += '</div>';
+                        }
                         if (item.items && item.items.length) {
-                            itemsHtml = '<div class="history-item-list mt-1">';
+                            itemsHtml += '<div class="history-item-list mt-1">';
                             item.items.forEach(function (it) {
                                 var isPlus = it.label.indexOf('+') === 0;
                                 var beforeAfter = (it.before !== undefined && it.after !== undefined)

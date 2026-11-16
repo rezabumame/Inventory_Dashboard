@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../lib/stock.php';
+require_once __DIR__ . '/../lib/bhp_history.php';
 
 header('Content-Type: application/json');
 
@@ -122,6 +123,17 @@ try {
             $klinik_id = $header['klinik_id'];
             $user_hc_id = $header['user_hc_id'];
 
+            $snap = bhp_history_snapshot($conn, $id);
+            if ($snap) {
+                $notes = 'Penghapusan disetujui SPV, record dihapus (' . count($snap['items']) . ' item, stok dikembalikan).';
+                if (!empty($header['approval_reason'])) $notes .= ' Alasan pengajuan: ' . $header['approval_reason'];
+                bhp_history_log($conn, $id, $snap['nomor'], 'delete', $notes, [
+                    'fields' => [],
+                    'items' => bhp_history_items_removed($snap),
+                    'snapshot' => $snap['fields'],
+                ]);
+            }
+
             $stmt_d = $conn->prepare("SELECT barang_id, qty FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = ?");
             $stmt_d->bind_param("i", $id);
             exec_or_throw($stmt_d, 'Fetch details');
@@ -189,6 +201,7 @@ try {
                 $klinik_id_ctx = (int)$original_header['klinik_id'];
                 $user_hc_id_ctx = (int)$original_header['user_hc_id'];
                 $original_nomor_ctx = $original_header['nomor_pemakaian'];
+                $history_before = bhp_history_snapshot($conn, (int)$parent_id);
 
                 // Apply deltas to stock
                 foreach ($delta_items as $delta_item) {
@@ -346,6 +359,14 @@ try {
                 $stmt_upd = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'active', spv_approved_by = ?, spv_approved_at = NOW(), created_at = ? WHERE id = ?");
                 $stmt_upd->bind_param("isi", $user_id, $now_val, $id);
                 exec_or_throw($stmt_upd, 'Mark revision as active');
+
+                $history_after = bhp_history_snapshot($conn, (int)$parent_id);
+                if ($history_before && $history_after) {
+                    $diff = bhp_history_diff($history_before, $history_after);
+                    $notes = 'Revisi ' . $header['nomor_pemakaian'] . ' disetujui SPV';
+                    if (!empty($header['approval_reason'])) $notes .= ' (alasan: ' . $header['approval_reason'] . ')';
+                    bhp_history_log($conn, (int)$parent_id, (string)$original_nomor_ctx, 'edit', $notes . ':', $diff);
+                }
 
                 $msg = "Revisi " . $header['nomor_pemakaian'] . " telah disetujui dan delta perubahan telah diterapkan.";
             } else {
@@ -551,8 +572,10 @@ try {
             // Cleanup BHP-AUT untuk tanggal & jenis yang sama setelah approval
             $date_only = date('Y-m-d', strtotime($tanggal));
             $tgl_like   = $date_only . '%';
-            $stmt_find_auto = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal LIKE ?");
-            $stmt_find_auto->bind_param("iss", $kid, $jenis_pemakaian, $tgl_like);
+            // BHP-AUT dari booking "Selesai" bisa tersimpan sebagai 'clinic' -- cocokkan dua-duanya.
+            $jenis_alt = $jenis_pemakaian === 'klinik' ? 'clinic' : $jenis_pemakaian;
+            $stmt_find_auto = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian IN (?, ?) AND is_auto = 1 AND tanggal LIKE ?");
+            $stmt_find_auto->bind_param("isss", $kid, $jenis_pemakaian, $jenis_alt, $tgl_like);
             $stmt_find_auto->execute();
             $res_auto = $stmt_find_auto->get_result();
             while ($row_auto = $res_auto->fetch_assoc()) {

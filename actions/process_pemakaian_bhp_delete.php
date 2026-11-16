@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../lib/bhp_history.php';
 
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
@@ -76,7 +77,10 @@ try {
                 $stmt = $conn->prepare("UPDATE inventory_pemakaian_bhp SET status = 'pending_delete', approval_reason = ? WHERE id = ?");
                 $stmt->bind_param("si", $reason, $id);
                 $stmt->execute();
-                
+
+                bhp_history_log($conn, $id, (string)$header['nomor_pemakaian'], 'request_delete',
+                    'Mengajukan penghapusan ke SPV. Alasan: ' . $reason);
+
                 $conn->commit();
                 echo json_encode(['success' => true, 'message' => 'Permintaan penghapusan telah dikirim ke SPV Klinik']);
                 exit;
@@ -97,6 +101,17 @@ try {
     $got_lock = (int)($rl && $rl->num_rows > 0 ? ($rl->fetch_assoc()['got'] ?? 0) : 0);
     if ($got_lock !== 1) {
         throw new Exception('Sistem sedang memproses stok klinik ini. Coba lagi sebentar.');
+    }
+
+    $snap = bhp_history_snapshot($conn, $id);
+    if ($snap) {
+        $notes = 'Record dihapus (' . count($snap['items']) . ' item, stok dikembalikan).';
+        if ($reason !== '') $notes .= ' Alasan: ' . $reason;
+        bhp_history_log($conn, $id, $snap['nomor'], 'delete', $notes, [
+            'fields' => [],
+            'items' => bhp_history_items_removed($snap),
+            'snapshot' => $snap['fields'],
+        ]);
     }
 
     // 2. Reverse stock before deleting details

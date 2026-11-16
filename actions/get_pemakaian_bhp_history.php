@@ -36,8 +36,35 @@ $stmt_h = $conn->prepare("
 $stmt_h->bind_param("i", $id);
 $stmt_h->execute();
 $header = $stmt_h->get_result()->fetch_assoc();
+
+// Log edit manual / hapus (lib/bhp_history.php). Tetap ada walau record-nya sudah dihapus.
+$log_events = [];
+try {
+    $stmt_l = $conn->prepare("SELECT * FROM inventory_pemakaian_bhp_history WHERE pemakaian_bhp_id = ? ORDER BY created_at ASC, id ASC");
+    $stmt_l->bind_param("i", $id);
+    $stmt_l->execute();
+    $res_l = $stmt_l->get_result();
+    while ($l = $res_l->fetch_assoc()) {
+        $changes = json_decode((string)$l['changes'], true) ?: [];
+        $log_events[] = [
+            'created_at' => $l['created_at'],
+            'user_name' => $l['user_name'] ?: 'Sistem',
+            'action' => $l['action'],
+            'notes' => $l['notes'],
+            'fields' => $changes['fields'] ?? [],
+            'items' => $changes['items'] ?? [],
+        ];
+    }
+} catch (Throwable $e) {
+    // tabel log belum dimigrasi -- tampilkan histori lama saja
+}
+
 if (!$header) {
-    echo json_encode(['success' => false, 'message' => 'Data tidak ditemukan']);
+    if (empty($log_events)) {
+        echo json_encode(['success' => false, 'message' => 'Data tidak ditemukan']);
+        exit;
+    }
+    echo json_encode(['success' => true, 'data' => array_reverse($log_events)]);
     exit;
 }
 
@@ -124,8 +151,20 @@ while ($row = $res_t->fetch_assoc()) {
 
 // $runs sudah dalam urutan kronologis (sesuai query ORDER BY created_at ASC), jadi akumulasi
 // per item berjalan maju di sini -- dipakai utk tampilkan "qty sebelum -> qty sesudah".
+// Run manual di menit yang sama dengan log 'edit' adalah baris ledger hasil edit itu sendiri
+// (selisih, atau tulis ulang penuh utk data lama) -- sudah diwakili entri edit, jadi tidak
+// ditampilkan dobel. Tapi tetap dihitung ke akumulasi supaya before->after run berikutnya benar.
+$edit_minutes = [];
+foreach ($log_events as $le) {
+    if ($le['action'] === 'edit') $edit_minutes[date('Y-m-d H:i', strtotime($le['created_at']))] = true;
+}
+
 $cumulative = [];
 foreach ($runs as $run) {
+    if (!$run['is_auto_run'] && isset($edit_minutes[date('Y-m-d H:i', strtotime($run['created_at']))])) {
+        foreach ($run['item_totals'] as $nama => $net) $cumulative[$nama] = ($cumulative[$nama] ?? 0) + $net;
+        continue;
+    }
     $label = $run['is_auto_run'] ? 'Sync otomatis' : 'Perubahan stok';
     $items_out = [];
     foreach ($run['item_totals'] as $nama => $net) {
@@ -150,6 +189,51 @@ foreach ($runs as $run) {
         'items' => $items_out,
     ];
 }
+
+// Edit manual menghapus seluruh ledger lama record ini, jadi entri stok sebelum edit pertama
+// (mis. hasil sync API saat record dibuat) ikut hilang. Rekonstruksi kondisi item awal:
+// mulai dari item SAAT INI, lalu mundurkan setiap log edit (terbaru -> terlama) pakai nilai "before".
+$edit_logs = array_values(array_filter($log_events, fn($le) => $le['action'] === 'edit'));
+if (!empty($edit_logs)) {
+    $first_edit_ts = strtotime($edit_logs[0]['created_at']);
+    $has_stok_before_edit = false;
+    foreach ($events as $ev) {
+        if ($ev['action'] === 'stok' && strtotime($ev['created_at']) < $first_edit_ts) { $has_stok_before_edit = true; break; }
+    }
+
+    if (!$has_stok_before_edit) {
+        require_once __DIR__ . '/../lib/bhp_history.php';
+        $snap_now = bhp_history_snapshot($conn, $id);
+        $state = [];
+        foreach (($snap_now['items'] ?? []) as $nama => $it) $state[$nama] = (float)$it['qty'];
+        foreach (array_reverse($edit_logs) as $le) {
+            foreach ($le['items'] as $it) $state[$it['nama']] = (float)$it['before'];
+        }
+        ksort($state);
+
+        $initial_items = [];
+        foreach ($state as $nama => $qty) {
+            if ($qty < 0.000001) continue;
+            $initial_items[] = [
+                'nama' => $nama,
+                'label' => '+' . fmt_qty_simple($qty),
+                'before' => '0',
+                'after' => fmt_qty_simple($qty),
+            ];
+        }
+        if (!empty($initial_items)) {
+            $events[] = [
+                'created_at' => $header['created_at'],
+                'user_name' => $creator,
+                'action' => 'stok',
+                'notes' => 'Item awal (' . count($initial_items) . ' item):',
+                'items' => $initial_items,
+            ];
+        }
+    }
+}
+
+$events = array_merge($events, $log_events);
 
 usort($events, function ($a, $b) {
     return strtotime($a['created_at']) <=> strtotime($b['created_at']);

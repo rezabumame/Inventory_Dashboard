@@ -646,11 +646,20 @@ foreach ($groups as $g) {
         // manual/Excel upload (lihat process_pemakaian_bhp.php "Step 2: Comprehensive cleanup
         // by date + jenis"). SENGAJA tidak membalikkan stok di sini -- ini cuma meniru pola
         // yang sudah terbukti aman di jalur lain, bukan logic baru.
-        if ($touched > 0) {
+        // Cukup ada data sync (baris tidak dibatalkan) utk klinik+tanggal+jenis ini -- tidak perlu
+        // ada nomor BHP baru / baris berubah. Sync ulang data yang sama tetap membersihkan estimasi.
+        // BHP-AUT dari tombol "Selesai" booking menyimpan jenis 'clinic' (bukan 'klinik'), jadi
+        // dua-duanya dicocokkan.
+        $has_real_rows = false;
+        foreach ($g['rows'] as $vr_chk) {
+            if (empty($vr_chk['is_deleted'])) { $has_real_rows = true; break; }
+        }
+        if ($has_real_rows) {
             $date_only = date('Y-m-d', strtotime($tanggal));
             $tgl_like = $date_only . '%';
-            $stmt_find_auto = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian = ? AND is_auto = 1 AND tanggal LIKE ?");
-            $stmt_find_auto->bind_param("iss", $klinik_id, $jenis, $tgl_like);
+            $jenis_alt = $jenis === 'klinik' ? 'clinic' : $jenis;
+            $stmt_find_auto = $conn->prepare("SELECT id FROM inventory_pemakaian_bhp WHERE klinik_id = ? AND jenis_pemakaian IN (?, ?) AND is_auto = 1 AND tanggal LIKE ?");
+            $stmt_find_auto->bind_param("isss", $klinik_id, $jenis, $jenis_alt, $tgl_like);
             $stmt_find_auto->execute();
             $res_auto = $stmt_find_auto->get_result();
             while ($row_auto = $res_auto->fetch_assoc()) {

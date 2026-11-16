@@ -515,6 +515,26 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
     });
 
+    // Audit log edit manual / hapus Pemakaian BHP (lib/bhp_history.php). Tidak ada FK ke
+    // inventory_pemakaian_bhp supaya log hapus tetap ada setelah record-nya dihapus.
+    run_migration_task("Table: inventory_pemakaian_bhp_history", function() use ($conn) {
+        return m_ensure_table($conn, "inventory_pemakaian_bhp_history", "CREATE TABLE IF NOT EXISTS inventory_pemakaian_bhp_history (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            pemakaian_bhp_id INT NOT NULL,
+            nomor_pemakaian VARCHAR(100),
+            klinik_id INT NULL,
+            user_id INT NOT NULL,
+            user_name VARCHAR(255),
+            action VARCHAR(50),
+            notes TEXT,
+            changes LONGTEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX (pemakaian_bhp_id),
+            INDEX (action, created_at),
+            INDEX (klinik_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+    });
+
     // Integrasi otomatis BHP (n8n + Metabase) -- pemetaan admin_id sumber -> user_id kita,
     // dipakai oleh api/bhp_auto_sync.php supaya tidak perlu cocokkan nama nakes berulang tiap run.
     run_migration_task("Table: inventory_nakes_external_mapping", function() use ($conn) {
