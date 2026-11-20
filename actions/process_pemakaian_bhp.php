@@ -693,6 +693,9 @@ try {
         $ids_to_delete = array_filter(array_map('intval', explode(',', $realized_auto_ids)));
         foreach ($ids_to_delete as $temp_id) {
             if ($temp_id <= 0) continue;
+            // Pastikan ID memang BHP-AUT sebelum hapus detail/ledger, supaya BHP real tidak ikut terhapus
+            $chk_auto = $conn->query("SELECT id FROM inventory_pemakaian_bhp WHERE id = $temp_id AND is_auto = 1 LIMIT 1");
+            if (!$chk_auto || $chk_auto->num_rows === 0) continue;
             $conn->query("DELETE FROM inventory_pemakaian_bhp_detail WHERE pemakaian_bhp_id = $temp_id");
             $conn->query("DELETE FROM inventory_transaksi_stok WHERE referensi_tipe = 'pemakaian_bhp' AND referensi_id = $temp_id");
             $conn->query("DELETE FROM inventory_pemakaian_bhp WHERE id = $temp_id AND is_auto = 1");

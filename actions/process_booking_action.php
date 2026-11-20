@@ -105,133 +105,12 @@ try {
                 throw new Exception('Access denied');
             }
 
-            // 1. Ambil data booking untuk status dan klinik
-            $klinik_id = (int)$booking['klinik_id'];
-            $is_hc = (stripos($booking['status_booking'], 'HC') !== false);
-            $jenis_pemakaian = $is_hc ? 'hc' : 'klinik';
-            $created_by = (int)$_SESSION['user_id'];
-            
-            // --- NEW NUMBERING SYSTEM (EST for Auto) ---
-            $res_k = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1");
-            $k_row = $res_k->fetch_assoc();
-            $k_code_raw = $is_hc ? ($k_row['kode_homecare'] ?? 'HC') : ($k_row['kode_klinik'] ?? 'CLN');
-            $k_code = explode('/', $k_code_raw)[0]; // Strip /Stock
-            
-            $date_ym = date('ym', strtotime($booking['tanggal_pemeriksaan'] ?? date('Y-m-d')));
-            $prefix = "BHP-AUT-" . $k_code;
-            $seq = next_sequence($conn, $prefix, $date_ym);
-            $nomor_pemakaian = $prefix . "-" . $date_ym . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
-
-            // 2. Hitung total qty per barang_id dari Master Pemeriksaan (Core & Support)
-            $items_to_deduct = [];
-            
-            // Ambil semua pasien dan pemeriksaan yang ada di booking ini
-            $res_pasien = $conn->query("SELECT pemeriksaan_grup_id FROM inventory_booking_pasien WHERE booking_id = $id");
-            while ($pasien = $res_pasien->fetch_assoc()) {
-                $pid = trim((string)$pasien['pemeriksaan_grup_id']);
-                
-                // Ambil SEMUA item dari master grup (Core & Support)
-                $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$pid'");
-                while ($item = $res_items->fetch_assoc()) {
-                    $bid = (int)$item['barang_id'];
-                    $qty = (float)$item['qty_per_pemeriksaan'];
-
-                    if ($qty > 0) {
-                        $key = (string)$bid;
-                        if (!isset($items_to_deduct[$key])) {
-                            $items_to_deduct[$key] = 0;
-                        }
-                        $items_to_deduct[$key] += $qty;
-                    }
-                }
-            }
-
-            // 3. Jika ada item yang perlu didekduk, buat data pemakaian_bhp (Auto)
-            if (!empty($items_to_deduct)) {
-                $bhp_tanggal = (string)($booking['tanggal_pemeriksaan'] ?? '');
-                if ($bhp_tanggal === '') $bhp_tanggal = date('Y-m-d');
-                $bhp_tanggal .= ' 00:00:00';
-
-                $jenis_pemakaian = $is_hc ? 'hc' : 'clinic';
-
-                // Insert header
-                $stmt_h = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, catatan_transaksi, created_by, created_at, status, is_auto, booking_id) VALUES (?, ?, ?, ?, 'Auto-deduction from Booking Completed', ?, NOW(), 'active', 1, ?)");
-                $stmt_h->bind_param("sssiii", $nomor_pemakaian, $bhp_tanggal, $jenis_pemakaian, $klinik_id, $created_by, $id);
-                $stmt_h->execute();
-                $pemakaian_id = $conn->insert_id;
-
-                // Insert details and record transactions
-                $stmt_d = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan) VALUES (?, ?, ?, ?)");
-
-                // For Auto-deductions, we always deduct from the global clinic pool (level = 'klinik')
-                // and avoid assigning to a specific petugas HC until manual/Excel realization.
-                $level = 'klinik';
-                $level_id = $klinik_id;
-
-                foreach ($items_to_deduct as $key => $qty) {
-                    $bid = (int)$key;
-                    $qty = (float)$qty;
-
-                    // --- RACE CONDITION FIX: LOCK THE STOCK ROW ---
-                    if ($is_hc && $level_id !== $klinik_id) {
-                        // Lock HC Stock
-                        $conn->query("INSERT IGNORE INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty) VALUES ($bid, $level_id, $klinik_id, 0)");
-                        $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = $bid AND user_id = $level_id AND klinik_id = $klinik_id FOR UPDATE");
-                    } else {
-                        // Lock Clinic Stock
-                        $conn->query("INSERT IGNORE INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES ($bid, $klinik_id, 0)");
-                        $conn->query("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = $bid AND klinik_id = $klinik_id FOR UPDATE");
-                    }
-
-                    // Cari satuan barang
-                    $res_b = $conn->query("SELECT satuan FROM inventory_barang WHERE id = $bid LIMIT 1");
-                    $satuan = $res_b->num_rows > 0 ? $res_b->fetch_assoc()['satuan'] : 'PCS';
-
-                    $stmt_d->bind_param("iids", $pemakaian_id, $bid, $qty, $satuan);
-                    $stmt_d->execute();
-
-                    // Record Transaction for Dashboard Sellout
-                    $eff = stock_effective($conn, $klinik_id, $is_hc, $bid);
-                    $qty_before = $eff['ok'] ? (float)($eff['on_hand'] ?? 0) : 0.0;
-                    $qty_after = $qty_before - $qty;
-
-                    $ref_type = 'pemakaian_bhp';
-                    $ref_id = (int)$pemakaian_id;
-                    $catatan = "BHP (Auto-Booking) " . $nomor_pemakaian;
-                    $created_at_str = date('Y-m-d H:i:s');
-
-                    // Record transaction log for dashboard sellout tracking
-                    // We use 'klinik' level so it deducts from global pool in dashboard view
-                    $stmt_trans = $conn->prepare("
-                        INSERT INTO inventory_transaksi_stok
-                        (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at)
-                        VALUES (?, ?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?)
-                    ");
-                    $stmt_trans->bind_param("isidddsisis", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $ref_type, $ref_id, $catatan, $created_by, $created_at_str);
-                    $stmt_trans->execute();
-
-                    // Skip automatic physical stock deduction for ALL (HC & Clinic) 
-                    // This ensures physical stock remains intact until real manual/Excel realization.
-                    /*
-                    if ($is_hc && $level_id !== $klinik_id) {
-                        // $stmt_upd = $conn->prepare("UPDATE inventory_stok_tas_hc SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND user_id = ? AND klinik_id = ?");
-                        // $stmt_upd->bind_param("diiii", $qty, $created_by, $bid, $level_id, $klinik_id);
-                        // $stmt_upd->execute();
-                    } else {
-                        $stmt_upd = $conn->prepare("UPDATE inventory_stok_gudang_klinik SET qty = qty - ?, updated_by = ?, updated_at = NOW() WHERE barang_id = ? AND klinik_id = ?");
-                        $stmt_upd->bind_param("diii", $qty, $created_by, $bid, $klinik_id);
-                        $stmt_upd->execute();
-                    }
-                    */
-                }
-            }
-
             $conn->query("UPDATE inventory_booking_pemeriksaan SET status = 'completed' WHERE id = $id");
             // Mark all patients as done if they were not already handled
             $conn->query("UPDATE inventory_booking_pasien SET status = 'done', done_at = NOW() WHERE booking_id = $id AND status = 'booked'");
             
-            logBookingHistory($conn, $id, 'complete', [], 'Pemeriksaan Selesai (BHP Created: ' . $nomor_pemakaian . ')');
-            $msg = "Booking selesai dan stok telah dipotong ($nomor_pemakaian).";
+            logBookingHistory($conn, $id, 'complete', [], 'Pemeriksaan Selesai');
+            $msg = "Booking selesai.";
             break;
 
         case 'reschedule':
@@ -285,99 +164,13 @@ try {
                 throw new Exception("Tidak ada pasien yang dipilih");
             }
 
-            $klinik_id = (int)$booking['klinik_id'];
             $is_hc = (stripos($booking['status_booking'], 'HC') !== false);
-            $jenis_pemakaian = $is_hc ? 'hc' : 'klinik';
             $created_by = (int)$_SESSION['user_id'];
 
-            // 1. Process DONE patients and calculate items to deduct
-            $items_to_deduct = [];
+            // 1. Tandai pasien DONE
             foreach ($done_ids as $pid) {
                 $pid = (int)$pid;
-                $res_p = $conn->query("SELECT pemeriksaan_grup_id FROM inventory_booking_pasien WHERE id = $pid AND booking_id = $id");
-                if ($p_row = $res_p->fetch_assoc()) {
-                    $gid = $p_row['pemeriksaan_grup_id'];
-                    $gid_esc = $conn->real_escape_string($gid);
-                    $res_items = $conn->query("SELECT barang_id, qty_per_pemeriksaan FROM inventory_pemeriksaan_grup_detail WHERE pemeriksaan_grup_id = '$gid_esc'");
-                    while ($i_row = $res_items->fetch_assoc()) {
-                        $bid = (int)$i_row['barang_id'];
-                        $qty = (float)$i_row['qty_per_pemeriksaan'];
-                        if ($qty > 0) {
-                            $key = (string)$bid;
-                            $items_to_deduct[$key] = ($items_to_deduct[$key] ?? 0) + $qty;
-                        }
-                    }
-                    $conn->query("UPDATE inventory_booking_pasien SET status = 'done', done_at = NOW() WHERE id = $pid");
-                }
-            }
-
-            // 2. Create BHP if needed
-            $nomor_pemakaian = '';
-            if (!empty($items_to_deduct)) {
-                $res_k = $conn->query("SELECT kode_klinik, kode_homecare FROM inventory_klinik WHERE id = $klinik_id LIMIT 1");
-                $k_row = $res_k->fetch_assoc();
-                $k_code_raw = $is_hc ? ($k_row['kode_homecare'] ?? 'HC') : ($k_row['kode_klinik'] ?? 'CLN');
-                $k_code = explode('/', $k_code_raw)[0];
-
-                $date_ym = date('ym', strtotime($booking['tanggal_pemeriksaan'] ?? date('Y-m-d')));
-                require_once __DIR__ . '/../lib/counter.php';
-                $prefix = "BHP-AUT-" . $k_code;
-                $seq = next_sequence($conn, $prefix, $date_ym);
-                $nomor_pemakaian = $prefix . "-" . $date_ym . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
-                
-                $bhp_tanggal = (string)($booking['tanggal_pemeriksaan'] ?? date('Y-m-d')) . ' 00:00:00';
-                $stmt_h = $conn->prepare("INSERT INTO inventory_pemakaian_bhp (nomor_pemakaian, tanggal, jenis_pemakaian, klinik_id, catatan_transaksi, created_by, created_at, status, is_auto, booking_id) VALUES (?, ?, ?, ?, 'Partial-deduction from Booking', ?, NOW(), 'active', 1, ?)");
-                $stmt_h->bind_param("sssiii", $nomor_pemakaian, $bhp_tanggal, $jenis_pemakaian, $klinik_id, $created_by, $id);
-                $stmt_h->execute();
-                $pemakaian_id = $conn->insert_id;
-
-                $level = $is_hc ? 'hc' : 'klinik';
-                $level_id = $klinik_id;
-                if ($is_hc) {
-                    $res_u = $conn->query("SELECT id FROM inventory_users WHERE klinik_id = $klinik_id AND role = 'petugas_hc' AND status = 'active' LIMIT 1");
-                    if ($res_u && $u_row = $res_u->fetch_assoc()) $level_id = (int)$u_row['id'];
-                }
-
-                $stmt_d = $conn->prepare("INSERT INTO inventory_pemakaian_bhp_detail (pemakaian_bhp_id, barang_id, qty, satuan) VALUES (?, ?, ?, ?)");
-                $stmt_trans = $conn->prepare("INSERT INTO inventory_transaksi_stok (barang_id, level, level_id, tipe_transaksi, qty, qty_sebelum, qty_sesudah, referensi_tipe, referensi_id, catatan, created_by, created_at) VALUES (?, ?, ?, 'out', ?, ?, ?, 'pemakaian_bhp', ?, ?, ?, NOW())");
-
-                foreach ($items_to_deduct as $key => $qty) {
-                    $bid = (int)$key;
-                    $qty = (float)$qty;
-
-                    // --- RACE CONDITION FIX: LOCK THE STOCK ROW ---
-                    if ($is_hc && $level_id !== $klinik_id) {
-                        $conn->query("INSERT IGNORE INTO inventory_stok_tas_hc (barang_id, user_id, klinik_id, qty) VALUES ($bid, $level_id, $klinik_id, 0)");
-                        $conn->query("SELECT qty FROM inventory_stok_tas_hc WHERE barang_id = $bid AND user_id = $level_id AND klinik_id = $klinik_id FOR UPDATE");
-                    } else {
-                        $conn->query("INSERT IGNORE INTO inventory_stok_gudang_klinik (barang_id, klinik_id, qty) VALUES ($bid, $klinik_id, 0)");
-                        $conn->query("SELECT qty FROM inventory_stok_gudang_klinik WHERE barang_id = $bid AND klinik_id = $klinik_id FOR UPDATE");
-                    }
-
-                    $res_b = $conn->query("SELECT satuan FROM inventory_barang WHERE id = $bid LIMIT 1");
-                    $satuan = $res_b->num_rows > 0 ? $res_b->fetch_assoc()['satuan'] : 'PCS';
-                    $stmt_d->bind_param("iids", $pemakaian_id, $bid, $qty, $satuan);
-                    $stmt_d->execute();
-
-                    // Get effective stock for dashboard history reconstruction
-                    $eff = stock_effective($conn, $klinik_id, $is_hc, $bid);
-                    $qty_before = $eff['ok'] ? (float)($eff['on_hand'] ?? 0) : 0.0;
-                    $qty_after = $qty_before - $qty;
-
-                    // Record transaction log for dashboard sellout tracking
-                    $cat = "BHP (Partial-Auto) " . $nomor_pemakaian;
-                    $stmt_trans->bind_param("isidddiis", $bid, $level, $level_id, $qty, $qty_before, $qty_after, $pemakaian_id, $cat, $created_by);
-                    $stmt_trans->execute();
-
-                    // Skip physical stock update for now
-                    /*
-                    if ($is_hc && $level_id !== $klinik_id) {
-                        // $conn->query("UPDATE inventory_stok_tas_hc SET qty = qty - $qty, updated_at = NOW(), updated_by = $created_by WHERE barang_id = $bid AND user_id = $level_id AND klinik_id = $klinik_id");
-                    } else {
-                        $conn->query("UPDATE inventory_stok_gudang_klinik SET qty = qty - $qty, updated_at = NOW(), updated_by = $created_by WHERE barang_id = $bid AND klinik_id = $klinik_id");
-                    }
-                    */
-                }
+                $conn->query("UPDATE inventory_booking_pasien SET status = 'done', done_at = NOW() WHERE id = $pid AND booking_id = $id");
             }
 
             // 3. Handle Fallback patients (Cancel / Reschedule)
@@ -487,7 +280,6 @@ try {
             $history_note = "Penyelesaian Bertahap: $done_count Selesai";
             if($res_count > 0) $history_note .= ", $res_count Reschedule (Split)";
             if($can_count > 0) $history_note .= ", $can_count Batal";
-            if($nomor_pemakaian) $history_note .= ". (BHP: $nomor_pemakaian)";
             
             logBookingHistory($conn, $id, 'complete', [], $history_note);
             $msg = "Proses penyelesaian booking berhasil diperbarui.";

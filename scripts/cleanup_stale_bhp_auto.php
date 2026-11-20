@@ -19,6 +19,10 @@
  * MANUAL" karena kemungkinan beneran pernah motong stok fisik waktu itu, butuh pengecekan
  * manual sebelum dihapus (perlu reversal stok kalau memang masih ada baris setua itu).
  *
+ * MODE "all" (?mode=all / CLI --all): tampilkan SEMUA record is_auto=1, bukan cuma yang basi.
+ * Sejak tombol "Selesai" booking tidak lagi membuat BHP-AUT, semua sisa BHP-AUT lama boleh
+ * dibersihkan supaya tidak jadi sellout "hantu" di halaman stok. Cutoff aman tetap berlaku.
+ *
  * CLI: default DRY RUN, tambahkan --apply untuk commit sungguhan (hapus SEMUA yang lolos
  * cutoff sekaligus). Web: halaman UI (filter tanggal + checkbox pilih per baris), tidak ada
  * mode "apply semua" -- harus pilih sendiri per baris, link ini sengaja tidak ada di menu.
@@ -36,7 +40,7 @@ if ($is_web) {
     }
 }
 
-function bhp_auto_stale_list(mysqli $conn, string $tgl_dari = '', string $tgl_sampai = ''): array {
+function bhp_auto_stale_list(mysqli $conn, string $tgl_dari = '', string $tgl_sampai = '', bool $all = false): array {
     $where_tgl = '';
     if ($tgl_dari !== '') $where_tgl .= " AND pb_auto.tanggal >= '" . $conn->real_escape_string($tgl_dari) . "'";
     if ($tgl_sampai !== '') $where_tgl .= " AND pb_auto.tanggal <= '" . $conn->real_escape_string($tgl_sampai) . "'";
@@ -48,18 +52,22 @@ function bhp_auto_stale_list(mysqli $conn, string $tgl_dari = '', string $tgl_sa
         FROM inventory_pemakaian_bhp pb_auto
         LEFT JOIN inventory_klinik k ON k.id = pb_auto.klinik_id
         WHERE pb_auto.is_auto = 1
-          AND EXISTS (
+          AND (? OR EXISTS (
               SELECT 1 FROM inventory_pemakaian_bhp pb_real
               WHERE pb_real.is_auto = 0
                 AND pb_real.status = 'active'
                 AND pb_real.klinik_id = pb_auto.klinik_id
                 AND pb_real.jenis_pemakaian = pb_auto.jenis_pemakaian
                 AND DATE(pb_real.tanggal) = DATE(pb_auto.tanggal)
-          )
+          ))
           $where_tgl
         ORDER BY pb_auto.tanggal DESC, pb_auto.id DESC
     ";
-    $res = $conn->query($q);
+    $stmt = $conn->prepare($q);
+    $all_int = $all ? 1 : 0;
+    $stmt->bind_param('i', $all_int);
+    $stmt->execute();
+    $res = $stmt->get_result();
     $rows = [];
     while ($res && ($r = $res->fetch_assoc())) $rows[] = $r;
     return $rows;
@@ -96,7 +104,8 @@ if ($is_web) {
 
     $tgl_dari = trim((string)($_GET['tgl_dari'] ?? $_POST['tgl_dari'] ?? ''));
     $tgl_sampai = trim((string)($_GET['tgl_sampai'] ?? $_POST['tgl_sampai'] ?? ''));
-    $rows = bhp_auto_stale_list($conn, $tgl_dari, $tgl_sampai);
+    $mode_all = (($_GET['mode'] ?? $_POST['mode'] ?? '') === 'all');
+    $rows = bhp_auto_stale_list($conn, $tgl_dari, $tgl_sampai, $mode_all);
     ?>
     <!DOCTYPE html>
     <html lang="id">
@@ -113,14 +122,24 @@ if ($is_web) {
         <h1 class="h3 mb-1 fw-bold" style="color:#204EAB;"><i class="fas fa-broom me-2"></i>Cleanup BHP-AUT Basi</h1>
         <div class="text-muted small mb-3">Halaman khusus, tidak ada di menu. Cutoff aman: <strong><?= SAFE_CUTOFF ?></strong> (dibuat sebelum ini tidak bisa dihapus lewat sini).</div>
 
+        <div class="btn-group btn-group-sm mb-3">
+            <a href="cleanup_stale_bhp_auto.php" class="btn <?= $mode_all ? 'btn-outline-primary' : 'btn-primary' ?>">Hanya yang Basi</a>
+            <a href="cleanup_stale_bhp_auto.php?mode=all" class="btn <?= $mode_all ? 'btn-primary' : 'btn-outline-primary' ?>">Semua BHP-AUT</a>
+        </div>
+
         <div class="alert alert-info border-0 shadow-sm">
             <i class="fas fa-info-circle me-2"></i>
+            <?php if ($mode_all): ?>
+            Mode <strong>Semua BHP-AUT</strong>: semua record estimasi booking (is_auto=1), termasuk yang belum punya data real. Tombol "Selesai" booking sudah tidak membuat BHP-AUT lagi, jadi sisa record ini cuma jadi sellout "hantu" di halaman stok.
+            <?php else: ?>
             Record BHP-AUT (estimasi booking) yang klinik+tanggal+jenisnya sudah punya data REAL, jadi estimasinya sudah tidak relevan. Menghapus baris ini TIDAK membalikkan stok fisik (memang tidak pernah memotong stok fisik, lihat komentar di bagian atas file ini).
+            <?php endif; ?>
         </div>
 
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-body">
                 <form method="GET" class="row g-2 align-items-end">
+                    <?php if ($mode_all): ?><input type="hidden" name="mode" value="all"><?php endif; ?>
                     <div class="col-auto">
                         <label class="form-label small fw-bold text-muted mb-1">Dari Tanggal</label>
                         <input type="date" name="tgl_dari" class="form-control form-control-sm" value="<?= htmlspecialchars($tgl_dari) ?>">
@@ -131,7 +150,7 @@ if ($is_web) {
                     </div>
                     <div class="col-auto">
                         <button type="submit" class="btn btn-outline-primary btn-sm"><i class="fas fa-filter me-1"></i>Filter</button>
-                        <a href="cleanup_stale_bhp_auto.php" class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo me-1"></i>Reset</a>
+                        <a href="cleanup_stale_bhp_auto.php<?= $mode_all ? '?mode=all' : '' ?>" class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo me-1"></i>Reset</a>
                     </div>
                 </form>
             </div>
@@ -155,10 +174,10 @@ if ($is_web) {
                 <?php if (empty($rows)): ?>
                     <div class="text-center text-muted py-5">
                         <i class="fas fa-check-circle d-block h2 mb-2 opacity-50"></i>
-                        Tidak ada record BHP-AUT basi yang ditemukan untuk filter ini.
+                        Tidak ada record BHP-AUT<?= $mode_all ? '' : ' basi' ?> yang ditemukan untuk filter ini.
                     </div>
                 <?php else: ?>
-                <form method="POST" action="cleanup_stale_bhp_auto.php">
+                <form method="POST" action="cleanup_stale_bhp_auto.php<?= $mode_all ? '?mode=all' : '' ?>">
                     <input type="hidden" name="_csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
                     <input type="hidden" name="tgl_dari" value="<?= htmlspecialchars($tgl_dari) ?>">
                     <input type="hidden" name="tgl_sampai" value="<?= htmlspecialchars($tgl_sampai) ?>">
@@ -227,11 +246,12 @@ if ($is_web) {
 // CLI: dry-run (default) / --apply
 // ──────────────────────────────────────────────────────────────────────────────
 $apply = in_array('--apply', $argv ?? [], true);
+$cli_all = in_array('--all', $argv ?? [], true);
 
 echo $apply ? "MODE: APPLY (perubahan akan disimpan)\n" : "MODE: DRY RUN (tidak ada perubahan disimpan)\n";
 echo str_repeat('-', 70) . "\n";
 
-$stale = bhp_auto_stale_list($conn);
+$stale = bhp_auto_stale_list($conn, '', '', $cli_all);
 
 echo "Ditemukan " . count($stale) . " record BHP-AUT yang sudah basi (klinik+tanggal+jenisnya sudah punya data real).\n\n";
 
